@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "346",
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "12",
       "description": "Sustained API retry rate (>0.1/s) \u2014 flakiness/backoff against the Tailscale API. Break down by endpoint on the Exporter Diagnostics tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health",
       "summary": "Elevated Tailscale API retry rate"

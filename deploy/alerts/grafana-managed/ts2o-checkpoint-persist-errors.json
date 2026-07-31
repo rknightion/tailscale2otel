@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "362",
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "28",
       "description": "rate(tailscale2otel_checkpoint_persist_errors_total) > 0 for {{ $labels.tailscale_collector }} \u2014 the scrape window succeeded but its high-water mark could not be saved, risking replay/duplicate emission on restart. Check the checkpoint file path/permissions.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health",
       "summary": "Collector {{ $labels.tailscale_collector }} cannot persist its checkpoint"

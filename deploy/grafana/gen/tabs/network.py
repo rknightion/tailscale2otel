@@ -7,6 +7,7 @@ network dashboard" is delivered here, on the flagship's Network & Flows tab.
 
 from builder import (BAR_NOISE, category_bar_opts, barchart_opts, loki_t, lot, organize, panel, PII, pii_sentinel, prom_t,
                      RI, row, sentinel, stat_opts, thr, ts_custom, ts_opts)
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 
 # --- rollup vs raw: pick ONE path, never add them (#391) ---------------------
@@ -69,28 +70,28 @@ def talker_bar(title, metric, label, display, filt, desc):
                  desc=desc)
 
 
-def tab_network():
+def tab_network(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_flows", "tailscale_network_flows_total")  # also consumed by events.py
-    sentinel("has_raw_flow", RAW_BYTES)
-    sentinel("has_rollup_flow", ROLLUP_BYTES)
+    sentinel("has_flows", "tailscale_network_flows_total", DASHBOARD)  # also consumed by events.py
+    sentinel("has_raw_flow", RAW_BYTES, DASHBOARD)
+    sentinel("has_rollup_flow", ROLLUP_BYTES, DASHBOARD)
     # has_unique was dead until #391: the peer/port topology row queries exactly the two
     # unique_* gauges, which are gated by cardinality.flow.node_dims on top of the rollup
     # mode, so has_rollup_flow was the looser of the two gates and left the row rendering
     # empty whenever node_dims was off.
-    sentinel("has_unique", "tailscale_network_unique_dst_peers")
-    sentinel("has_exit_io", "tailscale_exit_node_io_bytes_total")
-    pii_sentinel("pii_node", PII + '{category="node_ids"} == 0')
-    pii_sentinel("pii_topology", PII + '{category="network_topology"} == 0')  # also consumed by fleet.py
+    sentinel("has_unique", "tailscale_network_unique_dst_peers", DASHBOARD)
+    sentinel("has_exit_io", "tailscale_exit_node_io_bytes_total", DASHBOARD)
+    pii_sentinel("pii_node", PII + '{category="node_ids"} == 0', DASHBOARD)
+    pii_sentinel("pii_topology", PII + '{category="network_topology"} == 0', DASHBOARD)  # also consumed by fleet.py
     # Still dead: no panel on this tab renders a raw address. The three IP categories
     # redact source.address/destination.address, which only ever appear on the
     # tailscale.network.flow LOG record — the flow-log panels here are Loki *metric*
     # queries over node labels, so there is nothing for these to gate. Wiring them to a
     # row would mean ADDING an address-rendering panel, i.e. widening PII exposure,
     # which neither #391 nor #402 asks for.
-    pii_sentinel("pii_int_ips", PII + '{category="internal_ips"} == 0')  # dead: no row gates on it
-    pii_sentinel("pii_ext_ips", PII + '{category="external_ips"} == 0')  # dead: no row gates on it
-    pii_sentinel("pii_ts_ips", PII + '{category="tailscale_ips"} == 0')  # dead: no row gates on it
+    pii_sentinel("pii_int_ips", PII + '{category="internal_ips"} == 0', DASHBOARD)  # dead: no row gates on it
+    pii_sentinel("pii_ext_ips", PII + '{category="external_ips"} == 0', DASHBOARD)  # dead: no row gates on it
+    pii_sentinel("pii_ts_ips", PII + '{category="tailscale_ips"} == 0', DASHBOARD)  # dead: no row gates on it
 
     # Scope selectors (#391). tailnet/provider are real per-series metric labels stamped
     # on every signal (telemetry.constLabelAttrs), so they filter with a plain matcher and

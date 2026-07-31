@@ -56,19 +56,25 @@ func collectStrings(node any, keys map[string]bool, key string, out *[]string) {
 // template-variable queries alike).
 func dashboardExprs(t *testing.T) []string {
 	t.Helper()
-	b, err := os.ReadFile(dashboardPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", dashboardPath, err)
-	}
-	var doc any
-	if err := json.Unmarshal(b, &doc); err != nil {
-		t.Fatalf("parse %s: %v", dashboardPath, err)
-	}
 	var out []string
-	collectStrings(doc, exprKeys, "", &out)
-	if len(out) == 0 {
-		t.Fatalf("%s yielded no queries; the extraction is broken and every claim built on it "+
-			"would be vacuously unprovable", dashboardPath)
+	for _, path := range dashboardPaths {
+		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var doc any
+		if err := json.Unmarshal(b, &doc); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		before := len(out)
+		collectStrings(doc, exprKeys, "", &out)
+		if len(out) == before {
+			// Per-file, not just on the total: after the #526 split a whole
+			// artifact failing to contribute would otherwise be masked by the
+			// other one, and every "visualized" claim resting on it would be
+			// vacuously unprovable.
+			t.Fatalf("%s yielded no queries; the extraction is broken", path)
+		}
 	}
 	return out
 }

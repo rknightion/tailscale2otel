@@ -329,7 +329,55 @@ _SENTINEL_ORDER = [
     "has_k8s_schema_drift", "pii_command_text",
 ]
 
-_sentinels = {}  # name -> QueryVariable dict, keyed by registration order (not emission order)
+# --- scopes (#526) ----------------------------------------------------------
+#
+# A sentinel is registered against a SCOPE: the dashboard, or one leaf tab. The
+# v2 schema carries `variables` on RowsLayoutRowSpec/TabsLayoutTabSpec as well as
+# on the dashboard, so a presence variable consumed by rows in exactly one tab
+# belongs on that tab. 66 of the 82 dashboard-level variables were hidden
+# sentinels, 50 of them consumed by a single tab.
+#
+# Two rules, and neither is a matter of taste:
+#   * a sentinel that gates a TAB must stay dashboard-level — a tab cannot gate
+#     itself on a variable scoped to itself, because the variable only exists
+#     once the tab renders;
+#   * the same name may live in two different TAB scopes (the duplication rule
+#     for a sentinel spanning <=2 tabs) but never at both dashboard and tab
+#     scope, where a row's reference would resolve to whichever Grafana finds
+#     first.
+
+
+class _Scope:
+    """An opaque sentinel-scope token. Compared by identity, so two scopes with
+    the same title are the same scope (see tab_scope)."""
+
+    __slots__ = ("title",)
+
+    def __init__(self, title):
+        self.title = title
+
+    def __repr__(self):
+        return "<scope %s>" % self.title
+
+
+DASHBOARD = _Scope("__dashboard__")
+
+_tab_scopes = {}
+
+
+def tab_scope(title):
+    """The scope token for the leaf tab titled `title`.
+
+    Memoized: tab modules are re-executed on every build() call, so a fresh token
+    per call would scatter one tab's sentinels across two scopes.
+    """
+    if title not in _tab_scopes:
+        _tab_scopes[title] = _Scope(title)
+    return _tab_scopes[title]
+
+
+_sentinels = {}  # (scope, name) -> QueryVariable dict
+_scopes_by_name = {}  # name -> list[_Scope], for the cross-scope collision rule
 
 
 def reset_sentinels():
@@ -340,22 +388,35 @@ def reset_sentinels():
     — every test file here does this — would raise spurious "already
     registered" errors."""
     _sentinels.clear()
+    _scopes_by_name.clear()
 
 
-def _claim_sentinel(name):
-    """Reserve a sentinel name, or raise if it is already taken.
+def _claim_sentinel(name, scope):
+    """Reserve a sentinel name within `scope`, or raise.
 
     Must raise, not silently dedupe: a silent dedupe would let a name be
     registered twice with two different queries, with whichever call wins
     silently gating unrelated rows on the wrong metric.
     """
-    if name in _sentinels:
+    if not isinstance(scope, _Scope):
+        raise TypeError(
+            "sentinel %r: scope must be builder.DASHBOARD or builder.tab_scope(...), "
+            "got %r. It is required with no default so a tab module cannot forget "
+            "it and silently re-create a dashboard-level variable." % (name, scope))
+    if (scope, name) in _sentinels:
         raise ValueError(
-            "sentinel %r is already registered; two presence variables cannot "
-            "share a name (give the second one its own)" % name)
+            "sentinel %r is already registered in %r; two presence variables cannot "
+            "share a name in one scope (give the second one its own)" % (name, scope))
+    for other in _scopes_by_name.get(name, ()):
+        if (other is DASHBOARD) != (scope is DASHBOARD):
+            raise ValueError(
+                "sentinel %r is registered at both dashboard scope and tab scope "
+                "(%r and %r). A row referencing it would resolve to whichever "
+                "declaration Grafana finds first — pick one scope." % (name, other, scope))
+    _scopes_by_name.setdefault(name, []).append(scope)
 
 
-def sentinel(name, metric):
+def sentinel(name, metric, scope):
     """Register a hidden presence QueryVariable: non-empty when <metric> has series.
 
     Structural on purpose — callers pass a metric name, never a hand-written
@@ -363,8 +424,8 @@ def sentinel(name, metric):
     place and no call site can invent a divergent one. Returns `name`, so a
     call site can optionally capture it: `HAS_X = sentinel("has_x", "...")`.
     """
-    _claim_sentinel(name)
-    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+    _claim_sentinel(name, scope)
+    _sentinels[(scope, name)] = {"kind": "QueryVariable", "spec": {
         "name": name, "label": name, "hide": "hideVariable",
         "query": {"kind": "DataQuery", "version": "v0", "group": "",
                   "datasource": {"name": "${ds_prometheus}"},
@@ -375,13 +436,13 @@ def sentinel(name, metric):
     return name
 
 
-def pii_sentinel(name, expr):
+def pii_sentinel(name, expr, scope):
     """Register a hidden PII-redaction sentinel: non-empty ONLY when <expr> returns
     series, i.e. when the redaction condition holds. Used with row(hide_when=[...])
     -> notMatches so panels hide only on explicit redaction and stay visible when
     the pii_filter gauge is absent."""
-    _claim_sentinel(name)
-    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+    _claim_sentinel(name, scope)
+    _sentinels[(scope, name)] = {"kind": "QueryVariable", "spec": {
         "name": name, "label": name, "hide": "hideVariable",
         "query": {"kind": "DataQuery", "version": "v0", "group": "",
                   "datasource": {"name": "${ds_prometheus}"},
@@ -392,7 +453,7 @@ def pii_sentinel(name, expr):
     return name
 
 
-def raw_sentinel(name, query):
+def raw_sentinel(name, query, scope):
     """Register a hidden presence sentinel from an already-formed query string.
 
     For the one case that is neither a plain metric-presence check nor a PII
@@ -400,8 +461,8 @@ def raw_sentinel(name, query):
     metric existing, so its query has no single metric name to hand to
     sentinel().
     """
-    _claim_sentinel(name)
-    _sentinels[name] = {"kind": "QueryVariable", "spec": {
+    _claim_sentinel(name, scope)
+    _sentinels[(scope, name)] = {"kind": "QueryVariable", "spec": {
         "name": name, "label": name, "hide": "hideVariable",
         "query": {"kind": "DataQuery", "version": "v0", "group": "",
                   "datasource": {"name": "${ds_prometheus}"},
@@ -412,41 +473,102 @@ def raw_sentinel(name, query):
     return name
 
 
-def registered_sentinels():
-    """Every registered sentinel's QueryVariable dict, in the FROZEN historical
-    order (_SENTINEL_ORDER) rather than registration order — registration order
-    is now a function of which tabs got built and in what sequence, and must
-    not leak into the emitted variables array (#495)."""
-    unordered = [n for n in _sentinels if n not in _SENTINEL_ORDER]
+def registered_sentinels(scope):
+    """Every sentinel registered against `scope`, in the FROZEN historical order
+    (_SENTINEL_ORDER) rather than registration order — registration order is now
+    a function of which tabs got built and in what sequence, and must not leak
+    into the emitted variables array (#495)."""
+    unordered = sorted({n for (_s, n) in _sentinels if n not in _SENTINEL_ORDER})
     if unordered:
         raise ValueError(
             "sentinel(s) %r registered but missing from _SENTINEL_ORDER — add "
             "them there (at the end, unless intentionally matching a specific "
             "historical position)" % unordered)
-    return [_sentinels[n] for n in _SENTINEL_ORDER if n in _sentinels]
+    return [_sentinels[(scope, n)] for n in _SENTINEL_ORDER if (scope, n) in _sentinels]
 
 
-def row(title, panel_specs, present=None, hide_when=None, collapse=False):
-    spec = {"title": title, "collapse": collapse, "layout": place(panel_specs)}
+def _gating(present, hide_when):
+    """The conditionalRendering group for a row/tab, or None when it is ungated."""
     items = []
     if present:
         items.append(cond_item(present))
     for hv in (hide_when or []):
         # show UNLESS the redaction var is non-empty (==0 observed) -> hide-only-on-explicit-redaction
         items.append(cond_item(hv, op="notMatches"))
-    if items:
-        spec["conditionalRendering"] = cond_group(items)
-    return {"kind": "RowsLayoutRow", "spec": spec}
+    return cond_group(items) if items else None
 
 
-def tab(title, rowlist, present=None):
+def _scoped(spec, variables):
+    """Attach a grouping-level `variables` list, if there is one.
+
+    Set only when non-empty, never as an empty list: `variables` exists on
+    RowsLayoutRowSpec/TabsLayoutTabSpec ONLY in v2beta1 and v2 — v2alpha1 has no
+    such field at all — so emitting [] everywhere would make an accidental
+    apiVersion downgrade, which silently drops every scoped variable, impossible
+    to detect from the artifact (#526).
+    """
+    if variables:
+        spec["variables"] = variables
+    return spec
+
+
+def row(title, panel_specs, present=None, hide_when=None, collapse=False, variables=None):
+    spec = {"title": title, "collapse": collapse, "layout": place(panel_specs)}
+    gate = _gating(present, hide_when)
+    if gate:
+        spec["conditionalRendering"] = gate
+    return {"kind": "RowsLayoutRow", "spec": _scoped(spec, variables)}
+
+
+def autogrid_row(title, panel_names, present=None, hide_when=None, collapse=False,
+                 max_columns=None, variables=None):
+    """A row of N SAME-SIZE panels that reflows responsively (AutoGridLayout).
+
+    `panel_names` is a flat list of element names — NOT the (name, w, h) triples
+    row() takes. That is the entire point: the sizes are not stated, so Grafana
+    reflows the row to the viewport (verified: 3 panels wrap to 2 columns at
+    1400px). Use row() instead when the row has deliberate asymmetry — a wide
+    timeseries beside two stats — because AutoGrid cannot express that and would
+    flatten it to equal cells (#526 decision 6).
+    """
+    lay = {"items": [{"kind": "AutoGridLayoutItem",
+                      "spec": {"element": {"kind": "ElementReference", "name": n}}}
+                     for n in panel_names],
+           "columnWidthMode": "standard", "rowHeightMode": "standard",
+           "fillScreen": False}
+    if max_columns is not None:
+        lay["maxColumnCount"] = max_columns
+    spec = {"title": title, "collapse": collapse,
+            "layout": {"kind": "AutoGridLayout", "spec": lay}}
+    gate = _gating(present, hide_when)
+    if gate:
+        spec["conditionalRendering"] = gate
+    return {"kind": "RowsLayoutRow", "spec": _scoped(spec, variables)}
+
+
+def dashboard_link(title, uid, link_vars):
+    """A `spec.links` entry pointing at the sibling dashboard.
+
+    Propagates the time range and the named variables, so an operator following
+    "this panel is empty" -> "is the exporter broken?" lands on the same window
+    and the same tailnet rather than a fresh default view. Before #526 the
+    artifact shipped `spec.links: []` — no cross-navigation at all.
+    """
+    qs = "".join("&${%s:queryparam}" % v for v in link_vars)
+    return {"title": title, "type": "link", "icon": "external link",
+            "tooltip": "", "tags": [], "asDropdown": False, "targetBlank": False,
+            "includeVars": True, "keepTime": True, "placement": "inControlsMenu",
+            "url": "/d/%s?${__url_time_range}%s" % (uid, qs)}
+
+
+def tab(title, rowlist, present=None, variables=None):
     spec = {"title": title, "layout": {"kind": "RowsLayout", "spec": {"rows": rowlist}}}
     if present:
         spec["conditionalRendering"] = cond_present(present)
-    return {"kind": "TabsLayoutTab", "spec": spec}
+    return {"kind": "TabsLayoutTab", "spec": _scoped(spec, variables)}
 
 
-def tab_group(title, children, present=None):
+def tab_group(title, children, present=None, variables=None):
     """A top-level domain tab whose content is a second, NESTED TabsLayout (#495).
 
     `children` are complete `TabsLayoutTab` dicts already built via `tab()` — each keeps
@@ -462,4 +584,4 @@ def tab_group(title, children, present=None):
     spec = {"title": title, "layout": {"kind": "TabsLayout", "spec": {"tabs": children}}}
     if present:
         spec["conditionalRendering"] = cond_present(present)
-    return {"kind": "TabsLayoutTab", "spec": spec}
+    return {"kind": "TabsLayoutTab", "spec": _scoped(spec, variables)}

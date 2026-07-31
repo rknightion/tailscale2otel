@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "365",
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "31",
       "description": "tailscale2otel_config_valid_ratio < 1 \u2014 the running config failed validation. This normally fails startup, so seeing it at runtime is rare and serious; inspect the config. Ships ENABLED: an invalid config is unambiguous, needs no site-specific threshold, and the signal is emitted by any running exporter \u2014 there is no deployment where this firing is not worth knowing about.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health",
       "summary": "tailscale2otel config is invalid"

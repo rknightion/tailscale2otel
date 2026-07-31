@@ -92,7 +92,14 @@ INTERVAL = "1m"
 _GEN_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(_GEN_DIR)))
 RUNBOOK_DOC = os.path.join(_REPO_ROOT, "docs", "runbooks.md")
-DASHBOARD_DOC = os.path.join(_REPO_ROOT, "deploy", "grafana", "tailscale2otel.json")
+# The dashboard FAMILY (#526). A panel title is resolved across every artifact,
+# and the uid an alert links to is the uid of the dashboard the panel actually
+# lives on — so an alert on an exporter-health signal opens the health dashboard
+# rather than sending an on-call engineer to the tailnet one.
+DASHBOARD_DOCS = (
+    os.path.join(_REPO_ROOT, "deploy", "grafana", "tailscale2otel-tailnet.json"),
+    os.path.join(_REPO_ROOT, "deploy", "grafana", "tailscale2otel-health.json"),
+)
 
 # The public docs site (zensical `site_url` + the runbooks page). Deliberately the
 # PROJECT's own docs, not the operator's Grafana stack — an annotation must never
@@ -332,50 +339,61 @@ def runbook_url(slug):
 
 
 def _panel_index():
-    """title -> [panel id, ...] over the GENERATED flagship dashboard.
+    """title -> [(dashboard uid, panel id), ...] over EVERY generated dashboard.
 
     Resolution is by TITLE, never by a hard-coded id: ids come from a monotonic
     counter in deploy/grafana/gen/build.py and renumber whenever a panel is
     inserted, so a literal id in this file would rot silently into a link to
-    whatever panel inherited the number.
+    whatever panel inherited the number. Since #526 the id is only unique WITHIN
+    an artifact — the counter restarts per dashboard — so the uid has to travel
+    with it rather than being read once from a single file.
     """
     global _panel_index_cache
     if _panel_index_cache is None:
-        try:
-            with open(DASHBOARD_DOC, encoding="utf-8") as f:
-                doc = json.load(f)
-        except (OSError, ValueError) as err:
-            raise ValueError("cannot read the generated dashboard %s: %s" % (DASHBOARD_DOC, err))
         index = {}
-        for element in doc["spec"]["elements"].values():
-            if element.get("kind") != "Panel":
-                continue
-            index.setdefault(element["spec"]["title"], []).append(element["spec"]["id"])
-        if not index:
-            raise ValueError("%s contains no panels" % DASHBOARD_DOC)
-        _panel_index_cache = (doc["metadata"]["name"], index)
+        for path in DASHBOARD_DOCS:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    doc = json.load(f)
+            except (OSError, ValueError) as err:
+                raise ValueError("cannot read the generated dashboard %s: %s" % (path, err))
+            uid = doc["metadata"]["name"]
+            found = 0
+            for element in doc["spec"]["elements"].values():
+                if element.get("kind") != "Panel":
+                    continue
+                index.setdefault(element["spec"]["title"], []).append((uid, element["spec"]["id"]))
+                found += 1
+            if not found:
+                raise ValueError("%s contains no panels" % path)
+        _panel_index_cache = index
     return _panel_index_cache
 
 
-def panel_ref(title):
-    """(dashboardUid, panelId) for exactly one panel titled `title`.
+def _resolve_index(index, title):
+    """The single (uid, id) `title` names, or raise. Split out from panel_ref so
+    the ambiguity rule can be tested without a dashboard on disk."""
+    refs = index.get(title, [])
+    if not refs:
+        raise ValueError(
+            "no panel titled %r on any generated dashboard (%s). Panel titles are the link "
+            "key, so a retitled or MOVED panel must be updated here too."
+            % (title, ", ".join(os.path.basename(p) for p in DASHBOARD_DOCS)))
+    if len(refs) > 1:
+        # Ambiguity is an ERROR, not a pick-first: several titles are reused across
+        # tabs ("Updates available" appears three times), and silently linking the
+        # first match sends an on-call engineer to the wrong tab — or, since #526,
+        # to the wrong DASHBOARD.
+        raise ValueError(
+            "panel title %r is used by %d panels (%s). Pick a title unique to the canonical "
+            "panel, or qualify the panel's title in deploy/grafana/gen/tabs/." %
+            (title, len(refs), ", ".join("%s#%s" % (u, i) for (u, i) in refs)))
+    return refs[0]
 
-    Ambiguity is an ERROR, not a pick-first: several titles are reused across
-    tabs ("Updates available" appears three times), and silently linking the
-    first match sends an on-call engineer to the wrong tab.
-    """
-    uid, index = _panel_index()
-    ids = index.get(title, [])
-    if not ids:
-        raise ValueError(
-            "no panel titled %r in the generated dashboard. Panel titles are the link key, so a "
-            "retitled panel must be updated here too." % title)
-    if len(ids) > 1:
-        raise ValueError(
-            "panel title %r is used by %d panels (ids %s). Pick a title unique to the canonical "
-            "panel, or qualify the panel's title in deploy/grafana/gen/build.py." %
-            (title, len(ids), ", ".join(str(i) for i in ids)))
-    return uid, ids[0]
+
+def panel_ref(title):
+    """(dashboardUid, panelId) for exactly one panel titled `title`."""
+    return _resolve_index(_panel_index(), title)
 
 
 def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,

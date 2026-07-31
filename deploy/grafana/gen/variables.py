@@ -8,7 +8,7 @@ that tab (see tabs/*.py). This module only builds the base variables
 whatever sentinels got registered, via builder.registered_sentinels().
 """
 
-from builder import (PROM_DS_TEXT, PROM_DS_VALUE, LOKI_DS_TEXT, LOKI_DS_VALUE,
+from builder import (DASHBOARD, PROM_DS_TEXT, PROM_DS_VALUE, LOKI_DS_TEXT, LOKI_DS_VALUE,
                      TEMPO_DS_TEXT, TEMPO_DS_VALUE, registered_sentinels)
 
 
@@ -43,13 +43,45 @@ def custom_var(name, label, csv, current_text, current_value, multi=False, allva
         "hide": "dontHide", "skipUrlSync": False}}
 
 
+def adhoc_var(name, label, base_filters, ds="${ds_prometheus}", group="prometheus"):
+    """An AdhocVariable — one free-form label filter replacing several dropdowns.
+
+    `base_filters` is a list of (key, operator, value) tuples pinning the variable
+    to a metric family, so the key/value suggestions an operator gets are the ones
+    that mean something for that family rather than every label in the TSDB.
+
+    SHAPE TRAP, and the reason this helper exists at all: AdhocVariableKind puts
+    `datasource` and a REQUIRED `group` at the KIND level, as siblings of `spec` —
+    unlike QueryVariable, which nests its datasource inside the query. Putting
+    either inside `spec` produces a 422 whose CUE disjunction error names
+    `layout.kind` and never mentions the variable, so the real cause is masked;
+    bisect from a known-valid fragment if a v2 push ever 422s (#526).
+    """
+    return {"kind": "AdhocVariable",
+            "group": group,
+            "datasource": {"name": ds},
+            "spec": {
+                "name": name, "label": label, "description": "",
+                "hide": "dontHide", "skipUrlSync": False, "allowCustomValue": True,
+                "defaultKeys": [],
+                "baseFilters": [{"key": k, "operator": op, "value": v}
+                                for (k, op, v) in base_filters],
+                "filters": []}}
+
+
 def textbox_var(name, label):
     return {"kind": "TextVariable", "spec": {
         "name": name, "label": label, "current": {"text": "", "value": ""},
         "hide": "dontHide", "query": "", "skipUrlSync": False}}
 
 
-def build_variables():
+def build_variables(spec):
+    """The DASHBOARD-LEVEL variables for `spec`.
+
+    Base controls plus whatever sentinels this dashboard's tab modules registered
+    against builder.DASHBOARD. Tab-scoped sentinels are collected separately, by
+    build.py, onto the tab that declared them (#526).
+    """
     v = [
         ds_var("ds_prometheus", "Prometheus", "prometheus", PROM_DS_TEXT, PROM_DS_VALUE),
         ds_var("ds_loki", "Loki", "loki", LOKI_DS_TEXT, LOKI_DS_VALUE),
@@ -71,5 +103,5 @@ def build_variables():
                     ("webhook", "tailscale.webhook.*")], "All", ".+"),
         textbox_var("log_filter", "Log filter"),
     ]
-    v.extend(registered_sentinels())
+    v.extend(registered_sentinels(DASHBOARD))
     return v

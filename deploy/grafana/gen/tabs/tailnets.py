@@ -2,20 +2,21 @@
 
 from builder import (merge, organize, panel, prom_t, raw_sentinel, RI, row, stat_opts,
                      ts_custom, ts_opts)
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 
-def tab_tailnets():
+def tab_tailnets(scope):
     """MSP / multi-tailnet scorecard tab — gated by has_multitailnet (hidden on single-tailnet)."""
     # has_multitailnet declared here (moved from variables.py, #495): this is the tab it is
     # named after and gates (see build.py's tab_defs), even though the query itself is also
     # consumed by rows in overview.py and diagnostics.py — not by this function's own rows.
-    # Not a plain metric-presence check (no single metric to hand to sentinel()): it gates on
+    # Not a plain metric-presence check (no single metric to hand to sentinel(, DASHBOARD)): it gates on
     # ">1 distinct tailnet observed", excluding "" and "-" (single-tailnet placeholder) so
     # placeholder/unnamed-tailnet series don't false-positive on single-tailnet deployments.
     raw_sentinel(
         "has_multitailnet",
         'query_result(count(count by (tailscale_tailnet) '
-        '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"})) > 1)')
+        '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"})) > 1)', DASHBOARD)
 
     # tailscale_tailnet is a real per-series label now (item L) — filter it directly, no join.
     _tn = 'tailscale_tailnet!="", tailscale_tailnet!="-"'

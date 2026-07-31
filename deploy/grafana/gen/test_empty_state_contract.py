@@ -404,7 +404,7 @@ class CrossCollectorZeroFillTest(unittest.TestCase):
     """The gate itself, run against the real built dashboard."""
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.rows = extract_rows(self.doc)
         self.sentinel_metric = sentinel_metric_map(self.doc)
 
@@ -437,7 +437,7 @@ class NotViolationsStayInvisibleTest(unittest.TestCase):
     (per the task brief: fix the derivation, do not add an exception list)."""
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.rows = extract_rows(self.doc)
         self.sentinel_metric = sentinel_metric_map(self.doc)
         self.by_row = {title: (gates, panels) for (title, gates, panels) in self.rows}
@@ -617,7 +617,7 @@ def _all_novalue_strings(doc):
 
 class EmptyStateTextRulesTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.novalues = _all_novalue_strings(self.doc)
 
     def test_the_scan_actually_found_prose_empty_states(self):

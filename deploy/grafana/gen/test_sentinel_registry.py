@@ -76,33 +76,123 @@ KNOWN_DEAD_SENTINELS = {
 }
 
 
+def _per_dashboard():
+    """(uid, registered names, referenced names) for each shipped dashboard.
+
+    Per dashboard, not over the family: after the #526 split a sentinel is
+    registered while building the dashboard that consumes it, so a row on the
+    tailnet dashboard gating on a sentinel only the health dashboard's modules
+    declare would render permanently hidden. Checking the union would hide
+    exactly that.
+    """
+    out = []
+    for spec in dashboard.dashboards.ALL:
+        doc = dashboard.build(spec)
+        out.append((spec.uid,
+                    {name for (_scope, name) in builder._sentinels},
+                    referenced_sentinel_names(doc)))
+    return out
+
+
 class SentinelRegistryTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
-        self.registered = set(builder._sentinels.keys())
-        self.referenced = referenced_sentinel_names(self.doc)
+        self.per_dashboard = _per_dashboard()
 
     def test_every_referenced_sentinel_is_registered(self):
         # The higher-value direction: a typo'd present=/hide_when= name must fail the
-        # build, not silently produce an always-hidden row.
-        undefined = self.referenced - self.registered
-        self.assertEqual(undefined, set(),
-                          "row/tab references unregistered sentinel(s) %s — typo, or the "
-                          "declaring tab's sentinel() call is missing" % sorted(undefined))
+        # build, not silently produce an always-hidden row. Since #526 it also
+        # catches a row left behind on one dashboard gating on a sentinel whose
+        # declaring module moved to the other.
+        for uid, registered, referenced in self.per_dashboard:
+            undefined = referenced - registered
+            self.assertEqual(undefined, set(),
+                              "%s: row/tab references unregistered sentinel(s) %s — typo, "
+                              "the declaring tab's sentinel() call is missing, or the "
+                              "declaring module now lives on the other dashboard"
+                              % (uid, sorted(undefined)))
 
     def test_every_registered_sentinel_is_referenced_or_known_dead(self):
-        dead = self.registered - self.referenced
-        unexpected_dead = dead - KNOWN_DEAD_SENTINELS
-        self.assertEqual(unexpected_dead, set(),
-                          "sentinel(s) %s are registered but no row/tab references them — "
-                          "either wire them into a present=/hide_when=, or add them to "
-                          "KNOWN_DEAD_SENTINELS with a reason" % sorted(unexpected_dead))
-        # If a KNOWN_DEAD entry starts being referenced, drop it from the allowlist so
-        # this test keeps covering it going forward.
-        newly_alive = KNOWN_DEAD_SENTINELS & self.referenced
-        self.assertEqual(newly_alive, set(),
-                          "sentinel(s) %s are in KNOWN_DEAD_SENTINELS but ARE referenced now — "
-                          "remove them from the allowlist" % sorted(newly_alive))
+        for uid, registered, referenced in self.per_dashboard:
+            dead = registered - referenced
+            unexpected_dead = dead - KNOWN_DEAD_SENTINELS
+            self.assertEqual(unexpected_dead, set(),
+                              "%s: sentinel(s) %s are registered but no row/tab references "
+                              "them — either wire them into a present=/hide_when=, or add "
+                              "them to KNOWN_DEAD_SENTINELS with a reason"
+                              % (uid, sorted(unexpected_dead)))
+            # If a KNOWN_DEAD entry starts being referenced, drop it from the allowlist
+            # so this test keeps covering it going forward.
+            newly_alive = KNOWN_DEAD_SENTINELS & referenced
+            self.assertEqual(newly_alive, set(),
+                              "%s: sentinel(s) %s are in KNOWN_DEAD_SENTINELS but ARE "
+                              "referenced now — remove them from the allowlist"
+                              % (uid, sorted(newly_alive)))
+
+
+class ScopedSentinelTest(unittest.TestCase):
+    """#526: a sentinel is registered against a SCOPE — the dashboard, or one leaf
+    tab — so a presence variable consumed by exactly one tab stops being declared
+    at dashboard level. 66 of the 82 dashboard-level variables were hidden
+    sentinels, 50 of them consumed by rows in a single tab."""
+
+    def setUp(self):
+        builder.reset_sentinels()
+
+    def tearDown(self):
+        builder.reset_sentinels()
+
+    def test_a_sentinel_is_returned_only_for_its_own_scope(self):
+        # A name from the frozen _SENTINEL_ORDER: registered_sentinels() emits in
+        # that order and rejects anything absent from it, so a made-up name here
+        # would test the order guard rather than scoping.
+        s = builder.tab_scope("Flows")
+        builder.sentinel("has_flows", "tailscale_network_flows_total", s)
+        self.assertEqual(
+            [v["spec"]["name"] for v in builder.registered_sentinels(s)],
+            ["has_flows"])
+        self.assertEqual(builder.registered_sentinels(builder.DASHBOARD), [])
+
+    def test_the_same_name_in_one_scope_twice_raises(self):
+        s = builder.tab_scope("Flows")
+        builder.sentinel("has_probe", "a_metric", s)
+        with self.assertRaises(ValueError):
+            builder.sentinel("has_probe", "another_metric", s)
+
+    def test_the_same_name_in_two_tab_scopes_is_allowed(self):
+        # The "<=2 tabs duplicates at tab scope" rule (#526) depends on this.
+        # Whether GRAFANA accepts it is a separate, live-probed question; this
+        # only fixes the generator's own behaviour so the probe has something to
+        # push.
+        a, b = builder.tab_scope("Flows"), builder.tab_scope("Devices")
+        builder.sentinel("has_flows", "a_metric", a)
+        builder.sentinel("has_flows", "a_metric", b)
+        self.assertEqual(len(builder.registered_sentinels(a)), 1)
+        self.assertEqual(len(builder.registered_sentinels(b)), 1)
+
+    def test_the_same_name_at_dashboard_and_tab_scope_raises(self):
+        # Ambiguous: a row referencing it would resolve to whichever declaration
+        # Grafana finds first. Ban it rather than pick one.
+        s = builder.tab_scope("Flows")
+        builder.sentinel("has_probe", "a_metric", builder.DASHBOARD)
+        with self.assertRaises(ValueError):
+            builder.sentinel("has_probe", "a_metric", s)
+
+    def test_tab_scope_is_stable_per_title(self):
+        # Tab modules are re-executed on every build(); the scope token for a
+        # given tab title must be the same object across calls or a rebuild would
+        # scatter one tab's sentinels across two scopes.
+        self.assertIs(builder.tab_scope("Flows"), builder.tab_scope("Flows"))
+        self.assertIsNot(builder.tab_scope("Flows"), builder.tab_scope("Devices"))
+
+    def test_scope_is_required_on_every_registrar(self):
+        # No default on purpose: a default would let a tab module forget it and
+        # silently re-create the dashboard-level pile #526 exists to remove.
+        with self.assertRaises(TypeError):
+            builder.sentinel("has_probe", "a_metric")
+        with self.assertRaises(TypeError):
+            builder.pii_sentinel("has_probe", "a_metric == 0")
+        with self.assertRaises(TypeError):
+            builder.raw_sentinel("has_probe", "query_result(x)")
 
 
 class SentinelDuplicateRegistrationTest(unittest.TestCase):
@@ -113,18 +203,18 @@ class SentinelDuplicateRegistrationTest(unittest.TestCase):
 
     def test_declaring_the_same_sentinel_name_twice_raises(self):
         builder.reset_sentinels()
-        builder.sentinel("test_dup_sentinel", "some_metric")
+        builder.sentinel("test_dup_sentinel", "some_metric", builder.DASHBOARD)
         with self.assertRaises(ValueError):
-            builder.sentinel("test_dup_sentinel", "some_other_metric")
+            builder.sentinel("test_dup_sentinel", "some_other_metric", builder.DASHBOARD)
 
     def test_declaring_the_same_sentinel_name_twice_raises_across_kinds(self):
         # The collision check is on the NAME, regardless of which registration
         # function is used — a pii_sentinel colliding with a sentinel() name is the
         # same bug (#414-equivalent) as two sentinel() calls colliding.
         builder.reset_sentinels()
-        builder.sentinel("test_dup_sentinel2", "some_metric")
+        builder.sentinel("test_dup_sentinel2", "some_metric", builder.DASHBOARD)
         with self.assertRaises(ValueError):
-            builder.pii_sentinel("test_dup_sentinel2", "some_expr == 0")
+            builder.pii_sentinel("test_dup_sentinel2", "some_expr == 0", builder.DASHBOARD)
 
 
 if __name__ == "__main__":

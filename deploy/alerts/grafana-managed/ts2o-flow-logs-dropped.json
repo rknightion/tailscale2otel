@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "427",
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "93",
       "description": "rate(tailscale_network_flow_logs_dropped_total[10m]) > 0 for 10m \u2014 the per-window flow-log volume guard (collectors.flowlogs.max_log_records_per_window) is truncating flow LOG records. Metrics are NEVER capped, so throughput panels stay complete and correct while the log stream silently loses records; this rule is the only thing that makes that visible. Ships ENABLED for the same reason as the cardinality cap: the loss is silent and the counter is absent until the guard actually truncates. Raise the cap or narrow the flow-log scope (per_connection vs per_record) if this is unexpected.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline",
       "summary": "Tailscale flow log records being dropped by the volume guard"

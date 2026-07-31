@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "136",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "302",
       "description": "The current Tailscale audit stream contains enum values this collector version does not classify. Metrics remain bounded and raw values stay out of labels; inspect the once-per-value digest warning and update the vendored API contract.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#audit-events",
       "summary": "Unknown configuration-audit {{ $labels.field }} values are arriving"

@@ -5,6 +5,7 @@ from builder import (bargauge_opts, hq, lot, organize, panel, PII, prom_t, RI, r
                      vmap, WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 import builder
+from builder import DASHBOARD, raw_sentinel  # #526: wave 1 leaves every sentinel dashboard-level
 
 
 # Prerequisite-aware empty states for the optional sections (#385/#386).
@@ -38,16 +39,27 @@ _RDNS_EMPTY = ("No reverse-DNS cache series. Requires enrichment.reverse_dns.ena
                "self_observability.enabled.")
 
 
-def tab_diagnostics():
+def tab_diagnostics(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_selfobs", "tailscale2otel_series_active")  # also consumed by cardinality.py, overview.py, events.py
-    sentinel("has_api_retry", "tailscale2otel_api_retries_total")
-    sentinel("has_scrape_err", "tailscale2otel_scrape_errors_total")
-    sentinel("has_api_hist", "tailscale2otel_api_duration_seconds_count")
-    sentinel("has_export_hist", "tailscale2otel_export_duration_seconds_count")
-    sentinel("has_staleness", "tailscale2otel_scrape_staleness_seconds")
-    sentinel("has_pii", "tailscale2otel_pii_filter_category_ratio")
-    sentinel("has_rdns", "tailscale_rdns_cache_entries_ratio")
+    sentinel("has_selfobs", "tailscale2otel_series_active", DASHBOARD)  # also consumed by cardinality.py
+    # Declared here AS WELL AS in tabs/tailnets.py, which declares it for the tailnet
+    # dashboard. Since #526 the two modules build DIFFERENT dashboards and the
+    # sentinel registry resets per dashboard, so the health side needs its own
+    # declaration for the "Per-tailnet API errors" row below. Kept as raw_sentinel
+    # with the identical query: this gates on ">1 distinct tailnet observed", not on
+    # a metric existing, so there is no single metric name to hand to sentinel().
+    raw_sentinel(
+        "has_multitailnet",
+        'query_result(count(count by (tailscale_tailnet) '
+        '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"})) > 1)',
+        DASHBOARD)
+    sentinel("has_api_retry", "tailscale2otel_api_retries_total", DASHBOARD)
+    sentinel("has_scrape_err", "tailscale2otel_scrape_errors_total", DASHBOARD)
+    sentinel("has_api_hist", "tailscale2otel_api_duration_seconds_count", DASHBOARD)
+    sentinel("has_export_hist", "tailscale2otel_export_duration_seconds_count", DASHBOARD)
+    sentinel("has_staleness", "tailscale2otel_scrape_staleness_seconds", DASHBOARD)
+    sentinel("has_pii", "tailscale2otel_pii_filter_category_ratio", DASHBOARD)
+    sentinel("has_rdns", "tailscale_rdns_cache_entries_ratio", DASHBOARD)
 
     cf = "{tailscale_collector=~\"$collector\"}"
     live = [

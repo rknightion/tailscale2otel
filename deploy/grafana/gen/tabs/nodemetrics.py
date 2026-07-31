@@ -3,6 +3,7 @@
 from builder import (BAR_NOISE, category_bar_opts, bargauge_opts, derp_byte_fraction, lot, organize,
                      panel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom, ts_opts)
 from maps import UP_MAP
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Curated node-metric families (#402). Named once so a panel cannot typo one into a
 # silently empty chart — internal/catalog/dashboardrefs_test.go only catches a name
@@ -21,20 +22,20 @@ DROP_POLICY = 'tailscale_drop_reason="acl"'
 DROP_NOT_POLICY = 'tailscale_drop_reason!="acl"'
 
 
-def tab_nodemetrics():
+def tab_nodemetrics(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
     # has_nodemetrics gates the whole "Node Metrics" tab (see build.py's tab_defs) — declared
     # here because this is the tab it names/gates, even though build.py (not this function's
     # own rows) is the actual consumer.
-    sentinel("has_nodemetrics", "tailscale_node_up_ratio")
-    sentinel("has_path", "tailscaled_inbound_bytes_total")
-    sentinel("has_derp_rollup", "tailscale_derp_region_devices_ratio")
+    sentinel("has_nodemetrics", "tailscale_node_up_ratio", DASHBOARD)
+    sentinel("has_path", "tailscaled_inbound_bytes_total", DASHBOARD)
+    sentinel("has_derp_rollup", "tailscale_derp_region_devices_ratio", DASHBOARD)
     # has_dropped was dead until #402: the raw dropped-packets panel it names sat in the
     # ungated "Traffic (tailscaled)" row, so on a target whose tailscaled exposes no
     # dropped-packet counters it rendered permanently empty instead of hiding. It now
     # gates its own row.
-    sentinel("has_dropped", "tailscaled_outbound_dropped_packets_total")
-    sentinel("has_node_curated", "tailscale_node_io_bytes_total")
+    sentinel("has_dropped", "tailscaled_outbound_dropped_packets_total", DASHBOARD)
+    sentinel("has_node_curated", "tailscale_node_io_bytes_total", DASHBOARD)
 
     health = [
         (panel("Targets up", "stat", [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_node_up_ratio", "15m"))],

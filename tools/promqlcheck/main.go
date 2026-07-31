@@ -5,7 +5,8 @@
 //
 // It walks:
 //
-//	deploy/grafana/tailscale2otel.json    Grafana dashboard schema v2
+//	deploy/grafana/tailscale2otel-tailnet.json  Grafana dashboard schema v2
+//	deploy/grafana/tailscale2otel-health.json   Grafana dashboard schema v2
 //	deploy/alerts/grafana-managed/*.json  Grafana-managed rule manifests
 //	                                      (rules.alerting.grafana.app/v0alpha1)
 //
@@ -55,12 +56,20 @@ import (
 // The artifacts to walk, repo-relative. Adding one here is the whole change
 // needed to bring another generated file under the gate.
 const (
-	dashboardPath = "deploy/grafana/tailscale2otel.json"
 	// The rules are Grafana-managed manifests, one JSON file per rule, plus a
 	// folder manifest that carries no expressions and is skipped.
 	rulesDir       = "deploy/alerts/grafana-managed"
 	folderManifest = "_folder.json"
 )
+
+// dashboardPaths is the dashboard family (#526). Every expression on every
+// shipped dashboard is parsed with the real prometheus/promql parser; missing
+// one artifact would leave half of them unchecked while the gate still reported
+// success.
+var dashboardPaths = []string{
+	"deploy/grafana/tailscale2otel-tailnet.json",
+	"deploy/grafana/tailscale2otel-health.json",
+}
 
 func main() {
 	root := flag.String("root", ".", "repository root to resolve the artifact paths against")
@@ -107,11 +116,15 @@ func ruleManifests(root string) ([]string, error) {
 func run(w io.Writer, root string, verbose bool) (int, error) {
 	rep := newReport()
 
-	checks := []struct {
+	checks := make([]struct {
 		path string
 		fn   func(*Report, string, []byte) error
-	}{
-		{dashboardPath, checkDashboard},
+	}, 0, len(dashboardPaths))
+	for _, p := range dashboardPaths {
+		checks = append(checks, struct {
+			path string
+			fn   func(*Report, string, []byte) error
+		}{p, checkDashboard})
 	}
 
 	// One manifest per rule, so the rule leg is a directory walk rather than a

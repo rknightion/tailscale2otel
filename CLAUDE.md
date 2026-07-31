@@ -30,7 +30,7 @@ go generate ./...                    # regenerate portservice data + install the
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Seven files are committed but **generated** — each a pure function of its inputs and each gated in CI
+Eight files are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
 without the README). `scripts/regen-generated.sh` reproduces them all locally, byte-for-byte with CI:
 
@@ -48,7 +48,7 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | `docs/signal-coverage.md` | `internal/catalog/signal_dispositions.json` | `TestSignalCoverageDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
-| `deploy/grafana/tailscale2otel.json` | `deploy/grafana/gen/build.py` | `python3 build.py --out …` (stdlib only) |
+| `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
 | `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 
 > **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
@@ -79,7 +79,7 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all seven via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+CI re-validates all eight via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
 `docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
 `TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
 normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's

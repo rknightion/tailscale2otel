@@ -189,8 +189,11 @@ regen_dashboards() {
     skip "python3 not installed -> deploy/grafana + deploy/alerts not regenerated (CI will gate them)"
     return 0
   fi
-  note "deploy/grafana/tailscale2otel.json (grafana/gen/build.py)"
-  python3 "$ROOT/deploy/grafana/gen/build.py" --out "$ROOT/deploy/grafana/tailscale2otel.json" >/dev/null
+  # ONE invocation writes the whole dashboard FAMILY (#526): build.py emits every
+  # entry in dashboards.ALL to its own spec.out. Both must be built in one process
+  # so the signal-coverage union is computed across them.
+  note "deploy/grafana/tailscale2otel-{tailnet,health}.json (grafana/gen/build.py)"
+  python3 "$ROOT/deploy/grafana/gen/build.py" --out-dir "$ROOT" >/dev/null
   # MUST run after build.py: build_rules.py resolves each alert's canonical panel
   # BY TITLE against the generated dashboard, and hard-fails on a title that
   # matches zero or more than one panel.

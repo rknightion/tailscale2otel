@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "244",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "239",
       "description": "An OAuth client carries no top-level tag restriction, so auth keys it mints are not confined to a tag it owns. Scope it to the tags it actually needs.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-scope-hygiene",
       "summary": "An OAuth client's trust credential is unrestricted by tags"

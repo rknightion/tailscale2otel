@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "306",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "135",
       "description": "nodes are dropping outbound packets (sustained) \u2014 a connectivity-degradation signal.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity",
       "summary": "Nodes are dropping outbound packets (sustained)"

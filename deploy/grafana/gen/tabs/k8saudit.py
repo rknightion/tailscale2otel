@@ -17,6 +17,7 @@ one attribute with its own redaction switch (`pii_filter.command_text`).
 
 from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, organize, panel, PII,
                      pii_sentinel, prom_t, RI, row, sentinel, thr, ts_custom, ts_opts, stat_opts)
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Metric names — frozen strings from issue #462 / commit b61fe7a, never re-derived.
 K8S_REQUESTS = "tailscale_k8s_api_requests_total"
@@ -34,21 +35,21 @@ K8S_REQ_LOG = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api
 K8S_SESSION_LOG = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.session`"
 
 
-def tab_k8saudit():
+def tab_k8saudit(scope):
     # Presence sentinels this tab declares. has_k8s_audit also gates the whole tab itself
     # (see build.py's tab_defs) — declared here because this is the tab it names.
-    sentinel("has_k8s_audit", K8S_REQUESTS)
-    sentinel("has_k8s_sensitive_reads", K8S_SENSITIVE_READS)
-    sentinel("has_k8s_exec_sessions", K8S_EXEC_SESSIONS)
-    sentinel("has_k8s_mutations", K8S_MUTATIONS)
-    sentinel("has_k8s_rbac_probes", K8S_RBAC_PROBES)
-    sentinel("has_k8s_sessions", K8S_SESSION_STARTED)
-    sentinel("has_k8s_schema_drift", K8S_SCHEMA_DRIFT)
+    sentinel("has_k8s_audit", K8S_REQUESTS, DASHBOARD)
+    sentinel("has_k8s_sensitive_reads", K8S_SENSITIVE_READS, DASHBOARD)
+    sentinel("has_k8s_exec_sessions", K8S_EXEC_SESSIONS, DASHBOARD)
+    sentinel("has_k8s_mutations", K8S_MUTATIONS, DASHBOARD)
+    sentinel("has_k8s_rbac_probes", K8S_RBAC_PROBES, DASHBOARD)
+    sentinel("has_k8s_sessions", K8S_SESSION_STARTED, DASHBOARD)
+    sentinel("has_k8s_schema_drift", K8S_SCHEMA_DRIFT, DASHBOARD)
     # tailscale_k8s_user is a Kubernetes identity (typically an email/login via OIDC), so any
     # row that groups by it — metric or raw log record — hides under the SAME emails-redaction
     # gate the rest of the dashboard uses. pii_emails is already registered by tabs/policy.py
     # (deliberately dead there — "no panel renders an email"); this tab is what makes it live.
-    pii_sentinel("pii_command_text", PII + '{category="command_text"} == 0')
+    pii_sentinel("pii_command_text", PII + '{category="command_text"} == 0', DASHBOARD)
 
     # -------------------------------------------------------------------------------------
     # Row 1: overall request volume. Ungated beyond the tab's own has_k8s_audit — it queries

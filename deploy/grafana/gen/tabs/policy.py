@@ -4,6 +4,7 @@ from builder import (barchart_opts, bargauge_opts, loki_t, lot, merge, organize,
                      PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr,
                      ts_custom, ts_opts, WIN_SLOW)
 from maps import BOOL_HEALTHY_ON, BOOL_NEUTRAL
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Cross-links to the operator-facing configuration reference. The panel
 # `description` is the only text surface a v2 panel has that renders markdown —
@@ -37,27 +38,27 @@ def q_hist(quantile, metric):
             % (quantile, sel(metric + "_bucket"), RI))
 
 
-def tab_policy():
+def tab_policy(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_users_pe", "tailscale_user_connected_ratio")
-    sentinel("has_invites", "tailscale_user_invites_count_ratio")
+    sentinel("has_users_pe", "tailscale_user_connected_ratio", DASHBOARD)
+    sentinel("has_invites", "tailscale_user_invites_count_ratio", DASHBOARD)
     # has_keys / has_svc were registered-but-dead (#495): they queried Prometheus on
     # every dashboard load and gated nothing. Both are now wired to the row that
     # needs the per-entity series they check for — see "Key expiry detail" and
     # "VIP service detail" below.
-    sentinel("has_keys", "tailscale_key_expiry_seconds")
-    sentinel("has_services", "tailscale_services_count_ratio")
-    sentinel("has_key_scopes", "tailscale_key_scopes_ratio")
-    sentinel("has_dns_resolver", "tailscale_dns_resolver_ratio")
-    sentinel("has_svc", "tailscale_service_ports")
-    pii_sentinel("pii_usernames", PII + '{category="user_display_names"} == 0')
+    sentinel("has_keys", "tailscale_key_expiry_seconds", DASHBOARD)
+    sentinel("has_services", "tailscale_services_count_ratio", DASHBOARD)
+    sentinel("has_key_scopes", "tailscale_key_scopes_ratio", DASHBOARD)
+    sentinel("has_dns_resolver", "tailscale_dns_resolver_ratio", DASHBOARD)
+    sentinel("has_svc", "tailscale_service_ports", DASHBOARD)
+    pii_sentinel("pii_usernames", PII + '{category="user_display_names"} == 0', DASHBOARD)
     # pii_emails: no panel on THIS tab renders an email address — contacts report a
     # per-type verification flag and the address is never emitted, and the OAuth/
     # webhook inventory added for #403 carries app names and endpoint ids only. It
     # is declared here (not dead any more, #462) because tabs/k8saudit.py wires it
     # into hide_when= for tailscale_k8s_user (a Kubernetes identity, typically an
     # email/login) — the first panel anywhere to actually render one.
-    pii_sentinel("pii_emails", PII + '{category="emails"} == 0')
+    pii_sentinel("pii_emails", PII + '{category="emails"} == 0', DASHBOARD)
 
     _infra_tbl = ["Time", "__name__", "job", "instance",
                   "service_instance_id", "service_name", "service_namespace"]

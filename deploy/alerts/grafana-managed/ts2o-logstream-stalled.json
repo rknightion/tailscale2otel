@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "154",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "320",
       "description": "No log-stream delivery activity for over 1h while a stream is configured \u2014 delivery has stalled. Absent until a log stream is configured.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#log-streaming",
       "summary": "Log stream {{ $labels.tailscale_logstream_type }} has no recent delivery activity"

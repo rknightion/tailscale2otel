@@ -24,7 +24,8 @@ without a red CI run.
 Each family states what the alert means, what causes it *legitimately* (the reasons not to page
 anyone), what causes it illegitimately, the first thing to look at, and what "resolved" looks like.
 Panel names in the **First step** lines refer to the flagship dashboard
-(`deploy/grafana/tailscale2otel.json`, uid `tailscale2otel`); most alerts also carry a
+(`deploy/grafana/tailscale2otel-tailnet.json` and `-health.json`, uids
+`tailscale2otel-tailnet` / `tailscale2otel-health`); most alerts also carry a
 `__dashboardUid__`/`__panelId__` annotation pair so Grafana links you straight there from the
 alert itself.
 

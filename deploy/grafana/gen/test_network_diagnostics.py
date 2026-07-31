@@ -142,7 +142,7 @@ def panel_mixes_raw_and_rollup_across_targets(exprs):
 
 class RawRollupSeparationTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_no_expression_sums_a_raw_and_a_rollup_flow_metric(self):
         offenders = [title for (title, _p, _d, _o, _t, exprs, _desc) in panels(self.doc)
@@ -190,7 +190,7 @@ class RawRollupSeparationTest(unittest.TestCase):
 
 class TopTalkerCategoryTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def talkers(self):
         for (title, ptype, _d, options, transforms, exprs, _desc) in panels(self.doc):
@@ -236,7 +236,7 @@ class TopTalkerCategoryTest(unittest.TestCase):
 
 class AclDropsAreNotAFaultTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.by_title = {t: (d, o, tr, e) for (t, _p, d, o, tr, e, _desc) in panels(self.doc)}
 
     def test_policy_drop_panel_isolates_acl_and_carries_no_error_colouring(self):
@@ -265,7 +265,7 @@ class AclDropsAreNotAFaultTest(unittest.TestCase):
 
 class SignalCoverageInventoryTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_every_newly_covered_signal_appears_in_a_panel_query(self):
         seen = set()

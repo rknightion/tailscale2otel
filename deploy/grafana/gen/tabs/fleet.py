@@ -4,6 +4,7 @@ from builder import (barchart_opts, bargauge_opts, hq, lot, merge, organize, pan
                      pii_sentinel, prom_t, row, sentinel, stat_opts, thr, ts_custom, ts_opts,
                      WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_OFF, BOOL_HEALTHY_ON, BOOL_NEUTRAL
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Tailnet/provider selectors (#392). Both are real per-series metric LABELS (not
 # resource attributes), so a panel filters them straight in the selector — see the
@@ -76,27 +77,27 @@ def flag_map(field, mapping):
             "properties": [{"id": "mappings", "value": mapping}]}
 
 
-def tab_fleet():
+def tab_fleet(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_posture", "tailscale_device_posture_ratio")  # also consumed by events.py, security.py
-    sentinel("has_routes", "tailscale_device_routes_advertised")
-    sentinel("has_derp", "tailscale_device_derp_latency_seconds")
-    sentinel("has_connectivity", "tailscale_device_connectivity_hard_nat_ratio")
+    sentinel("has_posture", "tailscale_device_posture_ratio", DASHBOARD)  # also consumed by events.py, security.py
+    sentinel("has_routes", "tailscale_device_routes_advertised", DASHBOARD)
+    sentinel("has_derp", "tailscale_device_derp_latency_seconds", DASHBOARD)
+    sentinel("has_connectivity", "tailscale_device_connectivity_hard_nat_ratio", DASHBOARD)
     # Gates the "Device security flags" row. Those seven panels all read per-device
     # flag gauges that cardinality.per_entity.device switches off wholesale, so
     # without a gate the row renders seven empty-state panels on every deployment
     # that has the toggle off — which reads as "nothing to report" rather than
     # "not collected". blocks_incoming_connections is emitted for every device
     # whenever the per-entity series exist, so its presence is the right proxy.
-    sentinel("has_device_flags", "tailscale_device_blocks_incoming_connections_ratio")
-    sentinel("has_exit", "tailscale_device_exit_node_ratio")
-    sentinel("has_subnet", "tailscale_subnet_routes_advertised")
-    sentinel("has_version_skew", "tailscale_device_version_skew_ratio")
-    sentinel("has_key_expiry_hist", "tailscale_devices_key_expiry_days_count")
-    pii_sentinel("pii_host", PII + '{category="hostnames"} == 0')  # dead: no row gates on it
+    sentinel("has_device_flags", "tailscale_device_blocks_incoming_connections_ratio", DASHBOARD)
+    sentinel("has_exit", "tailscale_device_exit_node_ratio", DASHBOARD)
+    sentinel("has_subnet", "tailscale_subnet_routes_advertised", DASHBOARD)
+    sentinel("has_version_skew", "tailscale_device_version_skew_ratio", DASHBOARD)
+    sentinel("has_key_expiry_hist", "tailscale_devices_key_expiry_days_count", DASHBOARD)
+    pii_sentinel("pii_host", PII + '{category="hostnames"} == 0', DASHBOARD)  # dead: no row gates on it
     pii_sentinel("pii_perdevice",
                  '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)'
-                 % (PII, PII))  # also consumed by security.py
+                 % (PII, PII), DASHBOARD)  # also consumed by security.py
 
     # tailscale_tags=~"$device_tag" (allValue ".*") matches series that lack the
     # label too, so untagged devices still appear under "All". $tailnet/$provider

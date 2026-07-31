@@ -138,7 +138,7 @@ def bool_mapping(defaults):
 
 class BooleanPolarityTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_boolean_panels_are_exactly_the_expected_inventory(self):
         found = {(t, p) for (t, p, d, _e) in panels(self.doc) if bool_mapping(d)}
@@ -183,7 +183,7 @@ class BooleanPolarityTest(unittest.TestCase):
 
 class AbsentStateTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_unknown_when_absent_metrics_are_never_zero_filled(self):
         offenders = []

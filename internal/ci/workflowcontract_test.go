@@ -502,8 +502,8 @@ func TestRootModuleTidyIsChecked(t *testing.T) {
 
 // Every generated artifact needs a fail-on-diff gate, or a stale one ships
 // looking fine. Four have had one for a while (docs/metrics.md, docs/env-vars.md,
-// the chart README and values.schema.json); the two generated Grafana artifacts
-// had none at all until #438.
+// the chart README and values.schema.json); the generated Grafana artifacts had
+// none at all until #438.
 //
 // This asserts the gate exists and is REQUIRED, rather than asserting a diff —
 // the diff itself is what the CI job checks.
@@ -517,9 +517,9 @@ func TestGeneratedGrafanaArtifactsAreDriftGated(t *testing.T) {
 	const gate = "dashboards-drift"
 	job, ok := jobs[gate].(map[string]any)
 	if !ok {
-		t.Fatalf("ci.yml has no %q job. deploy/grafana/tailscale2otel.json and "+
-			"deploy/alerts/tailscale2otel.grafana-rules.yaml are generated, so without a "+
-			"fail-on-diff gate a stale one ships silently.", gate)
+		t.Fatalf("ci.yml has no %q job. deploy/grafana/tailscale2otel-tailnet.json, "+
+			"deploy/grafana/tailscale2otel-health.json and deploy/alerts/grafana-managed/ "+
+			"are generated, so without a fail-on-diff gate a stale one ships silently.", gate)
 	}
 
 	steps, ok := job["steps"].([]any)

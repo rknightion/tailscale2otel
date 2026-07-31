@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "158",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "324",
       "description": "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) \u2014 investigate the sender or HEC/webhook config.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Stream/webhook receiver is rejecting inbound ingest"

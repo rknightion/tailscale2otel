@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "186",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "181",
       "description": "An outstanding device invite/share allows the recipient to use the device as an exit node \u2014 review whether routing the recipient's traffic is intended.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-sharing",
       "summary": "A device share allows exit-node use"

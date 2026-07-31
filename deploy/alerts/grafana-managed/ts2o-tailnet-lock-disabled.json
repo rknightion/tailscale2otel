@@ -12,8 +12,8 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
-      "__panelId__": "182",
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "177",
       "description": "An audit event disabled tailnet lock \u2014 node-key signing enforcement is off, weakening the tailnet's trust model. Confirm this was an authorized change.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailnet-lock",
       "summary": "Tailnet lock was disabled"

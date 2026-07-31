@@ -52,11 +52,20 @@ jobs:
           token: ${{ secrets.GITSYNC_PAT }}
           path: gitsync
 
-      # The destination filename encodes the dashboard UID (tailscale2otel-overview),
-      # which is also this generator's --uid default. Renaming either breaks the
+      # Each destination filename encodes that dashboard's UID, which is also its
+      # `uid` in deploy/grafana/gen/dashboards.py. Renaming either side breaks the
       # GitSync identity and orphans the live dashboard.
-      - name: copy the generated dashboard into place
-        run: cp deploy/grafana/tailscale2otel.json gitsync/networking/tailscale2otel-overview.json
+      #
+      # #526 split the single `tailscale2otel-overview` artifact into this pair.
+      # Retiring the old live dashboard therefore means DELETING
+      # networking/tailscale2otel-overview.json from the GitSync repo — a `gcx
+      # dashboards delete` alone is undone by the next sync, which would simply
+      # re-create it from the file still sitting there.
+      - name: copy the generated dashboards into place
+        run: |
+          set -euo pipefail
+          cp deploy/grafana/tailscale2otel-tailnet.json gitsync/networking/tailscale2otel-tailnet.json
+          cp deploy/grafana/tailscale2otel-health.json  gitsync/networking/tailscale2otel-health.json
 
       - name: commit and push
         working-directory: gitsync

@@ -1,11 +1,21 @@
 """tab_overview() — moved out of build.py in the module split."""
 
-from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, RI, row,
-                     stat_opts, thr, ts_custom, ts_opts, WIN_SLOW)
+from builder import (bargauge_opts, DASHBOARD, hq, lot, organize, panel, prom_t, RI, row,
+                     sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
 
-def tab_overview():
+def tab_overview(scope):
+    # Declared here AS WELL AS in tabs/diagnostics.py. Before #526 one declaration
+    # served every consumer, because there was one dashboard and one registry.
+    # The two modules now build DIFFERENT dashboards and the registry resets per
+    # dashboard, so the tailnet side needs its own declaration — the Overview
+    # keeps a health strip (#526 decision 2, "without it a broken collector reads
+    # as a quiet tailnet") and gates it on this. A row gating on a sentinel only
+    # the OTHER dashboard declares renders permanently hidden, which looks
+    # identical to a correctly-gated row.
+    sentinel("has_selfobs", "tailscale2otel_series_active", DASHBOARD)
+
     health = [
         (panel("Devices online", "stat",
                [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_online_ratio"))],

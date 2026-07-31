@@ -185,7 +185,7 @@ FOUR_STATES = [
 class AssignedSignalCoverageTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.doc = dashboard.build("test", "test", False)
+        cls.doc = dashboard.build_family()
         cls.queries = all_query_text(cls.doc)
 
     def test_every_assigned_metric_is_queried(self):
@@ -275,7 +275,7 @@ def url_bearing_hits(panel, pattern=_URL_RE):
 class NoURLBearingFieldsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.doc = dashboard.build("test", "test", False)
+        cls.doc = dashboard.build_family()
 
     def test_no_panel_in_the_new_rows_exposes_a_url_bearing_field(self):
         offenders = {}
@@ -333,7 +333,7 @@ class NoURLBearingFieldsTest(unittest.TestCase):
 class AuditPipelineStateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.doc = dashboard.build("test", "test", False)
+        cls.doc = dashboard.build_family()
         cls.panels = row_panels(cls.doc, "Audit pipeline state")
 
     def test_the_row_renders_all_four_states(self):
@@ -401,7 +401,7 @@ EMPTY_STATE_PANELS = [
 class EmptyStateTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.by_title = {p["spec"]["title"]: p for p in all_panels(dashboard.build("t", "t", False))}
+        cls.by_title = {p["spec"]["title"]: p for p in all_panels(dashboard.build_family())}
 
     def test_empty_states_name_a_config_key(self):
         for title in EMPTY_STATE_PANELS:
@@ -433,7 +433,7 @@ class TailnetFilterTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.doc = dashboard.build("t", "t", False)
+        cls.doc = dashboard.build_family()
 
     def test_new_prometheus_panels_filter_by_tailnet_and_provider(self):
         unfiltered = []

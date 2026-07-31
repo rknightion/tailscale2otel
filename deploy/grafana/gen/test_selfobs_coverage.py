@@ -178,7 +178,7 @@ def novalue(spec):
 class _TabDocs(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.docs = {name: dashboard.build("test", "test", True, only=name)
+        cls.docs = {name: dashboard.build(dashboard.dashboards.HEALTH, True, only=name)
                     for name in (DIAGNOSTICS, CARDINALITY)}
         cls.exprs = {name: all_exprs(doc) for (name, doc) in cls.docs.items()}
         cls.panels = {name: panels(doc) for (name, doc) in cls.docs.items()}

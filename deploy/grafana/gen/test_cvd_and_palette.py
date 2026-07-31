@@ -87,7 +87,7 @@ def all_colors_used(doc):
 # Derived once, at import time, by scanning the real built dashboard (see all_colors_used) —
 # then FROZEN as the declared palette. A colour outside this set is a deliberate decision that
 # must edit this constant, not something that should silently start rendering.
-_REFERENCE_DOC = dashboard.build("test-palette-derivation", "test", False)
+_REFERENCE_DOC = dashboard.build_family()
 DECLARED_PALETTE = frozenset(all_colors_used(_REFERENCE_DOC))
 
 
@@ -108,7 +108,7 @@ class PaletteDerivationSanityTest(unittest.TestCase):
 
 class NoColourOutsideDeclaredPaletteTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_every_colour_used_is_in_the_declared_palette(self):
         used = all_colors_used(self.doc)
@@ -135,7 +135,7 @@ class BooleanPanelsCarryDistinctTextTest(unittest.TestCase):
     in greyscale or under deuteranopia/protanopia simulation."""
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.panels = list(all_bool_mapped_panels(self.doc))
 
     def test_the_scan_finds_a_reasonable_number_of_boolean_panels(self):

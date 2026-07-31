@@ -136,7 +136,7 @@ HIGH_RISK_TITLES = frozenset(k for k in GOLDEN if not k.startswith("_"))
 
 class HighRiskPanelFingerprintTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.found = collect_fingerprints(self.doc, HIGH_RISK_TITLES)
 
     def test_every_declared_high_risk_panel_exists_in_the_built_dashboard(self):
@@ -208,7 +208,7 @@ class NegativeTestFiresTest(unittest.TestCase):
 
 if __name__ == "__main__":
     if "--dump" in sys.argv:
-        doc = dashboard.build("test", "test", False)
+        doc = dashboard.build_family()
         found = collect_fingerprints(doc, HIGH_RISK_TITLES)
         out = {title: fps[0] for title, fps in found.items()}
         print(json.dumps(out, indent=2, sort_keys=True))

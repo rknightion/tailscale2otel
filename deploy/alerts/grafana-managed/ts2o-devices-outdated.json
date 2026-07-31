@@ -12,7 +12,7 @@
   },
   "spec": {
     "annotations": {
-      "__dashboardUid__": "tailscale2otel-overview",
+      "__dashboardUid__": "tailscale2otel-tailnet",
       "__panelId__": "51",
       "description": "tailscale_devices_outdated_ratio > 5 \u2014 several clients are N+ minor versions behind the latest. Informational fleet hygiene; surfaces update drift.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#fleet-version-hygiene",

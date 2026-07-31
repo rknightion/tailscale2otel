@@ -4,25 +4,26 @@ from builder import (barchart_opts, bargauge_opts, hq, logs_opts, loki_t, lot, m
                      panel, PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr,
                      ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import BOOL_HEALTHY_OFF
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Scrape-transport columns, excluded from every operator-facing table (#392).
 _INFRA = ["Time", "__name__", "job", "instance",
           "service_instance_id", "service_name", "service_namespace"]
 
 
-def tab_security():
+def tab_security(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_audit", "tailscale_config_audit_events_total")  # also consumed by events.py
-    sentinel("has_posture_integration", "tailscale_posture_integrations_count_ratio")
-    sentinel("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio")
-    sentinel("has_acl_risk", "tailscale_acl_unrestricted_rules_ratio")  # also consumed by overview.py
-    sentinel("has_audit_changes", "tailscale_config_audit_changes_total")
-    sentinel("has_invites_dev", "tailscale_device_invites_count_ratio")
-    sentinel("has_device_attr", "tailscale_device_attribute_ratio")
-    sentinel("has_posture_int", "tailscale_posture_integration_matched_ratio")  # dead: no row gates on it
+    sentinel("has_audit", "tailscale_config_audit_events_total", DASHBOARD)  # also consumed by events.py
+    sentinel("has_posture_integration", "tailscale_posture_integrations_count_ratio", DASHBOARD)
+    sentinel("has_tailnet_lock", "tailscale_tailnet_lock_errors_ratio", DASHBOARD)
+    sentinel("has_acl_risk", "tailscale_acl_unrestricted_rules_ratio", DASHBOARD)  # also consumed by overview.py
+    sentinel("has_audit_changes", "tailscale_config_audit_changes_total", DASHBOARD)
+    sentinel("has_invites_dev", "tailscale_device_invites_count_ratio", DASHBOARD)
+    sentinel("has_device_attr", "tailscale_device_attribute_ratio", DASHBOARD)
+    sentinel("has_posture_int", "tailscale_posture_integration_matched_ratio", DASHBOARD)  # dead: no row gates on it
     pii_sentinel("pii_actor",
                  '(%s{category="emails"} == 0) and ignoring(category) (%s{category="user_display_names"} == 0)'
-                 % (PII, PII))
+                 % (PII, PII), DASHBOARD)
 
     AUD = "{service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit`"
     POS = lot("tailscale_device_posture_ratio", WIN_FAST)  # posture is emitted every scrape

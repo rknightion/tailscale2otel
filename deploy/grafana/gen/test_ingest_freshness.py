@@ -22,7 +22,7 @@ rules = load_module("tailscale2otel_rules", ROOT / "deploy" / "alerts" / "gen" /
 
 class IngestFreshnessArtifactsTest(unittest.TestCase):
     def test_events_dashboard_carries_freshness_panels(self):
-        doc = dashboard.build("test", "test", True, only="Events & Logs")
+        doc = dashboard.build(dashboard.dashboards.TAILNET, True, only="Events & Logs")
         rendered = json.dumps(doc)
         for expected in (
             "Accepted event freshness",
@@ -53,7 +53,7 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
 
     def test_ingest_integrity_metrics_are_operationally_visible(self):
         network = json.dumps(
-            dashboard.build("test", "test", True, only="Network & Flows")
+            dashboard.build(dashboard.dashboards.TAILNET, True, only="Network & Flows")
         )
         for expected in (
             "Reporter trust & consistency",
@@ -64,7 +64,7 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
             self.assertIn(expected, network)
 
         events = json.dumps(
-            dashboard.build("test", "test", True, only="Events & Logs")
+            dashboard.build(dashboard.dashboards.TAILNET, True, only="Events & Logs")
         )
         self.assertIn("Audit schema drift", events)
         self.assertIn("tailscale_config_audit_schema_drift_total", events)

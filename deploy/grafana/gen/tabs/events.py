@@ -3,6 +3,7 @@
 from builder import (hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, row,
                      sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON
+from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Cross-link target for the empty states below. builder.panel() hardcodes
 # `links: []`, so the panel description is the only markdown surface available.
@@ -52,13 +53,13 @@ STATE_KEY = (
 )
 
 
-def tab_events():
+def tab_events(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_stream", "tailscale_stream_records_total")
-    sentinel("has_webhook", "tailscale_webhook_events_total")
-    sentinel("has_logstream", "tailscale_logstream_configured_ratio")
-    sentinel("has_recv_dur", "tailscale_stream_request_duration_seconds_count")
-    sentinel("has_ingest", "tailscale2otel_ingest_records_total")
+    sentinel("has_stream", "tailscale_stream_records_total", DASHBOARD)
+    sentinel("has_webhook", "tailscale_webhook_events_total", DASHBOARD)
+    sentinel("has_logstream", "tailscale_logstream_configured_ratio", DASHBOARD)
+    sentinel("has_recv_dur", "tailscale_stream_request_duration_seconds_count", DASHBOARD)
+    sentinel("has_ingest", "tailscale2otel_ingest_records_total", DASHBOARD)
 
     rates = [
         (panel("Audit events/s by action", "timeseries",

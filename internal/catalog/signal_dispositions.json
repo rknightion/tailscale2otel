@@ -2,8 +2,9 @@
   "//": [
     "Signal disposition manifest (#390). Generated + hand-dispositioned.",
     "Regenerate: go test ./internal/catalog -run TestSignalDispositionsInSync -update",
-    "Regeneration records only what deploy/grafana/tailscale2otel.json and the two",
-    "deploy/alerts rule files PROVE, and prunes signals the code no longer emits. It",
+    "Regeneration records only what the deploy/grafana dashboard FAMILY (tailnet +",
+    "health) and the deploy/alerts rule manifests PROVE, and prunes signals the code",
+    "no longer emits. It",
     "never assigns raw_only or omitted — fill those in by hand, with a note that says",
     "something true. An empty disposition list fails TestSignalDispositionsInSync.",
     "surface: operational (telemetry about the tailnet) | self_obs (about the exporter)",

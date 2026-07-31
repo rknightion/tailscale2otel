@@ -12,8 +12,8 @@ package catalog
 // metricdoc descriptors for two reasons: the descriptors are declared next to
 // their emit sites across two dozen packages, so a disposition field there would
 // be reviewed a line at a time and never as a whole; and the answer depends on
-// artifacts that live OUTSIDE the Go build (the generated dashboard and the two
-// rule files), which no struct tag can be checked against.
+// artifacts that live OUTSIDE the Go build (the generated dashboards and the
+// rule manifests), which no struct tag can be checked against.
 //
 // Regenerate with:
 //
@@ -253,8 +253,9 @@ type SignalDispositionBaseline struct {
 var manifestDoc = []string{
 	"Signal disposition manifest (#390). Generated + hand-dispositioned.",
 	"Regenerate: go test ./internal/catalog -run TestSignalDispositionsInSync -update",
-	"Regeneration records only what deploy/grafana/tailscale2otel.json and the two",
-	"deploy/alerts rule files PROVE, and prunes signals the code no longer emits. It",
+	"Regeneration records only what the deploy/grafana dashboard FAMILY (tailnet +",
+	"health) and the deploy/alerts rule manifests PROVE, and prunes signals the code",
+	"no longer emits. It",
 	"never assigns raw_only or omitted — fill those in by hand, with a note that says",
 	"something true. An empty disposition list fails TestSignalDispositionsInSync.",
 	"surface: operational (telemetry about the tailnet) | self_obs (about the exporter)",
@@ -542,7 +543,7 @@ func validateRow(problems SignalProblems, s Signal, row SignalDisposition, refs 
 func artifactFor(d Disposition) string {
 	switch d {
 	case DispVisualized:
-		return "panel or template variable in deploy/grafana/tailscale2otel.json"
+		return "panel or template variable in the deploy/grafana dashboard family"
 	case DispAlertable:
 		return "alert rule expression in deploy/alerts"
 	case DispRecorded:

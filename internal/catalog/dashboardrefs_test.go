@@ -23,14 +23,24 @@ import (
 // use, and the thing most likely to be got wrong by hand (dots to underscores,
 // `_total` only for monotonic counters, `_ratio` for a unit-"1" gauge).
 
-const (
-	dashboardPath = "../../deploy/grafana/tailscale2otel.json"
-	// The shipped rules are Grafana-managed `rules.alerting.grafana.app/v0alpha1`
-	// manifests, one JSON file per rule plus a folder manifest, pushed with
-	// `gcx resources push`. The former provisioning-format and Prometheus-ruler
-	// files are gone — see deploy/alerts/README.md.
-	rulesDir = "../../deploy/alerts/grafana-managed"
-)
+// dashboardPaths is the dashboard FAMILY, not one file.
+//
+// Scoping coverage to a single artifact makes splitting content structurally
+// impossible: the moment a panel moves to the second dashboard, its metric reads
+// as missing on the first. Every check here therefore takes the UNION across
+// both files. This is the single most important lesson carried over from
+// opnsense-exporter, whose coverage() is variadic over the dashboard family for
+// exactly this reason (#526).
+var dashboardPaths = []string{
+	"../../deploy/grafana/tailscale2otel-tailnet.json",
+	"../../deploy/grafana/tailscale2otel-health.json",
+}
+
+// The shipped rules are Grafana-managed `rules.alerting.grafana.app/v0alpha1`
+// manifests, one JSON file per rule plus a folder manifest, pushed with
+// `gcx resources push`. The former provisioning-format and Prometheus-ruler
+// files are gone — see deploy/alerts/README.md.
+const rulesDir = "../../deploy/alerts/grafana-managed"
 
 // metricRef matches a bare Prometheus metric identifier in a PromQL expression.
 // Anchored on the tailscale2otel prefixes so it never picks up a label name, a
@@ -210,7 +220,10 @@ func assertReferencesExist(t *testing.T, path string, extra map[string]bool) {
 }
 
 func TestFlagshipDashboardQueriesOnlyCatalogMetrics(t *testing.T) {
-	assertReferencesExist(t, dashboardPath, recordingRuleNames(t))
+	extra := recordingRuleNames(t)
+	for _, path := range dashboardPaths {
+		assertReferencesExist(t, path, extra)
+	}
 }
 
 func TestGrafanaRulesQueryOnlyCatalogMetrics(t *testing.T) {
@@ -221,7 +234,18 @@ func TestGrafanaRulesQueryOnlyCatalogMetrics(t *testing.T) {
 // library-panel references all key off it — and a generator that assigns IDs by
 // hand or by counter is exactly where a collision appears.
 func TestFlagshipDashboardPanelIDsAreUnique(t *testing.T) {
-	b, err := os.ReadFile(dashboardPath)
+	for _, path := range dashboardPaths {
+		t.Run(path, func(t *testing.T) { assertPanelIDsAreUnique(t, path) })
+	}
+}
+
+// Per artifact, not over the family: the generator restarts its panel-id counter
+// for each dashboard, so the two files legitimately reuse ids. Uniqueness is only
+// meaningful — and only matters to Grafana, which keys links, repeats and
+// library-panel references off the id — within a single dashboard.
+func assertPanelIDsAreUnique(t *testing.T, path string) {
+	t.Helper()
+	b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +308,17 @@ func itoa(i int) string {
 // "-- Grafana --" is the built-in pseudo-datasource used by annotation queries and
 // is legitimately not a declared variable.
 func TestFlagshipDashboardDatasourceRefsAreDeclared(t *testing.T) {
-	b, err := os.ReadFile(dashboardPath)
+	for _, path := range dashboardPaths {
+		t.Run(path, func(t *testing.T) { assertDatasourceRefsAreDeclared(t, path) })
+	}
+}
+
+// Per artifact: a variable declared on the health dashboard does nothing for a
+// panel on the tailnet one, so taking the union here would let a panel reference
+// a datasource variable its own dashboard never declares and still pass.
+func assertDatasourceRefsAreDeclared(t *testing.T, path string) {
+	t.Helper()
+	b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
 	if err != nil {
 		t.Fatal(err)
 	}

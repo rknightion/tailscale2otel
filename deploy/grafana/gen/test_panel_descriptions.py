@@ -83,7 +83,7 @@ def gated_row_panels(doc):
 
 class GatedRowPanelDescriptionTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.rows = gated_row_panels(self.doc)
 
     def test_the_scan_finds_a_reasonable_number_of_gated_panels(self):

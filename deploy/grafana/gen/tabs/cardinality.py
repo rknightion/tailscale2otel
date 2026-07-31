@@ -4,7 +4,7 @@ from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, 
                      stat_opts, thr, ts_custom, ts_opts, WIN_FAST)
 
 
-def tab_cardinality():
+def tab_cardinality(scope):
     OVF = "{otel_metric_overflow=\"true\", __name__=~\"tailscale.*\"}"
     overflow = [
         (panel("Metrics over cardinality cap", "stat",

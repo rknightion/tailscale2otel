@@ -217,7 +217,7 @@ def matchers_for(expr, metric):
 
 class NewSignalCoverageTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.all_panels = list(panels(self.doc))
         # guards the guard: a shape change that makes the scan yield nothing must
         # fail loudly rather than pass every emptiness-tolerant assertion below.
@@ -243,7 +243,7 @@ class AuthorizationSplitTest(unittest.TestCase):
     METRIC = "tailscale_devices_count_ratio"
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def _selector(self, title):
         _t, _p, _d, _o, exprs = panel_by_title(self.doc, title)
@@ -288,7 +288,7 @@ class AuthorizationSplitTest(unittest.TestCase):
 
 class InverseRiskPolarityTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_counts_of_a_bad_thing_are_green_at_zero(self):
         for title in INVERSE_RISK_STATS:
@@ -339,7 +339,7 @@ class InverseRiskPolarityTest(unittest.TestCase):
 
 class UnsupportedVersusZeroTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_unsupported_signals_are_never_zero_filled(self):
         offenders = []
@@ -386,7 +386,7 @@ class RowGatingTest(unittest.TestCase):
     }
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
         self.rows = {}
         for tab in (FLEET_TAB, SECURITY_TAB):
             for (title, spec, ptitles) in rows_of_tab(self.doc, tab):
@@ -436,7 +436,7 @@ class OperatorTableHygieneTest(unittest.TestCase):
              "service_name", "service_namespace"}
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_operator_tables_drop_scrape_transport_columns(self):
         # #392: job/instance/service_* are scrape plumbing. They are never the
@@ -458,7 +458,7 @@ class OperatorTableHygieneTest(unittest.TestCase):
 
 class SelectorAndDrilldownTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_fleet_device_queries_honour_the_tailnet_and_provider_selectors(self):
         # Both are real per-series labels (not resource attributes), so the fleet

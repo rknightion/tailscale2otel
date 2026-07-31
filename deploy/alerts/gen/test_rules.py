@@ -39,7 +39,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 RUNBOOKS = ROOT / "docs" / "runbooks.md"
-DASHBOARD = ROOT / "deploy" / "grafana" / "tailscale2otel.json"
+DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
+              ROOT / "deploy" / "grafana" / "tailscale2otel-health.json"]
 MANIFEST_DIR = ROOT / "deploy" / "alerts" / "grafana-managed"
 
 
@@ -268,13 +269,20 @@ class RunbookLinkTest(unittest.TestCase):
 class PanelLinkTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        doc = json.loads(DASHBOARD.read_text())
-        cls.uid = doc["metadata"]["name"]
-        cls.ids = {
-            element["spec"]["id"]
-            for element in doc["spec"]["elements"].values()
-            if element.get("kind") == "Panel"
-        }
+        # (uid, panel id) pairs across the whole family. Since #526 the panel id
+        # is only unique WITHIN a dashboard — the generator restarts its counter
+        # per artifact — so an alert's link is only valid as a PAIR. Checking the
+        # id alone against a merged set would accept an alert pointing at the
+        # health dashboard's panel 7 while claiming the tailnet uid.
+        cls.uids = set()
+        cls.refs = set()
+        for path in DASHBOARDS:
+            doc = json.loads(path.read_text())
+            uid = doc["metadata"]["name"]
+            cls.uids.add(uid)
+            for element in doc["spec"]["elements"].values():
+                if element.get("kind") == "Panel":
+                    cls.refs.add((uid, element["spec"]["id"]))
 
     def test_panel_link_annotations_are_emitted_as_a_pair(self):
         for rule in alert_rules():
@@ -283,7 +291,7 @@ class PanelLinkTest(unittest.TestCase):
                 self.assertEqual("__dashboardUid__" in ann, "__panelId__" in ann,
                                  "Grafana requires __dashboardUid__ and __panelId__ together")
 
-    def test_panel_links_resolve_in_the_generated_dashboard(self):
+    def test_panel_links_resolve_in_the_generated_dashboards(self):
         linked = 0
         for rule in alert_rules():
             ann = rule["annotations"]
@@ -291,11 +299,25 @@ class PanelLinkTest(unittest.TestCase):
                 continue
             linked += 1
             with self.subTest(uid=rule["uid"]):
-                self.assertEqual(self.uid, ann["__dashboardUid__"])
+                self.assertIn(ann["__dashboardUid__"], self.uids)
                 # Annotation values are strings; a bare int is silently dropped.
                 self.assertIsInstance(ann["__panelId__"], str)
-                self.assertIn(int(ann["__panelId__"]), self.ids)
+                # As a PAIR: the id alone is ambiguous across the family, so a link
+                # naming one dashboard's uid and the other's panel id must fail.
+                self.assertIn((ann["__dashboardUid__"], int(ann["__panelId__"])), self.refs,
+                              "panel %s does not exist on dashboard %s"
+                              % (ann["__panelId__"], ann["__dashboardUid__"]))
         self.assertGreater(linked, 0, "no rule links a panel; the resolver is not wired up")
+
+    def test_both_dashboards_are_actually_linked_from_some_alert(self):
+        # The point of resolving panel links across the family (#526): an alert on
+        # an exporter-health signal must open the health dashboard. If every link
+        # resolved to one uid, the resolver would be silently falling back to
+        # whichever artifact it read first.
+        got = {rule["annotations"]["__dashboardUid__"] for rule in alert_rules()
+               if "__dashboardUid__" in rule["annotations"]}
+        self.assertEqual(got, self.uids,
+                         "no alert links to %s" % sorted(self.uids - got))
 
     def test_provisioning_only_top_level_panel_fields_are_not_used(self):
         # dashboardUid/panelId as TOP-LEVEL rule fields belong to the apiVersion: 1

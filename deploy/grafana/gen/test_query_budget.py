@@ -33,7 +33,11 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DASHBOARD = ROOT / "deploy" / "grafana" / "tailscale2otel.json"
+# The dashboard family (#526). The budget is measured over the union: the load a
+# stack carries is the sum of what the project ships, and a per-file budget would
+# be satisfiable by moving panels to the other dashboard.
+DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
+              ROOT / "deploy" / "grafana" / "tailscale2otel-health.json"]
 
 
 # --- the budget ------------------------------------------------------------
@@ -117,9 +121,14 @@ def measure(doc):
 class QueryBudgetTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with open(DASHBOARD, encoding="utf-8") as f:
-            cls.doc = json.load(f)
-        cls.tabs, cls.totals = measure(cls.doc)
+        cls.tabs, cls.totals = [], {"panels": 0, "queries": 0, "sentinels": 0}
+        for path in DASHBOARDS:
+            with open(path, encoding="utf-8") as f:
+                doc = json.load(f)
+            tabs, totals = measure(doc)
+            cls.tabs.extend(tabs)
+            for k in cls.totals:
+                cls.totals[k] += totals[k]
 
     def test_the_measurement_found_a_real_dashboard(self):
         # Guards the guard: a walker that silently returns nothing would make every

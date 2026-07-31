@@ -264,7 +264,7 @@ class DerivationSanityTest(unittest.TestCase):
 
 class UnitFamilyConsistencyTest(unittest.TestCase):
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_the_scan_examines_a_reasonable_number_of_series(self):
         n = sum(1 for _ in series_specs(self.doc))
@@ -368,7 +368,7 @@ class DecimalsAndLegendConventionTest(unittest.TestCase):
     real, negative-testable regression gates rather than restated as prose."""
 
     def setUp(self):
-        self.doc = dashboard.build("test", "test", False)
+        self.doc = dashboard.build_family()
 
     def test_no_panel_sets_an_explicit_decimals_override(self):
         offenders = [d for d in all_defaults(self.doc) if d.get("decimals") is not None]

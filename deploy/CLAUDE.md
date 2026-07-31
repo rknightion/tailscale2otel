@@ -13,13 +13,34 @@ consumed by operators or by the release pipelines.
   now only builds cross-compiled binaries (see Release/publish pipelines below).
 - `docker-compose.yaml` — local/single-host run (this is how it's deployed on `node-a`).
 - `helm/tailscale2otel/` — Helm chart (see below).
-- `grafana/tailscale2otel.json` — the **flagship** dashboard, and since #394 the **only** one:
-  one comprehensive multi-tab dashboard using the Grafana **v2 schema**
-  (`dashboard.grafana.app/v2`, Grafana 13+) with conditional rendering. **Generated** from
-  `grafana/gen/` — edit the generator, not the JSON; regenerate with `python3
-  grafana/gen/build.py --out grafana/tailscale2otel.json`. The generator is modular:
-  `builder.py` (primitives + the sentinel registry), `variables.py`, `maps.py`, `tabs/*.py`
-  (one module per tab), `build.py` (orchestrator). See `grafana/README.md`.
+- `grafana/tailscale2otel-tailnet.json` and `grafana/tailscale2otel-health.json` — the
+  dashboard **family**, both Grafana **v2 schema** (`dashboard.grafana.app/v2`, Grafana 13+)
+  with conditional rendering. `-tailnet` answers "is my tailnet healthy?" (fleet, flows,
+  policy, audit); `-health` answers "is the exporter healthy?" (collection, ingestion,
+  delivery, runtime, cost). Split in #526 from the single 437-panel
+  `tailscale2otel-overview`. **Generated** from `grafana/gen/` — edit the generator, not the
+  JSON; regenerate BOTH with `scripts/regen-generated.sh dashboards` (or `python3
+  grafana/gen/build.py --out-dir <repo-root>`). The generator is modular: `dashboards.py`
+  (what dashboards exist and what is on each), `builder.py` (primitives + the scoped
+  sentinel registry), `variables.py`, `maps.py`, `tabs/*.py` (one module per tab), `build.py`
+  (orchestrator). See `grafana/README.md`.
+
+  > **Both are built in ONE process on purpose.** The signal-coverage gate in
+  > `internal/catalog` takes the union across them; a gate that could see only one artifact
+  > reports a metric as missing the moment its panel moves to the other file, which makes
+  > splitting content structurally impossible. For the same reason `--flat`/`--tab` previews
+  > require `--dashboard`: a tab title such as "Overview" exists on both.
+  >
+  > **The apiVersion is load-bearing — do not "simplify" it to an alpha version.** The
+  > `variables` field on `RowsLayoutRowSpec`/`TabsLayoutTabSpec`, which is what lets a
+  > presence sentinel live on the tab that consumes it instead of on the dashboard, exists
+  > only in `v2beta1` and `v2`. `v2alpha1` has no such field at all, so a downgrade drops
+  > every scoped variable silently rather than erroring.
+  >
+  > **`AdhocVariableKind` puts `datasource` and a required `group` at the KIND level**, as
+  > siblings of `spec`, unlike `QueryVariable`. Getting it wrong produces a 422 whose CUE
+  > disjunction error names `layout.kind` and never mentions the variable — bisect from a
+  > known-valid fragment. `gen/variables.py:adhoc_var()` owns the correct shape.
 - `alerts/grafana-managed/` — **Grafana-managed** alert and recording rules as
   `rules.alerting.grafana.app/v0alpha1` manifests plus a folder manifest, pushed with
   `gcx resources push`. **Generated** from `alerts/gen/build_rules.py`. See `alerts/README.md`.
