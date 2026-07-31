@@ -191,8 +191,9 @@ or mixed-tailnet batches are rejected without processor, dedup, or receiver-tele
 All accepted ingestion paths also feed bounded cross-source freshness telemetry:
 `tailscale2otel.ingest.event.age`, `capture.delay`, `last_event_timestamp`, and
 `timestamp_skew`, keyed only by `source` and `signal`. Event time remains distinct from upstream
-capture/observation time and local acceptance time. The Events & Logs dashboard shows current
-freshness plus p95 event/capture delay; the Grafana-managed stale-data rule is paused by default
+capture/observation time and local acceptance time. The **Ingestion** tab of the
+`tailscale2otel-health` dashboard shows current freshness plus p95 event/capture delay; the
+Grafana-managed stale-data rule is paused by default
 because webhook and audit sources can be legitimately quiet.
 
 ## Webhook receiver

@@ -223,13 +223,13 @@ receiver auth, object-gap handling, and `auto_configure` are in
 
 ## Dashboards, alerts & the admin UI
 
-- **Dashboards** — [`deploy/grafana/`](./deploy/grafana/) ships a flagship **10-tab** dashboard
-  (Overview, Fleet & Devices, Network & Flows, Events & Logs, Security & Audit, Policy & Config, Node
-  Metrics, Tailnets, Exporter Diagnostics, Cardinality & Cost) on Grafana's **v2 schema** (Grafana
-  13+), with dynamic rendering so a section only appears when its data is present. **Grafana 13+ is a
-  hard requirement** — 12.4 accepts the file with a `200` and renders nothing, and 11.5 rejects it
-  with the misleading `Dashboard title cannot be empty`. Push it with `gcx resources push -f`. See
-  [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
+- **Dashboards** — [`deploy/grafana/`](./deploy/grafana/) ships two dashboards on Grafana's **v2
+  schema** (Grafana 13+): **Tailnet** (is my tailnet healthy — devices, network, security, policy)
+  and **Exporter health** (is the exporter healthy — collection, ingestion, delivery, runtime, cost),
+  cross-linked to each other, with dynamic rendering so a section only appears when its data is
+  present. **Grafana 13+ is a hard requirement** — 12.4 accepts the file with a `200` and renders
+  nothing, and 11.5 rejects it with the misleading `Dashboard title cannot be empty`. Push them with
+  `gcx resources push -f`. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
 - **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **100 alert
   rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a

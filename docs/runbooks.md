@@ -90,8 +90,8 @@ That is the only one.
 **Not legitimate.** OOM-kill (the usual cause of a clean disappearance), a crash loop, an OTLP
 endpoint or credential that stopped working, a `for`-window that outlasted the deploy.
 
-**First step.** Look at **Uptime** and **Build info** on the Exporter Health tab. If `Uptime` is
-resetting repeatedly, it is a crash loop — go to the process logs. If there is no series at all,
+**First step.** Look at **Uptime** and **Build info** on the **Overview** tab of `tailscale2otel-health`.
+If `Uptime` is resetting repeatedly, it is a crash loop — go to the process logs. If there is no series at all,
 the process is gone or its exports are not landing; check the container/pod state first, then the
 OTLP endpoint and credentials, then whether the backend is rejecting writes.
 
@@ -122,9 +122,9 @@ is a tuning problem, not a fault.
 the silent-coverage-loss case these rules exist for, which is why they are `core`: if the per-collector
 series disappears entirely you get a `DatasourceNoData` alert rather than silence.
 
-**First step.** **Scrape success by collector** and **Last scrape age** on the Exporter Health tab
-identify which collector. Then **Scrape errors/s by collector / type** gives the error class, and
-**Scrape budget headroom** tells you whether it is erroring or simply too slow. Cross-check
+**First step.** **Scrape success by collector** and **Last scrape age** on the **Collection** tab of
+`tailscale2otel-health` identify which collector. Then **Scrape errors/s by collector / type** gives the
+error class, and **Scrape budget headroom** tells you whether it is erroring or simply too slow. Cross-check
 [Tailscale API health](#tailscale-api-health) — a single collector failing with a scope error is an
 API permission problem, not a collector bug.
 
@@ -147,8 +147,8 @@ stops being distinguishable. `export-volume-high` is the cost-side companion.
 **Not legitimate.** A newly-added label with unbounded values. If overflow appeared right after an
 upgrade or a config change, suspect that first.
 
-**First step.** **Metrics overflowing now** and **Per-metric headroom (top-N)** on the Cardinality
-tab name the offending metric family. Decide between raising `cardinality.metric_limit` (costs ingest)
+**First step.** **Metrics overflowing now** and **Per-metric headroom (top-N)** on the **Cost &
+Cardinality** tab of `tailscale2otel-health` name the offending metric family. Decide between raising `cardinality.metric_limit` (costs ingest)
 and lowering the source cardinality (flow rollups, dropping `source_port`, narrowing collectors).
 
 **Resolved when.** `tailscale2otel_series_overflowing_ratio` is `0` and the busiest family is back
@@ -188,11 +188,11 @@ upstream is normal internet.
 minted the key leaves, it dies with them. That is the most common cause of a sudden tailnet-wide
 outage.
 
-**First step.** **API requests/s by status** on the Exporter Diagnostics tab separates 401 from 403
-from 5xx. For 401, rotate the OAuth client or API key. For 403, find which endpoint is being refused
-and either widen the OAuth scope or disable that collector. For 429, raise poll intervals or reduce
-enabled collectors. For multi-tailnet, **Per-tailnet API errors** isolates which tailnet's
-credentials are at fault without the others masking it.
+**First step.** **API requests/s by status & endpoint** on the **Collection** tab of
+`tailscale2otel-health` separates 401 from 403 from 5xx. For 401, rotate the OAuth client or API key.
+For 403, find which endpoint is being refused and either widen the OAuth scope or disable that
+collector. For 429, raise poll intervals or reduce enabled collectors. For multi-tailnet, **Per-tailnet
+API errors** (same tab) isolates which tailnet's credentials are at fault without the others masking it.
 
 **Resolved when.** The relevant `tailscale2otel_api_availability_ratio` state series is absent again
 (these are `optional` precisely because absence is the healthy state) and the affected collectors
@@ -223,7 +223,7 @@ latency on a deliberately distant/underprovisioned collector endpoint.
 means datapoints are being dropped, and nothing else in the pack will tell you.
 
 **First step.** **Export failures/s by type** and **Export latency p50/p95/p99 by signal** on the
-Exporter Diagnostics tab. Break down by signal — metrics and logs use different endpoints, and one
+**Delivery** tab of `tailscale2otel-health`. Break down by signal — metrics and logs use different endpoints, and one
 failing alone points at a per-signal endpoint path or a per-signal quota. Remember the exporter
 appends `/v1/metrics` and `/v1/logs` itself: a bare gateway URL in `otlp.endpoint` 404s silently.
 
@@ -272,10 +272,11 @@ while every other collector and the exporter process itself are fine.
 progress. A delivery burn attributed to "the tailnet" — the delivery SLI is deliberately backend-only
 and cannot be caused by tailnet state.
 
-**First step.** **Exporter up** (availability), **Scrape success by collector** and **Scrape
-staleness** (freshness), and **Export outcome rate** (delivery) on the Exporter Diagnostics tab.
-Start with whichever SLI's alert fired, and for a delivery burn check the OTLP backend's own status
-before touching the exporter or tailnet configuration at all.
+**First step.** All three panels are on `tailscale2otel-health`: **Exporter up** (availability) is on
+the **Overview** tab; **Scrape success by collector** and **Scrape staleness** (freshness) are on the
+**Collection** tab; **Export outcome rate** (delivery) is on the **Delivery** tab. Start with whichever
+SLI's alert fired, and for a delivery burn check the OTLP backend's own status before touching the
+exporter or tailnet configuration at all.
 
 **Resolved when.** The fired SLI's recorded ratio is back above its target for both the short and
 the long window the alert reads.
@@ -296,8 +297,8 @@ filesystem in a hardened container where you have accepted the replay risk.
 Kubernetes, an `emptyDir`-backed checkpoint directory survives container restarts but **not** pod
 rescheduling; if you need durability across rescheduling, `persistence.enabled=true` is the fix.
 
-**First step.** **Checkpoint persist errors/s** and **Checkpoint persist age** on the Exporter
-Diagnostics tab. Then check the checkpoint path's existence, ownership (uid 65532 in the shipped
+**First step.** **Checkpoint persist errors/s** and **Checkpoint persist age** on the **Overview**
+tab of `tailscale2otel-health`. Then check the checkpoint path's existence, ownership (uid 65532 in the shipped
 image) and writability. The app falls back to in-memory with a WARN rather than crashing, so the
 startup log is where the real reason is.
 
@@ -325,10 +326,11 @@ low-signal.
 
 **Not legitimate.** A sustained `component_errors` rate. That is a real subsystem failing.
 
-**First step.** **Component errors/s** on the Exporter Diagnostics tab, broken down by `component`,
-then the process logs for that component. For the other three, confirm against the absolute-value
-panel (**Dedup set fill**, **GC CPU fraction**, **Admin auth rejected/s**) before treating the rate
-as a problem.
+**First step.** **Component errors/s** on the **Overview** tab of `tailscale2otel-health`, broken down
+by `component`, then the process logs for that component. For the other three, confirm against the
+absolute-value panel before treating the rate as a problem: **Admin auth rejected/s** is on the same
+Overview tab, **Dedup set fill** is on the **Ingestion** tab, and **GC CPU fraction** is on the
+**Runtime** tab.
 
 **Resolved when.** The component error rate returns to zero. The other three are `advisory` and are
 tuning signals, not incidents.
@@ -388,10 +390,11 @@ one serving, and `tailscale_geoip_reloads_total{result="failure"}` plus a WARN n
 only symptom. That is deliberate — degraded enrichment must never become a degraded exporter — but it
 does mean a broken file can sit there indefinitely while everything looks fine except this rule.
 
-**First step.** **Enrich cache age** and **Enrich cache devices** on the Exporter Diagnostics tab.
-If the age is climbing, check the devices collector's scrape success. For discovery, **Discovery OK**
-and **Discovered targets** on the Node Metrics tab. For the rDNS cache, **rDNS cache overflows vs
-lookups/s** shows whether overflow is tracking lookup volume or a step change.
+**First step.** **Enrich cache age** and **Enrich cache size** on the **Collection** tab of
+`tailscale2otel-health`. If the age is climbing, check the devices collector's scrape success. For
+discovery, **Node-metrics discovery OK** and **Node-metrics discovered targets** on the same
+Collection tab. For the rDNS cache, **rDNS cache overflows vs lookups/s** (also Collection) shows
+whether overflow is tracking lookup volume or a step change.
 
 **Resolved when.** Cache age drops back to roughly the devices poll interval, flow/audit panels show
 device names rather than `unknown`, and the rDNS overflow rate returns to zero.
@@ -411,7 +414,8 @@ a *new* warning after a config change is visible.
 **Not legitimate.** `config_valid_ratio < 1` at runtime. Validation normally fails at startup, so
 seeing an invalid config in a running process is rare and serious.
 
-**First step.** **Config warnings** and **Config valid** on the Exporter Health tab, then the startup
+**First step.** **Config warnings** and **Config valid** on the **Overview** tab of
+`tailscale2otel-health`, then the startup
 logs — the `Warnings()` output names each warning explicitly. `docs/configuration.md` is the
 key-by-key reference.
 
@@ -448,8 +452,10 @@ have had key expiry left on and did not (a mistake worth catching while it is re
 **user-bound**: they die when the user who created them is offboarded, taking the exporter with them.
 Prefer OAuth clients, which auto-refresh.
 
-**First step.** **Device key expiry (time until)** and **Key expiry (time until)** on the Fleet and
-Policy tabs list the specific devices and keys with their remaining time. For posture attributes,
+**First step.** On `tailscale2otel-tailnet`: **Device key expiry (time until)** is on the **Fleet &
+Network > Devices > Inventory & Hygiene** tab, and **Key expiry (time until)** is on the **Security &
+Policy > Policy & Config > Identity & Credentials** tab. Together they list the specific devices and
+keys with their remaining time. For posture attributes,
 note an expired attribute *silently* breaks posture-based ACLs — there is no error, the grant just
 stops matching.
 
@@ -481,11 +487,13 @@ entirely. A device flagged with multiple simultaneous connections: a shared node
 cannot tell the two clients apart, which undermines per-device posture and audit attribution for
 both.
 
-**First step.** **Auto-update coverage**, **State-encryption coverage** and **Posture match rate** on
-the Security tab. **Device posture snapshot** lists which devices are missing the property. Note the
-whole family is gated on `collect_posture`; with posture collection off the series are absent and
-nothing fires. For the shared-key case, **Multiple simultaneous connections** identifies the
-affected `host_id`; re-key one of the clients so each machine has its own node key.
+**First step.** On `tailscale2otel-tailnet`'s **Security & Policy > Security & Audit > Posture &
+Compliance** tab: **Auto-update coverage**, **State-encryption coverage** and **Posture match rate**,
+plus **Device posture snapshot**, which lists which devices are missing the property. Note the whole
+family is gated on `collect_posture`; with posture collection off the series are absent and nothing
+fires. For the shared-key case, **Multiple simultaneous connections** on the **Fleet & Network >
+Devices > Posture & Security** tab identifies the affected `host_id`; re-key one of the clients so
+each machine has its own node key.
 
 **Resolved when.** The ratio is back above threshold, or you have concluded the threshold was wrong
 for this fleet and adjusted it in the generator. For the shared-key rule: the device no longer shows
@@ -504,8 +512,8 @@ for a while, a staged rollout in progress, and platforms whose app-store updates
 **Not legitimate.** Nothing here is an incident. Treat a persistent high skew as a fleet-management
 backlog item, not a page.
 
-**First step.** **Most-behind devices (top-N)** and **Outdated (≥N behind)** on the Fleet tab name the
-laggards. If you want auto-update coverage rather than a snapshot of drift, that lives in
+**First step.** **Most-behind devices (top-N)** and **Outdated (≥N behind)** on the **Fleet & Network >
+Devices > Inventory & Hygiene** tab name the laggards. If you want auto-update coverage rather than a snapshot of drift, that lives in
 [Device posture coverage](#device-posture-coverage).
 
 **Resolved when.** The count falls below your threshold. Consider raising the threshold instead of
@@ -527,9 +535,11 @@ recognise, not one you discover here.
 **Not legitimate.** A persistent unsigned node (it is effectively cut off), and any disable event
 nobody can account for.
 
-**First step.** **Nodes with tailnet-lock errors** on the Security tab names the devices; sign them
-from a signing node. For a disable event, **Security/lifecycle changes/s** and the audit trail show
-the actor. Both rules are `optional` because tailnet lock is off by default on most tailnets, so the
+**First step.** **Nodes with tailnet-lock errors** on the **Security & Policy > Security & Audit >
+Risk & ACL** tab names the devices; sign them from a signing node. For a disable event,
+**Security/lifecycle changes/s** on the **Security & Policy > Security & Audit > Audit Trail** tab and
+the audit trail show the actor. Both rules are `optional` because tailnet lock is off by default on
+most tailnets, so the
 series are absent unless it is in use.
 
 **Resolved when.** The error gauge returns to `0`, or — for a disable — the change is confirmed
@@ -550,8 +560,10 @@ on. `acl-changed` is pure change tracking and is `advisory`.
 **Not legitimate.** An unrestricted rule appearing in a tailnet that had none. The `acl-changed`
 signal is what tells you when, and the audit trail tells you who.
 
-**First step.** **Unrestricted ACL rules** and **Auto-approvers by kind** on the Policy tab, then
-**ACL last changed** to correlate against a change. Pair with
+**First step.** **Unrestricted ACL rules** is on `tailscale2otel-tailnet`'s **Overview** tab;
+**Auto-approvers by kind** is on the **Security & Policy > Security & Audit > Risk & ACL** tab. Then
+**ACL last changed** on the **Security & Policy > Policy & Config > Access & ACL** tab to correlate
+against a change. Pair with
 [Audit events](#audit-events) to attribute it.
 
 **Resolved when.** The policy is tightened, or the finding is explicitly accepted and the rule paused
@@ -572,8 +584,8 @@ rules are `advisory` and ship paused.
 **Not legitimate.** A read-only integration holding `all`. `all:read` is the least-privilege
 equivalent and is what a monitoring integration — including this exporter — should use.
 
-**First step.** **Credential scopes (top-N)** on the Policy tab lists every credential and its scope
-class. Note the historical trap here: an earlier version of this rule counted scopes, which inverted
+**First step.** **Credential scopes (top-N)** on the **Security & Policy > Policy & Config > Identity &
+Credentials** tab lists every credential and its scope class. Note the historical trap here: an earlier version of this rule counted scopes, which inverted
 the answer — a single `all` scored `1` and never fired while eleven narrow `*:read` scopes scored
 `11` and did. The current rule keys off the privilege **class**, not the count.
 
@@ -598,8 +610,9 @@ bounded and raw values never reach labels.
 **Not legitimate.** A secret-scanner event, ever. Treat it as a live credential leak: find where the
 credential was exposed, confirm the revocation, and rotate anything derived from it.
 
-**First step.** **Changes by actor type** and **Top $topn actors over time** on the Security & Audit
-tab attribute the change. For schema drift, the collector emits a once-per-value digest warning naming
+**First step.** **Changes by actor type** and **Top $topn actors over time** on the **Security &
+Policy > Security & Audit > Audit Trail** tab attribute the change. For schema drift, the collector
+emits a once-per-value digest warning naming
 the unclassified field — that log line is what you feed into the contract refresh.
 
 **Resolved when.** The change is confirmed authorized (or reverted), the leaked credential is rotated,
@@ -629,9 +642,11 @@ compliance gap. The rule is audit-driven so it fires on the change itself, catch
 it is quickly reverted. An unverified contact means Tailscale's security notifications may never
 reach anyone.
 
-**First step.** **Flow logging**, **Tailnet scorecard**, **Streams configured** and **Contact needs
-verification** show current state; **Recent configuration changes** on the Security & Audit tab shows
-what moved.
+**First step.** **Flow logging** and **Tailnet scorecard** on `tailscale2otel-tailnet`'s **Overview**
+tab, and **Contact needs verification** on its **Security & Policy > Security & Audit > Identity &
+Keys** tab, show current state. **Streams configured** moved to the **Delivery** tab of
+`tailscale2otel-health`. **Recent configuration changes** on the tailnet dashboard's **Security &
+Policy > Security & Audit > Audit Trail** tab shows what moved.
 
 **Resolved when.** The setting is restored, or the deviation is a documented decision for this
 tailnet and the rule is paused accordingly.
@@ -649,7 +664,8 @@ own second tailnet. Perfectly normal if intended.
 **Not legitimate.** A share created with exit-node permission by accident. The permission is a
 checkbox at invite time and is easy to leave on.
 
-**First step.** **Exit-node-granting shares** on the Security tab lists the outstanding invites. Check
+**First step.** **Exit-node-granting shares** on the **Security & Policy > Security & Audit > Identity
+& Keys** tab lists the outstanding invites. Check
 each against who it was meant for and whether routing their traffic is intended.
 
 **Resolved when.** The invite is revoked or reissued without exit-node permission, or it is confirmed
@@ -685,8 +701,9 @@ users who have not yet logged in.
 **Not legitimate.** A large or growing count of internal devices sitting unauthorized with no admin
 action pending. An invite aged well past a week with no plan to revoke or re-send it.
 
-**First step.** **Unauthorized (internal)** on the Security tab for the devices alert; **Pending
-user-invite age (p50 / p90)** for the invites alert. Neither rule is page-tier by design — both ship
+**First step.** **Unauthorized (internal)** on the **Fleet & Network > Devices > Inventory & Hygiene**
+tab for the devices alert; **Pending user-invite age (p50 / p90)** on the **Security & Policy >
+Security & Audit > Identity & Keys** tab for the invites alert. Neither rule is page-tier by design — both ship
 `warning` severity with `page=false`, since neither represents an active outage.
 
 **Resolved when.** The unauthorized-devices count returns to zero (or every remaining device has a
@@ -710,8 +727,9 @@ rotation on the MDM side.
 **Not legitimate.** Sustained `status.error`. Posture data feeding your ACLs is stale, which means
 posture gates are being evaluated against out-of-date facts.
 
-**First step.** **Oldest sync age** and **Integration sync detail** on the Integrations tab identify
-the provider and integration. Then re-authorize it in the Tailscale admin console — revoked or expired
+**First step.** **Oldest sync age** and **Integration sync detail** on the **Security & Policy >
+Security & Audit > Posture & Compliance** tab identify the provider and integration. Then
+re-authorize it in the Tailscale admin console — revoked or expired
 credentials are the usual cause.
 
 **Resolved when.** `posture_integration_error_ratio` is `0` and the sync age is back inside the
@@ -737,7 +755,7 @@ sink. Spoofed entries mean something is sending forged log traffic at your strea
 investigate the source.
 
 **First step.** **Failed requests/s by type**, **Last activity age by type** and **Last delivery
-error** on the Integrations tab. The last delivery error is usually explicit about whether it is the
+error**, all on the **Delivery** tab of `tailscale2otel-health`. The last delivery error is usually explicit about whether it is the
 endpoint, the credential or the sink rejecting the payload. Pair with `ts2o-logstream-config-changed`
 in [Tailnet settings drift](#tailnet-settings-drift) — a stream that stopped delivering right after a
 config change was probably reconfigured.
@@ -778,13 +796,14 @@ oversized or undecodable events — either the sender is misconfigured or the HE
 not match. A sustained skip rate for either reason, or a webhook field parked at `unknown` for more
 than a brief window: something now depends on stale or missing data and nobody has noticed.
 
-**First step.** **Receiver rejected/s** (broken down by reason), **Receiver latency
-p50/p95/p99 (stream)** and **Accepted event freshness** on the Events & Logs tab. The rejection reason
-distinguishes an auth mismatch from a decode failure. **Stream records accepted vs skipped/s** shows
-which reason is climbing; **Webhook payload schema drift/s by field** names the specific field that
-drifted — cross-check the vendored OpenAPI spec (`spec/tailscale-api.json`) for whether it should be
-refreshed. Also confirm you have not enabled both poll and stream for the same log type — that
-double-counts, and cross-source dedup is only a best-effort failsafe.
+**First step.** All on the **Ingestion** tab of `tailscale2otel-health`: **Receiver rejected/s (stream
++ webhook)** (broken down by reason), **Receiver in-flight & latency (stream)** and **Accepted event
+freshness & age p95, timestamp skew/s**. The rejection reason distinguishes an auth mismatch from a
+decode failure. **Stream records accepted vs skipped/s** shows which reason is climbing; **Webhook
+accepted vs duplicates & schema drift/s** names when a field drifted — cross-check the vendored
+OpenAPI spec (`spec/tailscale-api.json`) for whether it should be refreshed. Also confirm you have not
+enabled both poll and stream for the same log type — that double-counts, and cross-source dedup is
+only a best-effort failsafe.
 
 **Resolved when.** Rejections return to zero, the newest accepted event timestamp is inside the
 expected window for that source, the skip rate for both reasons returns to zero, and no field remains
@@ -835,11 +854,12 @@ deliberately holding ingestion behind what the bucket has available.
 aging without the gap count dropping. A `-1`/stale `discovered.newest.age` while the export is
 believed to be running. A backlog that never drains across an hour with no budget skip in play.
 
-**First step.** The Exporter Diagnostics tab carries the panels for this family:
-**Undecodable objects (broken feed)**, **Unresolved gaps & oldest gap age**, **Newest exported
-object age**, **Backlog & oldest pending object age**, **Objects skipped/s by reason**,
-**Object-store cursor age**, and **Object listing complete**. Start with whichever rule fired, then
-check **Objects skipped/s by reason** for a `per_cycle_budget` skip before assuming a fault, and
+**First step.** The **Ingestion** tab of `tailscale2otel-health` carries the panels for this family:
+**Undecodable objects (broken feed)**, **Unresolved gaps & oldest gap age**, **Object-store age
+(cursor & newest object)** (cursor age and newest-object age are now one combined panel),
+**Backlog & oldest pending object age**, **Object ingestion loss (skipped / retried / limit-stopped)**,
+and **Object listing complete**. Start with whichever rule fired, then check **Object ingestion loss
+(skipped / retried / limit-stopped)** for a `per_cycle_budget` skip before assuming a fault, and
 **Object listing complete** to see whether truncation is why backlog/gap numbers look wrong.
 
 **Resolved when.** `ts2o-objectstore-undecodable`'s count returns to zero for a full evaluation
@@ -864,9 +884,10 @@ region legitimately exceeds 150 ms in some places.
 **Not legitimate.** A *rise* in relay share on a fleet that previously went direct. That points at a
 firewall change (UDP 41641 blocked, or outbound UDP restricted) rather than at Tailscale.
 
-**First step.** **Fleet DERP share (now)** and **Traffic mix by path (direct / DERP / peer-relay)** on
-the Node Metrics tab, then **Best latency per DERP region** and **Hard-NAT %**. All of these need the
-node-metrics scraper — with it disabled the series are absent and nothing fires.
+**First step.** On `tailscale2otel-tailnet`'s **Fleet & Network > Node Metrics** tab: **Fleet DERP
+share (now)** and **Traffic mix by path (direct / DERP / peer-relay)**, then **Best latency per DERP
+region**. **Hard-NAT %** is on the **Fleet & Network > Devices > Connectivity & Routing** tab. All of
+these need the node-metrics scraper — with it disabled the series are absent and nothing fires.
 
 **Resolved when.** The relay share returns to its baseline. Note the baseline is fleet-specific: pick
 a threshold from your own history rather than assuming 50% is meaningful for you.
@@ -899,8 +920,10 @@ should be a decision you made, not a surprise.
 you did not intend is likewise not legitimate: your flow log search results are incomplete and
 nothing in the query says so.
 
-**First step.** **Flows/s (now)** and **Flow log stream** on the Flow View tab; **Reporter trust &
-consistency** for the mismatch case; **Flow log records dropped/s** for the truncation case. Confirm
+**First step.** **Flows/s (now)**, **Flow log stream** and **Reporter trust & consistency** (mismatch
+case) are on `tailscale2otel-tailnet`'s **Fleet & Network > Network & Flows** tab. **Flow log records
+dropped/s** (truncation case) moved to the **Cost & Cardinality** tab of `tailscale2otel-health`.
+Confirm
 the ingestion path: for `flowlogs` you must choose *exactly one* of `source: poll` or
 `source: stream` — running both double-counts.
 
@@ -939,11 +962,13 @@ subnet is broken" while the fix is one click in the admin console. Nor is a repe
 event: the route is advertised, approved and *dead*, which looks like a network fault to everyone
 downstream.
 
-**First step.** **Subnet routes — advertised vs enabled** and **Subnet-route redundancy by CIDR** on
-the Network tab; **Backing hosts by service** for VIP services. Approve or reject the route in the
-Tailscale admin console. For IP forwarding, **Webhook events/s by type** identifies the event type;
-fix it on the node itself — `net.ipv4.ip_forward=1` and `net.ipv6.conf.all.forwarding=1`, persisted
-in `/etc/sysctl.d/`, not just set for the current boot.
+**First step.** On `tailscale2otel-tailnet`: **Subnet routes — advertised vs enabled** and
+**Subnet-route redundancy by CIDR** are on the **Fleet & Network > Devices > Connectivity & Routing**
+tab; **Backing hosts by service** for VIP services is on the **Security & Policy > Policy & Config >
+Integrations** tab. Approve or reject the route in the Tailscale admin console. For IP forwarding,
+**Webhook events by type & rejections by reason** on the **Ingestion** tab of `tailscale2otel-health`
+identifies the event type; fix it on the node itself — `net.ipv4.ip_forward=1` and
+`net.ipv6.conf.all.forwarding=1`, persisted in `/etc/sysctl.d/`, not just set for the current boot.
 
 **Resolved when.** Routes are approved (or the advertisement withdrawn), any CIDR/service that
 warrants redundancy has a second router/host, and the IP-forwarding events stop arriving — this last
@@ -985,12 +1010,12 @@ unreachable. A sustained non-zero error/unknown-protocol drop rate, or a peer-re
 `connecting` for the full hour window, means the connection attempt is not going to resolve on its
 own.
 
-**First step.** **Active health warnings by type** and **Health messages** on the Node Metrics tab
-identify the node and the warning type. Then go to that node: `tailscale status` and
-`tailscale netcheck` on the host give the client's own diagnosis directly. For drops, **Error &
-malformed drops by reason** breaks down which reason is climbing. For peer-relay, **Peer-relay
-endpoints by state** shows how many are stuck versus connected. This family needs the
-node-metrics scraper — without it the series are absent and nothing fires.
+**First step.** **Active health warnings by type** and **Health messages** on the **Fleet & Network >
+Node Metrics** tab of `tailscale2otel-tailnet` identify the node and the warning type. Then go to that
+node: `tailscale status` and `tailscale netcheck` on the host give the client's own diagnosis directly.
+For drops, **Error & malformed drops by reason** (same tab) breaks down which reason is climbing. For
+peer-relay, **Peer-relay endpoints by state** (same tab) shows how many are stuck versus connected.
+This family needs the node-metrics scraper — without it the series are absent and nothing fires.
 
 **Resolved when.** The node reports no active health warnings for a full evaluation window, the
 error/unknown-protocol drop rate returns to zero, and no peer-relay endpoint remains in `connecting`
@@ -1029,13 +1054,14 @@ name-budget rule: drops that persist after you have deliberately raised
 `node_metrics.max_distinct_metrics` and confirmed the metric surface is expected mean something else
 is generating unbounded metric names.
 
-**First step.** **Node up** and **Targets up** on the Node Metrics tab name the target
-(`tailscale_node`). Then, from a host on the tailnet, curl that node's metrics endpoint directly: a
-connection refused points at the endpoint, a timeout points at reachability. If *every* target is
-down at once, suspect the scraper's config rather than the fleet, and check
+**First step.** **Node-metrics targets up** and **Node-metrics scrape health by target** on the
+**Collection** tab of `tailscale2otel-health` name the target (`tailscale_node`); the second breaks
+the aggregate down per target. Then, from a host on the tailnet, curl that node's metrics endpoint
+directly: a connection refused points at the endpoint, a timeout points at reachability. If *every*
+target is down at once, suspect the scraper's config rather than the fleet, and check
 [Enrichment and discovery](#enrichment-and-discovery) for a stale or empty target list. For the
-name-budget rule, **Forwarded metric-name drops/s by reason** identifies which target is over
-budget.
+name-budget rule, **Forwarded metric-name drops/s by reason** on the **Cost & Cardinality** tab of
+`tailscale2otel-health` identifies which target is over budget.
 
 **Resolved when.** `tailscale_node_up_ratio` is `1` for that target across a full evaluation window.
 Note that decommissioning a target does **not** resolve it by clearing the alert to OK — the series
