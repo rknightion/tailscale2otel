@@ -29,8 +29,12 @@ var (
 			"The full state set is always emitted (zero-seeded), so a state that stops occurring reads as `0` " +
 			"rather than disappearing. States: `supported`, `disabled` (feature off or not configured — expected, " +
 			"not a fault), `scope_denied` (HTTP 403, the credential lacks the scope), `credential_rejected` " +
-			"(HTTP 401), `transient_failure` (429/5xx/network/timeout), `unknown` (not yet probed). " +
-			"**`disabled` and `scope_denied` are deliberately distinct** — alert on the latter, never the former.",
+			"(HTTP 401), `transient_failure` (429/5xx/network/timeout — retryable), `request_rejected` " +
+			"(any other 4xx: the API refused the request this exporter built, so retrying it unchanged " +
+			"cannot succeed — terminal and our fault), `unknown` (not yet probed). " +
+			"**`disabled` and `scope_denied` are deliberately distinct** — alert on the latter, never the former. " +
+			"**`request_rejected` and `transient_failure` are likewise distinct**: conflating them let a 400 " +
+			"on every single tick masquerade as upstream flakiness (#523).",
 		Attributes: []string{semconv.AttrCollector, semconv.AttrAPIOperation, semconv.AttrAPIState},
 		Group:      GroupAPIState,
 	}

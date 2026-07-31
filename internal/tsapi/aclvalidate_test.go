@@ -11,52 +11,80 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
-// TestValidatePolicyFile_SendsNoBodyToValidateEndpoint asserts the request
-// shape: POST to /tailnet/{tailnet}/acl/validate with an EMPTY body. A
-// populated body would either run externally supplied ACL tests (JSON array)
-// or validate a hypothetical replacement policy (JSON object/string) — this
-// call wants neither; it validates the tailnet's CURRENTLY ACTIVE policy.
-func TestValidatePolicyFile_SendsNoBodyToValidateEndpoint(t *testing.T) {
-	var gotMethod, gotPath string
+// testPolicy is a minimal non-blank HuJSON policy for call sites that only care
+// about the RESPONSE handling, not the request shape.
+const testPolicy = `{"acls": []}`
+
+// TestValidatePolicyFile_SendsThePolicyAsTheBody pins the request shape against
+// what the LIVE API actually requires. Verified 2026-07-31 against
+// api.tailscale.com with a read-only OAuth client:
+//
+//	no body                      -> HTTP 400 {"message":"unexpected end of JSON input"}
+//	{}                           -> HTTP 200 {} (validates an EMPTY policy: always passes)
+//	the tailnet's live policy    -> HTTP 200 {}
+//	a policy naming a bogus tag  -> HTTP 200 {"message":"src=tag not found: ..."}
+//
+// The last line is why the body must be the real policy: the endpoint validates
+// what you SEND, not what is live. This test previously asserted the opposite
+// (an empty body), which is how #523 shipped — the fake server accepted the
+// empty body because it was written from the same wrong assumption as the code.
+func TestValidatePolicyFile_SendsThePolicyAsTheBody(t *testing.T) {
+	const policy = "{\n\t// comment\n\t\"acls\": [],\n}"
 	var gotBody []byte
+	var gotMethod, gotPath, gotContentType string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
+		gotContentType = r.Header.Get("Content-Type")
 		gotBody, _ = io.ReadAll(r.Body)
-		if got := r.Header.Get("Authorization"); got != "Bearer testkey" {
-			http.Error(w, "auth = "+got, http.StatusUnauthorized)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
 
-	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background())
+	c := newClient(t, srv.URL)
+	got, err := c.ValidatePolicyFile(context.Background(), policy)
 	if err != nil {
 		t.Fatalf("ValidatePolicyFile: %v", err)
 	}
-
 	if gotMethod != http.MethodPost {
 		t.Errorf("method = %q, want POST", gotMethod)
 	}
-	if gotPath != "/api/v2/tailnet/example.com/acl/validate" {
-		t.Errorf("path = %q, want /api/v2/tailnet/example.com/acl/validate", gotPath)
+	if want := "/api/v2/tailnet/example.com/acl/validate"; gotPath != want {
+		t.Errorf("path = %q, want %q", gotPath, want)
 	}
-	if len(gotBody) != 0 {
-		t.Errorf("request body = %q, want empty (validating the CURRENT policy, not a supplied test/policy body)", gotBody)
+	if string(gotBody) != policy {
+		t.Errorf("request body = %q, want the policy verbatim %q", gotBody, policy)
 	}
-	if !v.OK {
-		t.Errorf("OK = false, want true for a bare {} success response")
+	if gotContentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", gotContentType)
 	}
-	if v.Errors != 0 || v.Warnings != 0 || v.TestFailures != 0 {
-		t.Errorf("got %+v, want all-zero counts on success", v)
+	if !got.OK {
+		t.Errorf("OK = false, want true for a bare {} response")
 	}
 }
 
-// TestValidatePolicyFile_TestsFailedCountsAsTestFailures mirrors the spec's
-// documented "test(s) failed" example: each data[] element's errors[] entries
-// are embedded-test failures, not generic validation errors.
+// TestValidatePolicyFile_EmptyPolicyIsRefusedLocally proves we never resurrect
+// the empty-body call by accident. An empty policy would return 200 upstream
+// while validating nothing, so it must fail loudly here instead of quietly
+// reporting a healthy validation of nothing at all (#523).
+func TestValidatePolicyFile_EmptyPolicyIsRefusedLocally(t *testing.T) {
+	var called bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		called = true
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv.URL)
+	if _, err := c.ValidatePolicyFile(context.Background(), "   "); err == nil {
+		t.Error("ValidatePolicyFile(blank policy) = nil error, want a refusal")
+	}
+	if called {
+		t.Error("a blank policy reached the API; it must be refused before the request")
+	}
+}
+
 func TestValidatePolicyFile_TestsFailedCountsAsTestFailures(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{
@@ -69,7 +97,7 @@ func TestValidatePolicyFile_TestsFailedCountsAsTestFailures(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background())
+	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background(), testPolicy)
 	if err != nil {
 		t.Fatalf("ValidatePolicyFile: %v", err)
 	}
@@ -100,7 +128,7 @@ func TestValidatePolicyFile_WarningsFoundCountsAsWarnings(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background())
+	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background(), testPolicy)
 	if err != nil {
 		t.Fatalf("ValidatePolicyFile: %v", err)
 	}
@@ -124,7 +152,7 @@ func TestValidatePolicyFile_ForbiddenReturnsStatusError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background())
+	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background(), testPolicy)
 	if err == nil {
 		t.Fatal("ValidatePolicyFile: expected error, got nil")
 	}
@@ -150,7 +178,7 @@ func TestValidatePolicyFile_MalformedBodyReturnsError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background())
+	v, err := newClient(t, srv.URL).ValidatePolicyFile(context.Background(), testPolicy)
 	if err == nil {
 		t.Fatal("ValidatePolicyFile: expected a decode error, got nil")
 	}

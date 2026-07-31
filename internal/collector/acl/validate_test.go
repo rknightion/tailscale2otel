@@ -18,10 +18,15 @@ type fakeValidator struct {
 	result *tsapi.PolicyValidation
 	err    error
 	calls  int
+	// gotPolicy records the document the collector passed through, so a test can
+	// prove the live policy reaches the validator rather than an empty body
+	// (#523).
+	gotPolicy string
 }
 
-func (f *fakeValidator) ValidatePolicyFile(_ context.Context) (*tsapi.PolicyValidation, error) {
+func (f *fakeValidator) ValidatePolicyFile(_ context.Context, policy string) (*tsapi.PolicyValidation, error) {
 	f.calls++
+	f.gotPolicy = policy
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -260,3 +265,44 @@ func TestValidation_ScopeDeniedNeverEmitsHealthyZero(t *testing.T) {
 
 // SnapshotCollector compile-time check already exists in acl_test.go; this
 // file only adds validation-specific coverage.
+
+// TestCollectValidationPassesTheFetchedPolicy proves the collector hands the
+// document it just fetched to the validator. Before #523 it passed nothing, the
+// API 400ed every tick, and the failure read as transient flakiness.
+func TestCollectValidationPassesTheFetchedPolicy(t *testing.T) {
+	api := newACLAPI()
+	v := &fakeValidator{result: &tsapi.PolicyValidation{OK: true}}
+	rec := telemetrytest.New()
+	c := acl.New(api, 0, time.Now, acl.WithValidator(v))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if v.calls != 1 {
+		t.Fatalf("validator calls = %d, want 1", v.calls)
+	}
+	if v.gotPolicy != api.acl.HuJSON {
+		t.Errorf("validator got policy %q, want the fetched document %q", v.gotPolicy, api.acl.HuJSON)
+	}
+}
+
+// TestCollectValidationSkippedWhenPolicyEmpty proves an empty document produces
+// no probe at all. Validating nothing passes unconditionally, so a green
+// availability row here would be a lie.
+func TestCollectValidationSkippedWhenPolicyEmpty(t *testing.T) {
+	api := newACLAPI()
+	api.acl.HuJSON = ""
+	v := &fakeValidator{result: &tsapi.PolicyValidation{OK: true}}
+	rec := telemetrytest.New()
+	c := acl.New(api, 0, time.Now, acl.WithValidator(v))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if v.calls != 0 {
+		t.Errorf("validator calls = %d, want 0 for an empty policy", v.calls)
+	}
+	if st, ok := availabilityState(t, rec, "validateAndTestPolicyFile"); ok {
+		t.Errorf("availability state = %q, want no entry at all", st)
+	}
+}

@@ -2,6 +2,7 @@ package acl
 
 import (
 	"context"
+	"strings"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
@@ -20,7 +21,7 @@ const opValidate = "validateAndTestPolicyFile"
 // endpoint — so a collector built without WithValidator is a clean no-op for
 // every tailscale.acl.validation.* signal.
 type Validator interface {
-	ValidatePolicyFile(ctx context.Context) (*tsapi.PolicyValidation, error)
+	ValidatePolicyFile(ctx context.Context, policy string) (*tsapi.PolicyValidation, error)
 }
 
 // WithValidator wires the optional ACL policy-validation dependency. Omit
@@ -45,7 +46,8 @@ func WithValidate(enabled bool) Option {
 	return func(c *Collector) { c.validate = enabled }
 }
 
-// collectValidation validates the tailnet's currently active ACL policy, when
+// collectValidation validates the policy document the collector just fetched,
+// when
 // a validator is wired and enabled, and emits the resulting signals. It is a
 // clean no-op — no validation.* gauge, no availability entry — when no
 // validator is wired or validation is disabled via WithValidate(false).
@@ -56,12 +58,18 @@ func WithValidate(enabled bool) Option {
 // zero) but does NOT fail the enclosing Collect: validation is a
 // supplementary probe alongside the primary policy fetch, matching the
 // framework's subrequest pattern elsewhere (devices, webhooks).
-func (c *Collector) collectValidation(ctx context.Context, e telemetry.Emitter) {
+func (c *Collector) collectValidation(ctx context.Context, e telemetry.Emitter, policy string) {
 	if c.validator == nil || !c.validate {
 		return
 	}
+	// No policy document means nothing to validate. Emitting an availability
+	// entry here would report a probe that never happened; staying silent keeps
+	// the row honest at unknown.
+	if strings.TrimSpace(policy) == "" {
+		return
+	}
 
-	v, err := c.validator.ValidatePolicyFile(ctx)
+	v, err := c.validator.ValidatePolicyFile(ctx, policy)
 	state := apistate.Observe(e, c.tracker, c.Name(), opValidate, apistate.Disposition{}, err, c.now())
 	if state != apistate.StateSupported || v == nil {
 		return

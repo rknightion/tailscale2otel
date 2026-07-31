@@ -169,7 +169,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	c.emitRuleCounts(e, top)
 	c.emitRiskScores(e, top)
 
-	c.collectValidation(ctx, e)
+	c.collectValidation(ctx, e, raw.HuJSON)
 
 	return nil
 }

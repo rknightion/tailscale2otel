@@ -212,13 +212,21 @@ type CapabilityInputs struct {
 // can never be hidden by a sibling success. Below them "supported" outranks
 // "disabled": a collector with one optional feature off and everything else
 // working should read as working, not as disabled. "unknown" is the floor.
+// Severity order among the actionable states: a transient blip will retry away;
+// a request_rejected never will (it is a defect in the request WE build); a
+// scope gap needs an operator to widen a credential; a rejected credential is
+// usually tailnet-wide and blocks everything. Every state in apistate.States()
+// must appear here — TestStateRankCoversEveryState enforces that, because a
+// missing entry silently ranks 0 and lets a real failure hide behind a sibling
+// success.
 var stateRank = map[apistate.State]int{
 	apistate.StateUnknown:            0,
 	apistate.StateDisabled:           1,
 	apistate.StateSupported:          2,
 	apistate.StateTransientFailure:   3,
-	apistate.StateScopeDenied:        4,
-	apistate.StateCredentialRejected: 5,
+	apistate.StateRequestRejected:    4,
+	apistate.StateScopeDenied:        5,
+	apistate.StateCredentialRejected: 6,
 }
 
 // BuildCapabilityMatrix is the single source of the configuration-to-capability

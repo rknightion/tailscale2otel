@@ -60,6 +60,17 @@ const (
 	// StateTransientFailure means a retryable failure: rate limiting, a server
 	// error, a network problem or a timeout.
 	StateTransientFailure State = "transient_failure"
+	// StateRequestRejected means the API refused the request itself (a 4xx that
+	// is not 401/403/404): malformed body, wrong method, unsupported media type.
+	// TERMINAL and OUR fault — retrying the same request can never succeed, so
+	// this is deliberately NOT transient_failure.
+	//
+	// This state exists because the absence of it hid a real bug: the acl
+	// validate call POSTed an empty body, the API answered 400 on every single
+	// tick, and it surfaced as transient_failure — indistinguishable from
+	// upstream flakiness — so a feature that had never once worked looked merely
+	// unlucky (#523).
+	StateRequestRejected State = "request_rejected"
 )
 
 // States returns every State, in a stable order. Emitters zero-seed this whole
@@ -72,6 +83,7 @@ func States() []State {
 		StateScopeDenied,
 		StateCredentialRejected,
 		StateTransientFailure,
+		StateRequestRejected,
 	}
 }
 
@@ -113,8 +125,17 @@ func Classify(err error, d Disposition) State {
 			// The endpoint is not present for this tailnet — an alpha or
 			// plan-gated API. Absence, not a credential problem.
 			return StateDisabled
+		case 429:
+			// Rate limiting: genuinely retryable.
+			return StateTransientFailure
 		default:
-			// 429, 5xx, and any other status: retryable or unclassified. Never
+			if se.Code >= 400 && se.Code < 500 {
+				// A 4xx we did not special-case above means the API rejected the
+				// request we built. Retrying it unchanged cannot help, so this
+				// must never read as transient.
+				return StateRequestRejected
+			}
+			// 5xx and any other status: retryable or unclassified. Never
 			// silently benign.
 			return StateTransientFailure
 		}
@@ -129,7 +150,7 @@ func Classify(err error, d Disposition) State {
 // this is the predicate that stops "feature not enabled" from paging someone.
 func (s State) Actionable() bool {
 	switch s {
-	case StateScopeDenied, StateCredentialRejected, StateTransientFailure:
+	case StateScopeDenied, StateCredentialRejected, StateTransientFailure, StateRequestRejected:
 		return true
 	default:
 		return false

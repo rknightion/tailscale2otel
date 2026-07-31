@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"path"
+	"strings"
 )
 
 // PolicyValidation is the summarized result of validating the tailnet's
@@ -50,17 +52,39 @@ type policyValidateItem struct {
 	Warnings []string `json:"warnings"`
 }
 
-// ValidatePolicyFile validates the tailnet's CURRENTLY ACTIVE ACL policy by
-// POSTing to /tailnet/{tailnet}/acl/validate with NO request body. Per the
-// API, a populated body would either run externally supplied ACL tests (a
-// JSON array) or validate a hypothetical replacement policy (a JSON object or
-// HuJSON string) — neither of which this call wants; an empty body validates
-// what is actually live, including any tests embedded in the policy's own
-// "tests" section. This method does not modify the tailnet policy file in any
-// way and requires only the policy_file:read OAuth scope.
-func (c *Client) ValidatePolicyFile(ctx context.Context) (*PolicyValidation, error) {
+// ValidatePolicyFile validates the supplied ACL policy document by POSTing it
+// to /tailnet/{tailnet}/acl/validate. It does not modify the tailnet policy
+// file in any way and requires only the policy_file:read OAuth scope.
+//
+// CORRECTED 2026-07-31 (#523). This method previously sent NO request body, on
+// the belief — stated in a comment here, and pinned by a test — that an empty
+// body validates whatever policy is currently live. That belief was WRONG. The
+// live API answers an empty body with HTTP 400 "unexpected end of JSON input",
+// so the call failed on every tick and, lacking a terminal 4xx state at the
+// time, reported as transient_failure. The feature never validated anything.
+//
+// Verified live against api.tailscale.com:
+//
+//	no body                      -> 400 {"message":"unexpected end of JSON input"}
+//	{}                           -> 200 {}
+//	the tailnet's live policy    -> 200 {}
+//	a policy naming a bogus tag  -> 200 {"message":"src=tag not found: ..."}
+//
+// The last case is the load-bearing one: the endpoint validates the document it
+// is GIVEN, not the live one. So sending `{}` is NOT an acceptable shortcut — it
+// returns 200 while validating an empty policy, which passes unconditionally and
+// would report a permanently healthy validation of nothing. The caller must pass
+// the real policy; the acl collector already holds it from its own fetch.
+func (c *Client) ValidatePolicyFile(ctx context.Context, policy string) (*PolicyValidation, error) {
+	// Refuse a blank document locally rather than letting it become an
+	// always-passing validation of nothing (see the note above).
+	if strings.TrimSpace(policy) == "" {
+		return nil, errors.New("tsapi: ValidatePolicyFile requires the policy document; " +
+			"an empty body is rejected by the API (400) and an empty policy validates nothing")
+	}
+
 	var raw policyValidateResponse
-	if err := c.postJSON(ctx, c.aclValidateURL(), nil, &raw); err != nil {
+	if err := c.postRawJSON(ctx, c.aclValidateURL(), []byte(policy), &raw); err != nil {
 		return nil, err
 	}
 
@@ -93,30 +117,18 @@ func (c *Client) aclValidateURL() string {
 	return u.String()
 }
 
-// postJSON marshals body to JSON (or sends no body at all when body is nil)
-// and POSTs it to urlStr through c.http (so auth, retry and the observer
-// transport apply). On a non-2xx response it returns a *StatusError —
-// distinct from putJSON, which returns a plain error and so cannot be
-// classified by apistate.Classify. On success, when out is non-nil, the
-// response body is decoded into it under the snapshot decode budget
-// (tailscale.max_response_bytes); out is left untouched when the caller
-// passes nil (a POST with no interesting response).
-func (c *Client) postJSON(ctx context.Context, urlStr string, body, out any) error {
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reqBody = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlStr, reqBody)
+// postRawJSON POSTs pre-encoded bytes verbatim, without re-marshaling them.
+// The ACL policy is HuJSON (comments, trailing commas), which is NOT valid JSON
+// and must reach the API byte-for-byte — running it through json.Marshal would
+// wrap it in a JSON string literal and change what is being validated.
+// Otherwise identical to postJSON: same auth, retry, observer transport,
+// *StatusError on non-2xx, and budgeted decode.
+func (c *Client) postRawJSON(ctx context.Context, urlStr string, body []byte, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlStr, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	if c.userAgent != "" {
 		req.Header.Set("User-Agent", c.userAgent)

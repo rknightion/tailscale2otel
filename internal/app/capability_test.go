@@ -431,3 +431,37 @@ func TestCapabilityCatalogMatchesEmitted(t *testing.T) {
 	}
 	telemetrytest.AssertCatalogAttrs(t, rec, docs, nil)
 }
+
+// TestStateRankCoversEveryState proves the aggregation ranking knows about every
+// state in the closed set. A state absent from stateRank ranks 0 — tying with
+// "unknown" — so a genuine failure on one operation would be hidden by any
+// sibling success. Adding a state without a rank is the exact mistake this
+// guards (#523 added request_rejected).
+func TestStateRankCoversEveryState(t *testing.T) {
+	for _, s := range apistate.States() {
+		if _, ok := stateRank[s]; !ok {
+			t.Errorf("apistate.State %q has no stateRank entry; it would rank 0 and hide real failures", s)
+		}
+	}
+}
+
+// TestActionableStatesOutrankHealthyOnes pins the invariant the ranking exists
+// for: anything an operator must act on must beat supported/disabled/unknown.
+func TestActionableStatesOutrankHealthyOnes(t *testing.T) {
+	healthy := []apistate.State{apistate.StateUnknown, apistate.StateDisabled, apistate.StateSupported}
+	for _, s := range apistate.States() {
+		if !s.Actionable() {
+			continue
+		}
+		rank, ok := stateRank[s]
+		if !ok {
+			continue // covered by TestStateRankCoversEveryState
+		}
+		for _, h := range healthy {
+			hr := stateRank[h]
+			if rank <= hr {
+				t.Errorf("actionable state %q ranks %d, not above healthy state %q at %d", s, rank, h, hr)
+			}
+		}
+	}
+}

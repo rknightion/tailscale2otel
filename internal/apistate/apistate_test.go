@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -40,7 +41,7 @@ func TestClassify(t *testing.T) {
 		{"429 is transient", statusErr(429), apistate.Disposition{}, apistate.StateTransientFailure},
 		{"500 is transient", statusErr(500), apistate.Disposition{}, apistate.StateTransientFailure},
 		{"503 is transient", statusErr(503), apistate.Disposition{}, apistate.StateTransientFailure},
-		{"400 is transient", statusErr(400), apistate.Disposition{}, apistate.StateTransientFailure},
+		{"400 is a terminal request rejection, not transient (#523)", statusErr(400), apistate.Disposition{}, apistate.StateRequestRejected},
 
 		{"wrapped status error is unwrapped", fmt.Errorf("collector: %w", statusErr(403)), apistate.Disposition{}, apistate.StateScopeDenied},
 
@@ -69,6 +70,7 @@ func TestStatesIsTheClosedSet(t *testing.T) {
 		apistate.StateScopeDenied,
 		apistate.StateCredentialRejected,
 		apistate.StateTransientFailure,
+		apistate.StateRequestRejected,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("States() has %d entries, want %d", len(got), len(want))
@@ -240,5 +242,53 @@ func TestCoverageIsNilSafe(t *testing.T) {
 	c.Reset()
 	if got := c.Snapshot(); got != nil {
 		t.Errorf("nil coverage Snapshot() = %v, want nil", got)
+	}
+}
+
+// TestClassifyRequestRejected pins that a 4xx which is NOT 401/403/404 is a
+// TERMINAL, our-fault state rather than transient_failure (#523). A 400 means
+// this exporter built a request the API refuses; retrying it unchanged can
+// never succeed, so presenting it as a retryable upstream blip hid a shipped
+// bug (the acl validate endpoint 400ed on every tick for months while reading
+// as flakiness).
+func TestClassifyRequestRejected(t *testing.T) {
+	for _, code := range []int{400, 405, 409, 415, 422} {
+		err := statusErr(code)
+		if got := apistate.Classify(err, apistate.Disposition{}); got != apistate.StateRequestRejected {
+			t.Errorf("Classify(%d) = %q, want %q", code, got, apistate.StateRequestRejected)
+		}
+	}
+}
+
+// TestClassifyRequestRejectedYieldsToDisabledOn proves an operation that
+// documents a 4xx as a feature gate still wins over the generic terminal
+// classification.
+func TestClassifyRequestRejectedYieldsToDisabledOn(t *testing.T) {
+	err := statusErr(400)
+	got := apistate.Classify(err, apistate.Disposition{DisabledOn: []int{400}})
+	if got != apistate.StateDisabled {
+		t.Errorf("Classify(400, DisabledOn:[400]) = %q, want %q", got, apistate.StateDisabled)
+	}
+}
+
+// TestRequestRejectedIsActionableAndEnumerated proves the new state is both
+// alertable and zero-seeded, so the bounded availability gauge cannot churn.
+func TestRequestRejectedIsActionableAndEnumerated(t *testing.T) {
+	if !apistate.StateRequestRejected.Actionable() {
+		t.Error("StateRequestRejected.Actionable() = false, want true")
+	}
+	if !slices.Contains(apistate.States(), apistate.StateRequestRejected) {
+		t.Errorf("States() = %v, missing %q", apistate.States(), apistate.StateRequestRejected)
+	}
+}
+
+// TestTransientFailureStillCoversRetryables guards the other half of the split:
+// 429/5xx/network errors must NOT drift into the new terminal bucket.
+func TestTransientFailureStillCoversRetryables(t *testing.T) {
+	for _, code := range []int{429, 500, 502, 503} {
+		err := statusErr(code)
+		if got := apistate.Classify(err, apistate.Disposition{}); got != apistate.StateTransientFailure {
+			t.Errorf("Classify(%d) = %q, want %q", code, got, apistate.StateTransientFailure)
+		}
 	}
 }
