@@ -312,6 +312,7 @@ _SENTINEL_ORDER = [
     "has_flows", "has_raw_flow", "has_rollup_flow", "has_unique", "has_posture",
     "has_routes", "has_derp", "has_nodemetrics", "has_stream", "has_webhook",
     "has_keys", "has_users_pe", "has_invites", "has_api_retry", "has_scrape_err",
+    "is_degraded",
     "has_path", "has_audit", "has_posture_integration", "has_logstream",
     "has_services", "has_tailnet_lock", "has_derp_rollup", "has_connectivity",
     "has_exit", "has_subnet", "has_exit_io", "has_acl_risk", "has_audit_changes",

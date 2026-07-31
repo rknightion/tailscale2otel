@@ -24671,7 +24671,7 @@
                               {
                                 "kind": "ConditionalRenderingVariable",
                                 "spec": {
-                                  "variable": "has_scrape_err",
+                                  "variable": "is_degraded",
                                   "operator": "matches",
                                   "value": ".+"
                                 }
@@ -24880,8 +24880,8 @@
                 {
                   "kind": "QueryVariable",
                   "spec": {
-                    "name": "has_scrape_err",
-                    "label": "has_scrape_err",
+                    "name": "is_degraded",
+                    "label": "is_degraded",
                     "hide": "hideVariable",
                     "query": {
                       "kind": "DataQuery",
@@ -24891,8 +24891,8 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "query": "label_values(tailscale2otel_scrape_errors_total, __name__)",
-                        "refId": "has_scrape_err"
+                        "query": "query_result((count(tailscale2otel_scrape_success_ratio == 0) or vector(0)) + (sum(increase(tailscale2otel_export_failures_total[1h])) or vector(0)) > 0)",
+                        "refId": "is_degraded"
                       }
                     },
                     "current": {

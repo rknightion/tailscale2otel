@@ -27,7 +27,7 @@ changed, and why:
   internals it used to carry (series active, enrich-cache size) are health-dashboard
   content and moved there.
 * **A gated "Exporter degradation detail" row** pairs with that strip (decision 2):
-  it renders only when `has_scrape_err` fires, and its whole job is to say WHICH
+  it renders only when `is_degraded` fires, and its whole job is to say WHICH
   collector or stage is degraded and SINCE WHEN — enough to decide whether to follow
   the "Exporter health ->" cross-link in the controls menu. It deliberately does not
   reproduce the diagnosis; that is what the link is for.
@@ -38,7 +38,7 @@ changed, and why:
   explorer and per-signal streams stay with their owning domain tabs.
 
 Sentinel scoping (#526): all three are declared HERE, at this tab's own scope.
-`has_scrape_err` gates the degradation row and nothing else. `has_multitailnet` and
+`is_degraded` gates the degradation row and nothing else. `has_multitailnet` and
 `has_acl_risk` were DASHBOARD-scoped, declared by `tabs/tailnets.py` and
 `tabs/security.py` — both of which this wave dissolved, so the declarations had to
 travel with the consumer rather than be assumed to survive. `has_acl_risk` is now
@@ -85,7 +85,23 @@ _TBL_INFRA = ["Time", "__name__", "job", "instance", "service_instance_id",
 def tab_tailnet_overview(scope):
     # Gates the degradation-detail row below, and nothing else on this dashboard —
     # hence this tab's scope rather than DASHBOARD.
-    sentinel("has_scrape_err", "tailscale2otel_scrape_errors_total", scope)
+    # NOT sentinel("...scrape_errors_total"): that is a PRESENCE check, and the
+    # counter exists from the first scrape whether or not it has ever been
+    # incremented — so the row rendered on a perfectly healthy exporter, showing
+    # two "No data" panels. Verified on a live render before this was fixed.
+    # Decision 2 asks for a row that appears when the exporter IS degraded, which
+    # is a threshold question, so it needs a raw query rather than presence.
+    #
+    # Fires when a collector's LAST scrape failed (a live condition) or an export
+    # failed within the hour (a counter, so recent history). Each side zero-fills
+    # independently, or a deployment missing one family entirely would drag the sum
+    # to no-result and hide the row exactly when the other side was firing.
+    raw_sentinel(
+        "is_degraded",
+        "query_result("
+        "(count(tailscale2otel_scrape_success_ratio == 0) or vector(0)) + "
+        "(sum(increase(tailscale2otel_export_failures_total[1h])) or vector(0)) > 0)",
+        scope)
     # Re-homed here in #526 wave 3. Both names used to be declared at DASHBOARD scope by
     # modules that no longer exist: has_multitailnet by tabs/tailnets.py, which decision 5
     # folds into this tab, and has_acl_risk by tabs/security.py, which decision 5 splits
@@ -254,7 +270,7 @@ def tab_tailnet_overview(scope):
                    "switches."),
     ]
 
-    # --- gated: exporter degradation detail (has_scrape_err) -----------------
+    # --- gated: exporter degradation detail (is_degraded) --------------------
     #
     # The strip above says "something is wrong"; this says WHICH collector or stage and
     # SINCE WHEN, which is exactly the amount needed to decide whether to cross over to
@@ -420,7 +436,7 @@ def tab_tailnet_overview(scope):
         autogrid_row("Audit & event rates", rates),
         autogrid_row("Capabilities", capabilities),
         # gated, below the always-on stack
-        autogrid_row("Exporter degradation detail", degraded, present="has_scrape_err"),
+        autogrid_row("Exporter degradation detail", degraded, present="is_degraded"),
         row("MSP / multi-tailnet summary", msp, present="has_multitailnet"),
         row("Security scorecard", scorecard, present="has_acl_risk"),
     ]
