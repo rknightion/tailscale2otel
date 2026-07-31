@@ -243,6 +243,13 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
 > walking for `go.mod`, so a new module is covered the day it is added) and SKIPs loudly rather than
 > silently passing when `golangci-lint`/`govulncheck` are absent. `internal/ci/workflowcontract_test.go`
 > fails if a module is missing from either CI matrix, or if `module-verify` stops running a leg.
+>
+> **It also runs `promqlcheck` against the ARTIFACTS, which is a different question from the module
+> legs and easy to conflate.** Building and unit-testing `tools/promqlcheck` proves nothing about the
+> dashboards and rules the repo ships; the artifact run parses every expression and resolves each
+> `$variable` against what is in scope where the panel actually sits. In CI it lives in the
+> "generated dashboards and rules are in sync" job, not in `module-verify`. #526 landed **65 real
+> failures on CI with every local gate green** for exactly this reason, which is why the leg exists.
 
 > **API drift CI** (see README "API drift CI" + `internal/oas`, `internal/tsapi/contract`,
 > `tools/apidrift`): the PR-time schema-driven **decode tests** and `oas` classifier tests run inside
