@@ -61,23 +61,43 @@ jobs:
       # networking/tailscale2otel-overview.json from the GitSync repo — a `gcx
       # dashboards delete` alone is undone by the next sync, which would simply
       # re-create it from the file still sitting there.
+      # Publishes the CURRENT SET and removes any tailscale2otel-*.json that is no
+      # longer in it, so retiring a dashboard is just deleting it from
+      # deploy/grafana/. Without the prune, #526's rename would have left the old
+      # `tailscale2otel-overview` file here forever, and GitSync would keep
+      # re-creating the orphaned dashboard from it no matter how often it was
+      # deleted through the API.
       - name: copy the generated dashboards into place
         run: |
           set -euo pipefail
-          cp deploy/grafana/tailscale2otel-tailnet.json gitsync/networking/tailscale2otel-tailnet.json
-          cp deploy/grafana/tailscale2otel-health.json  gitsync/networking/tailscale2otel-health.json
+          for src in deploy/grafana/tailscale2otel-*.json; do
+            cp "$src" "gitsync/networking/$(basename "$src")"
+          done
+          for existing in gitsync/networking/tailscale2otel-*.json; do
+            if [ ! -f "deploy/grafana/$(basename "$existing")" ]; then
+              echo "retiring $(basename "$existing") — no longer generated"
+              rm -f "$existing"
+            fi
+          done
 
       - name: commit and push
         working-directory: gitsync
         run: |
           set -euo pipefail
-          if git diff --quiet; then
-            echo "dashboard already matches the stack source"
+          # Stage FIRST, then diff the index. A bare `git diff` is blind to UNTRACKED
+          # files, so when #526 renamed the single artifact into a pair the two new
+          # filenames were invisible to it. This step reported "already matches" and
+          # exited 0 on three consecutive runs while publishing nothing at all — a
+          # green workflow that silently stopped doing its job. `git add -A` is
+          # required for the same reason: `commit -am` stages modifications only.
+          git add -A
+          if git diff --cached --quiet; then
+            echo "dashboards already match the stack source"
             exit 0
           fi
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -am "Sync tailscale2otel dashboard from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git commit -m "Sync tailscale2otel dashboards from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
           # Grafana commits UI saves into this repo on its own, so a push can lose a
           # race with the stack. Rebase and retry rather than failing the sync.
           for attempt in 1 2 3; do
