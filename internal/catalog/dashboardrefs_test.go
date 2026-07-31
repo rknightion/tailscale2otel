@@ -43,10 +43,19 @@ var dashboardPaths = []string{
 const rulesDir = "../../deploy/alerts/grafana-managed"
 
 // metricRef matches a bare Prometheus metric identifier in a PromQL expression.
-// Anchored on the tailscale2otel prefixes so it never picks up a label name, a
-// function, or a `tailscaled_*` passthrough series (those come from nodes, not
-// from this exporter's catalog, so the catalog cannot vouch for them).
-var metricRef = regexp.MustCompile(`\btailscale(?:2otel)?_[a-z0-9_]+`)
+// Anchored on the prefixes this exporter's catalog owns so it never picks up a
+// label name, a function, or a `tailscaled_*` passthrough series (those come from
+// nodes, not from this exporter's catalog, so the catalog cannot vouch for them).
+//
+// `process_` is in the alternation because the catalog carries the OTEL
+// process.* semantic-convention metrics (process.cpu.time, process.uptime) and a
+// pattern anchored only on the tailscale prefixes could not see them AT ALL.
+// That blindness was invisible while the only check ran panel -> catalog: an
+// unmatched name is simply not asked about. It became visible the moment #526
+// added the catalog -> panel direction, which reported both as reaching no panel
+// while two panels charted each of them. A gate that cannot see a family cannot
+// report it missing either — the failure was silent in the safe-looking direction.
+var metricRef = regexp.MustCompile(`\b(?:tailscale(?:2otel)?|process)_[a-z0-9_]+`)
 
 // catalogPromNames is every metric name the code can emit, in its normalized
 // Prometheus spelling, plus the histogram/summary suffixes Prometheus derives.

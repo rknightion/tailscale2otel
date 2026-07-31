@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "53",
+      "__panelId__": "54",
       "description": "min_over_time is what distinguishes a STUCK backlog from normal fill-and-drain: if the backlog ever reached zero in the window the minimum is zero and this cannot fire, so a busy feed that keeps catching up stays quiet. A backlog that never empties means ingestion is slower than the export writes \u2014 check the per-cycle object budget (objectstore.skipped{reason=\"per_cycle_budget\"}) and the poll interval. Note backlog and pending age are LOWER BOUNDS while objectstore.scan.truncated is 1, because the listing itself was cut short.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
       "summary": "The object-store backlog has not drained to zero in an hour"

@@ -169,7 +169,7 @@
       "prom_name": "process_cpu_time_seconds_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (Go runtime)."
     },
@@ -179,7 +179,7 @@
       "prom_name": "process_uptime_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (Go runtime)."
     },
@@ -1915,7 +1915,7 @@
       "prom_name": "tailscale2otel_annotation_degraded_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
@@ -1925,7 +1925,7 @@
       "prom_name": "tailscale2otel_annotation_dropped_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
@@ -1935,7 +1935,7 @@
       "prom_name": "tailscale2otel_annotation_published_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Delivery (annotations)."
     },
@@ -2147,7 +2147,7 @@
       "prom_name": "tailscale2otel_export_diagnostics_suppressed_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Delivery (OTLP export)."
     },
@@ -2187,7 +2187,7 @@
       "prom_name": "tailscale2otel_export_spans_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Delivery (OTLP export)."
     },
@@ -2299,7 +2299,7 @@
       "prom_name": "tailscale2otel_log_record_truncated_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (log truncation)."
     },
@@ -2309,7 +2309,7 @@
       "prom_name": "tailscale2otel_log_truncated_bytes_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (log truncation)."
     },
@@ -2319,7 +2319,7 @@
       "prom_name": "tailscale2otel_metrics_auth_rejected_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2329,7 +2329,7 @@
       "prom_name": "tailscale2otel_metrics_scrape_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2339,7 +2339,7 @@
       "prom_name": "tailscale2otel_metrics_scrape_gather_errors_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2349,7 +2349,7 @@
       "prom_name": "tailscale2otel_metrics_scrape_in_flight",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2359,7 +2359,7 @@
       "prom_name": "tailscale2otel_metrics_scrape_requests_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2566,7 +2566,7 @@
       "prom_name": "tailscale2otel_processor_dropped_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
@@ -2576,7 +2576,7 @@
       "prom_name": "tailscale2otel_processor_queue_capacity_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
@@ -2586,7 +2586,7 @@
       "prom_name": "tailscale2otel_processor_queue_size_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
@@ -2596,7 +2596,7 @@
       "prom_name": "tailscale2otel_profiling_upload_attempts_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2606,7 +2606,7 @@
       "prom_name": "tailscale2otel_profiling_upload_consecutive_failures_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2616,7 +2616,7 @@
       "prom_name": "tailscale2otel_profiling_upload_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2626,7 +2626,7 @@
       "prom_name": "tailscale2otel_profiling_upload_failures_total",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2636,7 +2636,7 @@
       "prom_name": "tailscale2otel_profiling_upload_last_success_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2774,7 +2774,7 @@
       "prom_name": "tailscale2otel_scrape_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (scrape/poll)."
     },
@@ -2904,8 +2904,8 @@
       "prom_name": "tailscale2otel_tls_cert_not_after_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today."
     },
@@ -2915,7 +2915,7 @@
       "prom_name": "tailscale2otel_tls_cert_not_before_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload)."
     },
@@ -2925,8 +2925,8 @@
       "prom_name": "tailscale2otel_tls_cert_reload_failures_total",
       "surface": "self_obs",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today."
     },
@@ -2936,7 +2936,7 @@
       "prom_name": "tailscale2otel_tls_cert_reload_last_success_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload)."
     },

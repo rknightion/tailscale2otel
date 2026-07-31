@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "102",
+      "__panelId__": "143",
       "description": "Samples are being dropped because their metric name had not been seen before and the distinct forwarded-name budget (node_metrics.max_distinct_metrics) was already exhausted. The scrape still succeeds and the target still reports healthy, so nothing else surfaces the loss \u2014 the dropped names simply never appear in your backend. A sustained non-zero rate means either a target upgraded and now presents more names, or the budget is set below what the fleet actually emits. Raise the budget or filter at the target.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets",
       "summary": "Forwarded node metrics are being dropped by the metric-name budget"

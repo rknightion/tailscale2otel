@@ -21,13 +21,18 @@ rules = load_module("tailscale2otel_rules", ROOT / "deploy" / "alerts" / "gen" /
 
 
 class IngestFreshnessArtifactsTest(unittest.TestCase):
-    def test_events_dashboard_carries_freshness_panels(self):
-        doc = dashboard.build(dashboard.dashboards.TAILNET, True, only="Events & Logs")
+    def test_health_dashboard_carries_freshness_panels(self):
+        # #526 moved accepted-data freshness off the product "Events & Logs" tab to
+        # the health dashboard's Ingestion stage. It always described whether the
+        # EXPORTER was keeping up, not what happened on the tailnet, so it belongs
+        # beside the rest of the ingest pipeline. The panels were also merged, so
+        # this asserts on the METRIC names rather than the panel titles — those are
+        # what the alert rules and the staleness guidance below actually depend on,
+        # and they survive a consolidation that a title does not.
+        doc = dashboard.build(dashboard.dashboards.HEALTH, True, only="Ingestion")
         rendered = json.dumps(doc)
         for expected in (
             "Accepted event freshness",
-            "Accepted event age p95",
-            "Capture delay p95",
             "Timestamp skew/s",
             "tailscale2otel_ingest_last_event_timestamp_seconds",
             "tailscale2otel_ingest_event_age_seconds_bucket",

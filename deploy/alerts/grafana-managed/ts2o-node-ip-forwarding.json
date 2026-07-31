@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "306",
+      "__panelId__": "303",
       "description": "Tailscale delivered {{ $labels.tailscale_webhook_type }} webhook events in the last 15m \u2014 a node that should route traffic (exit node or subnet router) has IP forwarding disabled on the host OS, so that routing is silently broken until it is fixed (net.ipv4.ip_forward=1 / net.ipv6.conf.all.forwarding=1 on the node). This signal exists ONLY as a webhook \u2014 there is no log-streaming or polling equivalent \u2014 and it is emitted at INFO severity, so this rule is the only thing that surfaces it. Ships ENABLED: the webhook receiver is off by default, so the series is absent and the rule is inert for anyone not using it. It clears once the events stop arriving.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services",
       "summary": "Tailscale node IP forwarding misconfigured ({{ $labels.tailscale_webhook_type }})"

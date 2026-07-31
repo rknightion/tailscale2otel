@@ -43,9 +43,22 @@ DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
 # --- the budget ------------------------------------------------------------
 # Measured 2026-07-27: 405 panels, 484 queries, 58 sentinels, worst tab
 # "Exporter Diagnostics" at 83 panels / 108 queries.
+#
+# Re-measured after #526: 466 panels, 571 queries across the FAMILY. The rise is
+# deliberate and is the point of that issue — the health tabs added panels for 25
+# signals that previously reached no panel at all, including two an alert could
+# fire on while nothing charted them.
+#
+# The budget is measured over both artifacts because that is the load a stack
+# actually carries. A per-file budget would be satisfiable by moving panels to the
+# other dashboard, which is not a saving.
+#
+# MAX_PANELS_PER_TAB is a backstop, not the design target: #526 holds a leaf to
+# ~35 panels and Overview to 30, enforced separately in test_dashboard_specs.py.
+# This one only catches a tab growing without bound.
 
-MAX_PANELS_TOTAL = 460
-MAX_QUERIES_TOTAL = 560
+MAX_PANELS_TOTAL = 520
+MAX_QUERIES_TOTAL = 640
 MAX_SENTINELS = 70          # the fixed per-load cost — see the module docstring
 MAX_PANELS_PER_TAB = 100
 MAX_QUERIES_PER_TAB = 130

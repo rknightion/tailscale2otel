@@ -47,7 +47,11 @@ ORIGINAL_LEAF_TABS = {
     "Security & Audit", "Policy & Config", "Kubernetes Audit", "Node Metrics", "Tailnets",
 }
 
-HEALTH_LEAF_TABS = {"Exporter Diagnostics", "Cardinality & Cost"}
+# The health dashboard's leaves after #526 reorganised it by PIPELINE STAGE. The
+# single 83-panel "Exporter Diagnostics" tab is gone; "Exporter internals" is its
+# residue — the rows that fit no stage cleanly — not a rename of it.
+HEALTH_LEAF_TABS = {"Overview", "Collection", "Ingestion", "Delivery", "Runtime",
+                    "Cost & Cardinality", "Exporter internals"}
 
 EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy",
                       "Events & Logs"]
@@ -184,9 +188,12 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
             self.assertGreater(len(panel_titles), 0, "leaf %r lost all its panels" % title)
 
     def test_total_panel_count_is_preserved_across_the_family(self):
-        # 437 measured 2026-07-29 after adding the Kubernetes Audit tab (#462, 32 new
-        # panels on top of the 405 measured 2026-07-27). Regrouping tabs must not add
-        # or drop a single panel element beyond a deliberate content change.
+        # 466 measured after #526's health rebuild. It is UP from the 437 measured
+        # 2026-07-29 (#462) because the health tabs added panels for 25 signals that
+        # previously reached none — the gap the coverage gate exists to close — while
+        # the Events & Logs split moved panels between the two artifacts rather than
+        # deleting them. Regrouping tabs must not add or drop a panel beyond a
+        # deliberate content change; this number moves only with one.
         #
         # Counted over the FAMILY since #526: the split moved 103 panels to
         # tailscale2otel-health, so a per-dashboard count would have to be lowered to
@@ -194,8 +201,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 437)
-        self.assertEqual(len(self.elements), 334, "tailnet dashboard")
+        self.assertEqual(total, 466)
+        self.assertEqual(len(self.elements), 308, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
         # The other half of the count above: #526 moved these two leaves rather than

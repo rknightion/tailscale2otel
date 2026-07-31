@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "29",
+      "__panelId__": "19",
       "description": "A non-collector subsystem ({{ $labels.component }} \u2014 receivers, admin server, streaming auto-configure) is logging errors. See the Reliability row on the Exporter Diagnostics tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
       "summary": "tailscale2otel component {{ $labels.component }} erroring"

@@ -327,6 +327,13 @@ _SENTINEL_ORDER = [
     "has_k8s_audit", "has_k8s_sensitive_reads", "has_k8s_exec_sessions",
     "has_k8s_mutations", "has_k8s_rbac_probes", "has_k8s_sessions",
     "has_k8s_schema_drift", "pii_command_text",
+    # #526: the health dashboard's opt-in subsystems. Appended at the end per the
+    # append-only rule. A name listed here but never registered is simply not
+    # emitted — this list is an ORDERING allowlist, not a declaration — so it is
+    # safe to reserve a name before the row that gates on it exists. The reverse
+    # is not: registering a name absent from this list raises.
+    "has_profiling", "has_tls", "has_annotations", "has_metrics_endpoint",
+    "has_processor_queue", "has_log_truncation", "has_siem",
 ]
 
 # --- scopes (#526) ----------------------------------------------------------

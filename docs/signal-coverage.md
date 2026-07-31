@@ -67,7 +67,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | pending_panel |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 218 | 203 | 57 | 11 | 14 |
-| self_obs | 92 | 65 | 29 | 9 | 27 |
+| self_obs | 92 | 92 | 29 | 9 | 0 |
 
 ## Operational signals
 
@@ -296,12 +296,12 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
-| `process.cpu.time` | metric | `process_cpu_time_seconds_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
-| `process.uptime` | metric | `process_uptime_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
+| `process.cpu.time` | metric | `process_cpu_time_seconds_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
+| `process.uptime` | metric | `process_uptime_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
 | `tailscale2otel.admin.auth.rejected` | metric | `tailscale2otel_admin_auth_rejected_total` | visualized, alertable |  |
-| `tailscale2otel.annotation.degraded` | metric | `tailscale2otel_annotation_degraded_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
-| `tailscale2otel.annotation.dropped` | metric | `tailscale2otel_annotation_dropped_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
-| `tailscale2otel.annotation.published` | metric | `tailscale2otel_annotation_published_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
+| `tailscale2otel.annotation.degraded` | metric | `tailscale2otel_annotation_degraded_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
+| `tailscale2otel.annotation.dropped` | metric | `tailscale2otel_annotation_dropped_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
+| `tailscale2otel.annotation.published` | metric | `tailscale2otel_annotation_published_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (annotations). |
 | `tailscale2otel.api.availability` | metric | `tailscale2otel_api_availability_ratio` | visualized, alertable |  |
 | `tailscale2otel.api.duration` | metric | `tailscale2otel_api_duration_seconds` | visualized |  |
 | `tailscale2otel.api.last_probe` | metric | `tailscale2otel_api_last_probe_seconds` | visualized |  |
@@ -323,11 +323,11 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.enrich.cache_age` | metric | `tailscale2otel_enrich_cache_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.enrich.cache_size` | metric | `tailscale2otel_enrich_cache_size_ratio` | visualized |  |
 | `tailscale2otel.export.datapoints` | metric | `tailscale2otel_export_datapoints_total` | visualized, alertable |  |
-| `tailscale2otel.export.diagnostics.suppressed` | metric | `tailscale2otel_export_diagnostics_suppressed_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
+| `tailscale2otel.export.diagnostics.suppressed` | metric | `tailscale2otel_export_diagnostics_suppressed_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
 | `tailscale2otel.export.duration` | metric | `tailscale2otel_export_duration_seconds` | visualized, alertable, recorded |  |
 | `tailscale2otel.export.failures` | metric | `tailscale2otel_export_failures_total` | visualized, alertable |  |
 | `tailscale2otel.export.log_records` | metric | `tailscale2otel_export_log_records_total` | visualized |  |
-| `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
+| `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |
@@ -339,22 +339,22 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingress_wal.orphan.stages` | metric | `tailscale2otel_ingress_wal_orphan_stages_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.entries` | metric | `tailscale2otel_ingress_wal_pending_entries_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.size` | metric | `tailscale2otel_ingress_wal_pending_size_bytes` | visualized |  |
-| `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
-| `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
-| `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
-| `tailscale2otel.metrics.scrape.duration` | metric | `tailscale2otel_metrics_scrape_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
-| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
-| `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
-| `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
+| `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
+| `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.duration` | metric | `tailscale2otel_metrics_scrape_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.pii_filter.category` | metric | `tailscale2otel_pii_filter_category_ratio` | visualized |  |
-| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
-| `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
-| `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
-| `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.runtime.gc.count` | metric | `tailscale2otel_runtime_gc_count_total` | visualized |  |
 | `tailscale2otel.runtime.gc.cpu_fraction` | metric | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.next_target` | metric | `tailscale2otel_runtime_gc_next_target_bytes` | visualized |  |
@@ -369,7 +369,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.runtime.memory.stack_inuse` | metric | `tailscale2otel_runtime_memory_stack_inuse_bytes` | visualized |  |
 | `tailscale2otel.runtime.memory.sys` | metric | `tailscale2otel_runtime_memory_sys_bytes` | visualized |  |
 | `tailscale2otel.scrape.budget` | metric | `tailscale2otel_scrape_budget_ratio` | visualized, alertable |  |
-| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Collection (scrape/poll). |
+| `tailscale2otel.scrape.duration` | metric | `tailscale2otel_scrape_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Collection (scrape/poll). |
 | `tailscale2otel.scrape.duration.histogram` | metric | `tailscale2otel_scrape_duration_histogram_seconds` | visualized | Distribution of collector scrape durations, recorded with the scrape span so an exemplar links a bucket back to the trace. Now visualized: #369's follow-up replaced the flagship dashboard's last-value scrape-duration panel with p50/p95/p99 over this histogram, which is what the issue's acceptance asked for. The pre-existing scrape.duration gauge is retained alongside it. |
 | `tailscale2otel.scrape.errors` | metric | `tailscale2otel_scrape_errors_total` | visualized, alertable |  |
 | `tailscale2otel.scrape.last_timestamp` | metric | `tailscale2otel_scrape_last_timestamp_seconds` | visualized, alertable |  |
@@ -382,10 +382,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.subrequest.attempts` | metric | `tailscale2otel_subrequest_attempts_total` | visualized |  |
 | `tailscale2otel.subrequest.coverage` | metric | `tailscale2otel_subrequest_coverage_ratio` | visualized |  |
 | `tailscale2otel.subrequest.failures` | metric | `tailscale2otel_subrequest_failures_total` | visualized |  |
-| `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
-| `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
-| `tailscale2otel.tls.cert.reload.failures` | metric | `tailscale2otel_tls_cert_reload_failures_total` | alertable, pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
-| `tailscale2otel.tls.cert.reload.last_success` | metric | `tailscale2otel_tls_cert_reload_last_success_seconds` | pending_panel | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
+| `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
+| `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
+| `tailscale2otel.tls.cert.reload.failures` | metric | `tailscale2otel_tls_cert_reload_failures_total` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
+| `tailscale2otel.tls.cert.reload.last_success` | metric | `tailscale2otel_tls_cert_reload_last_success_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |
 | `tailscale2otel.up` | metric | `tailscale2otel_up_ratio` | visualized, alertable, recorded |  |
 | `tailscale2otel.update_available` | metric | `tailscale2otel_update_available_ratio` | visualized, alertable |  |
 

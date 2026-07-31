@@ -68,6 +68,14 @@ BOOL_PANELS = {
     # object-store feed health: gap.healthy is 1-is-healthy, scan.truncated is inverse
     # risk, and they sit side by side — the pair is exactly the shape #385 got wrong.
     ("Object-store gaps clear", "stat"): {"0": ("GAPS", "red"), "1": ("CLEAN", "green")},
+    # #526. Two panels that moved onto the health dashboard, with OPPOSITE polarity —
+    # kept adjacent here on purpose, because a "simplify these onto one shared map"
+    # refactor is exactly what #385 was.
+    #   discovery OK      1 = healthy   (normal polarity: UP is good)
+    #   delivery degraded 1 = DEGRADED  (inverse risk: 1 is the bad state)
+    ("Node-metrics discovery OK", "stat"): {"0": ("DOWN", "red"), "1": ("UP", "green")},
+    ("Annotation delivery degraded", "stat"): {"0": ("healthy", "green"),
+                                               "1": ("degraded", "red")},
     ("Object listing complete", "stat"): {"0": ("complete", "green"),
                                           "1": ("truncated", "red")},
     ("OAuth scope preflight by capability", "table"): {"0": ("NOT SATISFIED", "red"),

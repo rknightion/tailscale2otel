@@ -55,11 +55,7 @@ STATE_KEY = (
 
 def tab_events(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_stream", "tailscale_stream_records_total", DASHBOARD)
     sentinel("has_webhook", "tailscale_webhook_events_total", DASHBOARD)
-    sentinel("has_logstream", "tailscale_logstream_configured_ratio", DASHBOARD)
-    sentinel("has_recv_dur", "tailscale_stream_request_duration_seconds_count", DASHBOARD)
-    sentinel("has_ingest", "tailscale2otel_ingest_records_total", DASHBOARD)
 
     rates = [
         (panel("Audit events/s by action", "timeseries",
@@ -159,20 +155,6 @@ def tab_events(scope):
                desc="Bounded known/unknown observations for audit action, origin, actor type, "
                     "and target property. Raw unknown values never enter metric labels."), 24, 7),
     ]
-    ingest = [
-        (panel("Stream records/s by type", "timeseries",
-               [prom_t("sum by (type) (rate(tailscale_stream_records_total[%s]))" % RI, legend="records {{type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Records accepted from the configured stream (HEC) receiver, by record type."), 8, 7),
-        (panel("Stream rejected/s by reason", "timeseries",
-               [prom_t("sum by (reason) (rate(tailscale_stream_rejected_total[%s]))" % RI, legend="rejected {{reason}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Stream records rejected before decoding, by rejection reason."), 8, 7),
-        (panel("Stream decode errors/s", "timeseries",
-               [prom_t("sum by (type) (rate(tailscale_stream_decode_errors_total[%s]))" % RI, legend="{{type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Stream records that failed to decode into a known record type."), 8, 7),
-    ]
     webhook = [
         (panel("Webhook events/s by type", "timeseries",
                [prom_t("sum by (tailscale_webhook_type) (rate(tailscale_webhook_events_total[%s]))" % RI, legend="{{tailscale_webhook_type}}")],
@@ -203,159 +185,16 @@ def tab_events(scope):
                options=logs_opts(),
                desc="Raw device-posture log lines; filter with the Log filter variable."), 24, 9),
     ]
-    streamhealth = [
-        (panel("Streams configured", "stat",
-               [prom_t("sum(max by (tailscale_logstream_type) (%s)) or vector(0)" % lot("tailscale_logstream_configured_ratio", WIN_SLOW), instant=True)],
-               unit="short", options=stat_opts(color="value"),
-               desc="Configuration/network log streams delivering to a SIEM sink."), 4, 6),
-        # No zero-fill: the error gauge is emitted only for a CONFIGURED stream, so the
-        # zero rendered a green "OK" for log types that deliver nowhere (#385).
-        (panel("Last delivery error", "stat",
-               [prom_t("max(%s)" % lot("tailscale_logstream_error_ratio", WIN_FAST), instant=True)],
-               mappings=bool_map("OK", "ERROR", "green", "red"),
-               thresholds=thr([(None, "green"), (1, "red")]), options=stat_opts(color="background"),
-               novalue="No delivery status — no configured log stream has reported one.",
-               desc="1 if any stream's last delivery reported an error (see the Delivery errors log)."), 4, 6),
-        (panel("Delivery throughput by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_bytes_sent_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
-               unit="Bps", custom=ts_custom(), options=ts_opts(),
-               desc="Bytes sent to the configured SIEM sink, by log type."), 8, 6),
-        (panel("Entries delivered/s by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_entries_sent_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Log entries successfully delivered to the SIEM sink, by log type."), 8, 6),
-        # #403 — log-stream request health. requests_total is the denominator the
-        # already-charted requests_failed_total needs: a flat failure rate means
-        # nothing without knowing whether anything was attempted.
-        (panel("Delivery requests/s by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(%s[%s]))"
-                       % (sel("tailscale_logstream_requests_total"), RI),
-                       legend="{{tailscale_logstream_type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Delivery requests attempted to the sink, per log type. Zero here with a "
-                    "configured stream means nothing is being sent at all, which the failure "
-                    "rate alone cannot show."), 8, 6),
-        (panel("Delivery failure ratio by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(%s[%s])) / clamp_min("
-                       "sum by (tailscale_logstream_type) (rate(%s[%s])), 0.001)"
-                       % (sel("tailscale_logstream_requests_failed_total"), RI,
-                          sel("tailscale_logstream_requests_total"), RI),
-                       legend="{{tailscale_logstream_type}}")],
-               unit="percentunit", min_=0, custom=ts_custom(), options=ts_opts(),
-               desc="Failed share of attempted delivery requests. The denominator is clamped, so "
-                    "a type with no attempts reads 0 rather than dividing by zero."), 8, 6),
-        (panel("Failed requests/s by type", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[%s]))" % RI, legend="{{tailscale_logstream_type}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Failed delivery requests to the sink — alert on a sustained rate."), 8, 6),
-        (panel("Backpressure: spoofed & max-body/s", "timeseries",
-               [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_spoofed_entries_total[%s]))" % RI, legend="spoofed {{tailscale_logstream_type}}", refid="A"),
-                prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_max_body_requests_total[%s]))" % RI, legend="max-body {{tailscale_logstream_type}}", refid="B")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Entries rejected as spoofed and requests that hit the max body size (SIEM backpressure)."), 8, 6),
-        (panel("Last activity age by type", "table",
-               [prom_t("time() - %s" % lot("tailscale_logstream_last_activity_seconds", WIN_SLOW), instant=True, fmt="table")],
-               unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                            "service_instance_id", "service_name", "service_namespace"],
-                                                   rename={"tailscale_logstream_type": "Log type", "Value": "Last activity age"})],
-               desc="Time since the most recent delivery activity per log type (alert on staleness)."), 8, 6),
-        (panel("Delivery errors", "logs",
-               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.logstream.error` |~ `$log_filter`", maxlines=100)],
-               options=logs_opts(), desc="Per-stream delivery errors; the error text is the log body."), 16, 7),
-    ]
-    receiver = [
-        (panel("Receiver in-flight", "timeseries",
-               [prom_t("tailscale_stream_inflight", legend="stream"),
-                prom_t("tailscale_webhook_inflight", legend="webhook")],
-               unit="short", custom=ts_custom(), options=ts_opts(),
-               desc="Requests currently being handled by the stream/webhook receivers — a "
-                    "sustained non-zero value means the receiver is backed up."), 8, 7),
-        (panel("Receiver latency p50/p95/p99 (stream)", "timeseries",
-               [prom_t(hq("0.5", "tailscale_stream_request_duration_seconds"), legend="p50"),
-                prom_t(hq("0.95", "tailscale_stream_request_duration_seconds"), legend="p95"),
-                prom_t(hq("0.99", "tailscale_stream_request_duration_seconds"), legend="p99")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
-               desc="Stream (HEC) receiver request-handling latency quantiles."), 8, 7),
-        (panel("Receiver rejected/s", "timeseries",
-               [prom_t("sum by (reason) (rate(tailscale_stream_rejected_total[%s]))" % RI, legend="stream {{reason}}"),
-                prom_t("sum by (reason) (rate(tailscale_webhook_rejected_total[%s]))" % RI, legend="webhook {{reason}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
-               desc="Requests rejected by either receiver, by reason — combines stream and webhook."), 8, 7),
-    ]
-    ingestvol = [
-        (panel("Ingest records/s by source+signal", "timeseries",
-               [prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI, legend="{{source}}/{{signal}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Records accepted across every ingestion path, by source and signal type."), 12, 7),
-        (panel("Ingest decoded bytes/s by source", "timeseries",
-               [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
-               unit="Bps", custom=ts_custom(), options=ts_opts(),
-               desc="Decoded payload bytes accepted across every ingestion path, by source."), 12, 7),
-        # The three ingestion paths count rejections under three differently-named
-        # metrics, so until now they could not be read on one axis against the
-        # accepted volume directly above. The label_replace + `or` union is what
-        # puts them on one footing; `+` would be a one-to-one join that silently
-        # drops any source present in only one operand, which is the normal case
-        # here because each receiver is independently optional.
-        (panel("Rejected/s by ingestion source", "timeseries",
-               [prom_t('sum by (source) ('
-                       'label_replace(rate(tailscale_stream_rejected_total[%(w)s]), "source", "stream", "", "") or '
-                       'label_replace(rate(tailscale_webhook_rejected_total[%(w)s]), "source", "webhook", "", "") or '
-                       'label_replace(rate(tailscale2otel_objectstore_skipped_total[%(w)s]), "source", "objectstore", "", "")'
-                       ')' % {"w": RI}, legend="{{source}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Rejections and skips from every ingestion path on one axis, to read against "
-                    "accepted volume above. A source missing here is a source that has never "
-                    "rejected anything, not one that is failing silently — the receivers are "
-                    "independently optional. Object-store contributes its skipped-object count, "
-                    "which includes per-cycle budget skips as well as faults, so read it alongside "
-                    "the by-reason breakdown on Exporter Diagnostics rather than as pure loss."), 12, 7),
-    ]
-    ingestfresh = [
-        (panel("Accepted event freshness", "timeseries",
-               [prom_t("clamp_min(time() - max by (source, signal) "
-                       "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
-                       legend="{{source}}/{{signal}}")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
-               desc="Seconds since the greatest event timestamp accepted from each source/signal. "
-                    "Unlike receiver liveness, this exposes stale-but-still-running ingestion."), 6, 7),
-        (panel("Accepted event age p95", "timeseries",
-               [prom_t("histogram_quantile(0.95, sum by (le, source, signal) "
-                       "(rate(tailscale2otel_ingest_event_age_seconds_bucket[%s])))" % RI,
-                       legend="{{source}}/{{signal}}")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
-               desc="p95 age at acceptance. Backfills and retries raise this without moving the "
-                    "last-event timestamp backwards."), 6, 7),
-        (panel("Capture delay p95", "timeseries",
-               [prom_t("histogram_quantile(0.95, sum by (le, source, signal) "
-                       "(rate(tailscale2otel_ingest_capture_delay_seconds_bucket[%s])))" % RI,
-                       legend="{{source}}/{{signal}}")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
-               desc="p95 upstream capture/observation delay where the wire format supplies a "
-                    "capture timestamp separately from event time."), 6, 7),
-        (panel("Timestamp skew/s", "timeseries",
-               [prom_t("sum by (source, signal) "
-                       "(rate(tailscale2otel_ingest_timestamp_skew_total[%s]))" % RI,
-                       legend="{{source}}/{{signal}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
-               desc="Events whose timestamp is later than local acceptance, or whose capture "
-                    "timestamp precedes event time. Negative derived durations are clamped to zero."), 6, 7),
-    ]
-    dedup = [
-        (panel("Dedup hits/s", "stat",
-               [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_hits_total[%s]))" % RI, legend="{{dedup_set}}")],
-               unit="cps", options=stat_opts(color="value"),
-               desc="Duplicate records suppressed by the cross-source dedup failsafe, per set."), 6, 7),
-        (panel("Dedup set fill", "timeseries",
-               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="{{dedup_set}}")],
-               unit="short", custom=ts_custom(), options=ts_opts(),
-               desc="Keys currently held in each bounded dedup set (a count, despite the metric's "
-                    "`_ratio` suffix)."), 9, 7),
-        (panel("Dedup evictions/s", "timeseries",
-               [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[%s]))" % RI, legend="{{dedup_set}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(),
-               desc="Entries evicted from a dedup set on capacity pressure, per set."), 9, 7),
-    ]
+    # #526 decision 9 moved the exporter-pipeline rows to the health dashboard:
+    # stream/webhook INTAKE, receiver health, ingestion volume, accepted-data
+    # freshness and dedup effectiveness (-> health/Ingestion), and SIEM log delivery
+    # (-> health/Delivery). They described whether the EXPORTER was working, on a tab
+    # an operator opens to read what happened on their TAILNET — and a panel that
+    # answers a different question than the tab it sits on is one an operator learns
+    # to scroll past.
+    #
+    # What stays is what a tailnet event actually is: the audit trail, the webhook
+    # events themselves, the log explorer, and the per-signal log streams.
     return [row("Audit & event rates", rates),
             # #393 — ungated on purpose: the row's whole job is to tell "no data"
             # apart from "no collector", and a presence gate would hide the answer
@@ -363,12 +202,7 @@ def tab_events(scope):
             row("Audit pipeline state", auditstate),
             row("Audit pipeline latency", auditlatency, present="has_audit"),
             row("Audit schema drift", auditdrift, present="has_audit"),
-            row("Stream ingestion", ingest, present="has_stream"),
-            row("Log streaming delivery (SIEM)", streamhealth, present="has_logstream"),
             row("Webhooks", webhook, present="has_webhook"),
-            row("Receiver health", receiver, present="has_recv_dur"),
-            row("Ingestion volume", ingestvol, present="has_ingest"),
-            row("Accepted-data freshness", ingestfresh, present="has_ingest"),
-            row("Dedup effectiveness", dedup, present="has_selfobs"),
             row("Log explorer", logstream),
-            row("Flow logs", flowlogs, present="has_flows"), row("Posture logs", posturelogs, present="has_posture")]
+            row("Flow logs", flowlogs, present="has_flows"),
+            row("Posture logs", posturelogs, present="has_posture")]

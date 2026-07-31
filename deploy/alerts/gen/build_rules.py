@@ -557,7 +557,8 @@ def groups():
               "directory, not the working directory, which is a common way for an issuer to renew "
               "a file the exporter never reads.",
               domain="observability", paused=False,
-              policy="optional", runbook="tls-certificate-rotation"),
+              policy="optional", runbook="tls-certificate-rotation",
+              panel="TLS certificate expiry countdown"),
         alert("ts2o-tls-cert-reload-failing", "TLS certificate reload failing",
               "sum by (component) (increase(tailscale2otel_tls_cert_reload_failures_total[1h]))",
               "gt", 0, "30m", "warning",
@@ -570,7 +571,8 @@ def groups():
               "the current certificate nears expiry. The status page carries the last failure "
               "reason per listener.",
               domain="observability", paused=False,
-              policy="optional", runbook="tls-certificate-rotation"),
+              policy="optional", runbook="tls-certificate-rotation",
+              panel="TLS certificate reload failures"),
         alert("ts2o-collector-scrape-failing", "Collector scrape failing",
               "min by (tailscale_collector) (tailscale2otel_scrape_success_ratio)",
               "lt", 1, "15m", "warning",
@@ -1321,7 +1323,7 @@ def groups():
               "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) "
               "— investigate the sender or HEC/webhook config.",
               domain="infra", paused=True,
-              policy="optional", runbook="ingest-receivers", panel="Receiver rejected/s"),
+              policy="optional", runbook="ingest-receivers", panel="Receiver rejected/s (stream + webhook)"),
         alert("ts2o-receiver-latency-high", "Receiver request latency high (p99)",
               "histogram_quantile(0.99, sum by (le) (rate(tailscale_stream_request_duration_seconds_bucket[10m])))",
               "gt", 5, "10m", "warning",
@@ -1339,7 +1341,7 @@ def groups():
               "sources are legitimately idle; enable it only for source/signal pairs expected to deliver "
               "continuously, and add label filters or tune the threshold for that workload.",
               domain="observability", paused=True, lookback=2592000,
-              policy="optional", runbook="ingest-receivers", panel="Accepted event freshness"),
+              policy="optional", runbook="ingest-receivers", panel="Accepted event freshness & age p95"),
         # --- WU12b: posture integration match rate ---
         alert("ts2o-posture-match-low", "Posture integration match rate low",
               "min(tailscale_posture_integration_matched_ratio / "
@@ -1403,7 +1405,7 @@ def groups():
               "stopped entirely.",
               domain="observability", paused=True,
               policy="optional", runbook="object-store-ingestion",
-              panel="Newest exported object age"),
+              panel="Object-store age (cursor & newest object)"),
         alert("ts2o-objectstore-backlog-stuck", "Object-store backlog stuck",
               "max(min_over_time(tailscale2otel_objectstore_backlog_ratio[1h]))",
               "gt", 0, "30m", "warning",
@@ -1484,7 +1486,7 @@ def groups():
               "schema drift/s by field\" against the receiver's expected shape and update the decoder.",
               domain="observability", paused=True,
               policy="optional", runbook="ingest-receivers",
-              panel="Webhook payload schema drift/s by field"),
+              panel="Webhook accepted vs duplicates & schema drift/s"),
         alert("ts2o-nodemetrics-name-budget", "Node-metrics name budget exhausted",
               "sum(rate(tailscale2otel_nodemetrics_metric_names_dropped_total[15m]))",
               "gt", 0, "30m", "warning",

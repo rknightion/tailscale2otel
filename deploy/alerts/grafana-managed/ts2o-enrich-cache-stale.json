@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "17",
+      "__panelId__": "148",
       "description": "The IP/nodeID->name enrichment cache has not refreshed in over 1h \u2014 flow/audit name resolution is degrading to unknown/external. The devices collector populates this cache; check it is enabled and scraping.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery",
       "summary": "Device-enrichment cache is stale"
