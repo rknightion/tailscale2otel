@@ -60,7 +60,24 @@ Both add a compile-time assertion in the subpackage, e.g. `var _ collector.Snaps
 4. **Register in `internal/app/collectors.go`** (`registerCollectors`): `registry.Register(c, interval)`
    for snapshot, or `registry.RegisterWindow(c, interval, initialLookback, maxWindow)` for window. Gate
    on the collector's config `Enabled` flag (and, for window collectors, `pollSource(cfg.Source)` so a
-   `stream`-only deployment doesn't also poll).
+   `stream`-only deployment doesn't also poll). **Also pass the availability tracker** —
+   `WithAPIState(rt.apiState)`, or `Options.APIState` for the two options-struct collectors.
+4b. **Record availability, or the collector ships dark** (#524). Call
+   `apistate.Observe(e, c.tracker, c.Name(), opConst, apistate.Disposition{}, err, c.now())` right after
+   each API call, **before** branching on `err` — success is observed too, and a collector that never
+   observes reads `unknown` on the status page forever AND cannot fire either of the two shipped
+   availability alerts. `TestEveryRegisteredCollectorRecordsAPIState` (internal/app) fails if you skip it.
+   Three traps:
+   - **Disposition is `apistate.Disposition{}`.** An ambiguous 403 must stay `scope_denied`; `flowlogs`
+     is the ONLY operation allowed `DisabledOn: []int{403}`, because upstream documents its 403 as the
+     feature gate. See the `internal/apistate` package doc before deviating.
+   - **The metric and the tracker are separate.** `Observe` emits the metric even with a nil tracker, so
+     forgetting `WithAPIState` in step 4 alerts fine and still shows `unknown` on the capability matrix.
+   - **Operation naming.** Use the upstream operationId from `spec/tailscale-api.json` — EXCEPT a
+     per-entity subrequest, which must record under its bounded **subrequest name** (`device_posture`,
+     `device_invites`, `user_invites`), because `internal/app/capability.go` joins a subrequest row on
+     `operation == sub.Name`. Aggregate a per-entity loop into ONE entry per tick (first error wins; emit
+     nothing at all if zero attempts, so an unprobed operation stays honestly `unknown`).
 5. **Wire into the global catalog** (`internal/catalog/catalog.go`): add `<name>.Catalog` / `<name>.LogCatalog`.
 6. **Test:** drive `Collect`/`CollectWindow` with a fake `api`; `catalog_test.go` should assert emitted
    signals match the declared catalog. Then regenerate docs:
