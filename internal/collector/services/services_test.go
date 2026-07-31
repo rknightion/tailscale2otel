@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -270,5 +271,194 @@ func TestGuard_RawServiceAddressesNeverEmitted(t *testing.T) {
 		for _, p := range rec.MetricPoints(name) {
 			checkAttrs(p.Attrs)
 		}
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+// Fails the test outright if any operation has two states pinned at 1 — the
+// signal that a duplicate Observe call clobbered the tracker entry.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailabilityListServicesStates is the #524 acceptance case for the
+// listServices operation: it must classify (not blanket-propagate) the
+// Services() error, exactly like webhooks/postureintegrations do for their own
+// single-call operations.
+func TestAvailabilityListServicesStates(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantErr   bool
+		wantState apistate.State
+	}{
+		{"success", nil, false, apistate.StateSupported},
+		{"401 credential rejected", &tsapi.StatusError{Code: 401}, true, apistate.StateCredentialRejected},
+		{"403 scope denied", &tsapi.StatusError{Code: 403}, true, apistate.StateScopeDenied},
+		{"400 request rejected", &tsapi.StatusError{Code: 400}, true, apistate.StateRequestRejected},
+		{"transport error", context.DeadlineExceeded, true, apistate.StateTransientFailure},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			api := &fakeAPI{svcs: sampleServices(), svcErr: tc.err}
+			c := New(api, 0, WithAPIState(apistate.NewTracker()))
+			err := c.Collect(context.Background(), rec.Emitter())
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("Collect() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if got := availabilityStates(t, rec)[opListServices]; got != string(tc.wantState) {
+				t.Errorf("listServices availability = %q, want %q", got, tc.wantState)
+			}
+		})
+	}
+}
+
+// TestAvailabilitySuccessfulTickBothOperationsSupported covers a fully clean
+// tick with collect_hosts on and N>0 services: both listServices and
+// listServiceHosts must read supported.
+func TestAvailabilitySuccessfulTickBothOperationsSupported(t *testing.T) {
+	api := &fakeAPI{
+		svcs: sampleServices(),
+		hosts: map[string][]tsapi.ServiceHost{
+			"svc:argocd": {{NodeID: "n1", ApprovalLevel: "approved:auto", Configured: "ready"}},
+			"svc:grpc":   {{NodeID: "n2", ApprovalLevel: "approved:auto", Configured: "ready"}},
+		},
+	}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithCollectHosts(true), WithAPIState(apistate.NewTracker()))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	states := availabilityStates(t, rec)
+	if states[opListServices] != string(apistate.StateSupported) {
+		t.Errorf("listServices availability = %q, want supported", states[opListServices])
+	}
+	if states[opListServiceHosts] != string(apistate.StateSupported) {
+		t.Errorf("listServiceHosts availability = %q, want supported", states[opListServiceHosts])
+	}
+}
+
+// TestAvailabilityListServicesObservedOnceDespiteTwoCallers is the #524 trap
+// regression: Services() and ServiceAddrs() both hit GET .../services, and
+// with the enrich cache wired both run every tick. listServices must still be
+// observed exactly once, not twice.
+func TestAvailabilityListServicesObservedOnceDespiteTwoCallers(t *testing.T) {
+	cache := enrich.NewDeviceCache()
+	api := &fakeAPI{svcs: sampleServices(), addrs: sampleServiceAddrs()}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithEnrichCache(cache), WithAPIState(apistate.NewTracker()))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	states := availabilityStates(t, rec) // fails outright on a duplicate entry
+	if states[opListServices] != string(apistate.StateSupported) {
+		t.Errorf("listServices availability = %q, want supported", states[opListServices])
+	}
+	var count int
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		if p.Attrs["tailscale.api.operation"] == opListServices {
+			count++
+		}
+	}
+	if want := len(apistate.States()); count != want {
+		t.Errorf("listServices availability points = %d, want %d (exactly one Observe call this tick)", count, want)
+	}
+}
+
+// TestAvailabilityHostsFailingWhileServicesSucceed covers the mixed-outcome
+// tick: listServices clean, listServiceHosts denied — both must be correct in
+// the same tick, independently.
+func TestAvailabilityHostsFailingWhileServicesSucceed(t *testing.T) {
+	api := &fakeAPI{
+		svcs: sampleServices(),
+		hostErr: map[string]error{
+			"svc:argocd": &tsapi.StatusError{Code: 403},
+			"svc:grpc":   &tsapi.StatusError{Code: 403},
+		},
+	}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithCollectHosts(true), WithAPIState(apistate.NewTracker()))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect should not fail on a per-service host error: %v", err)
+	}
+	states := availabilityStates(t, rec)
+	if states[opListServices] != string(apistate.StateSupported) {
+		t.Errorf("listServices availability = %q, want supported", states[opListServices])
+	}
+	if states[opListServiceHosts] != string(apistate.StateScopeDenied) {
+		t.Errorf("listServiceHosts availability = %q, want scope_denied", states[opListServiceHosts])
+	}
+}
+
+// TestAvailabilityNoHostAttemptsEmitsNoEntry is the #524 zero-attempts case:
+// listServiceHosts must stay unknown (no availability entry at all) rather
+// than falsely claiming a state, both when collect_hosts is off and when there
+// are no services to iterate.
+func TestAvailabilityNoHostAttemptsEmitsNoEntry(t *testing.T) {
+	assertNoHostsEntry := func(t *testing.T, rec *telemetrytest.Recorder) {
+		t.Helper()
+		for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+			if p.Attrs["tailscale.api.operation"] == opListServiceHosts {
+				t.Fatalf("unexpected listServiceHosts availability point: %+v", p)
+			}
+		}
+	}
+
+	t.Run("collect_hosts off", func(t *testing.T) {
+		rec := telemetrytest.New()
+		c := New(&fakeAPI{svcs: sampleServices()}, 0, WithAPIState(apistate.NewTracker()))
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		assertNoHostsEntry(t, rec)
+	})
+
+	t.Run("no services", func(t *testing.T) {
+		rec := telemetrytest.New()
+		c := New(&fakeAPI{svcs: nil}, 0, WithCollectHosts(true), WithAPIState(apistate.NewTracker()))
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		assertNoHostsEntry(t, rec)
+	})
+}
+
+// TestAvailabilityTrackerAndClock mirrors postureintegrations'
+// TestAvailabilitySupportedAndTracker: the tracker records one entry and the
+// last-probe gauge uses the injected clock.
+func TestAvailabilityTrackerAndClock(t *testing.T) {
+	probe := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{svcs: sampleServices()}, 0, WithAPIState(tr), WithClock(func() time.Time { return probe }))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	// collect_hosts is off, so only the listServices entry is recorded.
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "services" || snap[0].Operation != opListServices {
+		t.Fatalf("tracker snapshot = %+v, want one services/listServices entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
 	}
 }

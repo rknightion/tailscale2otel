@@ -284,12 +284,21 @@ func TestRender_CapabilityMatrix(t *testing.T) {
 	for _, want := range []string{
 		`data-tab="capabilities"`, `data-target="capabilities"`,
 		"devices:core:read", "device_invites", "devices_invites:read",
-		"scope_denied", "insufficient", "unsupported", "not polling", "stream",
+		"scope_denied", "insufficient", "unsupported", "stream",
 		"2026-07-25T12:00:00Z",
+		// The flowlogs row is not registered for polling because it streams in
+		// instead (#524) — it reads as informational prose, not the bare
+		// "not polling" token.
+		"ingested via streaming receiver — not polled",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("capability tab missing %q", want)
 		}
+	}
+	// The dns row (Reason=unsupported, no streaming Source) keeps the old plain
+	// pending badge — only the two streaming sources get the new treatment.
+	if !strings.Contains(out, `<span class="badge pending">unsupported</span>`) {
+		t.Error("non-streaming not-active row should still render the plain pending badge")
 	}
 	// Summary tiles: 2 active, 1 actionable, 1 running scope gap.
 	for _, want := range []string{
@@ -300,6 +309,171 @@ func TestRender_CapabilityMatrix(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("capability summary missing %q", want)
 		}
+	}
+}
+
+// TestRender_CapabilitiesTableGetsTallerScroll asserts the capability matrix's
+// scroll box (#524) gets its own taller modifier class rather than the shared
+// 460px cap every other scrollable table uses — the matrix has a fixed,
+// known-in-advance row count (one per configurable capability, e.g. 18 on a
+// real deployment) so clipping it to ~8 visible rows permanently hides half
+// the table it exists to present. The other long tables (API endpoints,
+// devices, metrics catalog, log events, cardinality's three lists) are
+// variable-length/searchable, not a fixed small inventory, so they must NOT
+// gain the modifier — a regression there would silently make ten tables tall
+// instead of one.
+func TestRender_CapabilitiesTableGetsTallerScroll(t *testing.T) {
+	s := statusdata.Status{
+		Devices: []statusdata.DeviceRow{{Name: "laptop"}},
+		API:     statusdata.APIInfo{Endpoints: []statusdata.APIEndpoint{{Endpoint: "/api/v2/devices"}}},
+		CapabilityMatrix: []statusdata.CapabilityRow{
+			{Collector: "devices", Capability: "devices", Active: true},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+
+	if got := strings.Count(out, `<div class="scroll tall">`); got != 1 {
+		t.Fatalf("want exactly 1 tall scroll box (capabilities), got %d", got)
+	}
+	capIdx := strings.Index(out, `id="panel-capabilities"`)
+	tallIdx := strings.Index(out, `<div class="scroll tall">`)
+	nextSectionIdx := strings.Index(out[capIdx+1:], "<!-- ═══")
+	if capIdx < 0 || tallIdx < capIdx || (nextSectionIdx >= 0 && tallIdx > capIdx+1+nextSectionIdx) {
+		t.Errorf("the tall scroll box is not inside the capabilities panel")
+	}
+	// Every other .scroll box must keep the plain (460px) variant. This fixture
+	// renders 4 of them unconditionally/via the populated fields above: API
+	// endpoints, devices, the metrics catalog, and log events. (Cardinality's
+	// three scroll boxes are gated behind Cardinality.Available, unset here.)
+	if got := strings.Count(out, `class="scroll"`); got != 4 {
+		t.Errorf("expected exactly 4 plain-scroll tables to be unaffected, got %d", got)
+	}
+}
+
+// TestRender_CapabilityStreamedRowIsInformational asserts a capability row
+// that is not polling BECAUSE its data streams in instead (#524) reads as a
+// healthy, intended state — plain-English prose naming the actual source,
+// styled distinctly from both the red/amber fault badges and the ambiguous
+// grey "pending" badge used for a genuine not-yet-registered gap.
+func TestRender_CapabilityStreamedRowIsInformational(t *testing.T) {
+	s := statusdata.Status{
+		CapabilityMatrix: []statusdata.CapabilityRow{
+			{Collector: "flowlogs", Capability: "flowlogs", ConfigEnabled: true, ProviderSupported: true,
+				Active: false, Reason: statusdata.CapabilityReasonNotRegistered, Source: "stream",
+				ScopeStatus: statusdata.ScopeSatisfied, State: "unknown"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<span class="badge info">`,
+		"ingested via streaming receiver — not polled",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("streamed capability row missing %q", want)
+		}
+	}
+	if strings.Contains(out, `<span class="badge pending">not polling</span>`) {
+		t.Error("a deliberately-streamed row must not be styled as the ambiguous pending badge")
+	}
+	if strings.Contains(out, `<span class="badge err`) || strings.Contains(out, `<span class="badge warn`) {
+		t.Error("a deliberately-streamed row must never read as a fault")
+	}
+}
+
+// TestRender_CapabilityObjectstoreRowIsInformational is the object-store
+// counterpart of TestRender_CapabilityStreamedRowIsInformational.
+func TestRender_CapabilityObjectstoreRowIsInformational(t *testing.T) {
+	s := statusdata.Status{
+		CapabilityMatrix: []statusdata.CapabilityRow{
+			{Collector: "objectstore", Capability: "objectstore", ConfigEnabled: true, ProviderSupported: true,
+				Active: false, Reason: statusdata.CapabilityReasonNotRegistered, Source: "objectstore",
+				ScopeStatus: statusdata.ScopeNotApplicable, State: "unknown"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`<span class="badge info">`,
+		"ingested via object storage — not polled",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("objectstore capability row missing %q", want)
+		}
+	}
+}
+
+// TestRender_CapabilityGenuineNotRegisteredStillPending asserts a NON-stream,
+// non-objectstore "not registered" row (e.g. a missing required
+// sub-configuration) keeps the pre-existing plain "not polling" pending
+// badge — the new informational treatment must be scoped to the two
+// deliberate-streaming sources, never applied blanket to every not-registered
+// reason.
+func TestRender_CapabilityGenuineNotRegisteredStillPending(t *testing.T) {
+	s := statusdata.Status{
+		CapabilityMatrix: []statusdata.CapabilityRow{
+			{Collector: "nodemetrics", Capability: "nodemetrics", ConfigEnabled: true, ProviderSupported: true,
+				Active: false, Reason: statusdata.CapabilityReasonNotRegistered,
+				ScopeStatus: statusdata.ScopeNotApplicable, State: "unknown"},
+		},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<span class="badge pending">not polling</span>`) {
+		t.Error("a genuine not-registered row with no streaming source must keep the plain pending badge")
+	}
+	if strings.Contains(out, `<span class="badge info">`) {
+		t.Error("a genuine not-registered row with no streaming source must not read as informational")
+	}
+}
+
+// TestRender_FlowsLinkIsProminentInHeader asserts /flows renders as a
+// visually prominent call-to-action in the header (#524) — it is the most
+// useful view on the page and previously read as a footnote identical in
+// weight to the plain /events link. /events must stay a plain link (another
+// lane wires up backlinks from both pages).
+func TestRender_FlowsLinkIsProminentInHeader(t *testing.T) {
+	s := statusdata.Status{
+		Flows:  statusdata.FlowStoreInfo{Enabled: true},
+		Events: statusdata.EventStoreInfo{Enabled: true},
+	}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<a class="cta" href="/flows"`) {
+		t.Error("the /flows link is not rendered as a prominent call-to-action")
+	}
+	eventsIdx := strings.Index(out, `href="/events"`)
+	if eventsIdx < 0 {
+		t.Fatal("the /events link is missing")
+	}
+	if strings.Contains(out[max(0, eventsIdx-40):eventsIdx], `class="cta"`) {
+		t.Error("/events must remain a plain link, not the CTA styling")
+	}
+
+	// Disabled: the CTA markup must not linger (would 404).
+	off := statusdata.Status{}
+	buf.Reset()
+	if err := statushtml.Render(&buf, off); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if strings.Contains(buf.String(), `href="/flows"`) {
+		t.Error("flows disabled but the page still links /flows")
 	}
 }
 
@@ -801,5 +975,30 @@ func TestRender_FlowStoreCapacityProfileCard(t *testing.T) {
 	}
 	if !strings.Contains(out, "worst case") {
 		t.Error("the footprint estimate is not disclosed as a worst-case planning number")
+	}
+}
+
+// TestRender_CapabilityNoteExplainsUnknown pins the #524 wording fix. The note
+// tells the operator the State column is "the column to trust", which only
+// became true once every collector recorded its outcome. A residual `unknown`
+// is still legitimately reachable — a collector that has not ticked yet, a
+// disabled subrequest, node-metrics with no targets — and an unexplained
+// `unknown` next to that claim reads as the column lying.
+func TestRender_CapabilityNoteExplainsUnknown(t *testing.T) {
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, statusdata.Status{
+		Provider:         "tailscale",
+		CapabilityMatrix: []statusdata.CapabilityRow{{Collector: "dns", Capability: "dns"}},
+	}); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "<code>unknown</code>") {
+		t.Error("capability note does not explain the unknown state at all")
+	}
+	for _, want := range []string{"not been probed", "not a fault"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("capability note missing %q; an unexplained unknown reads as the State column lying", want)
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/audit"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/auditlogs"
@@ -582,6 +583,102 @@ func TestCollectWindow_EmptyAndNullResponseEmitNothing(t *testing.T) {
 			}
 			if logs := rec.LogRecords(); len(logs) != 0 {
 				t.Errorf("emitted %d log record(s), want 0: %+v", len(logs), logs)
+			}
+		})
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailability_SuccessIsSupported pins the happy path and the injected
+// clock feeding the last-probe gauge (#524).
+func TestAvailability_SuccessIsSupported(t *testing.T) {
+	probe := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	api := &fakeAPI{resp: audit.ConfigurationResponse{}}
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil, auditlogs.WithAPIState(tr), auditlogs.WithClock(func() time.Time { return probe }))
+
+	hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+	if err != nil {
+		t.Fatalf("CollectWindow: unexpected error: %v", err)
+	}
+	if !hwm.Equal(to) {
+		t.Fatalf("high-water mark = %v, want %v", hwm, to)
+	}
+	if got := availabilityStates(t, rec)["listConfigurationAuditLogs"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want supported", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "auditlogs" || snap[0].Operation != "listConfigurationAuditLogs" {
+		t.Fatalf("tracker snapshot = %+v, want one auditlogs/listConfigurationAuditLogs entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+// TestAvailability_ErrorClassification is the #524 regression proving
+// auditlogs does NOT copy flowlogs' Disposition{DisabledOn: []int{403}}.
+// Configuration audit logging is not a documented feature gate on 403, so an
+// ambiguous 403 must classify as scope_denied, not disabled — the whole point
+// of this lane. In every case the high-water mark and error must be unchanged
+// from the collector's pre-existing error-propagation behavior: a window
+// collector zeroes the high-water mark on ANY fetch error so the scheduler
+// retries it.
+func TestAvailability_ErrorClassification(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantState apistate.State
+	}{
+		{"401 credential rejected", &tsapi.StatusError{Code: 401}, apistate.StateCredentialRejected},
+		{"403 scope denied, NOT disabled", &tsapi.StatusError{Code: 403}, apistate.StateScopeDenied},
+		{"404 disabled (Classify's own default, no Disposition needed)", &tsapi.StatusError{Code: 404}, apistate.StateDisabled},
+		{"400 request rejected", &tsapi.StatusError{Code: 400}, apistate.StateRequestRejected},
+		{"plain transport error is transient", context.DeadlineExceeded, apistate.StateTransientFailure},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			api := &fakeAPI{err: tc.err}
+			rec := telemetrytest.New()
+			c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil)
+
+			hwm, err := c.CollectWindow(context.Background(), from, to, rec.Emitter())
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("CollectWindow() error = %v, want %v propagated unchanged", err, tc.err)
+			}
+			if !hwm.IsZero() {
+				t.Fatalf("high-water mark = %v, want zero (checkpoint must not advance on any fetch error)", hwm)
+			}
+			if got := availabilityStates(t, rec)["listConfigurationAuditLogs"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+			if pts := rec.MetricPoints(audit.MetricAuditEvents); len(pts) != 0 {
+				t.Errorf("%s emitted %d point(s) on error, want 0", audit.MetricAuditEvents, len(pts))
+			}
+			if logs := rec.LogRecords(); len(logs) != 0 {
+				t.Errorf("emitted %d log record(s) on error, want 0", len(logs))
 			}
 		})
 	}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/audit"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
@@ -27,6 +28,11 @@ const (
 	// suppress the duplicate. The set is FIFO-bounded, so old keys age out.
 	dedupCapacity = 4096
 )
+
+// opListConfigurationAuditLogs is the upstream operationId of the window
+// fetch (GET /tailnet/{tailnet}/logging/configuration), verbatim from
+// spec/tailscale-api.json.
+const opListConfigurationAuditLogs = "listConfigurationAuditLogs"
 
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
@@ -49,6 +55,11 @@ type Collector struct {
 	// self-observability); the collector stays agnostic to how it's emitted.
 	onIngest         func(source, signal string, records, bytes int)
 	acceptedObserver ingest.AcceptedObserver
+	// tracker records this collector's per-operation availability for the admin
+	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
+	tracker *apistate.Tracker
+	// now is the clock, injectable from tests.
+	now func() time.Time
 }
 
 // Option configures optional Collector behavior.
@@ -58,6 +69,21 @@ type Option func(*Collector)
 // de-duplication after it has been handed to the shared processor.
 func WithAcceptedObserver(observer ingest.AcceptedObserver) Option {
 	return func(c *Collector) { c.acceptedObserver = observer }
+}
+
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads. A nil tracker is a no-op.
+func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tracker = t } }
+
+// WithClock overrides the collector's clock (for deterministic availability
+// last-probe tests); the default is time.Now.
+func WithClock(now func() time.Time) Option {
+	return func(c *Collector) {
+		if now != nil {
+			c.now = now
+		}
+	}
 }
 
 // New returns an auditlogs Collector that fetches via a and converts via proc.
@@ -72,6 +98,7 @@ func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest fun
 		lag:      lag,
 		seen:     dedup.New(dedupCapacity),
 		onIngest: onIngest,
+		now:      time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -111,6 +138,14 @@ func (c *Collector) Lag() time.Duration {
 // (rather than the max event time) keeps the scheduler's checkpoint simple.
 func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e telemetry.Emitter) (time.Time, error) {
 	resp, err := c.api.ConfigAuditLogs(ctx, from, to)
+	// Availability is a pure ADDITION here: the control flow below is unchanged.
+	// Configuration audit logging is not a documented feature gate, unlike
+	// flowlogs' network-flow-logging premium check, so this uses the zero
+	// Disposition{} — an ambiguous 403 must classify as scope_denied, never
+	// disabled (#524). A window that was never read must still be retried, so
+	// every fetch error below still zeroes the high-water mark regardless of
+	// its availability state.
+	apistate.Observe(e, c.tracker, c.Name(), opListConfigurationAuditLogs, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return time.Time{}, err
 	}

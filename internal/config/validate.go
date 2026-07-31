@@ -377,6 +377,25 @@ func (c *Config) Warnings() []string {
 			"that is intended and that the path is covered by your backup/retention policy.")
 	}
 
+	// flows.capacity_profile only tunes flowstore.Memory, the in-memory ring:
+	// WithCapacityProfile is passed only when internal/app/admin_flows.go builds
+	// that backend. Once flows.store.directory selects the persistent sqlite
+	// backend instead, WithCapacityProfile is never called at all — the
+	// sqlite store has no per-key capacity caps of its own, so the profile is
+	// silently ignored, and the status page reports capacity_profile: "sqlite"
+	// rather than the value the operator set. Same bug class as
+	// cardinality.flow.source_port under metrics_mode: rollup — a setting that
+	// looks active but is never actually applied — so flag it rather than let
+	// the operator discover it by reading the source.
+	if c.Flows.CapacityProfile != flowstore.ProfileDefault && c.Flows.Store.Directory != "" {
+		w = append(w, fmt.Sprintf("flows.capacity_profile=%s: this only tunes the in-memory flow ring; "+
+			"once flows.store.directory selects the persistent sqlite backend instead, this setting is "+
+			"never read (the sqlite store has no per-key capacity caps of its own) and the status page "+
+			"reports capacity_profile: \"sqlite\", not %q. Remove flows.capacity_profile, or set it back "+
+			"to \"default\", to stop configuring a setting that has no effect while "+
+			"flows.store.directory is set.", c.Flows.CapacityProfile, c.Flows.CapacityProfile))
+	}
+
 	// The event store's only consumer is the /events page on the admin server,
 	// exactly like the flow store above (#300).
 	if c.Events.Enabled && (!c.Admin.Enabled || !c.Admin.LandingPage) {

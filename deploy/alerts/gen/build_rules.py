@@ -619,23 +619,35 @@ def groups():
         # feature the tailnet does not have, so a tailnet simply lacking premium
         # flow logs paged someone. 401 (credential rejected) is the tailnet-wide
         # emergency; 403 (scope denied) is a real but narrower misconfiguration.
+        # Grouped by collector+operation rather than a bare max() (#524). Until
+        # #524 only 8 of 17 collectors recorded an availability state at all, so
+        # a bare max() was reading a minority of the fleet and an alert that did
+        # fire could not say WHICH endpoint was refused — leaving the operator to
+        # go find it on the status page. Now that every collector reports, the
+        # grouping is what makes the extra coverage actionable: one instance per
+        # denied operation, each naming itself.
         alert("ts2o-api-credential-rejected", "Tailscale API credential rejected",
-              'max(tailscale2otel_api_availability_ratio{tailscale_api_state="credential_rejected"})',
+              'max by (tailscale_collector, tailscale_api_operation) '
+              '(tailscale2otel_api_availability_ratio{tailscale_api_state="credential_rejected"})',
               "gt", 0, "10m", "critical",
-              "Tailscale API returning 401 — the credential is invalid, expired or revoked",
-              "The Tailscale API is rejecting the exporter's credential outright (HTTP 401), so polling "
-              "fails tailnet-wide and every metric goes stale. Rotate or re-issue the OAuth client or "
-              "API key. This is distinct from a scope denial — see ts2o-api-scope-denied.",
+              "Tailscale API returning 401 for {{ $labels.tailscale_collector }} "
+              "({{ $labels.tailscale_api_operation }}) — the credential is invalid, expired or revoked",
+              "The Tailscale API is rejecting the exporter's credential outright (HTTP 401) on "
+              "{{ $labels.tailscale_api_operation }}, so polling fails tailnet-wide and every metric "
+              "goes stale. Rotate or re-issue the OAuth client or API key. This is distinct from a "
+              "scope denial — see ts2o-api-scope-denied.",
               domain="security", paused=False,
               policy="optional", runbook="tailscale-api-health", panel="API requests/s by status"),
         alert("ts2o-api-scope-denied", "Tailscale API operation denied by scope",
-              'max(tailscale2otel_api_availability_ratio{tailscale_api_state="scope_denied"})',
+              'max by (tailscale_collector, tailscale_api_operation) '
+              '(tailscale2otel_api_availability_ratio{tailscale_api_state="scope_denied"})',
               "gt", 0, "30m", "warning",
-              "An API operation is returning 403 — the credential lacks its scope",
-              "The credential is valid but is being refused a specific operation (HTTP 403), so that "
-              "collector's signals are silently missing while everything else keeps working. Widen the "
-              "OAuth scope or disable the collector. Note this is NOT the same as a feature the tailnet "
-              "does not have — that reports as `disabled` and is expected, not alertable.",
+              "{{ $labels.tailscale_api_operation }} is returning 403 — the credential lacks its scope",
+              "The credential is valid but is being refused {{ $labels.tailscale_api_operation }} "
+              "(HTTP 403), so the {{ $labels.tailscale_collector }} collector's signals are silently "
+              "missing while everything else keeps working. Widen the OAuth scope or disable the "
+              "collector. Note this is NOT the same as a feature the tailnet does not have — that "
+              "reports as `disabled` and is expected, not alertable.",
               domain="security", paused=False,
               policy="optional", runbook="tailscale-api-health", panel="API requests/s by status"),
         alert("ts2o-api-rate-limited", "Tailscale API rate limited",

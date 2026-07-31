@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/devices"
 	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
@@ -47,10 +48,12 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// (tailscale.device.attribute{,.info}) are emitted and drift-checked too.
 	// WithClock pins "now" so the attribute-expiry WARN log's day threshold is
 	// deterministic (matches the other collectors' fixed-clock catalog tests).
+	tr := apistate.NewTracker()
 	c := devices.New(api, cache, 0, true, true,
 		devices.WithAttributeNamespaces([]string{"*"}),
 		devices.WithDeviceInvites(true),
-		devices.WithClock(func() time.Time { return now }))
+		devices.WithClock(func() time.Time { return now }),
+		devices.WithAPIState(tr))
 
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
@@ -58,7 +61,12 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range devices.Catalog() {
+	// The per-operation availability signals (tailscale2otel.api.availability,
+	// tailscale2otel.api.last_probe) are declared once, in the shared
+	// internal/apistate catalog (which internal/catalog aggregates), not per
+	// collector — every collector wiring apistate.Observe emits the same two
+	// descriptors (#524).
+	for _, m := range append(devices.Catalog(), apistate.Catalog()...) {
 		declared[m.Name] = m
 	}
 
@@ -130,6 +138,24 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	for _, lr := range rec.LogRecords() {
 		if lr.EventName != "" && !logDeclared[lr.EventName] {
 			t.Errorf("emitted log event %q is not declared in devices.LogCatalog()", lr.EventName)
+		}
+	}
+
+	// The API-state signals belong to internal/apistate's catalog, NOT this
+	// collector's — assert they are emitted (with a tracker wired, #524) but
+	// deliberately absent from devices.Catalog() itself, so a future "fix" that
+	// copies them in double-declares them in docs/metrics.md and fails loudly
+	// instead of silently.
+	ownDeclared := map[string]bool{}
+	for _, m := range devices.Catalog() {
+		ownDeclared[m.Name] = true
+	}
+	for _, name := range []string{apistate.MetricAvailability, apistate.MetricLastProbe} {
+		if len(rec.MetricPoints(name)) == 0 {
+			t.Errorf("%s not emitted with a tracker wired", name)
+		}
+		if ownDeclared[name] {
+			t.Errorf("%s must be declared by internal/apistate, not devices.Catalog()", name)
 		}
 	}
 }

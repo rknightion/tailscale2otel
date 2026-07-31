@@ -66,6 +66,11 @@
   .badge.err,.badge.critical,.badge.degraded{background:rgba(248,81,73,.16);color:var(--err)}
   .badge.warn,.badge.warning{background:rgba(210,153,34,.16);color:var(--warn)}
   .badge.pending,.badge.stale,.badge.none{background:rgba(110,118,129,.18);color:var(--muted)}
+  /* .badge.info: a deliberate, healthy, non-default state worth calling out
+     without reading as a fault (err/warn) or as the ambiguous "still waiting"
+     pending badge — e.g. a collector that is intentionally not polling
+     because its data streams in instead. */
+  .badge.info{background:rgba(68,147,248,.16);color:var(--accent)}
   table{width:100%;border-collapse:collapse;background:var(--panel);
     border:1px solid var(--line);border-radius:10px;overflow:hidden}
   th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);
@@ -84,6 +89,12 @@
     background:var(--panel2);border:1px solid var(--line);border-radius:8px;
     color:var(--fg);font-size:13px}
   .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  /* .scroll.tall: for a table with a fixed, small, known-in-advance row count
+     (the capability matrix — one row per configurable capability, ~18 on a
+     real deployment) where the shared 460px cap hides half the rows. Do NOT
+     apply this to the shared .scroll default — that would squeeze every
+     other (variable-length, filterable) scrollable table along with it. */
+  .scroll.tall{max-height:75vh}
   .scroll table{border:0;border-radius:0}
   .muted{color:var(--muted)}
   .note{color:var(--muted);font-size:12px;margin-top:2px}
@@ -127,6 +138,14 @@
   button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
     border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
   button.ctl:hover{border-color:var(--accent)}
+  /* .cta: the header's one prominent call-to-action (the /flows link — the
+     most useful view on this page). A solid accent button, deliberately
+     heavier than the plain-text .ver/header links beside it, incl. /events,
+     which stays a plain link on purpose. */
+  a.cta{background:var(--accent);color:#fff;border:1px solid var(--accent);
+    border-radius:7px;padding:6px 14px;font-size:13px;font-weight:600}
+  a.cta:hover{text-decoration:none;filter:brightness(1.08)}
+  a.cta:focus-visible{outline-offset:2px}
   /* Per-collector info affordance (see collectorInfo in JS). */
   .collector-info{position:relative;display:inline-block;margin-left:6px;
     color:var(--muted);font-size:12px;line-height:1;cursor:help;user-select:none}
@@ -176,7 +195,7 @@
   <a class="badge warn" id="updateBadge" href="{{.Update.ReleaseURL}}" target="_blank" rel="noopener noreferrer" title="{{if eq .Update.State "available"}}current {{.Update.CurrentVersion}} · latest {{.Update.LatestVersion}}{{end}}"{{if ne .Update.State "available"}} style="display:none"{{end}}>update available{{if .Update.LatestVersion}}: {{.Update.LatestVersion}}{{end}}</a>
   {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
   <span class="spacer"></span>
-  {{if .Flows.Enabled}}<a href="/flows" title="Explore this tailnet's traffic">flows &rarr;</a>{{end}}
+  {{if .Flows.Enabled}}<a class="cta" href="/flows" title="Explore this tailnet's traffic">Flow view &rarr;</a>{{end}}
   {{if .Events.Enabled}}<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>{{end}}
   <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
   <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
@@ -362,8 +381,11 @@
     <p class="note">Requirement vs. reality for every configurable capability. <strong>Scope</strong> is an advisory
     preflight of the OAuth scopes <em>requested</em> in configuration — the server stays authoritative, so
     <strong>State</strong> (from live API responses) is the column to trust. <code>disabled</code> means the tailnet
-    does not have the feature and is never a fault; <code>scope_denied</code> means the credential cannot see it.</p>
-    <div class="scroll">
+    does not have the feature and is never a fault; <code>scope_denied</code> means the credential cannot see it.
+    <code>unknown</code> means the operation has not been probed yet — a collector that has not run its first tick,
+    a subrequest switched off, or node metrics with no targets — and is not a fault either. A collector that has
+    completed a successful run never reads <code>unknown</code>.</p>
+    <div class="scroll tall">
     <table>
       <thead><tr><th>Capability</th><th>Required scope</th><th>Status</th><th>Scope preflight</th><th>State</th><th>Last probe</th></tr></thead>
       <tbody>
@@ -371,7 +393,7 @@
         <tr>
           <td class="mono">{{.Collector}}{{if .Subrequest}} <span class="muted">/ {{.Subrequest}}</span>{{end}}{{if .Source}} <span class="muted">({{.Source}})</span>{{end}}</td>
           <td class="mono">{{if .RequiredScopes}}{{range .RequiredScopes}}<code>{{.}}</code> {{end}}{{else}}<span class="muted">—</span>{{end}}</td>
-          <td>{{if .Active}}<span class="badge ok">active</span>{{else}}<span class="badge pending">{{capReason .Reason}}</span>{{end}}</td>
+          <td>{{if .Active}}<span class="badge ok">active</span>{{else if capInformational .Reason .Source}}<span class="badge info">{{capStatusLabel .Source}}</span><div class="note">{{capStatusExplain .Source}}</div>{{else}}<span class="badge pending">{{capReason .Reason}}</span>{{end}}</td>
           <td><span class="badge {{capScopeClass .ScopeStatus}}">{{.ScopeStatus}}</span>{{if .MissingScopes}}<div class="sub">missing {{range .MissingScopes}}<code>{{.}}</code> {{end}}</div>{{end}}</td>
           <td><span class="badge {{capStateClass .State .Actionable}}">{{if .State}}{{.State}}{{else}}unknown{{end}}</span></td>
           <td class="mono">{{if .LastProbe}}{{.LastProbe}}{{else}}<span class="muted">—</span>{{end}}</td>

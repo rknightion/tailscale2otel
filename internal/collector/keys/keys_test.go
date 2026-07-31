@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
@@ -312,6 +313,104 @@ func TestCollect_PropagatesError(t *testing.T) {
 	c := keys.New(&fakeLister{err: wantErr}, 0, time.Hour, nil)
 	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
 		t.Fatalf("Collect err = %v, want %v", err, wantErr)
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailabilityStates guards #524: this collector must call apistate.Observe
+// so a revoked credential or missing scope is visible on the admin status page
+// and to the availability alert rules, which it did not do before. Every case
+// keeps this collector's EXISTING error-propagation behavior unchanged: keys
+// always wraps and returns any error from KeysRich, regardless of how the
+// availability state classifies it (unlike webhooks/postureintegrations, which
+// swallow a 404).
+func TestAvailabilityStates(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantState apistate.State
+	}{
+		{"success", nil, apistate.StateSupported},
+		{"401 revoked credential", &tsapi.StatusError{Code: 401}, apistate.StateCredentialRejected},
+		{"403 missing scope", &tsapi.StatusError{Code: 403}, apistate.StateScopeDenied},
+		{"404 endpoint absent", &tsapi.StatusError{Code: 404}, apistate.StateDisabled},
+		{"400 malformed request", &tsapi.StatusError{Code: 400}, apistate.StateRequestRejected},
+		{"transport timeout", context.DeadlineExceeded, apistate.StateTransientFailure},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			c := keys.New(&fakeLister{err: tc.err}, 0, time.Hour, nil)
+			err := c.Collect(context.Background(), rec.Emitter())
+
+			// Control flow is unchanged: keys returns every non-nil error,
+			// wrapped, regardless of its availability classification.
+			if tc.err == nil {
+				if err != nil {
+					t.Fatalf("Collect() err = %v, want nil on success", err)
+				}
+			} else if !errors.Is(err, tc.err) {
+				t.Fatalf("Collect() err = %v, want wrapping %v", err, tc.err)
+			}
+
+			if got := availabilityStates(t, rec)["listTailnetKeys"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+		})
+	}
+}
+
+// TestAvailabilityTrackerWired guards WithAPIState: the tracker records the
+// same state the availability metric reports, and a nil tracker (the default)
+// is a no-op rather than a panic.
+func TestAvailabilityTrackerWired(t *testing.T) {
+	probe := time.Date(2026, 7, 31, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{}, 0, time.Hour, func() time.Time { return probe }, keys.WithAPIState(tr))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := availabilityStates(t, rec)["listTailnetKeys"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want supported", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "keys" || snap[0].Operation != "listTailnetKeys" {
+		t.Fatalf("tracker snapshot = %+v, want one keys/listTailnetKeys entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+// TestAvailabilityNilTrackerIsNoop guards that omitting WithAPIState (the
+// default, nil tracker) never panics.
+func TestAvailabilityNilTrackerIsNoop(t *testing.T) {
+	rec := telemetrytest.New()
+	c := keys.New(&fakeLister{}, 0, time.Hour, nil)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
 	}
 }
 

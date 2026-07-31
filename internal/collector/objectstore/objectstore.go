@@ -50,6 +50,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
 	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
@@ -202,6 +203,10 @@ type Options struct {
 	// empty for single-tailnet mode, or the tailnet name for multi-tailnet mode.
 	// New migrates that state atomically before the collector starts.
 	LegacyCheckpointNamespace string
+	// APIState, when non-nil, receives this collector's per-operation
+	// availability for the admin status page and the capability matrix
+	// (#430/#524). A nil tracker is a no-op.
+	APIState *apistate.Tracker
 }
 
 // Collector ingests exported flow-log objects and feeds them to the shared
@@ -213,6 +218,10 @@ type Collector struct {
 	opts   Options
 	logger *slog.Logger
 	now    func() time.Time
+	// tracker records this collector's listObjects availability for the admin
+	// status page and the capability matrix (#430/#524). A nil *apistate.Tracker
+	// is a no-op.
+	tracker *apistate.Tracker
 }
 
 var _ collector.SnapshotCollector = (*Collector)(nil)
@@ -304,12 +313,13 @@ func New(
 		now = time.Now
 	}
 	return &Collector{
-		api:    api,
-		signal: signal,
-		cp:     collector.Namespaced(cp, namespace),
-		opts:   opts,
-		logger: logger,
-		now:    now,
+		api:     api,
+		signal:  signal,
+		cp:      collector.Namespaced(cp, namespace),
+		opts:    opts,
+		logger:  logger,
+		now:     now,
+		tracker: opts.APIState,
 	}, nil
 }
 
@@ -332,6 +342,20 @@ func (c *Collector) Name() string {
 
 // DefaultInterval implements collector.SnapshotCollector.
 func (c *Collector) DefaultInterval() time.Duration { return c.opts.Interval }
+
+// opListObjects identifies the object-store LISTING call for the shared
+// api-availability tracker (#420/#430/#524).
+//
+// Unlike every other collector's operation name, this is NOT an upstream
+// Tailscale OpenAPI operationId — this collector never calls the Tailscale
+// control-plane API at all. It reads flow-log objects out of an S3-compatible
+// object store through storeapi.Backend.List, so there is no operationId to
+// borrow and this name will never appear in spec/tailscale-api.json. It is a
+// stable LOCAL identifier this package defines for that one call, kept
+// distinct from the transport-axis operationList constant in catalog.go
+// (which labels tailscale2otel.objectstore.requests, a different metric with a
+// different closed vocabulary).
+const opListObjects = "listObjects"
 
 // Collect runs one ingestion cycle: list from the cursor (with overlap), ingest
 // what has not been seen, advance the cursor, prune the seen set.
@@ -524,7 +548,20 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
-	listing, err := c.enumerate(ctx, from, now, seen, gapsByIdentity, state.Positions, e)
+	listing, listAttempted, listErr, err := c.enumerate(ctx, from, now, seen, gapsByIdentity, state.Positions, e)
+	// Observed once per Collect, right after the scan finishes, on every path
+	// including the error path below: enumerate aborts on its FIRST failing
+	// List call, so listErr here is exactly that first non-nil List error this
+	// tick, and multiple prefixes listed cleanly collapse to one Observe(nil)
+	// -> supported. When this tick made no List call at all (listAttempted is
+	// false — an empty scan window derives no prefixes to list), no Observe
+	// happens, so the operation stays unknown rather than claiming a state for
+	// a probe that never ran. listErr (not err) drives the classification, so
+	// an unrelated abort — e.g. a malformed object identity in an otherwise
+	// successfully listed page — still reports listObjects as supported.
+	if listAttempted {
+		apistate.Observe(e, c.tracker, c.Name(), opListObjects, apistate.Disposition{}, listErr, c.now())
+	}
 	if err != nil {
 		return err
 	}
@@ -716,6 +753,20 @@ func (c *Collector) beforeLowerBound(at, from time.Time, active bool) bool {
 // enumerate lists the configured prefixes for this layout — the day partitions
 // spanning [from, now], or the one flat base prefix — and returns the objects
 // worth fetching, oldest first.
+//
+// listAttempted reports whether this call made at least one Backend.List
+// attempt: Collect uses it to decide whether the listObjects availability
+// probe fired at all this tick. An empty prefix set (a scan window collapsed
+// by, e.g., a wildly out-of-range cursor) makes zero List calls, and that must
+// read as "not probed" rather than any concrete state.
+//
+// listErr is specifically the outcome of the List call(s) themselves — nil
+// once every attempted List call has succeeded, even when the overall err
+// below is non-nil for an unrelated downstream reason (e.g. a malformed
+// object identity in an otherwise successfully listed page). Collect
+// classifies listObjects availability from listErr, not err, so a data
+// problem in an already-listed page can never be misreported as "the bucket
+// could not be reached" — Observe covers the LISTING call only.
 func (c *Collector) enumerate(
 	ctx context.Context,
 	from, now time.Time,
@@ -723,12 +774,11 @@ func (c *Collector) enumerate(
 	gaps map[string]gapState,
 	positions map[string]string,
 	e telemetry.Emitter,
-) (enumeration, error) {
+) (result enumeration, listAttempted bool, listErr error, err error) {
 	prefixes, err := listingPrefixes(positions, c.scanPrefixes(from, now))
 	if err != nil {
-		return enumeration{}, err
+		return enumeration{}, false, nil, err
 	}
-	var result enumeration
 	var unparsed, already, stale, future int
 	for _, prefix := range prefixes {
 		// Listing is bounded per cycle even before the ingest budget: a day's
@@ -736,10 +786,12 @@ func (c *Collector) enumerate(
 		// value in walking further than one cycle could ever consume.
 		startAfter := truncatedStartAfter(positions[prefix], c.opts.Layout)
 		listStarted := time.Now()
-		page, err := c.api.List(ctx, prefix, startAfter, c.opts.MaxObjects*4)
-		observeRequest(ctx, e, operationList, listStarted, err)
-		if err != nil {
-			return enumeration{}, fmt.Errorf("objectstore: list %s: %w", prefix, err)
+		page, callErr := c.api.List(ctx, prefix, startAfter, c.opts.MaxObjects*4)
+		listAttempted = true
+		observeRequest(ctx, e, operationList, listStarted, callErr)
+		if callErr != nil {
+			wrapped := fmt.Errorf("objectstore: list %s: %w", prefix, callErr)
+			return enumeration{}, listAttempted, wrapped, wrapped
 		}
 		progress := prefixProgress{
 			prefix: prefix,
@@ -755,7 +807,7 @@ func (c *Collector) enumerate(
 			item := listedObject{key: o.Key, identity: o.Identity}
 			switch {
 			case o.Identity == "":
-				return enumeration{}, fmt.Errorf("objectstore: provider returned an object with an empty identity")
+				return enumeration{}, listAttempted, nil, fmt.Errorf("objectstore: provider returned an object with an empty identity")
 			case !ok:
 				unparsed++
 				item.safe = true
@@ -808,7 +860,7 @@ func (c *Collector) enumerate(
 	// already ordered, but a stable sort over all of them is what makes the
 	// cursor safe to advance to the newest ingested object.
 	sortCandidates(result.candidates)
-	return result, nil
+	return result, listAttempted, nil, nil
 }
 
 type ingestLimits struct {

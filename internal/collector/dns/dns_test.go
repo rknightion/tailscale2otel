@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
@@ -317,6 +318,84 @@ func TestResolverSeriesDropsOutOnReuse(t *testing.T) {
 		if p.Attrs[attrAddress] == "192.0.2.2" {
 			t.Errorf("tick 2: departed resolver 192.0.2.2 still present (ghost): %+v", p.Attrs)
 		}
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailabilityStates is the #524 coverage: success and every classified
+// failure must each report their own distinct, correctly-mapped state, and a
+// 403 must land on scope_denied — never disabled — since dns carries no
+// Disposition override.
+func TestAvailabilityStates(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantState apistate.State
+		wantErr   bool
+	}{
+		{"success", nil, apistate.StateSupported, false},
+		{"401 credential rejected", &tsapi.StatusError{Code: 401}, apistate.StateCredentialRejected, true},
+		{"403 scope denied", &tsapi.StatusError{Code: 403}, apistate.StateScopeDenied, true},
+		{"400 request rejected", &tsapi.StatusError{Code: 400}, apistate.StateRequestRejected, true},
+		{"transient transport error", context.DeadlineExceeded, apistate.StateTransientFailure, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			api := &fakeAPI{err: tc.err}
+			if tc.err == nil {
+				api.cfg = &tsapi.DNSConfig{}
+			}
+			err := New(api, 0).Collect(context.Background(), rec.Emitter())
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("Collect() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if got := availabilityStates(t, rec)["getDnsConfiguration"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+		})
+	}
+}
+
+// TestAvailabilityTracker asserts the shared tracker is wired and the
+// last-probe metric is emitted with the injected clock's timestamp.
+func TestAvailabilityTracker(t *testing.T) {
+	probe := time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	api := &fakeAPI{cfg: &tsapi.DNSConfig{}}
+	c := New(api, 0, WithAPIState(tr), WithClock(func() time.Time { return probe }))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "dns" || snap[0].Operation != "getDnsConfiguration" {
+		t.Fatalf("tracker snapshot = %+v, want one dns/getDnsConfiguration entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
 	}
 }
 

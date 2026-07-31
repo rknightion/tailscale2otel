@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/settings"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -28,6 +29,7 @@ func (f *catalogFakeAPI) TailnetSettings(context.Context) (*tsapi.TailnetSetting
 // duration ensure both declared metrics are emitted.
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
+	tr := apistate.NewTracker()
 	c := settings.New(&catalogFakeAPI{settings: &tsapi.TailnetSettings{
 		DevicesApprovalOn:           true,
 		DevicesAutoUpdatesOn:        false,
@@ -36,14 +38,17 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		RegionalRoutingOn:           true,
 		PostureIdentityCollectionOn: false,
 		DevicesKeyDurationDays:      90,
-	}}, 0)
+	}}, 0, settings.WithAPIState(tr))
 
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range settings.Catalog() {
+	// The per-operation availability signals are declared once, in the shared
+	// internal/apistate catalog (which internal/catalog aggregates), not per
+	// collector — every collector emits the same two descriptors.
+	for _, m := range append(settings.Catalog(), apistate.Catalog()...) {
 		declared[m.Name] = m
 	}
 
@@ -70,6 +75,10 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("%s: catalog instrument %q but emitted kind=%q monotonic=%v", name, d.Instrument, p0.Kind, p0.Monotonic)
 		}
 	}
+
+	// Attribute-key drift guard: the loop above compares name/unit/description
+	// only, so an emitted-but-undeclared attribute would silently rot the docs.
+	telemetrytest.AssertCatalogAttrs(t, rec, append(settings.Catalog(), apistate.Catalog()...), settings.LogCatalog())
 
 	logDeclared := map[string]bool{}
 	for _, le := range settings.LogCatalog() {

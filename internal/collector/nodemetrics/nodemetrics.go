@@ -37,6 +37,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
@@ -114,6 +115,20 @@ const (
 	// bound this: they cap one response, not the distinct names accumulated
 	// across many scrapes.
 	defaultMaxDistinctMetrics = 2000
+
+	// opScrapeNodeMetrics identifies this collector's own scrape probe for
+	// apistate.Observe (#430/#524).
+	//
+	// Unlike every other collector's operation name, this is NOT an upstream
+	// Tailscale OpenAPI operationId — nodemetrics never calls the tailnet
+	// control-plane API at all. It scrapes each node's own tailscaled
+	// client-metrics endpoint (:5252) directly, so there is no spec operation
+	// to name and no tsapi.StatusError to classify; every failure here is a
+	// plain error and lands on apistate.Classify's default branch
+	// (transient_failure), which is the honest read for an unreachable node.
+	// This string is a stable LOCAL probe identifier only — a future reader
+	// must not go looking for it in spec/tailscale-api.json.
+	opScrapeNodeMetrics = "scrapeNodeMetrics"
 )
 
 // prevEntry is a tracked counter series' last cumulative value and the scrape
@@ -226,6 +241,11 @@ type Options struct {
 	// target-specific in the name would make span-name cardinality unbounded.
 	// Per-target detail rides as span ATTRIBUTES instead.
 	Tracer trace.Tracer
+
+	// APIState, when non-nil, receives this collector's per-operation
+	// availability for the admin status page and the capability matrix
+	// (#430/#524). A nil tracker is a no-op.
+	APIState *apistate.Tracker
 }
 
 // resolvedTarget pairs a Target with the *http.Client to scrape it through,
@@ -265,6 +285,11 @@ type Collector struct {
 	concurrency       int // resolved worker-pool size for scrapeAll (#80)
 	logger            *slog.Logger
 	tracer            trace.Tracer // never nil; resolved in New (see noopAPITracer)
+
+	// tracker records this collector's per-operation availability for the
+	// admin status page and the capability matrix (#430/#524). A nil
+	// *apistate.Tracker is a no-op.
+	tracker *apistate.Tracker
 
 	metricAllow []*regexp.Regexp    // anchored name allowlist; empty => allow all
 	metricDeny  []*regexp.Regexp    // anchored name denylist; applied after allow
@@ -381,6 +406,7 @@ func New(opts Options) *Collector {
 		concurrency:        concurrency,
 		logger:             logger,
 		tracer:             tracer,
+		tracker:            opts.APIState,
 		metricAllow:        compileAnchored(opts.MetricAllow),
 		metricDeny:         compileAnchored(opts.MetricDeny),
 		dropLabels:         toSet(opts.DropLabels),
@@ -636,10 +662,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// drops out instead of ghosting (#55).
 	c.gsb.Flush(e)
 	c.flushCuratedGauges(e)
+
+	// Observe this collector's own probe (#430/#524): with at least one
+	// success the collector is working (an offline node is already reported
+	// per-target by tailscale.node.up, so it must not also flip this
+	// collector-level row and duplicate that signal); with every target
+	// failed, observe the SAME error returned below rather than inventing a
+	// second one — apistate.Classify has no tsapi.StatusError to work with
+	// here, so this reads as transient_failure, the honest answer for an
+	// unreachable node.
+	var scrapeErr error
 	if failures == len(targets) {
-		return fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
+		scrapeErr = fmt.Errorf("nodemetrics: all %d target(s) failed", failures)
 	}
-	return nil
+	apistate.Observe(e, c.tracker, c.Name(), opScrapeNodeMetrics, apistate.Disposition{}, scrapeErr, c.now())
+	return scrapeErr
 }
 
 // scrapeAll scrapes every target through a bounded worker pool (at most

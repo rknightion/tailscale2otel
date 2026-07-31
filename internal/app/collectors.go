@@ -123,6 +123,11 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// enclosing tick still reports a clean scrape. The coverage tally is what
 			// makes that partial blindness visible (#421).
 			devices.WithCoverage(rt.coverage),
+			// Coverage and APIState are NOT the same signal, which is exactly how
+			// this collector stayed dark: it had the coverage tally from #421 but
+			// never recorded a tracker entry, so all three of its capability-matrix
+			// rows read `unknown` while it succeeded every 60s (#524).
+			devices.WithAPIState(rt.apiState),
 		}
 		if d.geoDB != nil {
 			// Fleet geography (tailscale.devices.by_country), derived from each
@@ -167,14 +172,17 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		if rt.policy != nil {
 			userOpts = append(userOpts, users.WithDirectorySink(rt.policy))
 		}
+		userOpts = append(userOpts, users.WithAPIState(rt.apiState))
 		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(), userOpts...), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled && cp.Supports("keys") {
 		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
-			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key)), c.Keys.Interval.D())
+			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key),
+			keys.WithAPIState(rt.apiState)), c.Keys.Interval.D())
 	}
 	if c.Settings.Enabled && cp.Supports("settings") {
-		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D()), c.Settings.Interval.D())
+		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D(),
+			settings.WithAPIState(rt.apiState)), c.Settings.Interval.D())
 	}
 	if c.Acl.Enabled && cp.Supports("acl") {
 		aclOpts := []acl.Option{
@@ -195,10 +203,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil, aclOpts...), c.Acl.Interval.D())
 	}
 	if c.Dns.Enabled && cp.Supports("dns") {
-		rt.registry.Register(dns.New(rt.client, c.Dns.Interval.D()), c.Dns.Interval.D())
+		rt.registry.Register(dns.New(rt.client, c.Dns.Interval.D(),
+			dns.WithAPIState(rt.apiState)), c.Dns.Interval.D())
 	}
 	if c.Contacts.Enabled && cp.Supports("contacts") {
-		rt.registry.Register(contacts.New(rt.client, c.Contacts.Interval.D()), c.Contacts.Interval.D())
+		rt.registry.Register(contacts.New(rt.client, c.Contacts.Interval.D(),
+			contacts.WithAPIState(rt.apiState)), c.Contacts.Interval.D())
 	}
 	if c.Webhooks.Enabled && cp.Supports("webhooks") {
 		rt.registry.Register(webhooks.New(rt.client, c.Webhooks.Interval.D(),
@@ -215,7 +225,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			logstream.WithAPIState(rt.apiState)), c.LogStream.Interval.D())
 	}
 	if c.OAuthApps.Enabled && cp.Supports("oauth_apps") {
-		rt.registry.Register(oauthapps.New(rt.client, c.OAuthApps.Interval.D()), c.OAuthApps.Interval.D())
+		rt.registry.Register(oauthapps.New(rt.client, c.OAuthApps.Interval.D(),
+			oauthapps.WithAPIState(rt.apiState)), c.OAuthApps.Interval.D())
 	}
 	if c.Services.Enabled && cp.Supports("services") {
 		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
@@ -223,7 +234,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			services.WithCollectHosts(c.Services.CollectHosts),
 			// Feed the service-VIP -> name map so flow logs resolve a service
 			// VIP peer to its service name instead of "unknown" (#166).
-			services.WithEnrichCache(rt.cache)), c.Services.Interval.D())
+			services.WithEnrichCache(rt.cache),
+			services.WithAPIState(rt.apiState)), c.Services.Interval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {
 		// Static node_metrics targets are process-global (a shared jump host, not a
@@ -238,7 +250,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// Keep a typed reference so the status page can surface discovered nodes.
 			// Discovery uses the provider client's DevicesRich, so it works for both
 			// backends (Headscale nodes also run tailscaled on :5252).
-			rt.nodeMetrics = nodemetrics.New(nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics), d.tracer))
+			nmOpts := nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics), d.tracer)
+			// Set here rather than inside nodeMetricsOptions: that function maps
+			// CONFIG onto Options and is tested as a pure config mapping, while the
+			// tracker is a per-runtime object it has no business knowing about.
+			nmOpts.APIState = rt.apiState
+			rt.nodeMetrics = nodemetrics.New(nmOpts)
 			rt.registry.Register(rt.nodeMetrics, nm.Interval.D())
 		}
 	}
@@ -256,7 +273,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		// Stream-only or objectstore-only: the poller isn't registered, so the
 		// tailscale.feature.enabled health gauge it normally emits would be missing.
 		// Register a lightweight probe that reports it independently of ingestion.
-		fp := flowlogs.NewFeatureProbe(flowFeatureCheck(rt.client), c.Flowlogs.Interval.D())
+		fp := flowlogs.NewFeatureProbe(flowFeatureCheck(rt.client), c.Flowlogs.Interval.D(),
+			flowlogs.WithFeatureProbeAPIState(rt.apiState))
 		rt.registry.Register(fp, fp.DefaultInterval())
 	}
 	if c.Flowlogs.Enabled && objectStoreSource(c.Flowlogs.Source) {
@@ -267,7 +285,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	}
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), onIngest,
-			auditlogs.WithAcceptedObserver(onAccepted))
+			auditlogs.WithAcceptedObserver(onAccepted),
+			auditlogs.WithAPIState(rt.apiState))
 		rt.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}
 	if c.Auditlogs.Enabled && objectStoreSource(c.Auditlogs.Source) {

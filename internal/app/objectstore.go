@@ -227,6 +227,12 @@ func newObjectStoreCollector(
 	opts.OnIngest = onIngest
 	opts.OnAccepted = onAccepted
 	opts.Scope = objectStoreScope(feed.signal, objectStoreTailnetIdentity(rt, d.cfg), dest)
+	// Availability for the bucket LISTING, so an unreachable or unreadable bucket
+	// shows up on the capability matrix instead of leaving the row at `unknown`
+	// (#524). The backend surfaces no HTTP status, so every failure classifies as
+	// transient_failure — imprecise for a permanently-denied bucket, but it is
+	// Actionable() and therefore visible, which `unknown` never was.
+	opts.APIState = rt.apiState
 	// The pre-v1 layout is flow-only; objectstore.New ignores this for any other
 	// signal, so it is safe (and simpler) to supply the namespace unconditionally.
 	if d.multi {

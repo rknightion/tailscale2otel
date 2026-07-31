@@ -34,6 +34,13 @@ type fakeAPI struct {
 	inviteErr  error
 	inviteFail string // device ID whose invites call returns inviteErr
 	inviteIDs  []string
+
+	// postureFailAll / inviteFailAll fail EVERY device's subrequest with
+	// postureErr / inviteErr, unlike postureFail / inviteFail which target one
+	// device ID. Used by the #524 apistate tests to reproduce "a missing scope
+	// 403s every device" without hand-listing every ID in the fixture.
+	postureFailAll bool
+	inviteFailAll  bool
 }
 
 func (f *fakeAPI) DevicesRich(_ context.Context) ([]tsapi.RichDevice, error) {
@@ -43,7 +50,7 @@ func (f *fakeAPI) DevicesRich(_ context.Context) ([]tsapi.RichDevice, error) {
 
 func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (tsapi.DeviceAttributes, error) {
 	f.postureIDs = append(f.postureIDs, deviceID)
-	if deviceID == f.postureFail {
+	if f.postureFailAll || deviceID == f.postureFail {
 		return tsapi.DeviceAttributes{}, f.postureErr
 	}
 	return tsapi.DeviceAttributes{
@@ -54,7 +61,7 @@ func (f *fakeAPI) DevicePostureAttributes(_ context.Context, deviceID string) (t
 
 func (f *fakeAPI) DeviceInvites(_ context.Context, deviceID string) ([]tsapi.DeviceInvite, error) {
 	f.inviteIDs = append(f.inviteIDs, deviceID)
-	if deviceID == f.inviteFail {
+	if f.inviteFailAll || deviceID == f.inviteFail {
 		return nil, f.inviteErr
 	}
 	return f.invites[deviceID], nil

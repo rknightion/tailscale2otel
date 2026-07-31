@@ -256,10 +256,36 @@ const (
 // Bounded subrequest type names for the per-device N+1 calls (#421). These are
 // metric label values, so they are a CLOSED set — one per extra API call the
 // devices collector makes per device.
+//
+// subrequestDeviceInvites doubles as the apistate/tracker OPERATION name for
+// the device-invites availability signal (#524): its value already equals
+// app.SubrequestDeviceInvites in internal/app/capability.go, so no second
+// constant is needed and it is passed directly to apistate.Observe.
+// subrequestPostureAttributes is NOT reused the same way — its value
+// ("posture_attributes") does not match app.SubrequestDevicePosture
+// ("device_posture"), so the posture availability signal uses the separate
+// opDevicePosture constant below instead. This Coverage label is untouched by
+// #524.
 const (
 	subrequestDeviceInvites     = "device_invites"
 	subrequestPostureAttributes = "posture_attributes"
 )
+
+// opListTailnetDevices is the upstream OpenAPI operationId of the main device
+// listing call (GET /devices?fields=all via DevicesRich), used as the
+// tailscale.api.operation attribute value on the apistate availability signal
+// (#524).
+const opListTailnetDevices = "listTailnetDevices"
+
+// opDevicePosture is the apistate/tracker OPERATION name for the per-device
+// posture-attributes subrequest (#524) — deliberately NOT its upstream
+// operationId (getDevicePostureAttributes) and NOT the existing Coverage
+// subrequest label (subrequestPostureAttributes, left unchanged above). It
+// must equal app.SubrequestDevicePosture in internal/app/capability.go
+// byte-for-byte: the capability matrix looks up a tracker entry whose
+// Operation field equals this string, and a mismatch leaves that row
+// permanently "unknown".
+const opDevicePosture = "device_posture"
 
 // Bounded device-invite delivery states (#413), carried on attrInviteDelivery.
 const (
@@ -369,6 +395,10 @@ type Collector struct {
 	// invites) attempted and their outcomes for #421. Nil is a no-op, so a
 	// collector built without WithCoverage behaves exactly as before.
 	coverage *apistate.Coverage
+
+	// tracker records this collector's per-operation availability for the admin
+	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
+	tracker *apistate.Tracker
 
 	// ageBuckets is this collector's own copy of the shared entity-age bucket
 	// bounds (#426), taken once in New rather than per observation. The OTEL SDK
@@ -612,6 +642,11 @@ func WithCoverage(cov *apistate.Coverage) Option {
 	return func(c *Collector) { c.coverage = cov }
 }
 
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads. A nil tracker is a no-op.
+func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tracker = t } }
+
 // New returns a devices Collector that lists via the rich devices endpoint,
 // repopulates cache, and uses interval as its poll cadence (a non-positive
 // interval defaults to 60s). When collectRoutes is true the per-device route
@@ -676,6 +711,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	c.coverage.ResetCollector(c.Name())
 
 	devs, err := c.api.DevicesRich(ctx)
+	apistate.Observe(e, c.tracker, c.Name(), opListTailnetDevices, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return err
 	}
@@ -702,6 +738,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	byVersion := make(map[string]int)
 	byTag := make(map[string]int)
 	nowT := c.now()
+
+	// #524: aggregate the per-tick outcome of each per-device subrequest into
+	// ONE apistate.Observe call after the loop — apistate.Tracker holds one
+	// entry per (collector, operation), not per device, so N per-device calls
+	// must collapse to a single observation. *Attempted is set the first time
+	// the corresponding collectX flag fires in the loop below; *FirstErr keeps
+	// the FIRST non-nil error seen (these failures are systemic — a missing
+	// scope 403s every device — so first-error is as representative as any
+	// other choice and there is no need to rank them). Zero attempts this tick
+	// (subrequest disabled, or no devices) leaves *Attempted false, and no
+	// Observe call is made for it: a probe that never happened must stay
+	// unknown, never fabricate a state.
+	var (
+		postureAttempted bool
+		postureFirstErr  error
+		inviteAttempted  bool
+		inviteFirstErr   error
+	)
 
 	// #414 posture roll-ups and #427 distro inventory accumulators.
 	sshEnabled := 0
@@ -865,11 +919,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		if c.collectPosture {
-			c.emitPosture(ctx, e, d, nowT)
+			postureAttempted = true
+			if perr := c.emitPosture(ctx, e, d, nowT); perr != nil && postureFirstErr == nil {
+				postureFirstErr = perr
+			}
 		}
 
 		if c.collectDeviceInvites {
-			c.tallyDeviceInvites(ctx, e, d, inviteCounts, nowT)
+			inviteAttempted = true
+			if ierr := c.tallyDeviceInvites(ctx, e, d, inviteCounts, nowT); ierr != nil && inviteFirstErr == nil {
+				inviteFirstErr = ierr
+			}
 		}
 
 		if d.TailnetLockError != "" {
@@ -1169,6 +1229,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// earlier, leaving the previous snapshot in place until the next good tick.
 	c.gsb.Flush(e)
 
+	// #524: publish each per-device subrequest's aggregated availability, once
+	// per subrequest per tick. Emitted only when the subrequest was actually
+	// attempted this tick (see the *Attempted comment above the loop).
+	if postureAttempted {
+		apistate.Observe(e, c.tracker, c.Name(), opDevicePosture, apistate.Disposition{}, postureFirstErr, nowT)
+	}
+	if inviteAttempted {
+		apistate.Observe(e, c.tracker, c.Name(), subrequestDeviceInvites, apistate.Disposition{}, inviteFirstErr, nowT)
+	}
+
 	// #421: publish this tick's per-device subrequest coverage. Nil Coverage
 	// emits nothing (Snapshot returns nil), so a collector built without
 	// WithCoverage is byte-identical to the pre-#421 behavior.
@@ -1406,12 +1476,15 @@ func inviteDelivery(inv tsapi.DeviceInvite) string {
 // They are no longer SILENT, though — every attempt is classified through
 // apistate and tallied on the shared Coverage (#421). Before that, a 403 on
 // every device was indistinguishable from a tailnet with no invites at all,
-// while the scrape still reported success.
-func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int, nowT time.Time) {
+// while the scrape still reported success. The returned error (nil on
+// success) lets Collect aggregate this tick's per-device outcomes into a
+// single apistate.Observe call after the loop (#524); it is never used to
+// fail the enclosing Collect.
+func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int, nowT time.Time) error {
 	invs, err := c.api.DeviceInvites(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestDeviceInvites, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
-		return
+		return err
 	}
 	for _, inv := range invs {
 		delivery := inviteDelivery(inv)
@@ -1457,6 +1530,7 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter,
 			},
 		})
 	}
+	return nil
 }
 
 // emitDERPRollup aggregates the per-device DERP latency already fetched into
@@ -1505,12 +1579,15 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 // Per-device errors are non-fatal — the device is skipped and collection
 // continues — but they are recorded on the shared Coverage tally first (#421),
 // so a posture fetch that fails on every device shows up as degraded coverage
-// instead of an empty posture surface on a green scrape.
-func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time) {
+// instead of an empty posture surface on a green scrape. The returned error
+// (nil on success) lets Collect aggregate this tick's per-device outcomes into
+// a single apistate.Observe call after the loop (#524); it is never used to
+// fail the enclosing Collect.
+func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time) error {
 	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestPostureAttributes, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
-		return
+		return err
 	}
 	attrs := da.Attributes
 
@@ -1552,7 +1629,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	c.lastPosture[d.ID] = sig
 
 	if !emitLog {
-		return
+		return nil
 	}
 
 	evAttrs := telemetry.Attrs{
@@ -1575,6 +1652,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		Body:     fmt.Sprintf("device has %d posture attribute(s)", len(attrs)),
 		Attrs:    evAttrs,
 	})
+	return nil
 }
 
 // emitAttributes promotes the allow-listed posture attributes to metrics

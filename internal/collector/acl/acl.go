@@ -20,6 +20,12 @@ import (
 
 const defaultInterval = 600 * time.Second
 
+// opGetPolicyFile is the upstream OpenAPI operationId for the primary ACL
+// policy fetch (GET /tailnet/{tailnet}/acl), used as the tailscale.api.operation
+// attribute value on the availability signal (apistate). See opValidate in
+// validate.go for the optional validation subrequest's operation name.
+const opGetPolicyFile = "getPolicyFile"
+
 // Metric names emitted by this collector.
 const (
 	metricLastChanged = "tailscale.acl.last_changed"
@@ -134,6 +140,7 @@ func (c *Collector) DefaultInterval() time.Duration {
 // it records now() as the change time; otherwise it keeps the prior value.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	raw, err := c.api.PolicyFileRaw(ctx)
+	apistate.Observe(e, c.tracker, c.Name(), opGetPolicyFile, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return err
 	}

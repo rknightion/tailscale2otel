@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
@@ -66,6 +67,9 @@ const (
 // #167 seam (matches the other inventory collectors' default of 300s).
 const DefaultInterval = 300 * time.Second
 
+// opListOAuthApps is the upstream operationId of the list call.
+const opListOAuthApps = "listOAuthApps"
+
 // lister is the narrow client surface this collector needs. It is satisfied by
 // *tsapi.Client.
 type lister interface {
@@ -77,6 +81,9 @@ type Collector struct {
 	api      lister
 	interval time.Duration
 	now      func() time.Time
+	// tracker records this collector's per-operation availability for the admin
+	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
+	tracker *apistate.Tracker
 }
 
 // Option configures optional Collector behavior.
@@ -87,6 +94,11 @@ type Option func(*Collector)
 func WithClock(now func() time.Time) Option {
 	return func(c *Collector) { c.now = now }
 }
+
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads. A nil tracker is a no-op.
+func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tracker = t } }
 
 // New returns an oauth_apps Collector. A non-positive interval falls back to
 // the package DefaultInterval (300s) via (*Collector).DefaultInterval,
@@ -121,6 +133,20 @@ func (c *Collector) DefaultInterval() time.Duration {
 // is returned so the scheduler can classify and retry it normally.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	apps, err := c.api.OAuthApps(ctx)
+	// Observed regardless of outcome and INDEPENDENTLY of isFeatureOff below
+	// (#420/#524). With Disposition{} a 403 here records as scope_denied even
+	// though isFeatureOff (below) treats 403 OR 404 as "feature off" and
+	// swallows the error. That divergence is intentional: isFeatureOff's
+	// control flow (silently going idle) is unchanged, but the availability
+	// signal now makes a real scope regression visible on the admin status
+	// page and to the alert rules instead of looking identical to the alpha
+	// feature simply being unavailable. Do NOT "align" the two by adding
+	// DisabledOn: []int{403} — see the apistate package doc: an ambiguous 403
+	// must default to scope_denied, and this endpoint's 403 is genuinely
+	// ambiguous (alpha-feature-off vs. missing scope look identical on the
+	// wire; only isFeatureOff's existing, deliberate choice is to treat both
+	// as idle here).
+	apistate.Observe(e, c.tracker, c.Name(), opListOAuthApps, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		if isFeatureOff(err) {
 			return nil

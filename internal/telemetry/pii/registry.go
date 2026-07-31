@@ -241,7 +241,16 @@ var nonIdentifier = map[string]bool{
 	// shared file (a key missing here fails TestEveryCatalogAttributeIsClassified).
 
 	// Per-operation API availability (#420/#421/#425/#430). See internal/apistate.
-	"tailscale.api.operation": true, // upstream OpenAPI operationId — closed set from the vendored spec
+	// Mostly an upstream OpenAPI operationId from the vendored spec, but NOT
+	// exclusively (#524): a per-entity subrequest records under its bounded
+	// subrequest name instead ("device_posture", "device_invites",
+	// "user_invites"), because internal/app/capability.go joins a subrequest
+	// matrix row on operation == subrequest name; and the two collectors that do
+	// not call the control plane at all use a local probe name
+	// ("scrapeNodeMetrics" for tailscaled's :5252, "listObjects" for the S3
+	// backend). Every one of those is a compile-time constant, so the set stays
+	// closed and non-identifying either way.
+	"tailscale.api.operation": true,
 	"tailscale.api.state":     true, // apistate.State enum
 	"tailscale.subrequest":    true, // bounded per-entity subrequest type
 	"tailscale.capability":    true, // enabled-collector capability name on the config→capability matrix

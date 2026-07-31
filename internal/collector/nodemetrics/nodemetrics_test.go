@@ -18,9 +18,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+// Copied from internal/collector/postureintegrations/postureintegrations_test.go
+// so every collector's #524 wiring test asserts the same invariant: exactly one
+// state at 1 per operation.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
 
 // ptr returns a pointer to s, for serveText's mutable-body argument.
 func ptr(s string) *string { return &s }
@@ -2184,5 +2209,135 @@ func TestMetricNameBudget_NegativeDisablesBudget(t *testing.T) {
 	}
 	if dropped := rec.MetricPoints("tailscale2otel.nodemetrics.metric_names.dropped"); len(dropped) != 0 {
 		t.Fatalf("metric_names.dropped = %+v, want none (budget disabled)", dropped)
+	}
+}
+
+// TestAPIState_AllTargetsSucceed_Supported is the #524 wiring test: when every
+// target scrapes successfully, the collector must observe its own probe as
+// supported on BOTH surfaces (the OTLP availability gauge and the in-process
+// tracker the admin status page reads), not just leave it at unknown.
+func TestAPIState_AllTargetsSucceed_Supported(t *testing.T) {
+	body := "# TYPE g gauge\ng 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	tracker := apistate.NewTracker()
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:  []nodemetrics.Target{{URL: srv.URL, Instance: "n"}},
+		APIState: tracker,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil", err)
+	}
+	if got := availabilityStates(t, rec)["scrapeNodeMetrics"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want %q", got, apistate.StateSupported)
+	}
+	entries := tracker.Snapshot()
+	if len(entries) != 1 || entries[0].State != apistate.StateSupported {
+		t.Fatalf("tracker snapshot = %+v, want one supported entry", entries)
+	}
+}
+
+// TestAPIState_PartialFailure_StillSupported pins the deliberate #524 decision
+// that an offline node must NOT flip the collector's own availability row: that
+// per-target signal already exists as tailscale.node.up, and duplicating it onto
+// the collector-level probe would make the status page cry wolf over a single
+// unreachable node.
+func TestAPIState_PartialFailure_StillSupported(t *testing.T) {
+	goodBody := "# TYPE g gauge\ng 1\n"
+	good := serveText(&goodBody)
+	defer good.Close()
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	tracker := apistate.NewTracker()
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{
+			{URL: good.URL, Instance: "good"},
+			{URL: bad.URL, Instance: "bad"},
+		},
+		APIState: tracker,
+	})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil (one target healthy)", err)
+	}
+	if got := availabilityStates(t, rec)["scrapeNodeMetrics"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want %q (an offline node must not fail the collector-level probe)", got, apistate.StateSupported)
+	}
+}
+
+// TestAPIState_AllTargetsFail_TransientFailure verifies the all-failed path
+// observes the SAME error Collect already builds and returns (not a second,
+// invented one), and that it classifies as transient_failure — the honest
+// answer for an unreachable node, since there is no upstream operationId or
+// tsapi.StatusError to classify here.
+func TestAPIState_AllTargetsFail_TransientFailure(t *testing.T) {
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer bad.Close()
+
+	tracker := apistate.NewTracker()
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets:  []nodemetrics.Target{{URL: bad.URL, Instance: "bad1"}},
+		APIState: tracker,
+	})
+	rec := telemetrytest.New()
+	err := c.Collect(context.Background(), rec.Emitter())
+	if err == nil {
+		t.Fatal("Collect() error = nil, want non-nil (all targets failed)")
+	}
+	wantErr := "nodemetrics: all 1 target(s) failed"
+	if err.Error() != wantErr {
+		t.Fatalf("Collect() error = %q, want %q", err.Error(), wantErr)
+	}
+	if got := availabilityStates(t, rec)["scrapeNodeMetrics"]; got != string(apistate.StateTransientFailure) {
+		t.Errorf("availability = %q, want %q", got, apistate.StateTransientFailure)
+	}
+	entries := tracker.Snapshot()
+	if len(entries) != 1 || entries[0].State != apistate.StateTransientFailure {
+		t.Fatalf("tracker snapshot = %+v, want one transient_failure entry", entries)
+	}
+}
+
+// TestAPIState_ZeroTargets_NoAvailabilityEntry pins the one legitimate residual
+// "unknown" for this collector: a probe that never happened (no targets
+// configured, or discovery returned nothing) must stay unknown rather than
+// fabricate a state, so NO availability entry is emitted at all.
+func TestAPIState_ZeroTargets_NoAvailabilityEntry(t *testing.T) {
+	tracker := apistate.NewTracker()
+	c := nodemetrics.New(nodemetrics.Options{APIState: tracker})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil", err)
+	}
+	if pts := rec.MetricPoints(apistate.MetricAvailability); len(pts) != 0 {
+		t.Fatalf("availability points = %+v, want none (zero targets never probed)", pts)
+	}
+	if entries := tracker.Snapshot(); len(entries) != 0 {
+		t.Fatalf("tracker snapshot = %+v, want empty (zero targets never probed)", entries)
+	}
+}
+
+// TestAPIState_NilTracker_NoPanic verifies a nil Options.APIState (the default,
+// used by every deployment until the app wiring pass lands #524) is a clean
+// no-op: the OTLP availability metric is still emitted (metrics don't depend on
+// the tracker), and nothing panics.
+func TestAPIState_NilTracker_NoPanic(t *testing.T) {
+	body := "# TYPE g gauge\ng 1\n"
+	srv := serveText(&body)
+	defer srv.Close()
+
+	c := nodemetrics.New(nodemetrics.Options{Targets: []nodemetrics.Target{{URL: srv.URL, Instance: "n"}}})
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect() error = %v, want nil", err)
+	}
+	if got := availabilityStates(t, rec)["scrapeNodeMetrics"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want %q (metric still emitted with nil tracker)", got, apistate.StateSupported)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/oauthapps"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
@@ -261,14 +262,31 @@ func statusErr(code int) error {
 	return &tsapi.StatusError{Method: "GET", URL: "https://api.tailscale.com/api/v2/tailnet/example.com/oauth-apps", Code: code, Body: "not found"}
 }
 
+// appMetricNames returns the emitted metric names that belong to this
+// collector's own inventory signals, excluding the shared apistate
+// availability/last_probe series that Observe now emits on every call (#524).
+func appMetricNames(rec *telemetrytest.Recorder) []string {
+	var out []string
+	for _, name := range rec.MetricNames() {
+		if name == apistate.MetricAvailability || name == apistate.MetricLastProbe {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
+}
+
 func TestCollect_403IsIdleNotError(t *testing.T) {
 	rec := telemetrytest.New()
 	c := oauthapps.New(&fakeLister{err: statusErr(403)}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect on 403 must be idle (nil error), got: %v", err)
 	}
-	if len(rec.MetricNames()) != 0 {
-		t.Fatalf("Collect on 403 must emit nothing, got metrics: %v", rec.MetricNames())
+	// The control flow (isFeatureOff) is unchanged: no app inventory metrics.
+	// The availability signal is a deliberate, separate addition (#524) — see
+	// TestAvailabilityStates for the scope_denied assertion.
+	if got := appMetricNames(rec); len(got) != 0 {
+		t.Fatalf("Collect on 403 must emit no app inventory metrics, got: %v", got)
 	}
 }
 
@@ -278,8 +296,8 @@ func TestCollect_404IsIdleNotError(t *testing.T) {
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect on 404 must be idle (nil error), got: %v", err)
 	}
-	if len(rec.MetricNames()) != 0 {
-		t.Fatalf("Collect on 404 must emit nothing, got metrics: %v", rec.MetricNames())
+	if got := appMetricNames(rec); len(got) != 0 {
+		t.Fatalf("Collect on 404 must emit no app inventory metrics, got: %v", got)
 	}
 }
 
@@ -301,5 +319,103 @@ func TestCollect_5xxPropagates(t *testing.T) {
 	c := oauthapps.New(&fakeLister{err: statusErr(500)}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
 		t.Fatal("Collect on 5xx: expected a non-nil error (transient failure, not idle)")
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is 1.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestAvailabilityStates guards #524: this collector must call apistate.Observe
+// so the admin status page and the availability alert rules are no longer dark
+// for it. The 403 case is the load-bearing one: isFeatureOff's existing control
+// flow (treat 403 as idle, swallow the error, emit no app metrics) is UNCHANGED,
+// but the availability state must read scope_denied — proving Disposition{} was
+// used rather than DisabledOn: []int{403} — so a real scope regression on this
+// alpha endpoint is no longer indistinguishable from the feature simply being
+// off. See the divergence comment at the Observe call site in oauthapps.go.
+func TestAvailabilityStates(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantState   apistate.State
+		wantErr     bool
+		wantAppMets bool // app inventory metrics (e.g. apps.count) are emitted
+	}{
+		{"success", nil, apistate.StateSupported, false, true},
+		{"401 revoked credential", &tsapi.StatusError{Code: 401}, apistate.StateCredentialRejected, true, false},
+		{"403 missing scope, still swallowed", statusErr(403), apistate.StateScopeDenied, false, false},
+		{"404 endpoint absent, still swallowed", statusErr(404), apistate.StateDisabled, false, false},
+		{"400 malformed request", &tsapi.StatusError{Code: 400}, apistate.StateRequestRejected, true, false},
+		{"transport timeout", context.DeadlineExceeded, apistate.StateTransientFailure, true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			c := oauthapps.New(&fakeLister{err: tc.err}, 0)
+			err := c.Collect(context.Background(), rec.Emitter())
+
+			if tc.wantErr != (err != nil) {
+				t.Fatalf("Collect() err = %v, wantErr = %v", err, tc.wantErr)
+			}
+			if got := availabilityStates(t, rec)["listOAuthApps"]; got != string(tc.wantState) {
+				t.Errorf("availability = %q, want %q", got, tc.wantState)
+			}
+			gotAppMets := len(appMetricNames(rec)) != 0
+			if gotAppMets != tc.wantAppMets {
+				t.Errorf("app inventory metrics present = %v, want %v (metrics: %v)", gotAppMets, tc.wantAppMets, appMetricNames(rec))
+			}
+		})
+	}
+}
+
+// TestAvailabilityTrackerWired guards WithAPIState: the tracker records the
+// same state the availability metric reports, and a nil tracker (the default)
+// is a no-op rather than a panic.
+func TestAvailabilityTrackerWired(t *testing.T) {
+	probe := time.Date(2026, 7, 31, 9, 0, 0, 0, time.UTC)
+	tr := apistate.NewTracker()
+	rec := telemetrytest.New()
+	c := oauthapps.New(&fakeLister{}, 0, oauthapps.WithAPIState(tr), oauthapps.WithClock(func() time.Time { return probe }))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if got := availabilityStates(t, rec)["listOAuthApps"]; got != string(apistate.StateSupported) {
+		t.Errorf("availability = %q, want supported", got)
+	}
+	snap := tr.Snapshot()
+	if len(snap) != 1 || snap[0].Collector != "oauth_apps" || snap[0].Operation != "listOAuthApps" {
+		t.Fatalf("tracker snapshot = %+v, want one oauth_apps/listOAuthApps entry", snap)
+	}
+	lp := rec.MetricPoints(apistate.MetricLastProbe)
+	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
+		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+// TestAvailabilityNilTrackerIsNoop guards that omitting WithAPIState (the
+// default, nil tracker) never panics.
+func TestAvailabilityNilTrackerIsNoop(t *testing.T) {
+	rec := telemetrytest.New()
+	c := oauthapps.New(&fakeLister{}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
 	}
 }

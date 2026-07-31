@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
@@ -93,6 +94,9 @@ const (
 
 const defaultInterval = 300 * time.Second
 
+// opListTailnetKeys is the upstream operationId of the list call.
+const opListTailnetKeys = "listTailnetKeys"
+
 // lister is the narrow client surface this collector needs. It is satisfied by
 // *tsapi.Client.
 type lister interface {
@@ -106,6 +110,9 @@ type Collector struct {
 	expiryWarn time.Duration
 	now        func() time.Time
 	perEntity  bool
+	// tracker records this collector's per-operation availability for the admin
+	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
+	tracker *apistate.Tracker
 }
 
 // Option configures optional Collector behavior.
@@ -119,6 +126,11 @@ type Option func(*Collector)
 func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
 }
+
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads. A nil tracker is a no-op.
+func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tracker = t } }
 
 // New returns a keys Collector. A non-positive interval falls back to the
 // default (300s) via DefaultInterval. now defaults to time.Now when nil
@@ -190,6 +202,13 @@ func addTags(attrs telemetry.Attrs, k tsapi.Key) {
 // expiry warnings.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	ks, err := c.api.KeysRich(ctx)
+	// Observed regardless of outcome (#420/#524): success reads as `supported`,
+	// so a healthy collector never leaves this operation reading `unknown` on
+	// the admin status page or in the availability alert rules. Disposition{}
+	// is the correct default here — nothing about listTailnetKeys is
+	// documented upstream as 403-gated, so an ambiguous 403 must read as
+	// scope_denied, not disabled.
+	apistate.Observe(e, c.tracker, c.Name(), opListTailnetKeys, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return fmt.Errorf("keys: list: %w", err)
 	}

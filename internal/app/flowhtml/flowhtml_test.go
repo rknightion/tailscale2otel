@@ -641,6 +641,18 @@ func TestRender_TopologySimulationSkipsAnimationWhenMotionIsReduced(t *testing.T
 	}
 }
 
+// TestRender_HasBacklinkToStatusPage guards #524 item 4: following /flows or
+// /events must never strand the operator with only the browser Back button.
+// The link text and trailing arrow are pinned to match eventshtml's own
+// backlink byte-for-byte, so the two pages read as one consistent surface
+// rather than each inventing its own phrasing.
+func TestRender_HasBacklinkToStatusPage(t *testing.T) {
+	out := render(t, samplePage())
+	if !strings.Contains(out, `<a href="/">status &rarr;</a>`) {
+		t.Error(`rendered page is missing the backlink <a href="/">status &rarr;</a> to the status page`)
+	}
+}
+
 func TestPageDTOCannotCarryACredential(t *testing.T) {
 	t.Parallel()
 	rt := reflect.TypeOf(flowsdata.Page{})

@@ -11,6 +11,7 @@ import (
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
@@ -61,6 +62,24 @@ const (
 
 const defaultInterval = 300 * time.Second
 
+// opListUsers is the upstream operationId of the primary user-listing call
+// (verbatim from spec/tailscale-api.json).
+const opListUsers = "listUsers"
+
+// opUserInvites is the operation name this collector records for the
+// UserInvites() subrequest. It is deliberately NOT the upstream operationId
+// (which is listUserInvites) — it is the bounded subrequest name declared as
+// app.SubrequestUserInvites ("user_invites") in internal/app/capability.go.
+// That file's filterOperations joins a capability-matrix row to this
+// collector's tracker entries by exact match on the operation string against
+// the subrequest name, so recording under the operationId instead would leave
+// that row permanently "unknown" (#524). This package cannot import
+// internal/app (import cycle: internal/app already imports internal/catalog,
+// which would need to import this package), so the literal is duplicated here
+// rather than shared — TestUserInvitesRecordedUnderSubrequestNameNotOperationID
+// in users_test.go guards against it drifting.
+const opUserInvites = "user_invites"
+
 // lister is the narrow client surface this collector needs. It is satisfied by
 // *tsapi.Client.
 type lister interface {
@@ -76,6 +95,9 @@ type Collector struct {
 	activityData bool
 	directory    DirectorySink
 	now          func() time.Time
+	// tracker records this collector's per-operation availability for the admin
+	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
+	tracker *apistate.Tracker
 }
 
 // DirectorySink receives the login-to-role directory each collect, so the ACL
@@ -119,6 +141,11 @@ func WithActivityData(enabled bool) Option {
 func WithClock(now func() time.Time) Option {
 	return func(c *Collector) { c.now = now }
 }
+
+// WithAPIState wires the shared per-operation availability tracker (#420).
+// Availability METRICS are emitted regardless; the tracker is the in-process
+// introspection copy the admin status page reads. A nil tracker is a no-op.
+func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tracker = t } }
 
 // New returns a users Collector. A non-positive interval falls back to the
 // default (300s) via DefaultInterval. Per-user gauges are emitted by default;
@@ -173,6 +200,7 @@ func inviteDelivery(i tsapi.UserInvite) string {
 // by the sink and surfaced on the status page instead.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	us, err := c.api.Users(ctx)
+	apistate.Observe(e, c.tracker, c.Name(), opListUsers, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return fmt.Errorf("users: list: %w", err)
 	}
@@ -245,6 +273,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	invites, err := c.api.UserInvites(ctx)
+	apistate.Observe(e, c.tracker, c.Name(), opUserInvites, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return fmt.Errorf("users: invites: %w", err)
 	}

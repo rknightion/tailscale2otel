@@ -8,6 +8,7 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
@@ -485,5 +486,147 @@ func TestCollect_PropagatesInviteError(t *testing.T) {
 	c := users.New(&fakeLister{users: sampleUsers(), invitesErr: wantErr}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
 		t.Fatalf("Collect err = %v, want %v", err, wantErr)
+	}
+}
+
+// availabilityStates returns, per operation, the single state whose gauge is
+// 1. Copied from postureintegrations_test.go so this package's availability
+// assertions don't depend on another package's test-only helper.
+func availabilityStates(t *testing.T, rec *telemetrytest.Recorder) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, p := range rec.MetricPoints(apistate.MetricAvailability) {
+		op := p.Attrs["tailscale.api.operation"]
+		st := p.Attrs["tailscale.api.state"]
+		switch p.Value {
+		case 1:
+			if prev, dup := out[op]; dup {
+				t.Fatalf("operation %q has two states at 1: %q and %q", op, prev, st)
+			}
+			out[op] = st
+		case 0:
+		default:
+			t.Fatalf("availability gauge for %q/%q = %v, want 0 or 1", op, st, p.Value)
+		}
+	}
+	return out
+}
+
+// TestCollect_AvailabilityStates_ListUsers drives the primary Users() call
+// through every classified state (#524) and asserts the recorded
+// availability under the "listUsers" operation name. Disposition is the zero
+// value: an ambiguous 403 must read as scope_denied, never disabled — there
+// is no upstream-documented feature gate for user listing.
+func TestCollect_AvailabilityStates_ListUsers(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantState string
+	}{
+		{"success", nil, "supported"},
+		{"401 credential rejected", &tsapi.StatusError{Code: 401}, "credential_rejected"},
+		{"403 scope denied", &tsapi.StatusError{Code: 403}, "scope_denied"},
+		{"400 request rejected", &tsapi.StatusError{Code: 400}, "request_rejected"},
+		{"transient transport error", context.DeadlineExceeded, "transient_failure"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites(), err: tc.err}, 0)
+			err := c.Collect(context.Background(), rec.Emitter())
+			if tc.err == nil && err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			if tc.err != nil && err == nil {
+				t.Fatalf("Collect: want error, got nil")
+			}
+			if got := availabilityStates(t, rec)["listUsers"]; got != tc.wantState {
+				t.Errorf("listUsers availability = %q, want %q", got, tc.wantState)
+			}
+		})
+	}
+}
+
+// TestCollect_AvailabilityStates_UserInvites drives the UserInvites()
+// subrequest through every classified state and asserts it independently of
+// Users(), which always succeeds in this table. Disposition is the zero
+// value for the same reason as above.
+func TestCollect_AvailabilityStates_UserInvites(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantState string
+	}{
+		{"success", nil, "supported"},
+		{"401 credential rejected", &tsapi.StatusError{Code: 401}, "credential_rejected"},
+		{"403 scope denied", &tsapi.StatusError{Code: 403}, "scope_denied"},
+		{"400 request rejected", &tsapi.StatusError{Code: 400}, "request_rejected"},
+		{"transient transport error", context.DeadlineExceeded, "transient_failure"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := telemetrytest.New()
+			c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites(), invitesErr: tc.err}, 0)
+			err := c.Collect(context.Background(), rec.Emitter())
+			if tc.err == nil && err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			if tc.err != nil && err == nil {
+				t.Fatalf("Collect: want error, got nil")
+			}
+			states := availabilityStates(t, rec)
+			if got := states["user_invites"]; got != tc.wantState {
+				t.Errorf("user_invites availability = %q, want %q", got, tc.wantState)
+			}
+			if got := states["listUsers"]; got != "supported" {
+				t.Errorf("listUsers availability = %q, want supported (independent of UserInvites)", got)
+			}
+		})
+	}
+}
+
+// TestCollect_AvailabilityIndependence pins #524's core requirement: the two
+// operations are tracked independently in the same tick. Users() succeeding
+// must not mask a UserInvites() 403.
+func TestCollect_AvailabilityIndependence(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{
+		users:      sampleUsers(),
+		invitesErr: &tsapi.StatusError{Code: 403},
+	}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect: want error (invites 403), got nil")
+	}
+	states := availabilityStates(t, rec)
+	if states["listUsers"] != "supported" {
+		t.Errorf("listUsers = %q, want supported", states["listUsers"])
+	}
+	if states["user_invites"] != "scope_denied" {
+		t.Errorf("user_invites = %q, want scope_denied", states["user_invites"])
+	}
+}
+
+// TestUserInvitesRecordedUnderSubrequestNameNotOperationID pins #524: the
+// UserInvites() subrequest MUST be recorded under the bounded subrequest name
+// "user_invites" (internal/app.SubrequestUserInvites), NOT the upstream
+// operationId "listUserInvites". internal/app/capability.go's
+// filterOperations joins a capability-matrix row to tracker entries by exact
+// operation-string match against the subrequest name; recording under the
+// operationId would leave that row permanently "unknown". This collector
+// cannot import internal/app (import cycle), so the join key is duplicated
+// here as a literal rather than a shared constant — this test is the guard
+// against that literal drifting.
+func TestUserInvitesRecordedUnderSubrequestNameNotOperationID(t *testing.T) {
+	rec := telemetrytest.New()
+	c := users.New(&fakeLister{users: sampleUsers(), invites: sampleInvites()}, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	states := availabilityStates(t, rec)
+	if got, ok := states["listUserInvites"]; ok {
+		t.Errorf("UserInvites recorded under operationId %q instead of subrequest name %q", got, "user_invites")
+	}
+	if got, ok := states["user_invites"]; !ok || got != "supported" {
+		t.Errorf("user_invites availability = %q (present=%v), want supported", got, ok)
 	}
 }

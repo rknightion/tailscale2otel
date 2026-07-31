@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/dns"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -17,6 +18,7 @@ import (
 // event must be in LogCatalog().
 func TestCatalogMatchesEmitted(t *testing.T) {
 	rec := telemetrytest.New()
+	tr := apistate.NewTracker()
 	c := dns.New(&fakeCatalogAPI{cfg: &tsapi.DNSConfig{
 		Nameservers: []tsapi.DNSResolver{{Address: "1.1.1.1", UseWithExitNode: true}},
 		SplitDNS: map[string][]tsapi.DNSResolver{
@@ -25,13 +27,16 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		SearchPaths:      []string{"example.com"},
 		OverrideLocalDNS: true,
 		MagicDNS:         true,
-	}}, 0)
+	}}, 0, dns.WithAPIState(tr))
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range dns.Catalog() {
+	// The per-operation availability signals are declared once, in the shared
+	// internal/apistate catalog (which internal/catalog aggregates), not per
+	// collector — every collector emits the same two descriptors.
+	for _, m := range append(dns.Catalog(), apistate.Catalog()...) {
 		declared[m.Name] = m
 	}
 
@@ -58,6 +63,10 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 			t.Errorf("%s: catalog instrument %q but emitted kind=%q monotonic=%v", name, d.Instrument, p0.Kind, p0.Monotonic)
 		}
 	}
+
+	// Attribute-key drift guard: the loop above compares name/unit/description
+	// only, so an emitted-but-undeclared attribute would silently rot the docs.
+	telemetrytest.AssertCatalogAttrs(t, rec, append(dns.Catalog(), apistate.Catalog()...), dns.LogCatalog())
 
 	logDeclared := map[string]bool{}
 	for _, le := range dns.LogCatalog() {

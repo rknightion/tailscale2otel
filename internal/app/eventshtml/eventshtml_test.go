@@ -123,6 +123,22 @@ func TestRender_ReducedMotionRulePresent(t *testing.T) {
 	}
 }
 
+// TestRender_HasBacklinkToStatusPage guards #524 item 4: following /flows or
+// /events must never strand the operator with only the browser Back button.
+// The link text and trailing arrow are pinned to match flowhtml's own
+// backlink byte-for-byte, so the two pages read as one consistent surface
+// rather than each inventing its own phrasing.
+func TestRender_HasBacklinkToStatusPage(t *testing.T) {
+	var buf bytes.Buffer
+	if err := eventshtml.Render(&buf, eventsdata.Page{}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, `<a href="/">status &rarr;</a>`) {
+		t.Error(`rendered page is missing the backlink <a href="/">status &rarr;</a> to the status page`)
+	}
+}
+
 // TestPageDTOCannotCarryACredential mirrors flowhtml's own copy of this test
 // (#322) at the point where the template actually consumes the DTO, as a
 // second line of defense alongside eventsdata's own reflection test.

@@ -84,7 +84,10 @@ var funcs = template.FuncMap{
 			return "pending"
 		}
 	},
-	// capReason renders a non-active reason code as operator-facing prose.
+	// capReason renders a non-active reason code as operator-facing prose. Used
+	// as the fallback for every non-active row EXCEPT the deliberately-streamed
+	// case, which capStatusLabel/capStatusExplain handle instead (see
+	// capInformational).
 	"capReason": func(reason string) string {
 		switch reason {
 		case statusdata.CapabilityReasonUnsupported:
@@ -95,6 +98,41 @@ var funcs = template.FuncMap{
 			return "not polling"
 		default:
 			return "inactive"
+		}
+	},
+	// capInformational reports whether a non-active capability row describes a
+	// collector that is deliberately not polling because its data arrives
+	// another way — the streaming receiver or an object-store reader — rather
+	// than a real gap. That is a healthy, intended state and must never be
+	// styled like a fault or read like the ambiguous "still not registered"
+	// pending badge (#524).
+	"capInformational": func(reason, source string) bool {
+		return reason == statusdata.CapabilityReasonNotRegistered &&
+			(source == "stream" || source == "objectstore")
+	},
+	// capStatusLabel is the short Status-column badge text for an informational
+	// row; only meaningful when capInformational is true for the same row.
+	"capStatusLabel": func(source string) string {
+		switch source {
+		case "stream":
+			return "streamed"
+		case "objectstore":
+			return "object storage"
+		default:
+			return "not polling"
+		}
+	},
+	// capStatusExplain is the plain-English note rendered under an
+	// informational row's badge, naming the actual ingestion path so an
+	// operator never mistakes "not polling" for broken.
+	"capStatusExplain": func(source string) string {
+		switch source {
+		case "stream":
+			return "ingested via streaming receiver — not polled"
+		case "objectstore":
+			return "ingested via object storage — not polled"
+		default:
+			return ""
 		}
 	},
 }

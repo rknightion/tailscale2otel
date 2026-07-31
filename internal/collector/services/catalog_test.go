@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -34,7 +35,10 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 
 	declared := map[string]metricdoc.Metric{}
-	for _, m := range services.Catalog() {
+	// The per-operation availability signals are declared once, in the shared
+	// internal/apistate catalog (which internal/catalog aggregates), not per
+	// collector — every collector emits the same two descriptors.
+	for _, m := range append(services.Catalog(), apistate.Catalog()...) {
 		declared[m.Name] = m
 	}
 	for _, name := range rec.MetricNames() {
@@ -57,5 +61,6 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 
 	// Attribute-drift guard (#126): every emitted attribute must be declared.
-	telemetrytest.AssertCatalogAttrs(t, rec, services.Catalog(), services.LogCatalog())
+	telemetrytest.AssertCatalogAttrs(t, rec,
+		append(services.Catalog(), apistate.Catalog()...), services.LogCatalog())
 }
