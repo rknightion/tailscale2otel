@@ -211,8 +211,9 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # before the work, 466 after the health rebuild added panels for 25 signals that
         # previously reached none, then back down to 453 as the consolidation pass merged
         # near-duplicates and single-panel rows — while the LAST 15 uncovered signals
-        # gained panels. Fewer panels covering more signals is the whole point; a rise
-        # here without a coverage reason is the thing to be suspicious of.
+        # gained panels, and 454 once #527 exposed a 16th. Fewer panels covering more
+        # signals is the whole point; a rise here without a coverage reason is the
+        # thing to be suspicious of.
         # Regrouping tabs must not add or drop a panel beyond a deliberate content
         # change; this number moves only with one.
         #
@@ -222,8 +223,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 453)
-        self.assertEqual(len(self.elements), 298, "tailnet dashboard")
+        self.assertEqual(total, 454)
+        self.assertEqual(len(self.elements), 299, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
         # The other half of the count above: #526 moved these two leaves rather than

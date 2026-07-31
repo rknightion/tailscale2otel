@@ -59,31 +59,72 @@ func collectStrings(node any, keys map[string]bool, key string, out *[]string) {
 	}
 }
 
-// dashboardExprs is every query the generated dashboard runs (panel queries and
-// template-variable queries alike).
-func dashboardExprs(t *testing.T) []string {
+// dashboardExprs splits every query the generated dashboard family runs into the
+// ones a PANEL evaluates and the ones a TEMPLATE VARIABLE evaluates.
+//
+// The split is the whole point (#527). Only a panel puts a signal in front of an
+// operator; a presence sentinel's label_values() call references the metric just
+// as really, and shows nobody anything. Lumping them together let a signal clear
+// the every-signal-reaches-a-panel bar while being invisible.
+//
+// Panel queries are everything under spec.elements. Variable queries are
+// everything under any "variables" list — dashboard-level, and (since #526) the
+// per-tab and per-row lists inside spec.layout.
+func dashboardExprs(t *testing.T) (panels, variables []string) {
 	t.Helper()
-	var out []string
 	for _, path := range dashboardPaths {
 		b, err := os.ReadFile(path) //nolint:gosec // fixed repo-relative artifact path
 		if err != nil {
-			t.Fatalf("read %s: %v", path, err)
+			t.Fatal(err)
 		}
-		var doc any
+		var doc struct {
+			Spec struct {
+				Elements  any `json:"elements"`
+				Variables any `json:"variables"`
+				Layout    any `json:"layout"`
+			} `json:"spec"`
+		}
 		if err := json.Unmarshal(b, &doc); err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
-		before := len(out)
-		collectStrings(doc, exprKeys, "", &out)
-		if len(out) == before {
-			// Per-file, not just on the total: after the #526 split a whole
-			// artifact failing to contribute would otherwise be masked by the
-			// other one, and every "visualized" claim resting on it would be
-			// vacuously unprovable.
-			t.Fatalf("%s yielded no queries; the extraction is broken", path)
+
+		beforeP, beforeV := len(panels), len(variables)
+		collectStrings(doc.Spec.Elements, exprKeys, "", &panels)
+		collectStrings(doc.Spec.Variables, exprKeys, "", &variables)
+		collectVariableLists(doc.Spec.Layout, &variables)
+
+		// Per-file, not just on the total: after the #526 split a whole artifact
+		// failing to contribute would otherwise be masked by the other one, and
+		// every claim resting on it would be vacuously unprovable. Asserted on
+		// BOTH halves — an extraction that silently stopped finding variable
+		// queries would make this gate strictly weaker while still passing.
+		if len(panels) == beforeP {
+			t.Fatalf("%s yielded no PANEL queries; the extraction is broken", path)
+		}
+		if len(variables) == beforeV {
+			t.Fatalf("%s yielded no VARIABLE queries; the extraction is broken", path)
 		}
 	}
-	return out
+	return panels, variables
+}
+
+// collectVariableLists appends every query string found under a "variables" key
+// anywhere in the layout — the per-tab and per-row variable lists #526 added.
+func collectVariableLists(node any, out *[]string) {
+	switch v := node.(type) {
+	case map[string]any:
+		for k, child := range v {
+			if k == "variables" {
+				collectStrings(child, exprKeys, "", out)
+				continue
+			}
+			collectVariableLists(child, out)
+		}
+	case []any:
+		for _, child := range v {
+			collectVariableLists(child, out)
+		}
+	}
 }
 
 // ruleExprs splits the shipped rule manifests' expressions into the ones an ALERT
@@ -171,10 +212,12 @@ func refSet(texts []string) map[string]bool {
 func artifactRefs(t *testing.T) catalog.ArtifactRefs {
 	t.Helper()
 	alerting, recording := ruleExprs(t, rulesDir)
+	panels, variables := dashboardExprs(t)
 	return catalog.ArtifactRefs{
-		Dashboard: refSet(dashboardExprs(t)),
-		Alerting:  refSet(alerting),
-		Recording: refSet(recording),
+		Dashboard:         refSet(panels),
+		DashboardVariable: refSet(variables),
+		Alerting:          refSet(alerting),
+		Recording:         refSet(recording),
 	}
 }
 
@@ -484,6 +527,47 @@ func TestValidateSignalDispositions_RejectsContradictions(t *testing.T) {
 	if problems := catalog.ValidateSignalDispositions(clean, []catalog.Signal{metric}, shown); problems.Len() > 0 {
 		t.Errorf("a correct row was rejected:\n%s", problems)
 	}
+}
+
+// TestArtifactRefs_PanelAndVariableAreDifferentSurfaces is the #527 gate.
+//
+// A presence sentinel's label_values() call references a metric exactly as really
+// as a panel query does, and shows nobody anything. While both fed one set, a
+// signal could satisfy "every signal reaches a panel" while being invisible —
+// tailscale.subnet_routes.advertised did, for as long as the row its sentinel
+// gated survived, and tailscale.key.expiring did on the strength of its name
+// appearing as an OPTION VALUE in a dropdown, which is not even a query.
+func TestArtifactRefs_PanelAndVariableAreDifferentSurfaces(t *testing.T) {
+	sig := catalog.Signal{
+		Kind: catalog.KindMetric, Name: "tailscale.example",
+		PromName: "tailscale_example_ratio", Surface: catalog.SurfaceOperational,
+	}
+	name := map[string]bool{"tailscale_example_ratio": true}
+
+	t.Run("a panel query means visualized", func(t *testing.T) {
+		got := catalog.ArtifactRefs{Dashboard: name}.Observed(sig)
+		if len(got) != 1 || got[0] != catalog.DispVisualized {
+			t.Fatalf("got %v, want [visualized]", got)
+		}
+	})
+
+	// The half that matters. Anything that folds this back into visualized —
+	// including a well-meaning "a reference is a reference" simplification —
+	// reopens the hole.
+	t.Run("a variable query does NOT mean visualized", func(t *testing.T) {
+		got := catalog.ArtifactRefs{DashboardVariable: name}.Observed(sig)
+		if len(got) != 1 || got[0] != catalog.DispDrivesAVariable {
+			t.Fatalf("got %v, want [drives_a_variable] — a template variable puts "+
+				"nothing on screen, so it cannot satisfy the panel bar", got)
+		}
+	})
+
+	t.Run("both surfaces are recorded when both are true", func(t *testing.T) {
+		got := catalog.ArtifactRefs{Dashboard: name, DashboardVariable: name}.Observed(sig)
+		if len(got) != 2 || got[0] != catalog.DispVisualized || got[1] != catalog.DispDrivesAVariable {
+			t.Fatalf("got %v, want [visualized drives_a_variable]", got)
+		}
+	})
 }
 
 // TestValidateSignalDispositions_ReportsStaleRows: a manifest row for a signal the

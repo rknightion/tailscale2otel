@@ -89,8 +89,9 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
 > `scripts/regen-generated.sh coverage` rebuilds only the *page* from the manifest. The manifest itself
 > is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
-> which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded` from the actual
-> dashboard and rule artifacts and prunes dead rows, but leaves a new signal's disposition EMPTY — and an
+> which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded`/
+> `drives_a_variable` from the actual dashboard and rule artifacts and prunes dead rows, but leaves a
+> new signal's disposition EMPTY — and an
 > empty disposition always fails the gate. **There is no value a human may assign** — all three
 > dispositions are derived — so a signal on no surface cannot be settled by editing the manifest,
 > only by giving it a panel. Regenerating after changing the dashboards or rules is expected and
@@ -101,6 +102,12 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > them as an explicitly transitional shrink-only ledger and was deleted with its last row. Do not
 > reintroduce any of them. The only exemptions are the three **structural** classes in
 > `catalog.StructuralExemptions()`, each an individually justified entry.
+>
+> **`visualized` means a PANEL, and `drives_a_variable` is a separate value on purpose (#527).** A
+> presence sentinel's `label_values()` call is as real a reference as a panel query and shows nobody
+> anything; while both fed one value a signal could clear the coverage bar while being invisible.
+> `tailscale.subnet_routes.advertised` did, and `tailscale.key.expiring` cleared it merely because
+> its name is an option VALUE in a dropdown. Do not fold the two back together.
 
 > **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
 > classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**

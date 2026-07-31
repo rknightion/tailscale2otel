@@ -116,7 +116,23 @@ def tab_security_identity(scope):
                     "window and has not yet lapsed. Carries host_name, host_id and "
                     "tailscale_device_key_expires_in_days — the actionable per-device detail the "
                     "fleet-wide key-expiry histogram cannot give you. Needs the devices collector; "
-                    "hidden when host-name redaction is active."), 24, 9),
+                    "hidden when host-name redaction is active."), 12, 9),
+        # #527: tailscale.key.expiring — the AUTH-key counterpart of the device-key
+        # log beside it. It had no panel at all. It looked covered because its dotted
+        # name appears as an option VALUE in the `log_event` dropdown, which the
+        # coverage gate read as a reference — a string in a list, not a query, and it
+        # put the signal in front of nobody. Its sibling row above charts DEVICE node
+        # keys; this one is auth keys and OAuth clients, a different population with a
+        # different remedy (rotate a credential, not reauthenticate a machine).
+        (panel("Expiring auth keys & credentials (log detail)", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.key.expiring` "
+                       "|~ `$log_filter`", maxlines=200)],
+               options=logs_opts(),
+               desc="One WARN record per auth key or OAuth credential expiring inside the configured "
+                    "`expiry_warn` window. Carries the key id, type, auth kind, owner, tags and "
+                    "tailscale_key_expires_in_seconds — seconds REMAINING, not an absolute "
+                    "timestamp, so it counts down rather than up. Needs the keys collector. Read it "
+                    "against the expiry tiles above: those say how many, this says which."), 12, 9),
     ]
 
     # -----------------------------------------------------------------------
@@ -294,7 +310,7 @@ def tab_security_identity(scope):
     return [
         autogrid_row("Key & access expiry risk", expiry),
         row("Device share invites", devinvites, present="has_invites_dev"),
-        row("Expiring device keys", keyexpiring, hide_when=["pii_perdevice"]),
+        row("Expiring keys & credentials", keyexpiring, hide_when=["pii_perdevice"]),
         autogrid_row("Key inventory & age", keyinv),
         row("Credential scope & blast radius", scoperow,
             present="has_key_scopes", hide_when=["pii_actor"]),

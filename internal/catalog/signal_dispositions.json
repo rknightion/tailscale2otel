@@ -13,6 +13,11 @@
     "  visualized - queried by \u003e=1 panel or template variable in the generated dashboard",
     "  alertable  - queried by \u003e=1 alert rule expression",
     "  recorded   - consumed by \u003e=1 recording rule expression",
+    "  drives_a_variable - queried by a dashboard TEMPLATE VARIABLE (a presence",
+    "                  sentinel, or a filter dropdown). NOT visualized: a sentinel's",
+    "                  label_values() call is a real reference but puts nothing on",
+    "                  screen, and counting it let a signal clear the every-signal-",
+    "                  reaches-a-panel bar while being invisible (#527).",
     "There is NO disposition meaning \"this signal does not need a panel\". raw_only and",
     "omitted were exactly that and #526 deleted both after 35 signals had accrued under",
     "them, unreachable by any operator; the transitional pending_panel ledger that",
@@ -43,7 +48,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -69,7 +75,8 @@
       "name": "tailscale.device.posture",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -112,7 +119,8 @@
       "name": "tailscale.key.expiring",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -136,7 +144,8 @@
       "name": "tailscale.network.flow",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -244,7 +253,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -299,7 +309,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -317,7 +328,8 @@
       "prom_name": "tailscale_config_audit_events_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -355,7 +367,8 @@
       "prom_name": "tailscale_derp_region_devices_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -383,7 +396,8 @@
       "prom_name": "tailscale_device_attribute_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -412,7 +426,8 @@
       "prom_name": "tailscale_device_blocks_incoming_connections_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet."
     },
@@ -442,7 +457,8 @@
       "prom_name": "tailscale_device_connectivity_hard_nat_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -471,7 +487,8 @@
       "prom_name": "tailscale_device_derp_latency_seconds",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -490,7 +507,8 @@
       "prom_name": "tailscale_device_exit_node_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -541,7 +559,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -552,7 +571,8 @@
       "dispositions": [
         "visualized",
         "alertable",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -571,7 +591,8 @@
       "prom_name": "tailscale_device_routes_advertised",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -620,7 +641,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -733,7 +755,8 @@
       "prom_name": "tailscale_devices_key_expiry_days",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -852,7 +875,8 @@
       "prom_name": "tailscale_exit_node_io_bytes_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -939,7 +963,8 @@
       "prom_name": "tailscale_k8s_api_exec_sessions_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "kubectl exec/attach/port-forward attempts, dimensioned by the bounded command_class. Queried ad hoc in Loki alongside tailscale.k8s.api_request until a dashboard exists."
     },
@@ -949,7 +974,8 @@
       "prom_name": "tailscale_k8s_api_mutations_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "create/update/patch/delete attempts. Counts what was REQUESTED, not what succeeded, so it cannot back a change-success panel and no rule uses it."
     },
@@ -959,7 +985,8 @@
       "prom_name": "tailscale_k8s_api_rbac_probes_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Charted by resource and namespace. Deliberately not alerted: it is normal for UI clients such as Freelens, so the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline."
     },
@@ -969,7 +996,8 @@
       "prom_name": "tailscale_k8s_api_requests_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "Baseline Kubernetes API request volume, broken down by verb, namespace, resource and user agent on the Kubernetes Audit tab. Counts ATTEMPTS: the source carries no response status, so this is request volume, never a success or failure rate."
     },
@@ -979,7 +1007,8 @@
       "prom_name": "tailscale_k8s_api_sensitive_reads_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "Reads of secrets, service accounts and RBAC objects, charted by resource, namespace and user agent. A strong alerting candidate, but deliberately NOT wired to a rule: a useful threshold depends on the cluster's own baseline, and an arbitrary one would page on normal operator traffic."
     },
@@ -989,7 +1018,8 @@
       "prom_name": "tailscale_k8s_schema_drift_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "Guards an explicitly BETA upstream schema with no version field. Charted as a rate plus a range stat whose thresholds treat any drift as red, since a healthy feed reports nothing at all. Watch it after upgrading the operator or the recorder."
     },
@@ -999,7 +1029,8 @@
       "prom_name": "tailscale_k8s_session_started_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ],
       "note": "Terminal sessions derived from .cast headers. Fires once at session start; session completeness is not observable from the bucket, so there is no duration metric to visualize alongside it."
     },
@@ -1019,7 +1050,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1048,7 +1080,8 @@
       "prom_name": "tailscale_key_scopes_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1104,7 +1137,8 @@
       "prom_name": "tailscale_logstream_configured_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1218,7 +1252,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1228,7 +1263,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -1238,7 +1274,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -1284,7 +1321,8 @@
       "prom_name": "tailscale_network_unique_dst_peers",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1321,7 +1359,8 @@
       "prom_name": "tailscale_node_io_bytes_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1380,7 +1419,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1493,7 +1533,8 @@
       "prom_name": "tailscale_posture_integrations_count_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1511,7 +1552,8 @@
       "prom_name": "tailscale_rdns_cache_entries_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1576,7 +1618,8 @@
       "prom_name": "tailscale_service_ports",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1585,7 +1628,8 @@
       "prom_name": "tailscale_services_count_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1640,7 +1684,8 @@
       "prom_name": "tailscale_stream_records_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1661,7 +1706,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1719,7 +1765,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1728,7 +1775,8 @@
       "prom_name": "tailscale_user_connected_ratio",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1802,7 +1850,8 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -1954,7 +2003,8 @@
       "prom_name": "tailscale2otel_api_duration_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -1994,7 +2044,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -2158,7 +2209,8 @@
       "dispositions": [
         "visualized",
         "alertable",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -2168,7 +2220,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -2226,7 +2279,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -2556,7 +2610,8 @@
       "prom_name": "tailscale2otel_pii_filter_category_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "drives_a_variable"
       ]
     },
     {
@@ -2794,7 +2849,8 @@
       "surface": "self_obs",
       "dispositions": [
         "visualized",
-        "alertable"
+        "alertable",
+        "drives_a_variable"
       ]
     },
     {
@@ -2815,7 +2871,8 @@
       "dispositions": [
         "visualized",
         "alertable",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -2826,7 +2883,8 @@
       "dispositions": [
         "visualized",
         "alertable",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {
@@ -2837,7 +2895,8 @@
       "dispositions": [
         "visualized",
         "alertable",
-        "recorded"
+        "recorded",
+        "drives_a_variable"
       ]
     },
     {

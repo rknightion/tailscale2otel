@@ -73,6 +73,20 @@ const (
 	DispAlertable Disposition = "alertable"
 	// DispRecorded means a recording rule consumes or produces it.
 	DispRecorded Disposition = "recorded"
+	// DispDrivesAVariable means a dashboard TEMPLATE VARIABLE queries it — a
+	// hidden presence sentinel driving conditionalRendering, or a filter dropdown
+	// populated by label_values().
+	//
+	// Deliberately NOT visualized, and deliberately still recorded (#527). A
+	// sentinel's label_values() call is a real reference, so counting it as
+	// "visualized" let a signal satisfy the every-signal-reaches-a-panel bar while
+	// appearing on no panel an operator can see —
+	// tailscale.subnet_routes.advertised sat in exactly that state, covered only
+	// by the has_subnet sentinel, and stayed invisible until #526 deleted the row
+	// that sentinel gated. The failure mode is a signal invisible to operators and
+	// to the gate at once, and the gate gets QUIETER about it the longer the
+	// sentinel lives.
+	DispDrivesAVariable Disposition = "drives_a_variable"
 )
 
 // Every disposition is DERIVED — read off the shipped artifacts — and there is
@@ -129,18 +143,22 @@ type StructuralExemption struct {
 // derivedDispositions are the three a shipped artifact can PROVE. They are
 // computed, never chosen: the manifest must claim exactly the ones the dashboard
 // and rule files reference, in both directions.
-var derivedDispositions = []Disposition{DispVisualized, DispAlertable, DispRecorded}
+var derivedDispositions = []Disposition{
+	DispVisualized, DispAlertable, DispRecorded, DispDrivesAVariable,
+}
 
 // dispositionRank orders a disposition list for display: proven surfaces first,
 // in increasing distance from the operator's eye.
 var dispositionRank = map[Disposition]int{
-	DispVisualized: 0,
-	DispAlertable:  1,
-	DispRecorded:   2,
+	DispVisualized:      0,
+	DispAlertable:       1,
+	DispRecorded:        2,
+	DispDrivesAVariable: 3,
 }
 
 func isDerived(d Disposition) bool {
-	return d == DispVisualized || d == DispAlertable || d == DispRecorded
+	return d == DispVisualized || d == DispAlertable || d == DispRecorded ||
+		d == DispDrivesAVariable
 }
 func isKnown(d Disposition) bool { return isDerived(d) }
 
@@ -204,9 +222,13 @@ func sortSignals(s []Signal) {
 // PromQL extraction the dashboard-reference tests use); this package only decides
 // what they imply.
 type ArtifactRefs struct {
-	// Dashboard is every identifier queried by a panel or template variable in
-	// the generated dashboard.
+	// Dashboard is every identifier queried by a PANEL in the generated dashboard
+	// family. Panels only — a template-variable query goes in DashboardVariable,
+	// because only a panel puts a signal in front of an operator (#527).
 	Dashboard map[string]bool
+	// DashboardVariable is every identifier queried by a dashboard TEMPLATE
+	// VARIABLE: a presence sentinel, or a filter dropdown's label_values() call.
+	DashboardVariable map[string]bool
 	// Alerting is every identifier queried by an ALERT rule expression, across
 	// both the Grafana-managed and the Prometheus rule files.
 	Alerting map[string]bool
@@ -250,6 +272,9 @@ func (r ArtifactRefs) Observed(s Signal) []Disposition {
 	}
 	if r.references(r.Recording, s) {
 		out = append(out, DispRecorded)
+	}
+	if r.references(r.DashboardVariable, s) {
+		out = append(out, DispDrivesAVariable)
 	}
 	return out
 }
@@ -298,6 +323,11 @@ var manifestDoc = []string{
 	"  visualized - queried by >=1 panel or template variable in the generated dashboard",
 	"  alertable  - queried by >=1 alert rule expression",
 	"  recorded   - consumed by >=1 recording rule expression",
+	"  drives_a_variable - queried by a dashboard TEMPLATE VARIABLE (a presence",
+	"                  sentinel, or a filter dropdown). NOT visualized: a sentinel's",
+	"                  label_values() call is a real reference but puts nothing on",
+	"                  screen, and counting it let a signal clear the every-signal-",
+	"                  reaches-a-panel bar while being invisible (#527).",
 	"There is NO disposition meaning \"this signal does not need a panel\". raw_only and",
 	"omitted were exactly that and #526 deleted both after 35 signals had accrued under",
 	"them, unreachable by any operator; the transitional pending_panel ledger that",
@@ -559,11 +589,13 @@ func validateRow(problems SignalProblems, s Signal, row SignalDisposition, refs 
 func artifactFor(d Disposition) string {
 	switch d {
 	case DispVisualized:
-		return "panel or template variable in the deploy/grafana dashboard family"
+		return "PANEL in the deploy/grafana dashboard family"
 	case DispAlertable:
 		return "alert rule expression in deploy/alerts"
 	case DispRecorded:
 		return "recording rule expression in deploy/alerts"
+	case DispDrivesAVariable:
+		return "template variable in the deploy/grafana dashboard family"
 	default:
 		return "artifact"
 	}
@@ -643,13 +675,13 @@ func SignalCoverageReport(base *SignalDispositionBaseline) string {
 
 	b.WriteString("## Summary\n\n")
 	b.WriteString("A signal can carry more than one disposition, so the columns do not sum to the total.\n\n")
-	b.WriteString("| surface | signals | visualized | alertable | recorded |\n")
-	b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
+	b.WriteString("| surface | signals | visualized | alertable | recorded | drives a variable |\n")
+	b.WriteString("| --- | ---: | ---: | ---: | ---: | ---: |\n")
 	for _, s := range surfaceTitles {
 		c := perSurface[s.key]
-		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d |\n",
+		fmt.Fprintf(&b, "| %s | %d | %d | %d | %d | %d |\n",
 			s.key, totals[s.key],
-			c[DispVisualized], c[DispAlertable], c[DispRecorded])
+			c[DispVisualized], c[DispAlertable], c[DispRecorded], c[DispDrivesAVariable])
 	}
 
 	for _, s := range surfaceTitles {
