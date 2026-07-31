@@ -21,21 +21,26 @@ was called "-overview" in the first place.
 
 import collections
 
-from tabs.overview import tab_overview
-from tabs.fleet import tab_fleet
+from tabs.tailnet_overview import tab_tailnet_overview
+from tabs.devices_inventory import tab_devices_inventory
+from tabs.devices_posture import tab_devices_posture
+from tabs.devices_connectivity import tab_devices_connectivity
 from tabs.network import tab_network
-from tabs.events import tab_events
-from tabs.security import tab_security
-from tabs.policy import tab_policy
+from tabs.security_audit_trail import tab_security_audit_trail
+from tabs.security_risk import tab_security_risk
+from tabs.security_compliance import tab_security_compliance
+from tabs.security_identity import tab_security_identity
+from tabs.policy_access import tab_policy_access
+from tabs.policy_dns import tab_policy_dns
+from tabs.policy_identity import tab_policy_identity
+from tabs.policy_integrations import tab_policy_integrations
 from tabs.k8saudit import tab_k8saudit
 from tabs.nodemetrics import tab_nodemetrics
-from tabs.tailnets import tab_tailnets
 from tabs.health_overview import tab_health_overview
 from tabs.health_collection import tab_health_collection
 from tabs.health_ingestion import tab_health_ingestion
 from tabs.health_delivery import tab_health_delivery
 from tabs.health_runtime import tab_health_runtime
-from tabs.health_internals import tab_health_internals
 from tabs.cardinality import tab_cardinality
 
 
@@ -86,20 +91,52 @@ TAILNET = DashboardSpec(
                 "deploy/grafana/gen/build.py.",
     tags=("tailscale", "tailscale2otel"),
     out="deploy/grafana/tailscale2otel-tailnet.json",
+    # Three leaves exceeded the ~35-panel ceiling badly enough to earn the fourth
+    # grouping level (#526 decision 5): Devices was 59 panels over 18 rows, Security &
+    # Audit 49, Policy & Config 47. A sub-tab costs ~100px of stacked tab chrome, so it
+    # is spent only where a leaf is genuinely oversized — Network & Flows, Node Metrics
+    # and Kubernetes Audit all fit in one leaf and stay there.
+    #
+    # Two tabs are deliberately ABSENT rather than moved:
+    #   Tailnets (3 panels)      — decision 5 folds it into the Overview's MSP row; a
+    #                              three-panel tab is a tab an operator opens once.
+    #   Events & Logs (43)       — decision 9 splits it. Most of it was exporter pipeline
+    #                              health sitting on a tab an operator opens to read what
+    #                              happened on their TAILNET, so it went to -health; the
+    #                              genuine tailnet-event panels went to the domain tab
+    #                              that owns the signal (flow stream -> Network & Flows,
+    #                              posture -> Posture & Compliance, log explorer ->
+    #                              Audit Trail, event rates -> Overview).
     layout=(
-        TabDef("Overview", tab_overview, None),
+        TabDef("Overview", tab_tailnet_overview, None),
         DomainDef("Fleet & Network", (
-            TabDef("Fleet & Devices", tab_fleet, None),
+            SubTabbedDef("Devices", None, (
+                TabDef("Inventory & Hygiene", tab_devices_inventory, None),
+                TabDef("Posture & Security", tab_devices_posture, None),
+                TabDef("Connectivity & Routing", tab_devices_connectivity, None),
+            )),
             TabDef("Network & Flows", tab_network, None),
             TabDef("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
-            TabDef("Tailnets", tab_tailnets, "has_multitailnet"),
         )),
         DomainDef("Security & Policy", (
-            TabDef("Security & Audit", tab_security, None),
-            TabDef("Policy & Config", tab_policy, None),
+            # Decision 10 splits the key/identity overlap by QUESTION, not by deletion:
+            # Security & Audit owns the risk view (what is expiring, what is over-scoped),
+            # Policy & Config the configuration view (what exists, and with what scopes).
+            # The same signal legitimately appears under both.
+            SubTabbedDef("Security & Audit", None, (
+                TabDef("Audit Trail", tab_security_audit_trail, None),
+                TabDef("Risk & ACL", tab_security_risk, None),
+                TabDef("Posture & Compliance", tab_security_compliance, None),
+                TabDef("Identity & Keys", tab_security_identity, None),
+            )),
+            SubTabbedDef("Policy & Config", None, (
+                TabDef("Access & ACL", tab_policy_access, None),
+                TabDef("DNS & Settings", tab_policy_dns, None),
+                TabDef("Identity & Credentials", tab_policy_identity, None),
+                TabDef("Integrations", tab_policy_integrations, None),
+            )),
             TabDef("Kubernetes Audit", tab_k8saudit, "has_k8s_audit"),
         )),
-        TabDef("Events & Logs", tab_events, None),
     ),
     sibling="tailscale2otel-health",
     sibling_title="Exporter health →",
@@ -129,7 +166,6 @@ HEALTH = DashboardSpec(
         TabDef("Delivery", tab_health_delivery, None),
         TabDef("Runtime", tab_health_runtime, None),
         TabDef("Cost & Cardinality", tab_cardinality, None),
-        TabDef("Exporter internals", tab_health_internals, None),
     ),
     sibling="tailscale2otel-tailnet",
     sibling_title="← Tailnet",

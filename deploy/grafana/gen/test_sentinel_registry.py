@@ -87,6 +87,88 @@ def _per_dashboard():
     return out
 
 
+def _refs(node):
+    """Sentinel names one row/tab's conditionalRendering gates on."""
+    cr = node["spec"].get("conditionalRendering")
+    if not cr:
+        return set()
+    return {i["spec"]["variable"] for i in cr["spec"]["items"]
+            if i["kind"] == "ConditionalRenderingVariable"}
+
+
+def _scoped_resolution_failures(doc):
+    """[(where, name)] for every reference that cannot resolve where it is made.
+
+    A tab-scoped variable exists only inside the tab that declares it, so a row
+    may gate on a name declared at DASHBOARD level or by ITS OWN leaf tab — and
+    on nothing else. A tab's own gate is stricter still: it is evaluated to decide
+    whether the tab renders at all, so it cannot use a variable the tab itself
+    carries, because that variable does not exist until it renders.
+    """
+    at_dashboard = {v["spec"]["name"] for v in doc["spec"]["variables"]}
+    bad = []
+
+    def walk(tabs_layout, inherited):
+        for t in tabs_layout["spec"]["tabs"]:
+            title = t["spec"]["title"]
+            own = {v["spec"]["name"] for v in t["spec"].get("variables", [])}
+            for name in _refs(t) - inherited:
+                bad.append(("tab %r gate" % title, name))
+            inner = t["spec"]["layout"]
+            if inner.get("kind") == "TabsLayout":
+                walk(inner, inherited | own)
+                continue
+            visible = inherited | own
+            for r in inner.get("spec", {}).get("rows", []):
+                for name in _refs(r) - visible:
+                    bad.append(("%s > row %r" % (title, r["spec"].get("title")), name))
+
+    walk(doc["spec"]["layout"], at_dashboard)
+    return bad
+
+
+class SentinelScopeResolutionTest(unittest.TestCase):
+    """A name being declared somewhere is not the same as it resolving HERE.
+
+    #526 moved ~60 sentinels off the dashboard and onto the tab that consumes
+    them, which made "declared somewhere on this dashboard" too weak a check: a
+    row gating on a sibling tab's variable passes it, and then renders
+    permanently hidden — indistinguishable on screen from a row correctly hidden
+    for want of data. cardinality.py's "Ingest vs export cost" row was in exactly
+    that state and the name-only check reported it clean.
+    """
+
+    def test_every_gate_resolves_in_the_scope_it_is_referenced_from(self):
+        for spec in dashboard.dashboards.ALL:
+            bad = _scoped_resolution_failures(dashboard.build(spec))
+            self.assertEqual(bad, [],
+                             "%s: gate(s) reference a sentinel that does not resolve "
+                             "there — declared at another tab's scope, or on the other "
+                             "dashboard. Declare it at the referencing tab's own scope; "
+                             "duplicating a name across tabs is legal and safe." % spec.uid)
+
+    def test_negative_a_sibling_tabs_variable_would_be_caught(self):
+        """Proves the check above is not vacuous: a document where tab B gates a row
+        on a variable only tab A declares must be reported."""
+        v = {"kind": "QueryVariable", "spec": {"name": "has_x"}}
+        gate = {"kind": "ConditionalRenderingGroup", "spec": {"condition": "and", "items": [
+            {"kind": "ConditionalRenderingVariable",
+             "spec": {"variable": "has_x", "operator": "matches", "value": "true"}}]}}
+        doc = {"spec": {"variables": [], "layout": {"kind": "TabsLayout", "spec": {"tabs": [
+            {"kind": "TabsLayoutTab", "spec": {
+                "title": "A", "variables": [v],
+                "layout": {"kind": "RowsLayout", "spec": {"rows": []}}}},
+            {"kind": "TabsLayoutTab", "spec": {
+                "title": "B",
+                "layout": {"kind": "RowsLayout", "spec": {"rows": [
+                    {"kind": "RowsLayoutRow", "spec": {
+                        "title": "borrowed", "conditionalRendering": gate,
+                        "layout": {"kind": "GridLayout", "spec": {"items": []}}}}]}}}},
+        ]}}}}
+        self.assertEqual(_scoped_resolution_failures(doc),
+                         [("B > row 'borrowed'", "has_x")])
+
+
 class SentinelRegistryTest(unittest.TestCase):
     def setUp(self):
         self.per_dashboard = _per_dashboard()

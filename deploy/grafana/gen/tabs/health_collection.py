@@ -25,11 +25,23 @@ own noValue prose (matching the existing object-store-ingestion idiom in diagnos
 than gated on a new sentinel, since the feature has no single always-present prerequisite metric
 distinct from the four series it OWNS — gating a row on one of its own row's metrics doesn't
 buy anything beyond a good noValue string.
+
+#526 second pass (dissolving the 7th "Exporter internals" leaf, tabs/health_internals.py):
+"Enrichment cache", "rDNS resolver" and "Per-tailnet API errors" move here in full. Enrichment
+and reverse-DNS both happen while a scrape is pulling and resolving data — the same collection
+stage as the rows above — and a per-tailnet API error split is a collection-side signal (which
+tailnet's API calls are failing), not an ingestion or delivery concern. `has_rdns` and
+`has_multitailnet` move with their rows: both were TAB-scoped on health_internals.py (consumed
+only there), so they are declared fresh here at THIS tab's scope rather than referenced —
+exactly the same reasoning as has_nodemetrics above.
 """
 
-from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, RI, row,
-                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts, WIN_SLOW)
+from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, raw_sentinel, RI, row,
+                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, UP_MAP
+
+_RDNS_EMPTY = ("No reverse-DNS cache series. Requires enrichment.reverse_dns.enabled and "
+               "self_observability.enabled.")
 
 
 _PULL_EMPTY = ("No Prometheus pull-endpoint series. Requires prometheus.enabled and at least "
@@ -49,6 +61,15 @@ def tab_health_collection(scope):
     sentinel("has_staleness", "tailscale2otel_scrape_staleness_seconds", scope)
     sentinel("has_api_retry", "tailscale2otel_api_retries_total", scope)
     sentinel("has_api_hist", "tailscale2otel_api_duration_seconds_count", scope)
+    # Moved from tabs/health_internals.py (#526 dissolution) — both were tab-scoped there,
+    # consumed only by the row that moves with them, so declared fresh here rather than
+    # referenced (see module docstring).
+    sentinel("has_rdns", "tailscale_rdns_cache_entries_ratio", scope)
+    raw_sentinel(
+        "has_multitailnet",
+        'query_result(count(count by (tailscale_tailnet) '
+        '({__name__=~"tailscale_.+", tailscale_tailnet!="", tailscale_tailnet!="-"})) > 1)',
+        scope)
 
     cf = "{tailscale_collector=~\"$collector\"}"
 
@@ -139,15 +160,20 @@ def tab_health_collection(scope):
 
     # --- API requests & retries (from diagnostics.py's "API & export" / "API retries..." rows;
     # export-failures panel deliberately left out — that is Delivery-tab content).
+    # Consolidation (#526 decision 7): the by-status and by-endpoint breakdowns were two
+    # single-purpose rows over the exact same underlying counter and unit; merged into one
+    # two-series panel rather than two rows (neither metric loses coverage — both group-bys
+    # are still charted, now on one axis instead of two).
     api = [
-        (panel("API requests/s by status", "timeseries",
-               [prom_t("sum by (http_response_status_code) (rate(tailscale2otel_api_requests_total[%s]))" % RI, legend="{{http_response_status_code}}")],
+        (panel("API requests/s by status & endpoint", "timeseries",
+               [prom_t("sum by (http_response_status_code) (rate(tailscale2otel_api_requests_total[%s]))" % RI,
+                       legend="status {{http_response_status_code}}"),
+                prom_t("sum by (endpoint) (rate(tailscale2otel_api_requests_total[%s]))" % RI,
+                       legend="endpoint {{endpoint}}", refid="B")],
                unit="reqps", custom=ts_custom(stack="normal"), options=ts_opts(placement="right"),
-               desc="Tailscale API requests issued per second, by HTTP status code."), 12, 7),
-        (panel("API requests/s by endpoint", "timeseries",
-               [prom_t("sum by (endpoint) (rate(tailscale2otel_api_requests_total[%s]))" % RI, legend="{{endpoint}}")],
-               unit="reqps", custom=ts_custom(stack="normal"), options=ts_opts(placement="right"),
-               desc="Tailscale API requests issued per second, by endpoint."), 12, 7),
+               desc="Tailscale API requests issued per second, by HTTP status code and by "
+                    "endpoint (two independent group-bys over the same counter, on one "
+                    "axis)."), 24, 7),
     ]
     api_retry = [
         (panel("API retries/s by endpoint", "timeseries",
@@ -285,6 +311,70 @@ def tab_health_collection(scope):
                     "auth_required misconfiguration on a network-reachable bind)."), 8, 6),
     ]
 
+    # --- Moved verbatim from tabs/health_internals.py (#526 dissolution).
+    enrich = [
+        (panel("Enrich cache age", "timeseries", [prom_t("max(tailscale2otel_enrich_cache_age_seconds)", legend="age")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc='Age of the device-enrichment cache, which maps IPs and node IDs to device names for flow and audit records. It is populated by the devices collector: if that collector is disabled or failing this climbs, and enrichment silently degrades to unknown/external.'), 12, 6),
+        (panel("Enrich cache size", "timeseries", [prom_t("max(tailscale2otel_enrich_cache_size_ratio)", legend="devices")],
+               unit="short", custom=ts_custom(), options=ts_opts(),
+               desc="Devices held in the enrichment cache. A count well below the tailnet's device count means flow and audit records are resolving to unknown for the remainder."), 12, 6),
+    ]
+
+    rdns = [
+        (panel("rDNS cache fill", "stat",
+               [prom_t("%s / clamp_min(%s, 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
+                                                  lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
+               unit="percentunit", options=stat_opts(),
+               desc="rDNS cache entries as a fraction of configured capacity."), 6, 6),
+        # Both hit and stale are served FROM CACHE without the caller waiting on a
+        # resolver, so both belong in the numerator (#297). Counting only "hit"
+        # would make this rate fall every time stale serving did its job, which
+        # reads as the cache getting worse at the moment it saved a lookup. The
+        # stale share rides alongside so the two are still tellable apart.
+        (panel("rDNS lookup hit-rate", "timeseries",
+               [prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result=~"hit|stale"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
+                       legend="cache-served"),
+                prom_t('sum(rate(tailscale_rdns_cache_lookups_total{result="stale"}[%s])) / clamp_min(sum(rate(tailscale_rdns_cache_lookups_total[%s])), 1)' % (RI, RI),
+                       legend="of which stale", refid="B")],
+               unit="percentunit", custom=ts_custom(), options=ts_opts(),
+               desc="Share of rDNS lookups served from cache rather than an upstream query. "
+                    "'of which stale' is the part served past its TTL while a refresh ran "
+                    "(enrichment.reverse_dns.stale_ttl) — those names are still correct, just "
+                    "older than cache_ttl."), 9, 6),
+        (panel("rDNS upstream queries/s", "timeseries",
+               [prom_t("sum by (result) (rate(tailscale_rdns_queries_total[%s]))" % RI, legend="query {{result}}"),
+                prom_t("rate(tailscale_rdns_cache_evictions_total[%s])" % RI, legend="evictions/s", refid="B"),
+                # Refreshes are a SUBSET of the queries above, not additional load —
+                # they are the ones triggered by serving a stale name. Sustained
+                # refresh failure is the warning that stale names are heading for
+                # expiry rather than renewal.
+                prom_t("sum by (result) (rate(tailscale_rdns_refreshes_total[%s]))" % RI,
+                       legend="refresh {{result}}", refid="C")],
+               unit="cps", custom=ts_custom(), options=ts_opts(),
+               desc="Upstream PTR queries issued and cache evictions, per second. The refresh "
+                    "series are the subset of those queries triggered by a stale-serving hit."), 9, 6),
+        # An overflow rate on its own is unreadable — "12/s dropped" needs "out of how
+        # many", so the accepted hot-path lookup rate shares the panel (#405).
+        (panel("rDNS cache overflows vs lookups/s", "timeseries",
+               [prom_t("sum(rate(tailscale_rdns_cache_overflows_total[%s]))" % RI, legend="overflows/s"),
+                prom_t("sum(rate(tailscale_rdns_cache_lookups_total[%s]))" % RI, legend="lookups/s (accepted)", refid="B")],
+               unit="cps", custom=ts_custom(), options=ts_opts(), novalue=_RDNS_EMPTY,
+               desc="An overflow is a hot-path miss for a NEW address that could not be scheduled "
+                    "because the cache was already at enrichment.reverse_dns.max_entries — the "
+                    "address is simply never resolved. Read it against the accepted lookup rate: a "
+                    "sustained non-zero share means max_entries is too small."), 24, 6),
+    ]
+
+    pertailnet = [
+        (panel("Per-tailnet API errors", "timeseries",
+               [prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~"4..|5..", tailscale_tailnet!=""}[%s]))' % RI,
+                       legend="{{tailscale_tailnet}}")],
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Tailscale API 4xx/5xx responses per second, split out per tailnet on a "
+                    "multi-tailnet deployment."), 24, 7),
+    ]
+
     return [
         row("Scraper health", scraper_health, present="has_nodemetrics"),
         row("Scrape performance by collector", scrape_perf),
@@ -295,4 +385,7 @@ def tab_health_collection(scope):
         row("API rate-limiter wait & probe freshness", ratelimit),
         row("Capability & scope preflight", capability),
         row("Prometheus pull endpoint", pull_endpoint),
+        row("Enrichment cache", enrich),
+        row("rDNS resolver", rdns, present="has_rdns"),
+        row("Per-tailnet API errors", pertailnet, present="has_multitailnet"),
     ]

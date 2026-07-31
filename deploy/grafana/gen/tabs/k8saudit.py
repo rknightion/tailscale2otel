@@ -39,17 +39,27 @@ def tab_k8saudit(scope):
     # Presence sentinels this tab declares. has_k8s_audit also gates the whole tab itself
     # (see build.py's tab_defs) — declared here because this is the tab it names.
     sentinel("has_k8s_audit", K8S_REQUESTS, DASHBOARD)
-    sentinel("has_k8s_sensitive_reads", K8S_SENSITIVE_READS, DASHBOARD)
-    sentinel("has_k8s_exec_sessions", K8S_EXEC_SESSIONS, DASHBOARD)
-    sentinel("has_k8s_mutations", K8S_MUTATIONS, DASHBOARD)
-    sentinel("has_k8s_rbac_probes", K8S_RBAC_PROBES, DASHBOARD)
-    sentinel("has_k8s_sessions", K8S_SESSION_STARTED, DASHBOARD)
-    sentinel("has_k8s_schema_drift", K8S_SCHEMA_DRIFT, DASHBOARD)
+    # Only has_k8s_audit stays dashboard-level, because it gates this whole TAB from
+    # the outside and a tab cannot gate itself on a variable that exists only once it
+    # renders. Everything below gates a row inside the tab, so #526 scopes it here.
+    sentinel("has_k8s_sensitive_reads", K8S_SENSITIVE_READS, scope)
+    sentinel("has_k8s_exec_sessions", K8S_EXEC_SESSIONS, scope)
+    sentinel("has_k8s_mutations", K8S_MUTATIONS, scope)
+    sentinel("has_k8s_rbac_probes", K8S_RBAC_PROBES, scope)
+    sentinel("has_k8s_sessions", K8S_SESSION_STARTED, scope)
+    sentinel("has_k8s_schema_drift", K8S_SCHEMA_DRIFT, scope)
     # tailscale_k8s_user is a Kubernetes identity (typically an email/login via OIDC), so any
     # row that groups by it — metric or raw log record — hides under the SAME emails-redaction
-    # gate the rest of the dashboard uses. pii_emails is already registered by tabs/policy.py
-    # (deliberately dead there — "no panel renders an email"); this tab is what makes it live.
-    pii_sentinel("pii_command_text", PII + '{category="command_text"} == 0', DASHBOARD)
+    # gate the rest of the dashboard uses.
+    #
+    # Declared HERE since #526 wave 3. It used to be registered at DASHBOARD scope by
+    # tabs/policy.py, where it gated nothing at all and this tab rode on it; that module
+    # is gone, and this is now its only consumer on either dashboard. Left undeclared,
+    # eight rows here would have gated on a name nothing defines and rendered
+    # PERMANENTLY HIDDEN — which on screen is indistinguishable from a correctly
+    # redacted deployment, so the Kubernetes audit tab would simply have looked empty.
+    pii_sentinel("pii_emails", PII + '{category="emails"} == 0', scope)
+    pii_sentinel("pii_command_text", PII + '{category="command_text"} == 0', scope)
 
     # -------------------------------------------------------------------------------------
     # Row 1: overall request volume. Ungated beyond the tab's own has_k8s_audit — it queries

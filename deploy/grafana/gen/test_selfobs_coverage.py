@@ -49,9 +49,11 @@ INGESTION = "Ingestion"
 DELIVERY = "Delivery"
 RUNTIME = "Runtime"
 CARDINALITY = "Cost & Cardinality"
-INTERNALS = "Exporter internals"
 
-_TABS = (OVERVIEW, COLLECTION, INGESTION, DELIVERY, RUNTIME, CARDINALITY, INTERNALS)
+# A 7th leaf, "Exporter internals", existed between #526's waves 2 and 3 — the rows
+# no stage lane had claimed. It was distributed into the stage tabs in wave 3 rather
+# than kept, because a catch-all leaf is where the next unclassified row goes too.
+_TABS = (OVERVIEW, COLLECTION, INGESTION, DELIVERY, RUNTIME, CARDINALITY)
 
 # Every signal this lane took ownership of, mapped to the tab that must query it.
 # Frozen on purpose: this doubles as the inventory assertion, so a future panel
@@ -92,7 +94,7 @@ COVERED = {
     "tailscale2otel_api_rate_limit_wait_seconds_bucket": COLLECTION,
     "tailscale2otel_api_last_probe_seconds": COLLECTION,
     # --- loss / overflow, #405 ------------------------------------------------
-    "tailscale_rdns_cache_overflows_total": INTERNALS,
+    "tailscale_rdns_cache_overflows_total": COLLECTION,
     "tailscale_stream_skipped_total": INGESTION,
     "tailscale_webhook_request_duration_seconds_bucket": INGESTION,
     "tailscale2otel_nodemetrics_metric_names_dropped_total": CARDINALITY,

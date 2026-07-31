@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "58",
+      "__panelId__": "62",
       "description": "The count of devices with keyExpiryDisabled ROSE in the last hour \u2014 a node key was just set never to expire, so it will never appear in ts2o-device-keys-expiring-7d or ts2o-device-key-expiring-critical again. Deliberately keyed on the delta, not the level: a standing population of never-expiring keys is normal for tag-owned servers, and alerting on its existence trains people to ignore it. Confirm the change was intended and that the device is tag-owned rather than user-owned. See \"Key expiry disabled (fleet)\" for the level and \"Key expiry disabled (devices)\" for which ones.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry",
       "summary": "A device had node-key expiry disabled in the last hour"

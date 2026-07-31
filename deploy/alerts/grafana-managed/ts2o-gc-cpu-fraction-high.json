@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "112",
+      "__panelId__": "123",
       "description": "runtime gc.cpu_fraction > 0.25 \u2014 GC is taking a large share of CPU. Note: this exporter is near-idle, so the fraction can be high against a tiny absolute; check absolute CPU first.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
       "summary": "Go GC using a high CPU fraction"

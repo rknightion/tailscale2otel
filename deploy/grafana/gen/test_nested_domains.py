@@ -34,27 +34,44 @@ HERE = Path(__file__).resolve().parent
 dashboard = load_module("tailscale2otel_dashboard_nested", HERE / "build.py")
 builder = dashboard.builder
 
-# The pre-#495 flat leaf set, minus the two that became a dashboard of their own.
-# Every one of these must still exist on the TAILNET dashboard post-regrouping,
-# with no rename, drop, or duplicate.
+# Every LEAF on the TAILNET dashboard — the unit a panel budget and a --tab preview
+# apply to. Three of them are sub-tabs under an oversized parent (#526 decision 5):
+# Devices, Security & Audit and Policy & Config were 59, 49 and 47 panels and each
+# split into the sub-tabs listed here.
 #
-# "Exporter Diagnostics" and "Cardinality & Cost" left this set in #526: they are
-# exporter self-observability, not tailnet telemetry, and now make up the
-# tailscale2otel-health dashboard. They are still asserted — see
-# HEALTH_LEAF_TABS — so the split cannot quietly drop one.
+# Two former leaves are deliberately absent, and their absence is asserted rather
+# than merely unmentioned (see test_the_dissolved_tabs_are_gone):
+#   "Tailnets"       — 3 panels, folded into the Overview's MSP row (decision 5)
+#   "Events & Logs"  — split (decision 9); most of it was exporter pipeline health
+#                      and moved to tailscale2otel-health, the rest to the domain
+#                      tab that owns the signal.
+# "Exporter Diagnostics" and "Cardinality & Cost" left in #526's first wave: they
+# are exporter self-observability and now make up the health dashboard. All of them
+# are still asserted somewhere, so no split can quietly drop one.
 ORIGINAL_LEAF_TABS = {
-    "Overview", "Fleet & Devices", "Network & Flows", "Events & Logs",
-    "Security & Audit", "Policy & Config", "Kubernetes Audit", "Node Metrics", "Tailnets",
+    "Overview",
+    "Inventory & Hygiene", "Posture & Security", "Connectivity & Routing",
+    "Network & Flows", "Node Metrics",
+    "Audit Trail", "Risk & ACL", "Posture & Compliance", "Identity & Keys",
+    "Access & ACL", "DNS & Settings", "Identity & Credentials", "Integrations",
+    "Kubernetes Audit",
 }
 
-# The health dashboard's leaves after #526 reorganised it by PIPELINE STAGE. The
-# single 83-panel "Exporter Diagnostics" tab is gone; "Exporter internals" is its
-# residue — the rows that fit no stage cleanly — not a rename of it.
-HEALTH_LEAF_TABS = {"Overview", "Collection", "Ingestion", "Delivery", "Runtime",
-                    "Cost & Cardinality", "Exporter internals"}
+# Leaves that must NOT exist. A renamed-away tab is invisible to a set-equality
+# assertion on the leaves that DO exist if the new set was updated at the same time,
+# which is exactly how a "fold this into that" decision gets quietly reverted.
+DISSOLVED_LEAF_TABS = {"Tailnets", "Events & Logs", "Fleet & Devices",
+                       "Exporter Diagnostics", "Cardinality & Cost"}
 
-EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy",
-                      "Events & Logs"]
+# The health dashboard's leaves after #526 reorganised it by PIPELINE STAGE — where a
+# failure actually occurs in this exporter, rather than which subsystem emitted the
+# metric. The single 83-panel "Exporter Diagnostics" tab is gone. A 7th residue leaf,
+# "Exporter internals", existed between waves 2 and 3 and was distributed into the
+# stage tabs; it must not come back as a dumping ground.
+HEALTH_LEAF_TABS = {"Overview", "Collection", "Ingestion", "Delivery", "Runtime",
+                    "Cost & Cardinality"}
+
+EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy"]
 
 # Leaves that carry conditional rendering ONLY because their entire content is
 # feature-gated (present= on the tab() call in build.py's tab_defs) — the case #495
@@ -62,7 +79,6 @@ EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy",
 # itself is conditional."
 EXPECTED_GATED_LEAVES = {
     "Node Metrics": ("Fleet & Network", "has_nodemetrics"),
-    "Tailnets": ("Fleet & Network", "has_multitailnet"),
     "Kubernetes Audit": ("Security & Policy", "has_k8s_audit"),
 }
 
@@ -125,15 +141,18 @@ class NestedStructureIsRealTest(unittest.TestCase):
                                 "at all" % title)
             for child in children:
                 self.assertEqual(child["kind"], "TabsLayoutTab")
-                # Each child is itself a genuine leaf: a RowsLayout of real rows, not
-                # another layer of nesting and not a bare panel list.
-                self.assertEqual(child["spec"]["layout"]["kind"], "RowsLayout")
+                # A child is either a genuine leaf (a RowsLayout of real rows) or, for
+                # the three leaves that outgrew the ~35-panel ceiling, a further
+                # TabsLayout of sub-tabs — the fourth grouping level. What it may never
+                # be is a bare panel list.
+                self.assertIn(child["spec"]["layout"]["kind"],
+                              ("RowsLayout", "TabsLayout"))
 
     def test_standalone_leaves_are_not_wrapped_in_a_pointless_single_item_domain(self):
-        # Overview and Events & Logs each had no sibling to group with, so they must
-        # render as plain leaf tabs (RowsLayout) directly at the top level — not
-        # promoted into a one-child TabsLayout, which would add a dead sub-tab bar.
-        for title in ("Overview", "Events & Logs"):
+        # Overview has no sibling to group with, so it must render as a plain leaf tab
+        # (RowsLayout) directly at the top level — not promoted into a one-child
+        # TabsLayout, which would add a dead sub-tab bar above a single tab.
+        for title in ("Overview",):
             leaf = next(t for t in self.top_tabs if t["spec"]["title"] == title)
             self.assertEqual(leaf["spec"]["layout"]["kind"], "RowsLayout",
                               "%r must stay a plain leaf tab, not a one-child domain" % title)
@@ -201,8 +220,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 466)
-        self.assertEqual(len(self.elements), 308, "tailnet dashboard")
+        self.assertEqual(total, 452)
+        self.assertEqual(len(self.elements), 297, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
         # The other half of the count above: #526 moved these two leaves rather than
@@ -221,11 +240,23 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         flat_doc = dashboard.build(dashboard.dashboards.TAILNET, True)
         self.assertEqual(len(flat_doc["spec"]["elements"]), len(self.elements))
 
+    def test_the_dissolved_tabs_are_gone(self):
+        # Asserted explicitly, not left to the set equality above. Both sets are
+        # edited together by whoever changes the layout, so "is X still absent?" and
+        # "is Y present?" are the same assertion to a set comparison — and a decision
+        # to fold a tab away is exactly the kind of thing that gets quietly reverted
+        # by someone restoring a tab they found useful.
+        leaves = set(self._all_leaf_tabs())
+        top = {t["spec"]["title"] for t in self.doc["spec"]["layout"]["spec"]["tabs"]}
+        for gone in DISSOLVED_LEAF_TABS:
+            self.assertNotIn(gone, leaves, "%r was dissolved by #526" % gone)
+            self.assertNotIn(gone, top, "%r was dissolved by #526" % gone)
+
     def test_negative_a_dropped_leaf_would_be_caught(self):
         """Proves test_every_original_leaf_tab_still_exists_exactly_once is not
         vacuous: dropping one leaf from the found set must fail the equality."""
         leaves = self._all_leaf_tabs()
-        with_one_dropped = set(leaves) - {"Tailnets"}
+        with_one_dropped = set(leaves) - {"Risk & ACL"}
         self.assertNotEqual(with_one_dropped, ORIGINAL_LEAF_TABS)
 
 
@@ -258,7 +289,7 @@ class TwoLevelGatingTest(unittest.TestCase):
         # A core (always-present) leaf must not accidentally inherit gating either from
         # a copy-paste of a neighbouring optional leaf's present= or from the grouping
         # step itself.
-        core_leaves = [("Fleet & Network", "Fleet & Devices"),
+        core_leaves = [("Fleet & Network", "Devices"),
                        ("Fleet & Network", "Network & Flows"),
                        ("Security & Policy", "Security & Audit"),
                        ("Security & Policy", "Policy & Config")]
@@ -268,8 +299,8 @@ class TwoLevelGatingTest(unittest.TestCase):
                                "%r is core content and must not be gated" % leaf_title)
 
     def test_domains_with_any_core_leaf_are_not_gated_at_the_domain_level(self):
-        # Every current domain carries at least one always-present leaf (Fleet &
-        # Devices, Security & Audit), so gating the domain would
+        # Every current domain carries at least one always-present leaf (Devices,
+        # Security & Audit), so gating the domain would
         # hide that core content whenever the domain's OPTIONAL sibling's sentinel
         # happens to be absent — worse than the ungrouped flat tab ever was.
         for title in UNGATED_DOMAINS:

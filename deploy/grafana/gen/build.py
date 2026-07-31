@@ -40,7 +40,7 @@ import builder
 import dashboards
 from builder import tab, tab_group
 from dashboards import DomainDef, SubTabbedDef, TabDef
-from variables import build_variables
+from variables import build_variables, tab_controls
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +108,11 @@ def _build_leaf(node, flat_rows=None):
             r2["spec"]["title"] = "[%s] %s" % (node.title, r2["spec"].get("title", ""))
             flat_rows.append(r2)
         return None
-    return tab(node.title, rows, node.present,
-               variables=builder.registered_sentinels(builder.tab_scope(node.title)))
+    # Two sources, one list: the base controls this leaf is the only reader of
+    # (variables.TAB_CONTROLS, a static table) and the presence sentinels its own
+    # module registered while building the rows above (the scoped registry).
+    scoped = tab_controls(node.title) + builder.registered_sentinels(builder.tab_scope(node.title))
+    return tab(node.title, rows, node.present, variables=scoped)
 
 
 def _build_node(node, flat_rows=None, only=None):

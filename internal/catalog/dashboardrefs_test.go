@@ -124,6 +124,33 @@ func catalogLabelNames(t *testing.T) map[string]bool {
 // and treating one as a metric name reports a defect that is not there.
 var matcherValue = regexp.MustCompile(`(?:=~|!~|!=|=)\s*\\?"[^"\\]*\\?"`)
 
+// jsonMatcherValue matches the same thing in its STRUCTURED form. A v2 AdhocVariable
+// stores its baseFilters as JSON objects — {"key":"__name__","operator":"=~",
+// "value":"tailscale_device_.*"} — so the operator and its value are separate fields
+// with no textual adjacency for the PromQL-shaped pattern above to catch. The value
+// is still a label-matcher value and still not a metric reference: the device-filter
+// variable's `tailscale_device_.*` was extracted as a metric named
+// "tailscale_device_", which the catalog cannot emit and never could.
+//
+// Stripping it is also correct in the other direction: an adhoc filter charts
+// nothing, so it must not credit a signal as reaching a panel either.
+var jsonMatcherValue = regexp.MustCompile(
+	`"operator"\s*:\s*"[^"]*"\s*,\s*"value"\s*:\s*"[^"]*"`)
+
+// stripMatcherValues blanks every label-matcher value, in both forms, before metric
+// extraction.
+//
+// ORDER MATTERS, and getting it wrong is worse than not stripping at all. The
+// PromQL pattern starts at an operator and runs to the next quoted string, so on
+// the JSON form it matches `=~",\n "value": "` — consuming the operator's own
+// closing quote and the value's OPENING one, which leaves the value itself bare
+// and exposed to extraction. The structured form is stripped first so its whole
+// key/value pair is gone before the looser pattern ever sees it.
+func stripMatcherValues(body string) string {
+	body = jsonMatcherValue.ReplaceAllString(body, `"operator":"=","value":"<value>"`)
+	return matcherValue.ReplaceAllString(body, "=<value>")
+}
+
 // readArtifact returns an artifact's bytes. When path is a DIRECTORY it returns
 // every rule manifest in it concatenated, so the rules read as one artifact the
 // way the single provisioning file used to. Per-file extraction would be wrong
@@ -158,7 +185,7 @@ func readArtifact(t *testing.T, path string) []byte {
 // or, for the rule manifests, in a directory.
 func referencedMetrics(t *testing.T, path string) []string {
 	t.Helper()
-	body := matcherValue.ReplaceAllString(string(readArtifact(t, path)), "=<value>")
+	body := stripMatcherValues(string(readArtifact(t, path)))
 	seen := map[string]bool{}
 	for _, m := range metricRef.FindAllString(body, -1) {
 		seen[m] = true

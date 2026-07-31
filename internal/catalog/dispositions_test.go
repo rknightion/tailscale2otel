@@ -18,10 +18,16 @@ import (
 //	go test ./internal/catalog -run TestSignalDispositionsInSync -update
 //	go test ./internal/catalog -run TestSignalCoverageDocInSync -update
 //
-// Regeneration only records what the shipped artifacts PROVE — it never invents
-// a raw_only or omitted disposition — so a new signal lands with an empty
-// disposition list, which always fails the gate. Running -update can move work
-// forward, never hide it.
+// Regeneration only records what the shipped artifacts PROVE — it never invents an
+// intent disposition — so a new signal lands with an EMPTY disposition list, which
+// always fails the gate. Running -update can move work forward, never hide it.
+//
+// There is deliberately no disposition meaning "this signal does not need a panel".
+// raw_only and omitted were exactly that and #526 deleted both: between them they
+// had accrued 35 signals that an operator could not see anywhere, because relabelling
+// an awkward signal is always easier than paneling it. The only escapes now are the
+// three structural classes in StructuralExemptions(), each an individually justified
+// entry, and the transitional pending_panel ledger, which is shrink-only.
 var updateManifest = flag.Bool("update", false, "rewrite the committed signal-disposition manifest and coverage doc")
 
 const coverageDocPath = "../../docs/signal-coverage.md"
@@ -145,7 +151,7 @@ func ruleManifests(t *testing.T, dir string) []string {
 func refSet(texts []string) map[string]bool {
 	out := map[string]bool{}
 	for _, s := range texts {
-		body := matcherValue.ReplaceAllString(s, "=<value>")
+		body := stripMatcherValues(s)
 		for _, m := range metricRef.FindAllString(body, -1) {
 			out[m] = true
 		}
@@ -215,7 +221,7 @@ func TestSignalDispositionsInSync(t *testing.T) {
 		}
 		for _, s := range merged.Signals {
 			if len(s.Dispositions) == 0 {
-				t.Logf("  NEEDS A HUMAN (%s): %s %s — choose raw_only or omitted and write a note",
+				t.Logf("  NEEDS A HUMAN (%s): %s %s — give it a panel, or (rarely) a structural exemption",
 					s.Surface, s.Kind, s.Name)
 			}
 		}
@@ -225,7 +231,8 @@ func TestSignalDispositionsInSync(t *testing.T) {
 	if problems := catalog.ValidateSignalDispositions(base, signals, refs); problems.Len() > 0 {
 		t.Fatalf("signal-disposition manifest broken (%d problem(s)):\n%s\n"+
 			"Run: go test ./internal/catalog -run TestSignalDispositionsInSync -update\n"+
-			"then give every empty row a raw_only or omitted disposition and an honest note.",
+			"then give every signal that still reaches no panel a panel. A disposition is "+
+			"a RECORD of where a signal appears, not a way to excuse one from appearing.",
 			problems.Len(), problems)
 	}
 }

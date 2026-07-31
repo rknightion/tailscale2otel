@@ -26,7 +26,7 @@
       "name": "tailscale.acl.risky_rule",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Risk \u0026 ACL."
     },
@@ -52,7 +52,7 @@
       "name": "tailscale.device.attribute.expiring",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Posture \u0026 Compliance."
     },
@@ -61,7 +61,7 @@
       "name": "tailscale.device.key_expiring",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys."
     },
@@ -86,7 +86,7 @@
       "name": "tailscale.device_invite",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
@@ -393,8 +393,8 @@
       "prom_name": "tailscale_device_attribute_expiry_seconds",
       "surface": "operational",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Posture \u0026 Compliance - ALERTABLE-ONLY today."
     },
@@ -481,7 +481,7 @@
       "prom_name": "tailscale_device_distro_ratio",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
@@ -648,7 +648,7 @@
       "prom_name": "tailscale_devices_by_country_ratio",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Devices \u003e Inventory \u0026 Hygiene."
     },
@@ -899,8 +899,8 @@
       "prom_name": "tailscale_geoip_database_build_time_seconds",
       "surface": "operational",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations - ALERTABLE-ONLY today."
     },
@@ -910,7 +910,7 @@
       "prom_name": "tailscale_geoip_downloads_total",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
@@ -920,7 +920,7 @@
       "prom_name": "tailscale_geoip_lookups_total",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
@@ -930,7 +930,7 @@
       "prom_name": "tailscale_geoip_reloads_total",
       "surface": "operational",
       "dispositions": [
-        "pending_panel"
+        "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations."
     },
@@ -1038,8 +1038,8 @@
       "prom_name": "tailscale_key_scope_class_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys - ALERTABLE-ONLY today."
     },
@@ -1058,8 +1058,8 @@
       "prom_name": "tailscale_key_tag_scope_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Identity \u0026 Keys - ALERTABLE-ONLY today."
     },
@@ -1444,8 +1444,8 @@
       "prom_name": "tailscale_posture_integration_error_ratio",
       "surface": "operational",
       "dispositions": [
-        "alertable",
-        "pending_panel"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Policy \u0026 Config \u003e Integrations - ALERTABLE-ONLY today."
     },

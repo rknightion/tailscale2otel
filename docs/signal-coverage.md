@@ -66,21 +66,21 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | pending_panel |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 218 | 203 | 57 | 11 | 14 |
+| operational | 218 | 217 | 57 | 11 | 0 |
 | self_obs | 92 | 92 | 29 | 9 | 0 |
 
 ## Operational signals
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
-| `tailscale.acl.risky_rule` | log_event | `event_name="tailscale.acl.risky_rule"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Risk & ACL. |
+| `tailscale.acl.risky_rule` | log_event | `event_name="tailscale.acl.risky_rule"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Risk & ACL. |
 | `tailscale.acl.validation_issue` | log_event | `event_name="tailscale.acl.validation_issue"` | visualized |  |
 | `tailscale.config.audit` | log_event | `event_name="tailscale.config.audit"` | visualized, alertable |  |
-| `tailscale.device.attribute.expiring` | log_event | `event_name="tailscale.device.attribute.expiring"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance. |
-| `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys. |
+| `tailscale.device.attribute.expiring` | log_event | `event_name="tailscale.device.attribute.expiring"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance. |
+| `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys. |
 | `tailscale.device.posture` | log_event | `event_name="tailscale.device.posture"` | visualized |  |
 | `tailscale.device.tailnet_lock_error` | log_event | `event_name="tailscale.device.tailnet_lock_error"` | visualized |  |
-| `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
+| `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.k8s.api_request` | log_event | `event_name="tailscale.k8s.api_request"` | visualized | The per-request record carrying the high-cardinality detail kept off the metrics (object name, query-free path, selectors, pod/container, and the raw exec command line under pii_filter.command_text). Read in Loki by event_name; this is the SIEM surface for the feed. |
 | `tailscale.k8s.session` | log_event | `event_name="tailscale.k8s.session"` | visualized | Per-session record from the .cast header: namespace, pod, container, session type, command and the recorder that holds the recording. Read in Loki by event_name. |
 | `tailscale.key.expiring` | log_event | `event_name="tailscale.key.expiring"` | visualized |  |
@@ -112,7 +112,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.derp.region.latency_min` | metric | `tailscale_derp_region_latency_min_seconds` | visualized, alertable |  |
 | `tailscale.derp.region.preferred` | metric | `tailscale_derp_region_preferred_ratio` | visualized |  |
 | `tailscale.device.attribute` | metric | `tailscale_device_attribute_ratio` | visualized |  |
-| `tailscale.device.attribute.expiry` | metric | `tailscale_device_attribute_expiry_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance - ALERTABLE-ONLY today. |
+| `tailscale.device.attribute.expiry` | metric | `tailscale_device_attribute_expiry_seconds` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance - ALERTABLE-ONLY today. |
 | `tailscale.device.attribute.info` | metric | `tailscale_device_attribute_info_ratio` | visualized |  |
 | `tailscale.device.blocks_incoming_connections` | metric | `tailscale_device_blocks_incoming_connections_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.connectivity.direct_capable` | metric | `tailscale_device_connectivity_direct_capable_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
@@ -121,7 +121,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.connectivity.ipv6` | metric | `tailscale_device_connectivity_ipv6_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
 | `tailscale.device.connectivity.udp` | metric | `tailscale_device_connectivity_udp_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
 | `tailscale.device.derp.latency` | metric | `tailscale_device_derp_latency_seconds` | visualized |  |
-| `tailscale.device.distro` | metric | `tailscale_device_distro_ratio` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
+| `tailscale.device.distro` | metric | `tailscale_device_distro_ratio` | visualized | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.device.exit_node` | metric | `tailscale_device_exit_node_ratio` | visualized |  |
 | `tailscale.device.key.expiry` | metric | `tailscale_device_key_expiry_seconds` | visualized, alertable, recorded |  |
 | `tailscale.device.key_expiry_disabled` | metric | `tailscale_device_key_expiry_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
@@ -138,7 +138,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device_invites.count` | metric | `tailscale_device_invites_count_ratio` | visualized, alertable |  |
 | `tailscale.device_invites.pending_age` | metric | `tailscale_device_invites_pending_age_seconds` | visualized |  |
 | `tailscale.devices.age` | metric | `tailscale_devices_age_seconds` | visualized |  |
-| `tailscale.devices.by_country` | metric | `tailscale_devices_by_country_ratio` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
+| `tailscale.devices.by_country` | metric | `tailscale_devices_by_country_ratio` | visualized | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.devices.by_distro` | metric | `tailscale_devices_by_distro_ratio` | visualized |  |
 | `tailscale.devices.by_tag` | metric | `tailscale_devices_by_tag_ratio` | visualized |  |
 | `tailscale.devices.by_version` | metric | `tailscale_devices_by_version_ratio` | visualized |  |
@@ -165,10 +165,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.exit_nodes.count` | metric | `tailscale_exit_nodes_count_ratio` | visualized |  |
 | `tailscale.feature.enabled` | metric | `tailscale_feature_enabled_ratio` | visualized, alertable |  |
 | `tailscale.fleet.latest_version` | metric | `tailscale_fleet_latest_version_ratio` | visualized |  |
-| `tailscale.geoip.database.build_time` | metric | `tailscale_geoip_database_build_time_seconds` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
-| `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
-| `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
-| `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
+| `tailscale.geoip.database.build_time` | metric | `tailscale_geoip_database_build_time_seconds` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
+| `tailscale.geoip.downloads` | metric | `tailscale_geoip_downloads_total` | visualized | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
+| `tailscale.geoip.lookups` | metric | `tailscale_geoip_lookups_total` | visualized | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
+| `tailscale.geoip.reloads` | metric | `tailscale_geoip_reloads_total` | visualized | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations. |
 | `tailscale.k8s.api.exec_sessions` | metric | `tailscale_k8s_api_exec_sessions_total` | visualized | kubectl exec/attach/port-forward attempts, dimensioned by the bounded command_class. Queried ad hoc in Loki alongside tailscale.k8s.api_request until a dashboard exists. |
 | `tailscale.k8s.api.mutations` | metric | `tailscale_k8s_api_mutations_total` | visualized | create/update/patch/delete attempts. Counts what was REQUESTED, not what succeeded, so it cannot back a change-success panel and no rule uses it. |
 | `tailscale.k8s.api.rbac_probes` | metric | `tailscale_k8s_api_rbac_probes_total` | visualized | SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Charted by resource and namespace. Deliberately not alerted: it is normal for UI clients such as Freelens, so the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline. |
@@ -179,9 +179,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.key.allowed_tags` | metric | `tailscale_key_allowed_tags_ratio` | visualized |  |
 | `tailscale.key.expiry` | metric | `tailscale_key_expiry_seconds` | visualized, alertable |  |
 | `tailscale.key.preauthorized` | metric | `tailscale_key_preauthorized_ratio` | visualized |  |
-| `tailscale.key.scope_class` | metric | `tailscale_key_scope_class_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
+| `tailscale.key.scope_class` | metric | `tailscale_key_scope_class_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
 | `tailscale.key.scopes` | metric | `tailscale_key_scopes_ratio` | visualized |  |
-| `tailscale.key.tag_scope` | metric | `tailscale_key_tag_scope_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
+| `tailscale.key.tag_scope` | metric | `tailscale_key_tag_scope_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys - ALERTABLE-ONLY today. |
 | `tailscale.keys.age` | metric | `tailscale_keys_age_seconds` | visualized |  |
 | `tailscale.keys.by_owner` | metric | `tailscale_keys_by_owner_ratio` | visualized |  |
 | `tailscale.keys.count` | metric | `tailscale_keys_count_ratio` | visualized |  |
@@ -222,7 +222,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.oauth_app.scopes` | metric | `tailscale_oauth_app_scopes_ratio` | visualized |  |
 | `tailscale.oauth_apps.age` | metric | `tailscale_oauth_apps_age_seconds` | visualized |  |
 | `tailscale.oauth_apps.count` | metric | `tailscale_oauth_apps_count_ratio` | visualized |  |
-| `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | alertable, pending_panel | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
+| `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
 | `tailscale.posture_integration.last_sync` | metric | `tailscale_posture_integration_last_sync_seconds` | visualized, alertable |  |
 | `tailscale.posture_integration.matched` | metric | `tailscale_posture_integration_matched_ratio` | visualized, alertable |  |
 | `tailscale.posture_integration.possible_matched` | metric | `tailscale_posture_integration_possible_matched_ratio` | visualized, alertable |  |

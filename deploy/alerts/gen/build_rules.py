@@ -657,7 +657,7 @@ def groups():
               "goes stale. Rotate or re-issue the OAuth client or API key. This is distinct from a "
               "scope denial — see ts2o-api-scope-denied.",
               domain="security", paused=False,
-              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status"),
+              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status & endpoint"),
         alert("ts2o-api-scope-denied", "Tailscale API operation denied by scope",
               'max by (tailscale_collector, tailscale_api_operation) '
               '(tailscale2otel_api_availability_ratio{tailscale_api_state="scope_denied"})',
@@ -669,7 +669,7 @@ def groups():
               "collector. Note this is NOT the same as a feature the tailnet does not have — that "
               "reports as `disabled` and is expected, not alertable.",
               domain="security", paused=False,
-              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status"),
+              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status & endpoint"),
         alert("ts2o-api-rate-limited", "Tailscale API rate limited",
               'sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[10m]))',
               "gt", 0, "10m", "warning",
@@ -685,7 +685,7 @@ def groups():
               "Sustained HTTP 5xx from the Tailscale API (>0.05/s) — Tailscale-side instability; the "
               "exporter retries but data may be delayed.",
               domain="observability", paused=True,
-              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status"),
+              policy="optional", runbook="tailscale-api-health", panel="API requests/s by status & endpoint"),
         alert("ts2o-api-retries-elevated", "Tailscale API retries elevated",
               "sum(rate(tailscale2otel_api_retries_total[10m]))", "gt", 0.1, "15m", "warning",
               "Elevated Tailscale API retry rate",
@@ -1057,7 +1057,8 @@ def groups():
               "(0, 14d]), so it clears once the attribute is refreshed. Gated by collect_posture and "
               "attribute_namespaces; absent when no attribute carries an expiry.",
               domain="security", paused=False,
-              policy="optional", runbook="credential-expiry"),
+              policy="optional", runbook="credential-expiry",
+              panel="Posture attribute expiry — time remaining"),
         alert("ts2o-auth-keys-expiring-7d", "Auth/API keys expiring (<7d)",
               "count((max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() < 7*86400) and "
               "(max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() > 0))",
@@ -1134,7 +1135,7 @@ def groups():
               "credential can have. Review the credential scopes table on the Policy & Config tab and "
               "scope it down; `all:read` is the least-privilege equivalent for a read-only integration.",
               domain="security", hygiene=True, paused=True,
-              policy="advisory", runbook="credential-scope-hygiene", panel="Credential scopes (top-N)"),
+              policy="advisory", runbook="credential-scope-hygiene", panel="Credential privilege class (blast radius)"),
         # Companion hygiene signal: a credential that can create auth keys with no
         # tag restriction can mint a node with any tags at all (#416).
         alert("ts2o-key-unrestricted-tags", "Trust credential has no tag restriction",
@@ -1144,7 +1145,7 @@ def groups():
               "An OAuth client carries no top-level tag restriction, so auth keys it mints are not "
               "confined to a tag it owns. Scope it to the tags it actually needs.",
               domain="security", hygiene=True, paused=True,
-              policy="advisory", runbook="credential-scope-hygiene", panel="Preauthorized auth keys"),
+              policy="advisory", runbook="credential-scope-hygiene", panel="OAuth client tag restriction class"),
         alert("ts2o-device-share-exit-node", "Device share grants exit node",
               "sum(tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node=\"true\"})",
               "gt", 0, "30m", "warning",
@@ -1281,7 +1282,7 @@ def groups():
               "broken-but-retrying integration the staleness alert structurally cannot (#99). Absent until "
               "an integration exists AND the collector decodes/emits status.error as this gauge.",
               domain="security", paused=False,
-              policy="optional", runbook="posture-integrations", panel="Integration sync detail"),
+              policy="optional", runbook="posture-integrations", panel="Posture integration last-sync errors"),
         alert("ts2o-logstream-delivery-failing", "Log-stream delivery failing",
               "sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[15m]))",
               "gt", 0, "15m", "warning",
@@ -1330,7 +1331,7 @@ def groups():
               "Stream-receiver p99 request latency is above 5s",
               "p99 stream-receiver request latency above 5s — receiver backpressure.",
               domain="observability", paused=True,
-              policy="optional", runbook="ingest-receivers", panel="Receiver latency p50/p95/p99 (stream)"),
+              policy="optional", runbook="ingest-receivers", panel="Receiver in-flight & latency (stream)"),
         alert("ts2o-ingest-data-stale", "Accepted ingest data stale",
               "clamp_min(time() - max by (source, signal) "
               "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
@@ -1341,7 +1342,7 @@ def groups():
               "sources are legitimately idle; enable it only for source/signal pairs expected to deliver "
               "continuously, and add label filters or tune the threshold for that workload.",
               domain="observability", paused=True, lookback=2592000,
-              policy="optional", runbook="ingest-receivers", panel="Accepted event freshness & age p95"),
+              policy="optional", runbook="ingest-receivers", panel="Accepted event freshness & age p95, timestamp skew/s"),
         # --- WU12b: posture integration match rate ---
         alert("ts2o-posture-match-low", "Posture integration match rate low",
               "min(tailscale_posture_integration_matched_ratio / "
@@ -1460,7 +1461,8 @@ def groups():
               "supplies the files (a geoipupdate cron, a mounted volume) has stopped; confirm the file "
               "mtime changed and that enrichment.geoip.reload_interval is not 0.",
               domain="observability", paused=True,
-              policy="optional", runbook="enrichment-and-discovery"),
+              policy="optional", runbook="enrichment-and-discovery",
+              panel="GeoIP database age since build"),
         alert("ts2o-stream-records-skipped", "Stream records skipped",
               "sum by (reason) (rate(tailscale_stream_skipped_total[15m]))",
               "gt", 0, "15m", "warning",
@@ -1615,7 +1617,7 @@ def groups():
               "your targets are hosts expected to be up continuously. Gated on the node-metrics "
               "scraper (off by default) => the gauge is absent and the rule cannot fire without it.",
               domain="infra", paused=True,
-              policy="optional", runbook="nodemetrics-scrape-targets", panel="Node up"),
+              policy="optional", runbook="nodemetrics-scrape-targets", panel="Node-metrics scrape health by target"),
         # Restored from the deleted datasource-managed FlowLogsDropped.
         alert("ts2o-flow-logs-dropped", "Flow logs dropped",
               "sum(rate(tailscale_network_flow_logs_dropped_total[10m]))",
@@ -1649,7 +1651,7 @@ def groups():
               "is inert for anyone not using it. It clears once the events stop arriving.",
               domain="infra", paused=False,
               policy="optional", runbook="subnet-routing-and-services",
-              panel="Webhook events/s by type"),
+              panel="Webhook events by type & rejections by reason"),
         # --- Task 2.5: per-tailnet API errors (F) ---
         alert("ts2o-tailnet-api-errors", "Per-tailnet API errors",
               "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total"

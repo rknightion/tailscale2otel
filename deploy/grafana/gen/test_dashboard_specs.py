@@ -129,5 +129,125 @@ class AdhocAndLinkSeams(unittest.TestCase):
         self.assertTrue(link["url"].startswith("/d/tailscale2otel-health?"), link["url"])
 
 
+def panels_in(node):
+    """Panels under one layout node, recursing through nested tabs and rows."""
+    kind, spec = node.get("kind"), node.get("spec", {})
+    if kind in ("GridLayout", "AutoGridLayout"):
+        return len(spec.get("items", []))
+    if kind == "RowsLayout":
+        return sum(panels_in(r["spec"]["layout"]) for r in spec.get("rows", []))
+    if kind == "TabsLayout":
+        return sum(panels_in(t["spec"]["layout"]) for t in spec.get("tabs", []))
+    return 0
+
+
+def leaf_panel_counts(doc):
+    """{leaf title: panel count} for every LEAF tab — a tab whose own layout is
+    not itself a TabsLayout. Domains and sub-tabbed leaves are containers and
+    have no budget of their own; their children do."""
+    out = {}
+
+    def walk(tabs_layout, path):
+        for t in tabs_layout["spec"]["tabs"]:
+            title = t["spec"]["title"]
+            inner = t["spec"]["layout"]
+            if inner.get("kind") == "TabsLayout":
+                walk(inner, path + (title,))
+            else:
+                out[" > ".join(path + (title,))] = panels_in(inner)
+
+    walk(doc["spec"]["layout"], ())
+    return out
+
+
+class PanelBudgets(unittest.TestCase):
+    """#526's panel ceilings. A tab an operator has to scroll for a minute is one
+    they stop reading, which is the failure the whole re-architecture is against.
+
+    These are asserted on the BUILT document rather than on the tab modules, so a
+    panel added via a row helper, a sub-tab or a domain is counted the same way.
+    """
+
+    LEAF_MAX = 35
+    OVERVIEW_MAX = 30
+
+    @classmethod
+    def setUpClass(cls):
+        cls.docs = {spec.uid: build.build(spec) for spec in build.dashboards.ALL}
+
+    def test_no_leaf_or_sub_tab_exceeds_the_ceiling(self):
+        for uid, doc in self.docs.items():
+            for title, n in leaf_panel_counts(doc).items():
+                with self.subTest(dashboard=uid, leaf=title):
+                    self.assertLessEqual(n, self.LEAF_MAX)
+
+    def test_overview_is_tighter_still_on_both_dashboards(self):
+        # The first tab anyone opens, and the only one most people open. It earns
+        # a tighter budget than the tabs a reader arrives at deliberately.
+        for uid, doc in self.docs.items():
+            with self.subTest(dashboard=uid):
+                self.assertLessEqual(leaf_panel_counts(doc)["Overview"], self.OVERVIEW_MAX)
+
+
+class VariableBudgets(unittest.TestCase):
+    """#526's variable budgets, and the reason the scoped-variable seam exists.
+
+    82 dashboard-level variables — 16 visible controls and 66 hidden presence
+    sentinels — is what the single dashboard shipped. Every hidden sentinel is a
+    Prometheus query on every dashboard load, and 16 controls is a control bar an
+    operator reads as noise. The fix is not deleting them but MOVING them to the
+    tab that consumes them, which is why these gates count dashboard-level
+    variables specifically rather than variables in total.
+    """
+
+    MAX_DASHBOARD_VARS = 15
+    MAX_VISIBLE = 6
+
+    @classmethod
+    def setUpClass(cls):
+        cls.docs = {spec.uid: build.build(spec) for spec in build.dashboards.ALL}
+
+    @staticmethod
+    def visible(doc):
+        return [v["spec"]["name"] for v in doc["spec"]["variables"]
+                if v["spec"].get("hide", "dontHide") == "dontHide"]
+
+    def test_dashboard_level_variable_count(self):
+        for uid, doc in self.docs.items():
+            with self.subTest(dashboard=uid):
+                names = [v["spec"]["name"] for v in doc["spec"]["variables"]]
+                self.assertLessEqual(len(names), self.MAX_DASHBOARD_VARS, names)
+
+    def test_visible_control_count(self):
+        for uid, doc in self.docs.items():
+            with self.subTest(dashboard=uid):
+                self.assertLessEqual(len(self.visible(doc)), self.MAX_VISIBLE,
+                                     self.visible(doc))
+
+    def test_a_tab_scoped_variable_is_not_also_declared_on_the_dashboard(self):
+        # Both would resolve, and the tab's copy would win on that tab only — so
+        # the same name would mean two different things depending on where you
+        # stood. Cheap to assert, very hard to notice on screen.
+        for uid, doc in self.docs.items():
+            at_dashboard = {v["spec"]["name"] for v in doc["spec"]["variables"]}
+
+            def walk(tabs_layout, seen):
+                for t in tabs_layout["spec"]["tabs"]:
+                    for v in t["spec"].get("variables", []):
+                        seen.append((t["spec"]["title"], v["spec"]["name"]))
+                    inner = t["spec"]["layout"]
+                    if inner.get("kind") == "TabsLayout":
+                        walk(inner, seen)
+                    else:
+                        for r in inner.get("spec", {}).get("rows", []):
+                            for v in r["spec"].get("variables", []):
+                                seen.append((r["spec"]["title"], v["spec"]["name"]))
+                return seen
+
+            for where, name in walk(doc["spec"]["layout"], []):
+                with self.subTest(dashboard=uid, where=where, variable=name):
+                    self.assertNotIn(name, at_dashboard)
+
+
 if __name__ == "__main__":
     unittest.main()

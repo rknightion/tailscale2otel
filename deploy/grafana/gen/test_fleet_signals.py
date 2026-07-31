@@ -35,8 +35,14 @@ def load_module(name, path):
 dashboard = load_module("tailscale2otel_dashboard_fleet", Path(__file__).with_name("build.py"))
 builder = dashboard.builder
 
-FLEET_TAB = "Fleet & Devices"
-SECURITY_TAB = "Security & Audit"
+# #526 wave 3 split both leaves into sub-tabs — "Fleet & Devices" (59 panels) into
+# three and "Security & Audit" (49) into four — so these scans walk the LEAVES, not
+# the two parents. A parent is now a TabsLayout with no rows of its own, and a scan
+# that kept pointing at it would find nothing while still passing every "did we look
+# at enough?" floor below it.
+DEVICE_TABS = ("Inventory & Hygiene", "Posture & Security", "Connectivity & Routing")
+SECURITY_TABS = ("Audit Trail", "Risk & ACL", "Posture & Compliance", "Identity & Keys")
+SCANNED_TABS = DEVICE_TABS + SECURITY_TABS
 
 # Every signal #392/#401 assigned, mapped to the panel title that must query it.
 # An inventory, not a sample — removing a panel breaks the build here.
@@ -373,22 +379,27 @@ class RowGatingTest(unittest.TestCase):
 
     # row title -> (presence sentinel or None, required hide_when sentinels)
     NEW_ROWS = {
-        ("Fleet & Devices", "Authorization & sharing"): (None, set()),
+        ("Inventory & Hygiene", "Authorization & sharing"): (None, set()),
         # Gated as of the #495 wiring pass: every panel in this row reads a
         # per-device flag gauge that cardinality.per_entity.device switches off
         # wholesale, so ungated it rendered seven empty-state panels — which reads
         # as "nothing to report" rather than "not collected".
-        ("Fleet & Devices", "Device security flags"): ("has_device_flags", set()),
-        ("Fleet & Devices", "Connectivity detail (per device)"): ("has_connectivity", {"pii_perdevice"}),
-        ("Security & Audit", "Key inventory & age"): (None, set()),
-        ("Security & Audit", "OAuth client tag scope"): ("has_key_scopes", {"pii_actor"}),
-        ("Security & Audit", "Identity & invite hygiene"): (None, set()),
+        ("Posture & Security", "Device security flags"): ("has_device_flags", set()),
+        ("Connectivity & Routing", "Connectivity detail (per device)"):
+            ("has_connectivity", {"pii_perdevice"}),
+        ("Identity & Keys", "Key inventory & age"): (None, set()),
+        # Renamed from "OAuth client tag scope" in wave 3: the row now also carries
+        # the API privilege class and the tag-authority class, which are different
+        # fields from the tag COUNT it originally charted. Gates unchanged.
+        ("Identity & Keys", "Credential scope & blast radius"):
+            ("has_key_scopes", {"pii_actor"}),
+        ("Identity & Keys", "Identity & invite hygiene"): (None, set()),
     }
 
     def setUp(self):
         self.doc = dashboard.build_family()
         self.rows = {}
-        for tab in (FLEET_TAB, SECURITY_TAB):
+        for tab in SCANNED_TABS:
             for (title, spec, ptitles) in rows_of_tab(self.doc, tab):
                 self.rows[(tab, title)] = (spec, ptitles)
         self.assertGreater(len(self.rows), 15, "row scan found almost nothing")
@@ -414,7 +425,7 @@ class RowGatingTest(unittest.TestCase):
     def test_every_row_exposing_a_hostname_is_pii_gated(self):
         # Widening PII exposure is the failure this catches: a new per-device table
         # dropped into an ungated row leaks host names whenever redaction is on.
-        for tab in (FLEET_TAB, SECURITY_TAB):
+        for tab in SCANNED_TABS:
             for (title, spec, ptitles) in rows_of_tab(self.doc, tab):
                 _present, hidden = self._conditions(spec)
                 exposes = False
@@ -442,7 +453,7 @@ class OperatorTableHygieneTest(unittest.TestCase):
         # #392: job/instance/service_* are scrape plumbing. They are never the
         # answer to an operator's question and they push the real columns off-screen.
         checked = 0
-        for tab in (FLEET_TAB, SECURITY_TAB):
+        for tab in SCANNED_TABS:
             for (_rtitle, _spec, ptitles) in rows_of_tab(self.doc, tab):
                 for pt in ptitles:
                     ps = raw_panel(self.doc, pt)

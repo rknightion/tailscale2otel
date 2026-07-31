@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "29",
+      "__panelId__": "25",
       "description": "sum(tailscale_acl_unrestricted_rules_ratio) > 0 \u2014 one or more ACL grants/rules are unrestricted (e.g. * to *). Review the ACL hygiene row on the Security & Audit tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#acl-policy-hygiene",
       "summary": "The tailnet policy has unrestricted (wide-open) rules"

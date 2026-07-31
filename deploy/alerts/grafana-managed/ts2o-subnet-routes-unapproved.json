@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "91",
+      "__panelId__": "89",
       "description": "tailscale_subnet_routes_unapproved > 0 \u2014 a device is advertising subnet routes that an admin has not approved, so those subnets are not reachable. Approve or reject in the admin console.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services",
       "summary": "Subnet routes are advertised but unapproved"

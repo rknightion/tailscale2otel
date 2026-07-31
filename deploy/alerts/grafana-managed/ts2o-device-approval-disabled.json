@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "162",
+      "__panelId__": "23",
       "description": "tailscale_setting_enabled_ratio{tailscale_setting_name=\"devices_approval\"} == 0 \u2014 new devices can join the tailnet without manual admin approval. Ships PAUSED because device approval is off by default in Tailscale and many tailnets run that way intentionally; enable this alert if your tailnet requires device approval. Absent (=> not firing) when the settings collector is disabled.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift",
       "summary": "Tailnet device approval is disabled"

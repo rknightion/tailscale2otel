@@ -28,33 +28,38 @@ def tab_nodemetrics(scope):
     # here because this is the tab it names/gates, even though build.py (not this function's
     # own rows) is the actual consumer.
     sentinel("has_nodemetrics", "tailscale_node_up_ratio", DASHBOARD)
-    sentinel("has_path", "tailscaled_inbound_bytes_total", DASHBOARD)
-    sentinel("has_derp_rollup", "tailscale_derp_region_devices_ratio", DASHBOARD)
+    # The rest gate ROWS inside this tab and nothing else on the dashboard, so #526
+    # scopes them to the tab that consumes them. Only has_nodemetrics stays
+    # dashboard-level, because it gates this tab from the outside and a tab cannot
+    # gate itself on a variable that exists only once it renders.
+    sentinel("has_path", "tailscaled_inbound_bytes_total", scope)
+    sentinel("has_derp_rollup", "tailscale_derp_region_devices_ratio", scope)
     # has_dropped was dead until #402: the raw dropped-packets panel it names sat in the
     # ungated "Traffic (tailscaled)" row, so on a target whose tailscaled exposes no
     # dropped-packet counters it rendered permanently empty instead of hiding. It now
     # gates its own row.
-    sentinel("has_dropped", "tailscaled_outbound_dropped_packets_total", DASHBOARD)
-    sentinel("has_node_curated", "tailscale_node_io_bytes_total", DASHBOARD)
+    sentinel("has_dropped", "tailscaled_outbound_dropped_packets_total", scope)
+    sentinel("has_node_curated", "tailscale_node_io_bytes_total", scope)
 
+    # Two summary tiles, not the full five-panel row this tab used to carry (#526).
+    # The scraper's own health is EXPORTER health, so its detail — target counts, the
+    # per-target up table, discovery target counts — moved to tailscale2otel-health's
+    # Collection tab in full. What stays behind is the minimum a reader needs to tell
+    # "this tailnet has no node data" apart from "the scraper is broken" WITHOUT
+    # leaving the tab; the cross-link in the controls menu is how they get the rest.
     health = [
         (panel("Targets up", "stat", [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_node_up_ratio", "15m"))],
                unit="short", thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background"),
-               desc="Node-metrics scrape targets currently reachable."), 5, 5),
-        (panel("Targets total", "stat", [prom_t("count(%s) or vector(0)" % lot("tailscale_node_up_ratio", "15m"))],
-               unit="short", options=stat_opts(),
-               desc="Node-metrics scrape targets configured/discovered, up or down."), 5, 5),
+               desc="Node-metrics scrape targets currently reachable. Zero here with a healthy "
+                    "Discovery OK means targets were found and none answered — the panels below "
+                    "are empty because of the targets, not because of the tailnet. Per-target "
+                    "detail is on the Exporter health dashboard's Collection tab."), 12, 5),
         (panel("Discovery OK", "stat", [prom_t("max(%s)" % lot("tailscale2otel_nodemetrics_discovery_success_ratio"))],
                mappings=UP_MAP, thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background"),
-               desc="Whether the last node-metrics target-discovery pass succeeded."), 5, 5),
-        (panel("Discovered targets", "stat", [prom_t("max(%s)" % lot("tailscale2otel_nodemetrics_discovery_targets"))],
-               unit="short", options=stat_opts(),
-               desc="Scrape targets found by the last node-metrics discovery pass."), 5, 5),
-        (panel("Node up", "table", [prom_t(lot("tailscale_node_up_ratio", "15m"), instant=True, fmt="table")],
-               transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                  "service_instance_id", "service_name", "service_namespace"],
-                                         rename={"tailscale_node": "Node", "Value": "Up"})],
-               desc="Per-target scrape health (1=up)."), 4, 5),
+               desc="Whether the last node-metrics target-discovery pass succeeded. A failure "
+                    "here explains an empty tab on its own: nothing was scraped because nothing "
+                    "was found. Discovery detail is on the Exporter health dashboard's "
+                    "Collection tab."), 12, 5),
     ]
     traffic = [
         (panel("Inbound bytes/s", "timeseries",

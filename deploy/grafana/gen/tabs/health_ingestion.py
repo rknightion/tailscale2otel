@@ -26,17 +26,92 @@ ingest records-vs-rejections by source. No signal loses its last panel: every
 metric charted by a source row is still charted here, just alongside its
 nearest neighbour instead of alone in its own row.
 
-`has_selfobs` gates the Dedup row but is NOT declared here — it is a
-DASHBOARD-scope sentinel (consumed by 3+ health tabs) declared by whichever
-module now owns the former `tabs/diagnostics.py` "App health" row; declaring
-it again here at tab scope would collide with that dashboard-scope
-declaration (builder._claim_sentinel's cross-scope check).
+`has_selfobs` gates the Dedup row but is NOT declared here at DASHBOARD scope — see the
+docstring note below: this tab now declares its OWN tab-scoped copy, same reasoning as
+`has_stream`/`has_webhook`/etc. above.
+
+#526 second pass — two more sources feed this module:
+
+1. The last three rows of the pre-split `tabs/events.py` "Events & Logs" tab (issue decision
+   9's final piece): "Audit pipeline state" (the #393 four-state discriminator, deliberately
+   UNGATED — see its own comment below), "Audit pipeline latency" and "Audit schema drift"
+   (both gated `has_audit`, declared fresh here since the tab that used to carry it does not
+   survive the split). `TNP`/`LOKI_TN`/`sel()`/`q_hist()`/`STATE_KEY`/`CFG_DOC` are copied
+   from events.py verbatim — that module keeps its own copies for the rows that stayed there
+   (Audit & event rates).
+2. "Cardinality & dedup" from the now-dissolved `tabs/health_internals.py` does NOT feed this
+   module — its two dedup panels went to cardinality.py's Cost & Cardinality tab (task 1 of
+   this pass), where they turned out to be byte-identical duplicates of a row already there,
+   so nothing was added. This tab's own "Cross-source dedup" row (tailscale2otel_dedup_hits_
+   total / _evictions_total / _size_ratio) is unchanged by this pass.
+
+Consolidation (#526 decision 7, second pass) to hold this tab at or under the 35-panel
+ceiling after the audit-row addition:
+  - "Audit events by ingestion path" (from the incoming state row) is DROPPED as a standalone
+    panel — its data (records by source, filtered to signal="audit") is a strict subset of
+    the existing "Ingest records/s & rejections/s by source" panel below, which already
+    breaks out by source AND signal. It is not one of the #393 four-state discriminators
+    (those are the scrape gauge, the accepted counter, the Loki counter and the failures
+    panel — see STATE_KEY), so dropping it does not weaken the row's diagnostic job.
+  - the two object-store rows merge two pairs of same-subject, different-unit panels via a
+    right-axis override (objects/records ingested + bytes read/decompressed; provider
+    requests + provider latency) — 11 panels -> 9.
+  - "Ingest records/s & rejections/s by source" and "Ingest decoded bytes/s by source" merge
+    into one panel via a right-axis override — 2 -> 1.
+  - the two "Log truncation" panels (record count vs bytes, same field breakdown) merge into
+    one via a right-axis override — 2 -> 1.
+  - "Timestamp skew/s" folds into "Accepted event freshness & age p95" as a fourth
+    right-axis series — 2 -> 1.
 """
 
-from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, RI, row,
+from builder import (bargauge_opts, hq, loki_t, lot, organize, panel, prom_t, RI, row,
                      sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts,
                      vmap, WIN_FAST, WIN_SLOW)
-from maps import bool_map
+from maps import bool_map, BOOL_HEALTHY_ON
+
+# --- copied verbatim from tabs/events.py (that module keeps its own copies for the rows
+# that stayed there — see its docstring). Not importable from here: events.py is READ-ONLY
+# to this lane and, more fundamentally, a shared helper used by two independently-owned tab
+# modules belongs in builder.py, not one tab reaching into another's module.
+CFG_DOC = "https://m7kni.io/tailscale2otel/configuration/"
+
+TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
+
+
+def sel(metric, extra=""):
+    """`<metric>{<tailnet/provider filter>[, <extra>]}` — the filtered selector."""
+    return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
+
+def q_hist(quantile, metric):
+    """histogram_quantile over a tailnet-filtered `<metric>_bucket`.
+
+    builder.hq() cannot be reused here: it appends `_bucket` to whatever string
+    it is given, so a selector would come out as `metric{...}_bucket`.
+    """
+    return ("histogram_quantile(%s, sum by (le) (rate(%s[%s])))"
+            % (quantile, sel(metric + "_bucket"), RI))
+
+
+# The state key #393 asks for, written once and appended to every panel in the
+# "Audit pipeline state" row so a reader lands on it wherever they look first.
+# It states its own limit on purpose: presence cannot separate "switched off"
+# from "unsupported" from "never deployed" (#385), so the row names the
+# prerequisite and stops, rather than asserting a cause it cannot know.
+STATE_KEY = (
+    "\n\nReading this row — four states that otherwise look identical:\n\n"
+    "- **idle tailnet**: the collector scrape reads 1, the accepted counter has series, and "
+    "both range counters read 0. Nothing happened.\n"
+    "- **absent Loki data**: the metric counter moved over this range but the Loki counter "
+    "is 0. Events were accepted; the log records are not in the queried Loki datasource.\n"
+    "- **ingestion failure**: the scrape gauge reads 0, or the failures panel is non-zero. "
+    "Records are being attempted and lost.\n"
+    "- **audit collection not enabled**: no scrape series and no accepted counter at all. "
+    "This one is a floor, not a verdict — presence **cannot** separate a disabled collector "
+    "from a provider that does not support the API from a process that was never deployed, "
+    "so the empty states name the prerequisite instead of guessing why."
+)
 
 # Empty-state copy, carried over verbatim from tabs/diagnostics.py (#526 — this
 # tab does not edit that file, but the prerequisite wording is still accurate
@@ -75,6 +150,10 @@ def tab_health_ingestion(scope):
     sentinel("has_webhook", "tailscale_webhook_events_total", scope)
     sentinel("has_recv_dur", "tailscale_stream_request_duration_seconds_count", scope)
     sentinel("has_ingest", "tailscale2otel_ingest_records_total", scope)
+    # Moved from tabs/events.py (#526 decision 9, final piece): gates "Audit pipeline
+    # latency" and "Audit schema drift" below. Declared fresh at THIS tab's scope — the
+    # module that used to own it at DASHBOARD scope for the pre-split tab is gone.
+    sentinel("has_audit", "tailscale_config_audit_events_total", scope)
 
     # --- object-store ingestion (flow/audit export bucket) — moved from
     # tabs/diagnostics.py #399. Every panel relies on its own empty state
@@ -128,18 +207,23 @@ def tab_health_ingestion(scope):
                     "the oldest. A gap aging without the count falling is an object failing "
                     "repeatedly rather than recovering."), 12, 7),
     ]
+    # Consolidation (#526 decision 7, second pass): "Objects & records ingested/s" (cps) and
+    # "Object bytes read vs decompressed" (Bps) merge into one panel via a right-axis
+    # override — same subject (object-store throughput), different unit, no metric lost.
     objstore_throughput = [
-        (panel("Objects & records ingested/s", "timeseries",
+        (panel("Objects & records ingested/s, bytes read vs decompressed", "timeseries",
                [prom_t("sum(rate(tailscale2otel_objectstore_objects_total[%s]))" % RI, legend="objects/s"),
-                prom_t("sum(rate(tailscale2otel_objectstore_records_total[%s]))" % RI, legend="records/s", refid="B")],
-               unit="cps", custom=ts_custom(), options=ts_opts(), novalue=_OBJ_EMPTY,
-               desc="Objects fully ingested and flow-log records decoded out of them."), 8, 7),
-        (panel("Object bytes read vs decompressed", "timeseries",
-               [prom_t("sum(rate(tailscale2otel_objectstore_bytes_total[%s]))" % RI, legend="compressed read"),
-                prom_t("sum(rate(tailscale2otel_objectstore_decompressed_bytes_total[%s]))" % RI, legend="decompressed", refid="B")],
-               unit="Bps", custom=ts_custom(), options=ts_opts(), novalue=_OBJ_EMPTY,
-               desc="Transfer cost (compressed bytes actually read) against expansion "
-                    "(decompressed bytes consumed)."), 8, 7),
+                prom_t("sum(rate(tailscale2otel_objectstore_records_total[%s]))" % RI, legend="records/s", refid="B"),
+                prom_t("sum(rate(tailscale2otel_objectstore_bytes_total[%s]))" % RI, legend="compressed read", refid="C"),
+                prom_t("sum(rate(tailscale2otel_objectstore_decompressed_bytes_total[%s]))" % RI, legend="decompressed", refid="D")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"), novalue=_OBJ_EMPTY,
+               overrides=[{"matcher": {"id": "byName", "options": "compressed read"},
+                           "properties": [{"id": "unit", "value": "Bps"}, {"id": "custom.axisPlacement", "value": "right"}]},
+                          {"matcher": {"id": "byName", "options": "decompressed"},
+                           "properties": [{"id": "unit", "value": "Bps"}, {"id": "custom.axisPlacement", "value": "right"}]}],
+               desc="Objects fully ingested and flow-log records decoded out of them (left "
+                    "axis, cps), beside transfer cost (compressed bytes actually read) "
+                    "against expansion (decompressed bytes consumed, right axis, Bps)."), 12, 7),
         (panel("Object ingestion loss (skipped / retried / limit-stopped)", "timeseries",
                [prom_t("sum by (reason) (rate(tailscale2otel_objectstore_skipped_total[%s]))" % RI, legend="skipped {{reason}}"),
                 prom_t("sum(rate(tailscale2otel_objectstore_retries_total[%s]))" % RI, legend="retries/s", refid="B"),
@@ -161,21 +245,24 @@ def tab_health_ingestion(scope):
                desc="Whole objects that decoded ZERO records while at least one row failed — the "
                     "signature of an export whose framing is not newline-delimited records. Treat "
                     "any non-zero value as a feed-level fault, not corrupt data."), 12, 7),
-        (panel("Object-store provider requests/s", "timeseries",
+        # Consolidation (#526 decision 7, second pass): provider requests (reqps) and
+        # provider latency quantiles (s) merge into one panel via a right-axis override —
+        # same subject (object-store provider call health), different unit, no metric lost.
+        (panel("Object-store provider requests/s & latency", "timeseries",
                [prom_t("sum by (operation, outcome) (rate(tailscale2otel_objectstore_requests_total[%s]))" % RI,
-                       legend="{{operation}} {{outcome}}")],
+                       legend="{{operation}} {{outcome}}"),
+                prom_t(hq("0.5", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p50 {{operation}}", refid="B"),
+                prom_t(hq("0.95", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p95 {{operation}}", refid="C"),
+                prom_t(hq("0.99", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p99 {{operation}}", refid="D")],
                unit="reqps", custom=ts_custom(), options=ts_opts(placement="right"), novalue=_OBJ_EMPTY,
+               overrides=[{"matcher": {"id": "byRegexp", "options": "p(50|95|99) .+"},
+                           "properties": [{"id": "unit", "value": "s"}]}],
                desc="TRANSPORT health only: `error` means the LIST or GET call itself returned "
                     "an error, never a decode/validation/framing/limit failure (those are the "
                     "ingestion-loss panel above). A body that fails mid-read counts as a "
-                    "SUCCESSFUL get here."), 12, 6),
-        (panel("Object-store provider latency p50/p95/p99", "timeseries",
-               [prom_t(hq("0.5", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p50 {{operation}}"),
-                prom_t(hq("0.95", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p95 {{operation}}", refid="B"),
-                prom_t(hq("0.99", "tailscale2otel_objectstore_request_duration_seconds", by="operation"), legend="p99 {{operation}}", refid="C")],
-               unit="s", custom=ts_custom(), options=ts_opts(placement="right"), novalue=_OBJ_EMPTY,
-               desc="Times the provider call itself — for `get` that is obtaining the object's "
-                    "reader, not streaming/decompressing/decoding its body."), 12, 6),
+                    "SUCCESSFUL get here. Latency quantiles (p50/p95/p99, right axis in "
+                    "seconds) time the provider call itself — for `get` that is obtaining the "
+                    "object's reader, not streaming/decompressing/decoding its body."), 24, 7),
     ]
     # --- durable ingress WAL (receiver acceptance before processing), moved
     # from tabs/diagnostics.py #386.
@@ -247,19 +334,24 @@ def tab_health_ingestion(scope):
     ]
     # --- receiver-level health (both stream and webhook receivers), moved
     # from tabs/events.py.
+    #
+    # Consolidation (#526 decision 7, second pass): "Receiver in-flight" (short, a count)
+    # and "Receiver latency p50/p95/p99 (stream)" (s) merge into one panel via a right-axis
+    # override — same subject (receiver health), different unit, no metric lost.
     receiver = [
-        (panel("Receiver in-flight", "timeseries",
-               [prom_t("tailscale_stream_inflight", legend="stream"),
-                prom_t("tailscale_webhook_inflight", legend="webhook", refid="B")],
-               unit="short", custom=ts_custom(), options=ts_opts(),
-               desc="Requests currently being handled by the stream/webhook receivers — a "
-                    "sustained non-zero value means the receiver is backed up."), 8, 7),
-        (panel("Receiver latency p50/p95/p99 (stream)", "timeseries",
-               [prom_t(hq("0.5", "tailscale_stream_request_duration_seconds"), legend="p50"),
-                prom_t(hq("0.95", "tailscale_stream_request_duration_seconds"), legend="p95", refid="B"),
-                prom_t(hq("0.99", "tailscale_stream_request_duration_seconds"), legend="p99", refid="C")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
-               desc="Stream (HEC) receiver request-handling latency quantiles."), 8, 7),
+        (panel("Receiver in-flight & latency (stream)", "timeseries",
+               [prom_t("tailscale_stream_inflight", legend="in-flight stream"),
+                prom_t("tailscale_webhook_inflight", legend="in-flight webhook", refid="B"),
+                prom_t(hq("0.5", "tailscale_stream_request_duration_seconds"), legend="p50 latency", refid="C"),
+                prom_t(hq("0.95", "tailscale_stream_request_duration_seconds"), legend="p95 latency", refid="D"),
+                prom_t(hq("0.99", "tailscale_stream_request_duration_seconds"), legend="p99 latency", refid="E")],
+               unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
+               overrides=[{"matcher": {"id": "byRegexp", "options": "p(50|95|99) latency"},
+                           "properties": [{"id": "unit", "value": "s"}, {"id": "custom.axisPlacement", "value": "right"}]}],
+               desc="Requests currently being handled by the stream/webhook receivers (left "
+                    "axis) — a sustained non-zero value means the receiver is backed up. "
+                    "Stream (HEC) receiver request-handling latency quantiles ride the right "
+                    "axis (s); webhook has no equivalent latency histogram."), 12, 7),
         (panel("Receiver rejected/s (stream + webhook)", "timeseries",
                [prom_t("sum by (reason) (rate(tailscale_stream_rejected_total[%s]))" % RI, legend="stream {{reason}}"),
                 prom_t("sum by (reason) (rate(tailscale_webhook_rejected_total[%s]))" % RI, legend="webhook {{reason}}", refid="B")],
@@ -301,29 +393,38 @@ def tab_health_ingestion(scope):
                     "drifted field feeds is quietly no longer populated."), 24, 7),
     ]
     # --- ingestion volume across every path, moved from tabs/events.py.
+    #
+    # Consolidation (#526 decision 7, second pass): "Ingest decoded bytes/s by source" (Bps)
+    # merges into the records/rejections panel (cps) via a right-axis override — same
+    # subject, different unit, no metric lost.
     ingestvol = [
-        (panel("Ingest records/s & rejections/s by source", "timeseries",
+        (panel("Ingest records/s & rejections/s & bytes/s by source", "timeseries",
                [prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI, legend="accepted {{source}}/{{signal}}"),
                 prom_t('sum by (source) ('
                        'label_replace(rate(tailscale_stream_rejected_total[%(w)s]), "source", "stream", "", "") or '
                        'label_replace(rate(tailscale_webhook_rejected_total[%(w)s]), "source", "webhook", "", "") or '
                        'label_replace(rate(tailscale2otel_objectstore_skipped_total[%(w)s]), "source", "objectstore", "", "")'
-                       ')' % {"w": RI}, legend="rejected {{source}}", refid="B")],
+                       ')' % {"w": RI}, legend="rejected {{source}}", refid="B"),
+                prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI,
+                       legend="bytes {{source}}", refid="C")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               overrides=[{"matcher": {"id": "byRegexp", "options": "bytes .+"},
+                           "properties": [{"id": "unit", "value": "Bps"}]}],
                desc="Records accepted across every ingestion path, by source and signal, beside "
-                    "rejections and skips from every path on the same axis. A source missing "
-                    "from the rejected series is a source that has never rejected anything, not "
-                    "one failing silently — the receivers are independently optional. "
-                    "Object-store contributes its skipped-object count, which includes "
-                    "per-cycle budget skips as well as faults."), 12, 7),
-        (panel("Ingest decoded bytes/s by source", "timeseries",
-               [prom_t("sum by (source) (rate(tailscale2otel_ingest_size_bytes_total[%s]))" % RI, legend="{{source}}")],
-               unit="Bps", custom=ts_custom(), options=ts_opts(),
-               desc="Decoded payload bytes accepted across every ingestion path, by source."), 12, 7),
+                    "rejections and skips from every path on the same axis (left, cps). A source "
+                    "missing from the rejected series is a source that has never rejected "
+                    "anything, not one failing silently — the receivers are independently "
+                    "optional. Object-store contributes its skipped-object count, which includes "
+                    "per-cycle budget skips as well as faults. Decoded payload bytes accepted, "
+                    "by source, ride the right axis (Bps)."), 24, 7),
     ]
     # --- accepted-data freshness/staleness, moved from tabs/events.py.
+    #
+    # Consolidation (#526 decision 7, second pass): "Timestamp skew/s" (cps) folds into the
+    # freshness panel (s) as a fourth right-axis series — same subject, different unit, no
+    # metric lost.
     ingestfresh = [
-        (panel("Accepted event freshness & age p95", "timeseries",
+        (panel("Accepted event freshness & age p95, timestamp skew/s", "timeseries",
                [prom_t("clamp_min(time() - max by (source, signal) "
                        "(last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)",
                        legend="freshness {{source}}/{{signal}}"),
@@ -332,23 +433,28 @@ def tab_health_ingestion(scope):
                        legend="p95 age {{source}}/{{signal}}", refid="B"),
                 prom_t("histogram_quantile(0.95, sum by (le, source, signal) "
                        "(rate(tailscale2otel_ingest_capture_delay_seconds_bucket[%s])))" % RI,
-                       legend="p95 capture delay {{source}}/{{signal}}", refid="C")],
-               unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
+                       legend="p95 capture delay {{source}}/{{signal}}", refid="C"),
+                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_timestamp_skew_total[%s]))" % RI,
+                       legend="skew {{source}}/{{signal}}", refid="D")],
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right"), novalue="0",
+               overrides=[{"matcher": {"id": "byRegexp", "options": "skew .+"},
+                           "properties": [{"id": "unit", "value": "cps"}]}],
                desc="Seconds since the greatest event timestamp accepted from each source/signal "
                     "(exposes stale-but-still-running ingestion, unlike receiver liveness alone); "
                     "the p95 age at acceptance (backfills and retries raise this without moving "
                     "the last-event timestamp backwards); and p95 upstream capture/observation "
                     "delay where the wire format supplies a capture timestamp separately from "
-                    "event time."), 24, 7),
-        (panel("Timestamp skew/s", "timeseries",
-               [prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_timestamp_skew_total[%s]))" % RI,
-                       legend="{{source}}/{{signal}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
-               desc="Events whose timestamp is later than local acceptance, or whose capture "
-                    "timestamp precedes event time. Negative derived durations are clamped to "
-                    "zero."), 24, 6),
+                    "event time. Right axis (cps): events whose timestamp is later than local "
+                    "acceptance, or whose capture timestamp precedes event time — negative "
+                    "derived durations are clamped to zero."), 24, 7),
     ]
-    # --- cross-source dedup, moved from tabs/events.py "Dedup effectiveness".
+    # --- cross-source dedup, moved from tabs/events.py "Dedup effectiveness". Unchanged by
+    # #526's second pass: the dissolved tabs/health_internals.py "Cardinality & dedup" row
+    # (task 1 of this pass) went to cardinality.py's Cost & Cardinality tab, not here — its
+    # two dedup panels (dedup_size_ratio / dedup_evictions_total) were byte-identical
+    # duplicates of a row already on THAT tab, so nothing moved. tailscale2otel_dedup_hits_
+    # total already had its only panel right here, in "Dedup hits & evictions/s" below,
+    # before this pass touched anything.
     dedup = [
         (panel("Dedup hits & evictions/s", "timeseries",
                [prom_t("sum by (dedup_set) (rate(tailscale2otel_dedup_hits_total[%s]))" % RI, legend="hits {{dedup_set}}"),
@@ -392,24 +498,108 @@ def tab_health_ingestion(scope):
     # --- NEW: log truncation (body/attribute bounding before export). The
     # remaining two of the five #526 pending-panel signals scheduled for this
     # tab: tailscale2otel.log.record.truncated, tailscale2otel.log.truncated.bytes.
+    #
+    # Consolidation (#526 decision 7, second pass): the two panels merge into one via a
+    # right-axis override — same field breakdown, different unit, no metric lost.
     truncation = [
-        (panel("Log records truncated/s by field", "timeseries",
+        (panel("Log records & bytes truncated/s by field", "timeseries",
                [prom_t("sum by (field) (rate(tailscale2otel_log_record_truncated_total[%s]))" % RI,
-                       legend="{{field}}")],
-               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
+                       legend="records {{field}}"),
+                prom_t("sum by (field) (rate(tailscale2otel_log_truncated_bytes_total[%s]))" % RI,
+                       legend="bytes {{field}}", refid="B")],
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"), novalue="0",
+               overrides=[{"matcher": {"id": "byRegexp", "options": "bytes .+"},
+                           "properties": [{"id": "unit", "value": "Bps"}]}],
                desc="Log records whose body or an attribute value was truncated to a bounded "
-                    "length before export, by field. Non-zero is expected on a very verbose "
-                    "source; a sustained climb on a field that was previously flat means an "
-                    "upstream payload shape got bigger, not that the exporter regressed."), 12, 6),
-        (panel("Log bytes truncated/s by field", "timeseries",
-               [prom_t("sum by (field) (rate(tailscale2otel_log_truncated_bytes_total[%s]))" % RI,
-                       legend="{{field}}")],
-               unit="Bps", custom=ts_custom(), options=ts_opts(), novalue="0",
-               desc="Bytes dropped from log record bodies/attribute values by truncation, by "
-                    "field — the size of what the panel beside it counts. Read together: a "
-                    "rising record count with flat bytes means many small truncations; flat "
-                    "count with rising bytes means the same records are losing more each "
-                    "time."), 12, 6),
+                    "length before export, by field (left axis, cps). Non-zero is expected on "
+                    "a very verbose source; a sustained climb on a field that was previously "
+                    "flat means an upstream payload shape got bigger, not that the exporter "
+                    "regressed. Bytes dropped by truncation, same field breakdown, right axis "
+                    "(Bps) — read together: a rising record count with flat bytes means many "
+                    "small truncations; flat count with rising bytes means the same records "
+                    "are losing more each time."), 24, 6),
+    ]
+
+    # --- #526 decision 9 (final piece): moved from tabs/events.py, verbatim query logic.
+    # Ungated on purpose — the row's whole job is to tell "no data" apart from "no
+    # collector", and a presence gate would hide the answer in exactly the case an operator
+    # opened the tab to diagnose (see STATE_KEY above). "Audit events by ingestion path" is
+    # dropped here — see the module docstring's consolidation note; it is not one of the
+    # four state discriminators.
+    auditstate = [
+        (panel("Audit poll collector", "stat",
+               [prom_t("min(%s)" % lot(sel("tailscale2otel_scrape_success_ratio",
+                                           'tailscale_collector="auditlogs"'), WIN_FAST))],
+               mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
+               options=stat_opts(color="background"),
+               # No zero-fill. A manufactured 0 would render "the audit poller is
+               # broken" on a tailnet that streams its audit log instead (#385).
+               novalue="No auditlogs scrape reported. Prerequisites: collectors.auditlogs.enabled "
+                       "with collectors.auditlogs.source of poll or both. A stream, webhook or "
+                       "objectstore path reports no scrape here — read the ingestion-path panel. "
+                       "See " + CFG_DOC,
+               desc="Last poll-path scrape result for the auditlogs collector." + STATE_KEY), 5, 6),
+        (panel("Audit events accepted (this range)", "stat",
+               [prom_t("sum(increase(%s[$__range]))" % sel("tailscale_config_audit_events_total"),
+                       instant=True)],
+               unit="short", options=stat_opts(color="value", graph="none"),
+               desc="Audit events the exporter accepted over the dashboard time range, from every "
+                    "ingestion path. Reads exactly $__range, the same window as its Loki "
+                    "counterpart — the two disagreeing on window is the classic false "
+                    "\"the data is missing\" report." + STATE_KEY), 5, 6),
+        (panel("Audit log lines in Loki (this range)", "stat",
+               [loki_t("sum(count_over_time(%s | event_name=`tailscale.config.audit` [$__range]))"
+                       % LOKI_TN, instant=True)],
+               unit="short", options=stat_opts(color="value", graph="none"), novalue="0",
+               desc="Audit log records present in the queried Loki datasource over the same "
+                    "$__range window. Materially below the accepted counter means the records "
+                    "were accepted but did not land where this dashboard reads them." + STATE_KEY), 5, 6),
+        (panel("Audit ingestion failures/s", "timeseries",
+               [prom_t("sum by (error_type) (rate(%s[%s]))"
+                       % (sel("tailscale2otel_scrape_errors_total",
+                              'tailscale_collector="auditlogs"'), RI),
+                       legend="poll {{error_type}}", refid="A"),
+                prom_t("sum by (reason) (rate(%s[%s]))"
+                       % (sel("tailscale_stream_rejected_total"), RI),
+                       legend="stream {{reason}}", refid="B"),
+                prom_t("sum by (reason) (rate(%s[%s]))"
+                       % (sel("tailscale_webhook_rejected_total"), RI),
+                       legend="webhook {{reason}}", refid="C")],
+               unit="cps", custom=ts_custom(), options=ts_opts(), novalue="0",
+               desc="Records the pipeline attempted and lost, by path. Any non-zero series here "
+                    "rules out the idle reading: something arrived and did not make it "
+                    "through." + STATE_KEY), 9, 6),
+    ]
+    # --- #526 decision 9 (final piece), moved from tabs/events.py verbatim. Two distinct
+    # delays: how long Tailscale itself deferred the record before logging it, and how long
+    # it then took to reach local acceptance. A backlog in the first is upstream and nothing
+    # here can shorten it.
+    auditlatency = [
+        (panel("Tailscale deferred delay (p50/p95/p99)", "timeseries",
+               [prom_t(q_hist("0.5", "tailscale_config_audit_deferred_delay_seconds"), legend="p50"),
+                prom_t(q_hist("0.95", "tailscale_config_audit_deferred_delay_seconds"), legend="p95"),
+                prom_t(q_hist("0.99", "tailscale_config_audit_deferred_delay_seconds"), legend="p99")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc="Time Tailscale deferred a configuration-audit record before logging it. "
+                    "Emitted only when the record carries both eventTime and deferredAt in "
+                    "order, so a quiet panel is not the same as a zero delay."), 12, 7),
+        (panel("Local processing delay (p50/p95/p99)", "timeseries",
+               [prom_t(q_hist("0.5", "tailscale_config_audit_processing_delay_seconds"), legend="p50"),
+                prom_t(q_hist("0.95", "tailscale_config_audit_processing_delay_seconds"), legend="p95"),
+                prom_t(q_hist("0.99", "tailscale_config_audit_processing_delay_seconds"), legend="p99")],
+               unit="s", custom=ts_custom(), options=ts_opts(),
+               desc="Time from the record's deferredAt (or eventTime when it was not deferred) to "
+                    "local processor acceptance. Rising here with a flat deferred delay points at "
+                    "the poll window or the exporter, not at upstream."), 12, 7),
+    ]
+    auditdrift = [
+        (panel("Audit schema drift", "timeseries",
+               [prom_t("sum by (field, status) "
+                       "(rate(tailscale_config_audit_schema_drift_total[%s]))" % RI,
+                       legend="{{field}} / {{status}}")],
+               unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
+               desc="Bounded known/unknown observations for audit action, origin, actor type, "
+                    "and target property. Raw unknown values never enter metric labels."), 24, 7),
     ]
 
     return [
@@ -426,4 +616,7 @@ def tab_health_ingestion(scope):
         row("Cross-source dedup", dedup, present="has_selfobs"),
         row("Processor queue", queue),
         row("Log truncation", truncation),
+        row("Audit pipeline state", auditstate),
+        row("Audit pipeline latency", auditlatency, present="has_audit"),
+        row("Audit schema drift", auditdrift, present="has_audit"),
     ]

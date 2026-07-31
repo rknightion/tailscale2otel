@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "62",
+      "__panelId__": "66",
       "description": "Tailscale reports at least one device where more than one client has connected simultaneously using the same node key, sustained for an hour \u2014 the key material has been copied to another machine. That is a credential-sharing signal, not a connectivity one: the second client inherits the first's ACL grants and tags. Identify the device on \"Multiple simultaneous connections\", then rotate by removing the device and re-authenticating it. The one-hour `for` is what makes this a sustained state rather than a transient re-auth overlap.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage",
       "summary": "A node key has been used by more than one client simultaneously"

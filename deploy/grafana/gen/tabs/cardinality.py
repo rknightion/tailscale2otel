@@ -1,10 +1,37 @@
-"""tab_cardinality() — moved out of build.py in the module split."""
+"""tab_cardinality() — moved out of build.py in the module split.
 
-from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row,
+#526 second pass (dissolving the 7th "Exporter internals" leaf, tabs/health_internals.py):
+that tab's "Cardinality & dedup" row (3 panels) belongs here — this tab is the dashboard's
+one home for cardinality/cost signals. All three panels turned out to be near- or exact
+duplicates of panels already on this tab, so nothing was added:
+  - "Dedup set size" and "Dedup evictions/s" (tailscale2otel_dedup_size_ratio /
+    tailscale2otel_dedup_evictions_total) were BYTE-IDENTICAL (same title, query, unit,
+    viz options) to the two panels already in the "Cross-source dedup" row below — dropped,
+    the existing row already charts both metrics.
+  - "Active series by metric (top $topn)" was the same query, legend, unit and viz config as
+    the existing "Active series over time (top $topn)" panel in the "Series budget" row
+    below (just a different title) — dropped as a duplicate. That existing panel was
+    missing its `desc=` (a pre-existing gap predating #526); fixed here as part of this
+    consolidation since it's the panel now doing double duty.
+"""
+
+from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row, sentinel,
                      stat_opts, thr, ts_custom, ts_opts, WIN_FAST)
 
 
 def tab_cardinality(scope):
+    # Declared HERE, at this tab's own scope. It gates the "Ingest vs export cost" row
+    # below, and until #526 wave 3 this module declared nothing at all and rode on a
+    # DASHBOARD-scoped declaration made by a module that no longer exists.
+    #
+    # A sibling tab's declaration would NOT do. Grafana resolves a tab-scoped variable
+    # per tab (verified live), which is exactly what makes the scoping useful and also
+    # what makes borrowing one from a neighbour fail — silently, as a row that renders
+    # permanently hidden and looks identical to one correctly hidden for want of data.
+    # The registry gate did not catch this because it only asked whether the name was
+    # declared SOMEWHERE; test_sentinel_registry now checks resolution per scope.
+    sentinel("has_selfobs", "tailscale2otel_series_active", scope)
+
     OVF = "{otel_metric_overflow=\"true\", __name__=~\"tailscale.*\"}"
     overflow = [
         (panel("Metrics over cardinality cap", "stat",
@@ -26,7 +53,9 @@ def tab_cardinality(scope):
                desc="Sum of active series across all tailscale2otel metrics (a proxy for ingest cost)."), 6, 5),
         (panel("Metric families tracked", "stat",
                [prom_t("count(tailscale2otel_series_active)", instant=True)],
-               unit="short", options=stat_opts()), 6, 5),
+               unit="short", options=stat_opts(),
+               desc="Distinct tailscale2otel metric families currently reporting an active-"
+                    "series count."), 6, 5),
         (panel("Overflowing families", "table",
                [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
                novalue="No metrics over cap — all series fully resolved.",
@@ -43,7 +72,9 @@ def tab_cardinality(scope):
                desc="Per-metric active series against the cap. Watch the flow families."), 12, 8),
         (panel("Active series over time (top $topn)", "timeseries",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
-               unit="short", custom=ts_custom(), options=ts_opts(placement="right")), 12, 8),
+               unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Per-metric active series (cap 10k) over time, top-N by current value. "
+                    "Watch the flow families."), 12, 8),
     ]
     flow = [
         (panel("Flow series: raw vs bounded rollup", "timeseries",

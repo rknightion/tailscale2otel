@@ -32,8 +32,11 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
         doc = dashboard.build(dashboard.dashboards.HEALTH, True, only="Ingestion")
         rendered = json.dumps(doc)
         for expected in (
+            # Both readings now share one two-axis panel, "Accepted event freshness &
+            # age p95, timestamp skew/s" — which is why these assert on SUBSTRINGS and
+            # on the metric names rather than on whole titles.
             "Accepted event freshness",
-            "Timestamp skew/s",
+            "timestamp skew/s",
             "tailscale2otel_ingest_last_event_timestamp_seconds",
             "tailscale2otel_ingest_event_age_seconds_bucket",
             "tailscale2otel_ingest_capture_delay_seconds_bucket",
@@ -68,11 +71,15 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
         ):
             self.assertIn(expected, network)
 
-        events = json.dumps(
-            dashboard.build(dashboard.dashboards.TAILNET, True, only="Events & Logs")
+        # Audit schema drift moved to tailscale2otel-health's Ingestion tab in #526
+        # (decision 9): it measures whether the EXPORTER decoded the audit feed's
+        # fields, not what happened on the tailnet, and it sat on a tab an operator
+        # opened to read the latter.
+        ingestion = json.dumps(
+            dashboard.build(dashboard.dashboards.HEALTH, True, only="Ingestion")
         )
-        self.assertIn("Audit schema drift", events)
-        self.assertIn("tailscale_config_audit_schema_drift_total", events)
+        self.assertIn("Audit schema drift", ingestion)
+        self.assertIn("tailscale_config_audit_schema_drift_total", ingestion)
 
     def test_integrity_alerts_are_paused_and_bounded(self):
         all_rules = rules.rules_by_uid()

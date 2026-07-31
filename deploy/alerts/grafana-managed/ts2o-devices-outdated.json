@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "51",
+      "__panelId__": "47",
       "description": "tailscale_devices_outdated_ratio > 5 \u2014 several clients are N+ minor versions behind the latest. Informational fleet hygiene; surfaces update drift.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#fleet-version-hygiene",
       "summary": "More than 5 devices are running an outdated client"

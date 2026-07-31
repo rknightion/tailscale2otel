@@ -223,8 +223,13 @@ def extract_rows(doc):
     rows = []
 
     def panels_of(grid_layout):
+        # BOTH layout kinds. #526 decision 6 converts rows that are N same-size panels
+        # to AutoGridLayout so they reflow, and a reader of this function that accepted
+        # only GridLayout would return an empty panel list for every converted row —
+        # which does not FAIL anything here, it just silently stops checking them. The
+        # floor assertions below exist because that is exactly what happened.
         out = []
-        if grid_layout["kind"] != "GridLayout":
+        if grid_layout["kind"] not in ("GridLayout", "AutoGridLayout"):
             return out
         for item in grid_layout["spec"]["items"]:
             el = elements[item["spec"]["element"]["name"]]
@@ -428,6 +433,50 @@ class CrossCollectorZeroFillTest(unittest.TestCase):
                     zero_fill_stat_panels += 1
         self.assertGreater(zero_fill_stat_panels, 5,
                            "found suspiciously few zero-filled stat-like panels in gated rows")
+
+
+class RowScanIsNotBlindTest(unittest.TestCase):
+    """Every check in this file reads panels through extract_rows(). If that walker
+    does not understand a layout kind it returns an empty panel list, and every
+    per-panel assertion then passes VACUOUSLY on the rows it could not read — no
+    failure, just less coverage.
+
+    That is not hypothetical. #526 decision 6 converted uniform rows to
+    AutoGridLayout so they reflow; the walker accepted only GridLayout, and every
+    converted row — including "Exit nodes", which one test names explicitly —
+    silently left the contract. The only reason it surfaced is that the named test
+    asserted its panel was FOUND before checking it. These assertions generalise
+    that: a row that reads as empty is a bug in the reader, not a row without panels,
+    because the generator cannot build one.
+    """
+
+    def setUp(self):
+        self.rows = extract_rows(dashboard.build_family())
+
+    def test_no_row_reads_as_having_zero_panels(self):
+        empty = sorted(title for (title, _gates, panels) in self.rows if not panels)
+        self.assertEqual(empty, [],
+                         "extract_rows() found no panels in these rows — it almost "
+                         "certainly does not understand their layout kind, so every "
+                         "check in this file is passing vacuously on them")
+
+    def test_the_scan_covers_the_whole_family(self):
+        # A floor, so a walker that silently stopped descending into (say) sub-tabs
+        # fails here rather than quietly shrinking what is checked.
+        self.assertGreater(len(self.rows), 100, "row scan found far too little")
+
+    def test_negative_an_unreadable_layout_kind_would_be_caught(self):
+        """Proves the zero-panel assertion is not vacuous: a row whose layout kind the
+        walker does not handle must read as empty and be reported."""
+        doc = {"spec": {"elements": {}, "layout": {"kind": "TabsLayout", "spec": {"tabs": [
+            {"kind": "TabsLayoutTab", "spec": {"title": "T", "layout": {
+                "kind": "RowsLayout", "spec": {"rows": [
+                    {"kind": "RowsLayoutRow", "spec": {
+                        "title": "future layout", "layout": {
+                            "kind": "SomeLayoutKindFromTheFuture", "spec": {"items": []}}}}]}}}},
+        ]}}}}
+        self.assertEqual([t for (t, _g, p) in extract_rows(doc) if not p],
+                         ["future layout"])
 
 
 class NotViolationsStayInvisibleTest(unittest.TestCase):

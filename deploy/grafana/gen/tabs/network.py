@@ -5,9 +5,9 @@
 network dashboard" is delivered here, on the flagship's Network & Flows tab.
 """
 
-from builder import (BAR_NOISE, category_bar_opts, barchart_opts, loki_t, lot, organize, panel, PII, pii_sentinel, prom_t,
-                     RI, row, sentinel, stat_opts, thr, ts_custom, ts_opts)
-from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
+from builder import (BAR_NOISE, category_bar_opts, barchart_opts, logs_opts, loki_t, lot, organize,
+                     panel, PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
+                     ts_opts)
 
 
 # --- rollup vs raw: pick ONE path, never add them (#391) ---------------------
@@ -72,17 +72,21 @@ def talker_bar(title, metric, label, display, filt, desc):
 
 def tab_network(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
-    sentinel("has_flows", "tailscale_network_flows_total", DASHBOARD)  # also consumed by events.py
-    sentinel("has_raw_flow", RAW_BYTES, DASHBOARD)
-    sentinel("has_rollup_flow", ROLLUP_BYTES, DASHBOARD)
+    # #526 wave 3: every sentinel here gates a ROW inside this one tab, so each is
+    # declared at TAB scope rather than on the dashboard. The Events & Logs tab, which
+    # used to be the other consumer of has_flows, no longer exists — its flow-log stream
+    # moved onto this tab (decision 9), so the name is genuinely single-tab now.
+    sentinel("has_flows", "tailscale_network_flows_total", scope)
+    sentinel("has_raw_flow", RAW_BYTES, scope)
+    sentinel("has_rollup_flow", ROLLUP_BYTES, scope)
     # has_unique was dead until #391: the peer/port topology row queries exactly the two
     # unique_* gauges, which are gated by cardinality.flow.node_dims on top of the rollup
     # mode, so has_rollup_flow was the looser of the two gates and left the row rendering
     # empty whenever node_dims was off.
-    sentinel("has_unique", "tailscale_network_unique_dst_peers", DASHBOARD)
-    sentinel("has_exit_io", "tailscale_exit_node_io_bytes_total", DASHBOARD)
-    pii_sentinel("pii_node", PII + '{category="node_ids"} == 0', DASHBOARD)
-    pii_sentinel("pii_topology", PII + '{category="network_topology"} == 0', DASHBOARD)  # also consumed by fleet.py
+    sentinel("has_unique", "tailscale_network_unique_dst_peers", scope)
+    sentinel("has_exit_io", "tailscale_exit_node_io_bytes_total", scope)
+    pii_sentinel("pii_node", PII + '{category="node_ids"} == 0', scope)
+    pii_sentinel("pii_topology", PII + '{category="network_topology"} == 0', scope)
     # DELETED in #526: pii_int_ips / pii_ext_ips / pii_ts_ips. They were declared and
     # shipped in the artifact while gating nothing, costing a Prometheus query on every
     # dashboard load and reading, to anyone scanning the variable list, like a working
@@ -339,6 +343,19 @@ def tab_network(scope):
         (talker_bar("Top $topn destination services (raw)", RAW_BYTES, "tailscale_dst_service", "Destination service", tsf,
                     "Busiest destination services by raw per-flow byte rate. " + RAW_PREREQ), 8, 8),
     ]
+    # #526 decision 9: the Events & Logs tab is dissolved and its per-signal log streams
+    # go to the tab that owns the signal. This one is the raw flow-log line, which is the
+    # detail behind every rollup panel above — a reader who wants to know WHICH connection
+    # drove a spike ends up here, so it sits last, after the aggregates that sent them.
+    flowlogs = [
+        (panel("Flow log stream", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` "
+                       "|~ `$log_filter`", maxlines=300)],
+               options=logs_opts(),
+               desc="Raw flow-log lines as received, newest first; narrow them with the Log "
+                    "filter control. This is the unaggregated record behind the rollup and raw "
+                    "panels above."), 24, 10),
+    ]
     return [
         row("Flow summary", summary, present="has_flows"),
         row("Flow integrity", integrity, present="has_flows"),
@@ -354,4 +371,5 @@ def tab_network(scope):
         row("Throughput & talkers — RAW (full detail)", raw_agg, present="has_raw_flow"),
         row("Top talkers — RAW", raw_talkers, present="has_raw_flow", hide_when=["pii_node"]),
         row("Top node-pair talkers (flow logs)", fl_pairs, present="has_flows", hide_when=["pii_node"]),
+        row("Flow log stream", flowlogs, present="has_flows"),
     ]

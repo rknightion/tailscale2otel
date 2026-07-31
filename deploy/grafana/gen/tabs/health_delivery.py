@@ -11,11 +11,21 @@ every sentinel its own rows consume, at the tab-scoped `scope` it is handed.
 Also the scheduled home for five signals that had NO panel anywhere before
 #526 (per the coverage ledger): tailscale2otel.annotation.published/dropped/
 degraded, tailscale2otel.export.spans, tailscale2otel.export.diagnostics.suppressed.
+
+#526 second pass (dissolving the 7th "Exporter internals" leaf,
+tabs/health_internals.py): "Traces & spans" and "Traces & spans (metrics)" move here in
+full, moved verbatim (Tempo queries, unchanged) — tracing is telemetry the exporter SHIPS,
+alongside OTLP export and SIEM log shipping, the same delivery stage as the rest of this
+tab. Neither row needs a new sentinel: both were already ungated on health_internals.py
+(each panel's own desc states the tracing.enabled prerequisite), so they stay ungated here.
 """
 
 from builder import (hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, row,
-                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
+                     sentinel, stat_opts, TBL_NOISE, tempo_t, thr, ts_custom, ts_opts,
+                     WIN_FAST, WIN_SLOW)
 from maps import bool_map
+
+_TRACE_DESC = "Trace panels are empty if tracing.enabled=false."
 
 
 # Grafana annotations are entirely opt-in (grafana_annotations.url), and unlike
@@ -170,7 +180,31 @@ def tab_health_delivery(scope):
                     "body."), 16, 7),
     ]
 
+    # --- Moved verbatim from tabs/health_internals.py (#526 dissolution).
+    traces = [
+        (panel("Scrape → API trace waterfall", "traces",
+               [tempo_t('{ resource.service.name = "tailscale2otel" && name =~ "scrape.+" }')],
+               desc=_TRACE_DESC), 24, 9),
+    ]
+    traces2 = [
+        (panel("API p95 by endpoint (traces)", "timeseries",
+               [tempo_t('{span.tailscale.endpoint != "" && resource.service.name = "tailscale2otel"} '
+                   '| quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)')],
+               unit="s", custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
+        (panel("Scrape cadence by collector (traces)", "timeseries",
+               [tempo_t('{name =~ "scrape.+" && resource.service.name = "tailscale2otel"} | rate() by (name)')],
+               custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
+        (panel("stream.receive batch size (traces)", "timeseries",
+               [tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
+                   '| avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)'),
+                tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
+                   '| avg_over_time(span.http.request.body.size) by (resource.service.instance.id)', refid="B")],
+               custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 24, 7),
+    ]
+
     return [row("Annotations", annotations),
             row("OTLP export health", export, present="has_export_hist"),
             row("PII filter status", pii_status, present="has_pii"),
-            row("SIEM log shipping", siem, present="has_logstream")]
+            row("SIEM log shipping", siem, present="has_logstream"),
+            row("Traces & spans", traces),
+            row("Traces & spans (metrics)", traces2)]

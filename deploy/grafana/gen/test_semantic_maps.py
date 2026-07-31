@@ -55,8 +55,19 @@ BOOL_PANELS = {
     # --- neither is good or bad --------------------------------------------
     ("Tailnet settings", "table"): NEUTRAL,
     ("Tailnet features", "table"): NEUTRAL,
+    # --- inverse risk, from #526's ledger drain ------------------------------
+    # The error gauge is 1-is-bad, and it sits in a table beside a last-sync AGE
+    # column, which is the pairing the alert exists for: lastSync advances on a
+    # FAILED attempt too, so staleness alone cannot see a broken-but-retrying
+    # integration and the error flag is the only signal that can.
+    ("Posture integration last-sync errors", "table"): HEALTHY_OFF,
     # --- liveness -----------------------------------------------------------
     ("Exporter up", "stat"): UP,
+    # The product dashboard's glance copy of the panel above. Suffixed because an
+    # alert links to its panel by title across the whole family and a title on two
+    # dashboards is ambiguous; it must map IDENTICALLY to the canonical one, or the
+    # same reading would render as two different words depending which tab you were on.
+    ("Exporter up (summary)", "stat"): UP,
     ("Discovery OK", "stat"): UP,
     # --- custom labels/colours ---------------------------------------------
     # inverse risk, but the panel's threshold rates it yellow rather than red
@@ -111,7 +122,10 @@ EMPTY_STATE_PANELS = [
     ("Stale users (>30d)", "stat", "tailscale_user_last_seen_seconds"),
     ("Preauthorized auth keys", "stat", "tailscale_key_preauthorized_ratio"),
     ("Series limit", "stat", "tailscale2otel_series_limit"),
-    ("Series headroom", "stat", "tailscale2otel_series_limit"),
+    # "Series headroom" left with the product Overview's golden-signals row in #526
+    # wave 3 — those were the EXPORTER's golden signals on the tailnet dashboard, and
+    # tailscale2otel-health's own Overview already carried the same reading. The metric
+    # keeps its panel on health's Cost & Cardinality tab ("Series limit", above).
     ("Checkpoint disk", "stat", "tailscale2otel_checkpoint_disk_size_bytes"),
     ("Checkpoint persist age", "timeseries", "tailscale2otel_checkpoint_persist_age_seconds"),
     ("Last delivery error", "stat", "tailscale_logstream_error_ratio"),

@@ -127,28 +127,51 @@ def is_boolean_selection(expr):
 
 def series_specs(doc):
     """Yield (panel_title, viz_group, legend, expr, effective_unit, defaults) for every
-    PanelQuery of every panel, where effective_unit accounts for a per-series `byName`
-    fieldConfig override (falls back to the panel's default unit when no override names
-    this series' legend)."""
+    PanelQuery of every panel, where effective_unit accounts for a per-series unit
+    override (falling back to the panel's default unit when none matches this series'
+    legend).
+
+    Both matcher kinds Grafana resolves against a series NAME are honoured: `byName`
+    (exact) and `byRegexp`. Handling only `byName` used to be enough because every
+    mixed-unit panel named its series explicitly; #526's consolidation pass merged
+    same-subject/different-unit panels whose extra series are templated
+    (`p95 {{operation}}`), which cannot be matched by an exact name at generation time
+    and so must use a regexp. A checker blind to `byRegexp` reports those panels as
+    unit-family violations while they render perfectly — and the reflex when a gate
+    cries wolf is to exempt the panel, which then really would stop being checked.
+    """
     for el in doc["spec"]["elements"].values():
         spec = el["spec"]
         viz = spec["vizConfig"]
         defaults = viz["spec"]["fieldConfig"]["defaults"]
         base_unit = defaults.get("unit")
-        by_name_unit = {}
+        by_name_unit, by_regexp_unit = {}, []
         for o in viz["spec"]["fieldConfig"].get("overrides") or []:
             matcher = o.get("matcher", {})
-            if matcher.get("id") != "byName":
+            if matcher.get("id") not in ("byName", "byRegexp"):
                 continue
             for prop in o.get("properties", []):
-                if prop.get("id") == "unit":
+                if prop.get("id") != "unit":
+                    continue
+                if matcher["id"] == "byName":
                     by_name_unit[matcher.get("options")] = prop["value"]
+                else:
+                    by_regexp_unit.append((re.compile(matcher.get("options", "")),
+                                           prop["value"]))
+
+        def _unit_for(legend):
+            if legend in by_name_unit:
+                return by_name_unit[legend]
+            for rx, u in by_regexp_unit:
+                if rx.match(legend):
+                    return u
+            return base_unit
+
         for q in spec["data"]["spec"]["queries"]:
             qs = q["spec"]["query"]["spec"]
             expr = qs.get("expr") or qs.get("query") or ""
             legend = qs.get("legendFormat", "") or ""
-            unit = by_name_unit.get(legend, base_unit)
-            yield spec["title"], viz["group"], legend, expr, unit, defaults
+            yield spec["title"], viz["group"], legend, expr, _unit_for(legend), defaults
 
 
 # Panel viz types where the number itself (not just its color) is the primary read — tables
