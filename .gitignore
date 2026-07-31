@@ -60,6 +60,10 @@ checkpoints/
 /tailscale-api.yaml
 
 docs/superpowers/
+# Some tooling writes plans/specs to the repo root instead of docs/. Same rule
+# applies wherever they land: brainstorming specs and implementation plans are
+# scratch, never committed.
+/superpowers/
 
 2026-06-07-feature-roadmap.md
 
