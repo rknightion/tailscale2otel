@@ -531,10 +531,15 @@ def groups():
     health = [
         alert("ts2o-exporter-down", "Exporter down",
               "tailscale2otel_up_ratio",
-              "lt", 1, "5m", "critical",
+              "lt", 1, "10m", "critical",
               "tailscale2otel exporter is down",
-              "tailscale2otel_up_ratio is 0 for 5m — the exporter is not running or not emitting "
-              "telemetry, so no Tailscale metrics or logs are flowing. This is the pack's only "
+              "tailscale2otel_up_ratio is 0 for 10m — the exporter is not running or not emitting "
+              "telemetry, so no Tailscale metrics or logs are flowing. 10m rather than 5m because "
+              "this rule's whole point (absence is the alert) also makes it the first thing to trip "
+              "when the network between a running exporter and the stack goes away: rebooting the "
+              "site's firewall takes 10-15 minutes, and every minute of that looks identical to a "
+              "dead exporter from here. 10m costs five minutes of detection on a genuine outage and "
+              "buys silence across the routine one. This is the pack's only "
               "coverage_critical rule: BOTH noDataState and execErrState are Alerting, so the series "
               "going fully absent — e.g. an OOM-killed pod — also fires it, matching the "
               "datasource-managed ExporterDown semantics "
@@ -817,13 +822,16 @@ def groups():
               domain="observability", paused=False,
               policy="core", runbook="exporter-config-health", panel="Config warnings"),
         alert("ts2o-config-invalid", "Config invalid",
-              "max(tailscale2otel_config_valid_ratio)", "lt", 1, "5m", "critical",
+              "max(tailscale2otel_config_valid_ratio)", "lt", 1, "10m", "critical",
               "tailscale2otel config is invalid",
               "tailscale2otel_config_valid_ratio < 1 — the running config failed validation. This normally "
               "fails startup, so seeing it at runtime is rare and serious; inspect the config. Ships "
               "ENABLED: an invalid config is unambiguous, needs no site-specific threshold, and the "
               "signal is emitted by any running exporter — there is no deployment where this firing is "
-              "not worth knowing about.",
+              "not worth knowing about. 10m rather than 5m because config validity is only observable "
+              "while the exporter is reachable, so this rule trips on a network outage between a "
+              "healthy exporter and the stack — a firewall reboot takes 10-15 minutes. Nothing is lost "
+              "by waiting: a config invalid at runtime has already been invalid since startup.",
               domain="observability", paused=False,
               policy="core", runbook="exporter-config-health", panel="Config valid"),
         alert("ts2o-checkpoint-stalled", "Checkpoint persist stalled",

@@ -14,7 +14,7 @@
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
       "__panelId__": "11",
-      "description": "tailscale2otel_config_valid_ratio < 1 \u2014 the running config failed validation. This normally fails startup, so seeing it at runtime is rare and serious; inspect the config. Ships ENABLED: an invalid config is unambiguous, needs no site-specific threshold, and the signal is emitted by any running exporter \u2014 there is no deployment where this firing is not worth knowing about.",
+      "description": "tailscale2otel_config_valid_ratio < 1 \u2014 the running config failed validation. This normally fails startup, so seeing it at runtime is rare and serious; inspect the config. Ships ENABLED: an invalid config is unambiguous, needs no site-specific threshold, and the signal is emitted by any running exporter \u2014 there is no deployment where this firing is not worth knowing about. 10m rather than 5m because config validity is only observable while the exporter is reachable, so this rule trips on a network outage between a healthy exporter and the stack \u2014 a firewall reboot takes 10-15 minutes. Nothing is lost by waiting: a config invalid at runtime has already been invalid since startup.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health",
       "summary": "tailscale2otel config is invalid"
     },
@@ -90,7 +90,7 @@
         "source": true
       }
     },
-    "for": "5m0s",
+    "for": "10m0s",
     "labels": {
       "domain": "observability",
       "service": "tailscale2otel",
