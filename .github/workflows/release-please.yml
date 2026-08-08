@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: write # create the GitHub Release + tag
       pull-requests: write # open/maintain the release PR
+      id-token: write # exchanged for a tailnet identity and an OpenBao token
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -47,18 +48,27 @@ jobs:
       minor: ${{ steps.release.outputs.minor }}
     steps:
       # Pinned to the immutable commit for release-please-action v4.
+      # Mints a short-lived GitHub App installation token scoped to THIS repo,
+      # replacing RELEASE_PLEASE_TOKEN -- a PAT scoped across every rknightion repo.
+      # Nothing durable is stored here to leak. The release PR's author becomes the
+      # App rather than rknightion; CI still runs unattended on it, because the
+      # action_required gate applies to github-actions[bot], not to bot identities
+      # generally -- Renovate, a GitHub App, already runs fine.
+      #
+      # Releases now depend on camden being up, unsealed and on the tailnet; a
+      # failure here is infrastructure, not the commit.
+      - name: Mint a scoped release token
+        id: bao
+        uses: rknightion/.github/.github/actions/broker-token@b9ab5f80961f2c29c47a8d7d5dff112b6551169c
+        with:
+          permission-set: release-please-tailscale2otel
+          tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
+          tailscale-audience: ${{ secrets.TS_WIF_AUDIENCE }}
+
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         with:
-          # PAT (not GITHUB_TOKEN): bot-authored release PRs need a non-default-token author for CI to run without manual approval
-          #
-          # zizmor's `secrets-outside-env` audit (auditor persona only; not raised under the
-          # persona CI runs) wants this moved into a deployment environment. DELIBERATELY NOT
-          # DONE: this job has no `if:` gate, so it runs on EVERY push to main to maintain the
-          # release PR — not just when cutting a release. An environment with protection rules
-          # would put a manual approval in front of every push, which is exactly what this PAT
-          # exists to avoid; one without protection rules is naming ceremony and no security.
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.bao.outputs.token }}
 
   # Build + push the image + Helm chart for the freshly-created tag via the shared
   # rknightion container-publish reusable. Same run as the merge that created the release.
