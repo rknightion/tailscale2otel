@@ -302,9 +302,8 @@ See [Configuration](configuration.md) for the full list of options once you are 
     Use `--from-env-file` or `--from-file`, not `--from-literal` — the latter has
     exactly the same command-line exposure as an inline `--set`.
 
-    Rotating that Secret does not reach a running pod on its own; see
-    [Rotating an externally managed Secret](#rotating-an-externally-managed-secret)
-    below.
+    Rotating that Secret does not reach a running pod on its own; see the
+    **Rotating an externally managed Secret** note below.
 
     ### Alternative: a values file the chart turns into a Secret
 

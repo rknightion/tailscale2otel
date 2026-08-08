@@ -174,7 +174,7 @@ loopback (these behaviours are also noted in
 
 !!! danger "Persistent flow storage writes identities to disk"
     That "never leaves the process" reasoning holds only for the in-memory default. Setting
-    [`flows.store.directory`](configuration.md#flowsstore--opt-in-persistent-backend) writes flow
+    [`flows.store.directory`](configuration.md#flowsstore-opt-in-persistent-backend) writes flow
     rows to a SQLite database that survives restarts and lands in whatever backs up that volume,
     so the admin token stops being the only control — filesystem and backup access now read the
     same data.
