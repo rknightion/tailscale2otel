@@ -390,15 +390,19 @@ func TestSignalCoverageDocInSync(t *testing.T) {
 }
 
 // TestSignalCoverageDocIsListedInNav catches the quiet half of adding a docs page:
-// a page absent from the zensical nav is built but unreachable, so nobody ever
-// reads the coverage table this issue exists to publish.
+// a page absent from the nav is built but unreachable, so nobody ever reads the
+// coverage table this issue exists to publish.
+//
+// The nav moved from zensical.toml to docs.toml when this repo adopted the
+// m7kni.io inverted docs model: the hub generates zensical.toml at build time,
+// so it no longer exists here and this test would fail on a missing file.
 func TestSignalCoverageDocIsListedInNav(t *testing.T) {
-	b, err := os.ReadFile("../../zensical.toml")
+	b, err := os.ReadFile("../../docs.toml")
 	if err != nil {
-		t.Fatalf("read zensical.toml: %v", err)
+		t.Fatalf("read docs.toml: %v", err)
 	}
 	if !strings.Contains(string(b), "signal-coverage.md") {
-		t.Error("docs/signal-coverage.md is not in the zensical nav, so the published site never links it")
+		t.Error("docs/signal-coverage.md is not in the docs.toml nav, so the published site never links it")
 	}
 }
 
