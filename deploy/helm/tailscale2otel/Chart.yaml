@@ -162,7 +162,7 @@ version: 0.31.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "3.0.0" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/
-icon: https://m7kni.io/tailscale2otel/assets/logo.png
+icon: https://m7kni.io/tailscale2otel/assets/project-icon-solid.svg
 sources:
   - https://github.com/rknightion/tailscale2otel
 keywords:
