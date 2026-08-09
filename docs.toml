@@ -61,6 +61,7 @@ Reference = [
 [[site.nav]]
 "How It Works" = [
     { Architecture = "architecture.md" },
+    { "Why This Exporter" = "comparison.md" },
 ]
 
 [[site.nav]]
