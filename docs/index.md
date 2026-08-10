@@ -18,6 +18,25 @@ tailnet to show up there alongside everything else, rather than living in a sepa
 The source, releases and issue tracker live on
 **[GitHub](https://github.com/rknightion/tailscale2otel)**.
 
+## Quickstart
+
+Needs a Tailscale OAuth client, and a Grafana Cloud stack if you want the data to
+land somewhere:
+
+```sh
+docker run --rm \
+  -e TS2OTEL_TAILSCALE__TAILNET=example.com \
+  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
+  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
+  -e TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id> \
+  -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
+  ghcr.io/rknightion/tailscale2otel:latest
+```
+
+No config file needed — every setting has a `TS2OTEL_*` environment variable. To
+try it with no backend at all, set `TS2OTEL_OTLP__PROTOCOL=stdout` and it prints
+to the console.
+
 ## Start here
 
 <div class="grid cards" markdown>
