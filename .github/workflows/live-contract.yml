@@ -134,6 +134,37 @@ jobs:
           echo "::add-mask::$token"
           echo "TS_API_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
 
+      # A token that mints is not a token that can READ. Rotating the federated identity on
+      # 2026-08-08 produced one carrying only auth-key and tailnet-settings read, and the lane
+      # reported that as 15 ops "live decode failed" with 403 — indistinguishable, at a glance,
+      # from real API drift, and it filed a drift issue saying so every day (#552).
+      #
+      # So assert read scope BEFORE the contract runs, and fail with the actual cause. A 403
+      # here is never drift: the endpoint answered, it just refused this identity. Devices is
+      # the probe because `all:read` (and every narrower grant this lane needs) includes it,
+      # and it is the resource ResolveLiveArgs needs to address the path-parameterized ops.
+      - name: The minted token must carry read scope
+        env:
+          TS_TAILNET: ${{ vars.TS_TAILNET }}
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer ${TS_API_ACCESS_TOKEN}" \
+            "https://api.tailscale.com/api/v2/tailnet/${TS_TAILNET}/devices?fields=all")
+          if [ "$code" = "200" ]; then
+            echo "minted token can read tailnet devices (HTTP 200)"
+            exit 0
+          fi
+          if [ "$code" = "401" ] || [ "$code" = "403" ] || [ "$code" = "404" ]; then
+            echo "The workload identity minted a token that cannot read this tailnet (HTTP ${code})." >&2
+            echo "This is a MISCONFIGURED FEDERATED IDENTITY, not Tailscale API drift: grant the" >&2
+            echo "identity behind secrets.TS_WIF_CLIENT_ID read scope (all:read) in the admin" >&2
+            echo "console. Failing here rather than letting the contract report it as drift." >&2
+            exit 1
+          fi
+          echo "unexpected HTTP ${code} probing tailnet devices" >&2
+          exit 1
+
       - name: Run live contract
         id: live
         env:
