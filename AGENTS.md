@@ -85,8 +85,10 @@ machine.
   refactor. Standard-library `testing` only — **no testify**.
 - **Assert telemetry, not internals:** every collector/processor test drives the code against
   `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and asserts the emitted metrics/logs.
-- After every change run `go build ./... && go vet ./... && go test -race ./...` and keep
-  `golangci-lint run` clean; commit a **green** state between units of work.
+- During iteration run the narrowest relevant package tests and checks. Before the completing commit,
+  run `go build ./... && go vet ./... && go test -race ./...` and keep `golangci-lint run` clean.
+  Do not repeat the unchanged full gate between intermediate edits unless new evidence or a failure
+  warrants it.
 - Go 1.26 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
 - **Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it** — the client
