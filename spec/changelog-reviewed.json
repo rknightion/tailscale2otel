@@ -1445,6 +1445,11 @@
       "title": "Admin console URL change",
       "verdict": "pre-baseline",
       "note": "predates the changelog review lane; not individually reviewed"
+    },
+    "changelog:2026-08-03-client": {
+      "title": "Tailscale v1.102.1",
+      "verdict": "parked",
+      "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred: the series are labeled by Tailscale Service name, and 1.102.2 emits only HELP/TYPE with no sample until Serve traffic exists, so the label key is unverified. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
     }
   }
 }
