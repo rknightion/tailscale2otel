@@ -41,15 +41,38 @@ jobs:
     name: publish dashboard to GitSync
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # exchanged for a tailnet identity and an OpenBao token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The default GITHUB_TOKEN cannot write to another repository, hence the PAT.
+      # The default GITHUB_TOKEN cannot write to another repository. This used to be
+      # GITSYNC_PAT; that PAT was revoked in the 2026-08-08 secret sweep and this lane
+      # was the one consumer the sweep missed, so it failed with `Bad credentials` for
+      # two days while every other gate stayed green (gc-gitsync-m7kni#17).
+      #
+      # The minted token carries contents:write on gc-gitsync-m7kni ONLY — not on this
+      # repository — and expires in an hour. contents:write is what a `git push` needs;
+      # note this lane pushes commits rather than firing a repository_dispatch.
+      - name: Mint a scoped GitSync token
+        id: bao
+        uses: rknightion/.github/.github/actions/broker-token@06d6727487515cd6628e01696af6f886f1421e04
+        with:
+          permission-set: gitsync
+          # One shared permission set — all three publisher repos target the same hub
+          # repo — but a role per repo to pin repository_id, so these names diverge and
+          # `role` MUST be passed. Omitting it defaults the role to `gitsync`, which
+          # does not exist, and auth/gha/login answers 400.
+          role: gitsync-tailscale2otel
+          tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
+          tailscale-audience: ${{ secrets.TS_WIF_AUDIENCE }}
+
       - name: check out the GitSync repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: rknightion/gc-gitsync-m7kni
-          token: ${{ secrets.GITSYNC_PAT }}
+          token: ${{ steps.bao.outputs.token }}
           path: gitsync
 
       # Each destination filename encodes that dashboard's UID, which is also its
