@@ -1449,7 +1449,7 @@
     "changelog:2026-08-03-client": {
       "title": "Tailscale v1.102.1",
       "verdict": "parked",
-      "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred: the series are labeled by Tailscale Service name, and 1.102.2 emits only HELP/TYPE with no sample until Serve traffic exists, so the label key is unverified. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
+      "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred until a real sample exists: the series are labeled by Tailscale Service name and the label KEY is not in the HELP text. Probed all 39 lab nodes 2026-08-10 \u2014 8 expose :5252/metrics, 7 declare the family with zero samples, and the nodes that actually host Tailscale Services (the k8s operator ingress proxies) run 1.98.9, which predates the metric and exposes no metrics endpoint. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
     }
   }
 }
