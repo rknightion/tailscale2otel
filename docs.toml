@@ -5,7 +5,7 @@
 [site]
 name = "tailscale2otel"
 description = "Tailscale exporter for OpenTelemetry and Prometheus. Export device fleet metrics, network flow logs and audit logs over OTLP to Grafana Cloud or any OTEL backend. Single Go binary; Headscale supported."
-author = "Rob Knighton"
+author = "Rob Knight"
 keywords = [
     "tailscale",
     "tailscale exporter",
