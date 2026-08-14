@@ -18,11 +18,21 @@ go generate ./...                    # regenerate portservice data + install the
 
 `govulncheck` is a CI gate: `go install golang.org/x/vuln/cmd/govulncheck@v1.3.0 && govulncheck ./...`.
 
+> **A clean local `actionlint` does NOT mean the actionlint CI lane will pass.** actionlint shells
+> out to whatever `shellcheck` is on PATH, and its findings depend on that version. A local
+> shellcheck **0.11.0** does not emit **SC2015** (`A && B || C` is not if-then-else) at all, while
+> the runner's older shellcheck does — so a workflow edit can pass locally on both actionlint
+> 1.7.7 and the CI-pinned 1.7.12 and still fail CI. Confirmed 2026-07-28: `[ -n "$x" ] && [ "$x" !=
+> "null" ] || { …; }` in `live-contract.yml` was clean under both local actionlint versions and
+> failed the lane. The version gap is the reverse of the usual one — local is NEWER and reports
+> LESS — so "my tool is up to date" is not reassurance here. When a workflow's `run:` block is
+> edited, prefer a plain `if` over `A && B || C` rather than trusting the local run.
+
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Four files are committed but **generated** — each a pure function of its inputs and each gated in CI
+Eight files are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
-without the README). `scripts/regen-generated.sh` reproduces all four locally, byte-for-byte with CI:
+without the README). `scripts/regen-generated.sh` reproduces them all locally, byte-for-byte with CI:
 
 ```sh
 scripts/regen-generated.sh tools  # ONCE PER MACHINE: install the pinned helm tools (see below)
@@ -35,8 +45,11 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | --- | --- | --- |
 | `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
 | `docs/env-vars.md` | `config.example.yaml` (keys, defaults, inline comments) | `TestEnvReferenceDocInSync -update` (root module; no separate tool) |
+| `docs/signal-coverage.md` | `internal/catalog/signal_dispositions.json` | `TestSignalCoverageDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
+| `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
+| `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 
 > **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
 > CI pins the *actions*, and each action installs one specific tool binary; a local tool of any other
@@ -66,10 +79,73 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all four via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/AGENTS.md`;
-`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` via `TestEnvReferenceDocInSync` in the
-normal `go test -race ./...` run — no extra workflow step). The local tools above are installed on this
-machine.
+CI re-validates all eight via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
+`TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
+normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's
+`dashboards-drift` job, which runs `scripts/regen-generated.sh dashboards` and then
+`git diff --exit-code`). The local tools above are installed on this machine.
+
+> **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
+> `scripts/regen-generated.sh coverage` rebuilds only the *page* from the manifest. The manifest itself
+> is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
+> which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded`/
+> `drives_a_variable` from the actual dashboard and rule artifacts and prunes dead rows, but leaves a
+> new signal's disposition EMPTY — and an
+> empty disposition always fails the gate. **There is no value a human may assign** — all three
+> dispositions are derived — so a signal on no surface cannot be settled by editing the manifest,
+> only by giving it a panel. Regenerating after changing the dashboards or rules is expected and
+> correct; regenerating to make a red gate green is not, and will not work.
+>
+> #526 removed the three escapes that used to exist. `raw_only` and `omitted` let an awkward signal
+> be re-labelled instead of panelled, and 35 had accrued between them; `pending_panel` replaced
+> them as an explicitly transitional shrink-only ledger and was deleted with its last row. Do not
+> reintroduce any of them. The only exemptions are the three **structural** classes in
+> `catalog.StructuralExemptions()`, each an individually justified entry.
+>
+> **`visualized` means a PANEL, and `drives_a_variable` is a separate value on purpose (#527).** A
+> presence sentinel's `label_values()` call is as real a reference as a panel query and shows nobody
+> anything; while both fed one value a signal could clear the coverage bar while being invisible.
+> `tailscale.subnet_routes.advertised` did, and `tailscale.key.expiring` cleared it merely because
+> its name is an option VALUE in a dropdown. Do not fold the two back together.
+
+> **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
+> classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**
+> (#394) — sitting outside the drift gate is exactly why they rotted. The project is **Grafana v2 /
+> Grafana 13+ only and will never ship a Classic export**; do not reintroduce a v1 path (v1 cannot
+> express `conditionalRendering`, so every feature-gated tab would render permanently EMPTY rather
+> than hiding). Alert rules are **Grafana-managed `rules.alerting.grafana.app/v0alpha1` manifests**,
+> one JSON per rule, pushed with `gcx resources push -p deploy/alerts/grafana-managed`.
+>
+> Two format traps in those manifests, both silent: **`noDataState` and `execErrState` BOTH spell
+> the OK state `"Ok"`** — the API accepts only `["Error", "Ok", "Alerting", "KeepLast"]` for either
+> — and durations are Go-style strings (`"30m0s"`, not `"5m"`).
+>
+> **CORRECTED 2026-07-27, by an actual push.** This file previously stated that `execErrState`
+> spelled its own value `"OK"`. It does not, and `"OK"` is rejected outright. That wrong belief was
+> encoded in five places at once — here, `build_rules.py`, `validate_manifests.py`, `test_rules.py`
+> and three docs — so **every offline gate agreed with itself and all 19 `advisory` rules failed at
+> push time** with `spec.execErrState: Invalid value: "OK"`. A validator written from the same
+> assumption as the generator cannot catch that assumption being wrong.
+>
+> The durable lesson is not the casing: **`gcx resources validate` does not validate the spec** (it
+> says so — "does not support server-side dry-run … did not validate the spec"), and neither
+> `validate_manifests.py` nor promtool exercises the real schema. **Only a real
+> `gcx resources push` proves a rule is deployable**, and pushing is pre-authorized here — so push
+> and read the result rather than trusting a green offline run.
+>
+> `build_rules.py --prom-out` renders the same catalogue as throwaway Prometheus rules **purely so
+> `promtool test rules` can execute them** against the fixtures in `deploy/alerts/tests/`. That file
+> is gitignored and never shipped. Parsing proves an expression is well-formed; only execution
+> proves it fires when it should.
+>
+> Separately, `internal/catalog/dashboardrefs_test.go` checks every metric name the generated dashboard
+> and the rule manifests QUERY against the in-code catalog's normalized Prometheus spellings. Nothing else
+> connects those artifacts to the catalog, so a renamed metric leaves a panel silently empty — it still
+> loads, it just shows "No data". That test found the flagship dashboard grouping by
+> `tailscale_user_invite_accepted`, a label emitted nowhere (#438). Note it has to subtract the catalog's
+> LABEL and log-attribute names too: labels share the `tailscale_` prefix, so a text scan cannot tell a
+> metric from a label by shape.
 
 ## Development methodology
 
@@ -85,10 +161,8 @@ machine.
   refactor. Standard-library `testing` only — **no testify**.
 - **Assert telemetry, not internals:** every collector/processor test drives the code against
   `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and asserts the emitted metrics/logs.
-- During iteration run the narrowest relevant package tests and checks. Before the completing commit,
-  run `go build ./... && go vet ./... && go test -race ./...` and keep `golangci-lint run` clean.
-  Do not repeat the unchanged full gate between intermediate edits unless new evidence or a failure
-  warrants it.
+- After every change run `go build ./... && go vet ./... && go test -race ./...` and keep
+  `golangci-lint run` clean; commit a **green** state between units of work.
 - Go 1.26 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
 - **Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it** — the client
@@ -99,18 +173,58 @@ machine.
   interface it can fake in tests. The `telemetry.Emitter` facade is the only thing touching OTLP — keep
   it that way so OTLP never leaks into collectors.
 
+## Task tracking — Backlog.md
+
+Open work lives in `backlog/`, driven **only** through the `backlog` CLI. `backlog task list --plain`
+is the queue; `backlog doc list --plain` lists the durable docs. GitHub Issues was retired for this
+repo on **2026-08-14** — closed issues stay on GitHub and are still cited as `#NNN` (the *Closed
+GitHub issues* doc indexes all 401), while new work is `tso-NNNN`. Two ID spaces, no overlap.
+
+Read the **Codex fan-out protocol (canonical)** doc before designing a wave, and the **Wave operating
+model** doc for this project's own rules. Docs load on demand via `backlog doc view <id> --plain`, so
+neither costs context until something reads it.
+
+- **`backlog/` is committed, so no real identifiers in tasks or docs.** No email addresses, handles,
+  usernames, account IDs, device names, addresses, or credential values — write the shape, not the
+  instance ("the live deployment host", not its name). Aggregate counts, timings and structural
+  findings are fine. A tracker *feels* private, which is exactly why this breaks by accident.
+- **Never use `--notes` or `--plan` bare** — they *silently replace* the whole section, destroying
+  another session's writes with no warning. Use `--append-notes` and `--append-plan`.
+- **Finalize in one call**, so an interrupted run cannot leave finished work looking unfinished:
+  `backlog task edit tso-0007 --check-ac 1 --check-ac 2 -s Done`. Checking criteria at one step and
+  setting status several steps later leaves the task inconsistent if anything interrupts between.
+- **Never hand-edit task, draft, doc, decision or milestone markdown.** Section boundaries are
+  HTML-comment markers; break one and the section is *silently dropped* at exit 0 — the data is still
+  in the file but invisible, until the next write destroys it for real. There is no repair command;
+  `backlog doctor` only fixes duplicate task IDs. `backlog/config.yml` is the one file edited by hand,
+  because list-valued keys cannot be set through `backlog config set`.
+- **Never let two agents edit the same task.** The v1.50 concurrency fix covers the edit funnel but
+  *not* reorder, draft saves, the TUI edit path, `doc update` or decision updates.
+- **`Parked` is a real status**, not a synonym for To Do: attempted, blocked, and left with a concrete
+  resume boundary. Flattening it loses the most valuable thing a long autonomous run produces.
+- **Do not build on decisions, and do not use the MCP surface.** Decisions are half-built upstream —
+  no `edit`, `view` or `update`, no supersede mechanism, no validation — so durable reference goes in
+  **docs** and tasks stay the unit. MCP is frozen upstream and costs 10-50k tokens of permanent
+  context against 1-2k for the CLI.
+
 ## Module / package layout
 
-Four modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v4`) plus three
+Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v4`) plus four
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
-`tools/apidrift`).
+`tools/apidrift`, `tools/promqlcheck`).
+
+> `tools/promqlcheck` is the one tool module with **no `replace ../..`** — it needs nothing from the
+> root module. It pins `golang.org/x/text` explicitly: the version prometheus v0.313.1 pulls in
+> transitively is vulnerable (`GO-2026-5970`), so **Renovate must keep that pin in step with the root
+> module's**. Invoke it as `go run -C tools/promqlcheck . -root "$PWD"` — `go run ./tools/promqlcheck`
+> from the root fails, per the separate-module gotcha above.
 
 - `cmd/tailscale2otel/main.go` — thin entrypoint: load config, build slog logger, `app.New` → `Run`.
   `version` is injected via `-ldflags -X main.version=...`.
 - `internal/app/` — **composition root**. `app.New` resolves the configured tailnets and builds one
   `*tailnetRuntime` per tailnet — its own provider/client, enrich cache, flow/audit processors, and
-  collector registry+scheduler — fanning into a `telemetry.ProviderSet` (see `internal/telemetry/AGENTS.md`),
+  collector registry+scheduler — fanning into a `telemetry.ProviderSet` (see `internal/telemetry/CLAUDE.md`),
   or a single Headscale-backed runtime when `provider: headscale` (`internal/hsapi` + `internal/provider`).
   It also builds the shared checkpoint store, the reverse-DNS cache (`internal/rdns`), the release/update-check
   fetchers (`internal/release`), the receivers, the admin HTTP server (probes + status page + opt-in pprof),
@@ -126,10 +240,10 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   import-cycle gotcha below).
 - `internal/collector/` — scheduler + registry + checkpoints, and one subpackage per source
   (devices, flowlogs, auditlogs, users, keys, settings, acl, dns, nodemetrics, contacts, services,
-  webhooks, postureintegrations, logstream). See `internal/collector/AGENTS.md` for the "add a
+  webhooks, postureintegrations, logstream). See `internal/collector/CLAUDE.md` for the "add a
   collector" recipe.
 - `internal/telemetry/`, `internal/semconv/`, `internal/metricdoc/`, `internal/catalog/` — the OTEL
-  facade and the code-as-docs metrics catalog. See `internal/telemetry/AGENTS.md`.
+  facade and the code-as-docs metrics catalog. See `internal/telemetry/CLAUDE.md`.
 - `internal/tsapi/` — Tailscale API client + log "doers" (auth: OAuth preferred, or API key).
 - `internal/provider/` — abstracts the control plane (Tailscale or Headscale) behind one `ControlPlane`
   interface + capability set, so collectors and app wiring stay provider-agnostic; `*tsapi.Client`
@@ -147,25 +261,65 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   the self update-available check and per-device version-skew metrics.
 - `internal/config/` — layered config loader (defaults → YAML → `TS2OTEL_*` env), `Validate()` and advisory `Warnings()`.
 - `tools/metricscatalog/` (docs/metrics.md generator), `tools/configcheck/` (validates config via the
-  real `config.Load`, catching cross-field rules JSON Schema can't express).
-- `deploy/` — Dockerfiles, docker-compose, Helm chart, Grafana dashboards, Prometheus alert rules. See `deploy/AGENTS.md`.
+  real `config.Load`, catching cross-field rules JSON Schema can't express), `tools/promqlcheck/`
+  (parses every dashboard/rule expression with the real `prometheus/promql/parser`).
+- `deploy/` — Dockerfiles, docker-compose, Helm chart, Grafana dashboards, Prometheus alert rules. See `deploy/CLAUDE.md`.
 
 ## CI gates (a PR must pass all of these)
 
-`go vet` · `go build` · `go test -race` · `golangci-lint` (root + **three** tool modules:
-`configcheck`, `metricscatalog`, `apidrift`) · `docs/metrics.md` in sync (`metricscatalog -check`) ·
-`govulncheck` · GoReleaser snapshot build · Docker image build. The Helm workflow additionally gates:
-`helm lint`/`template`, `values.schema.json` drift, `helm-docs` drift, and `configcheck` on both
-`config.example.yaml` and the chart-rendered config. Match these locally before claiming work is done.
+Root module: `go vet` · `go build` · `go test -race` · `golangci-lint` · `govulncheck` ·
+`docs/metrics.md` in sync (`metricscatalog -check`) · GoReleaser snapshot build · Docker image build.
+The Helm workflow additionally gates: `helm lint`/`template`, `values.schema.json` drift, `helm-docs`
+drift, and `configcheck` on both `config.example.yaml` and the chart-rendered config.
+
+> **`go test -race ./...` at the root is NOT "the test suite" — there is no `go.work`, so it stops at
+> the root module boundary.** Each tool module is a separate `go.mod` on purpose (so it never affects
+> the main module's build), which means nothing run from the repo root reaches it. The
+> **`module-verify`** matrix job in `ci.yml` covers the three tool modules with `go build` · `go vet` ·
+> `go test -race` · **`go mod tidy` diff** · `govulncheck`, and is in `ci-success.needs`; the separate
+> `lint` matrix runs `golangci-lint` across all four. Before that job existed the tool modules were
+> lint-only, and `tools/configcheck/go.sum` had silently drifted 82 lines out of tidy (#437).
+>
+> **Run `scripts/verify-modules.sh` locally** — it mirrors those legs for every module (discovered by
+> walking for `go.mod`, so a new module is covered the day it is added) and SKIPs loudly rather than
+> silently passing when `golangci-lint`/`govulncheck` are absent. `internal/ci/workflowcontract_test.go`
+> fails if a module is missing from either CI matrix, or if `module-verify` stops running a leg.
+>
+> **It also runs `promqlcheck` against the ARTIFACTS, which is a different question from the module
+> legs and easy to conflate.** Building and unit-testing `tools/promqlcheck` proves nothing about the
+> dashboards and rules the repo ships; the artifact run parses every expression and resolves each
+> `$variable` against what is in scope where the panel actually sits. In CI it lives in the
+> "generated dashboards and rules are in sync" job, not in `module-verify`. #526 landed **65 real
+> failures on CI with every local gate green** for exactly this reason, which is why the leg exists.
 
 > **API drift CI** (see README "API drift CI" + `internal/oas`, `internal/tsapi/contract`,
-> `tools/apidrift`): the PR-time **decode-fuzz** and `oas` classifier tests run inside `go test -race ./...`
-> and **do** gate PRs. The three *scheduled* lanes (`api-drift.yml`, `clientlib-main.yml`,
-> `live-contract.yml`) are advisory — on detection they open a deduped tracking issue + fail the
-> scheduled run, but never block PRs. The live lane does NOT use GitHub OIDC — it mints a short-lived
-> Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client whose
-> credentials live in the environment of a dedicated self-hosted runner (label `tailscale-api`), not
-> in GitHub secrets (see `.github/workflows/live-contract.yml`).
+> `tools/apidrift`): the PR-time schema-driven **decode tests** and `oas` classifier tests run inside
+> `go test -race ./...` and **do** gate PRs. The separate **`fuzz` JOB** (exploratory `go test -fuzz`)
+> is deliberately NOT in `ci-success.needs` — finding a new crasher is nondeterministic, so gating it
+> would let an unrelated PR randomly block merges; each target's seed corpus rides the gated leg, so a
+> known crasher still blocks. Don't conflate the two: "decode fuzz gates" is true of the tests and
+> false of the job. The three *scheduled* lanes (`api-drift.yml` **daily**, `clientlib-main.yml`
+> **weekly**, `live-contract.yml` **daily**) are advisory — on detection they open a deduped tracking
+> issue + fail the scheduled run, but never block PRs. `internal/ci/workflowcontract_test.go` asserts
+> these cadences and the gating split against the workflow files, because the README stated two of
+> them wrong for months while nothing failed (#436). The live lane does NOT use GitHub OIDC — it mints a short-lived
+> Tailscale API token via OAuth client-credentials, using a read-only (`all:read`) OAuth client.
+>
+> **The credentials are GitHub secrets on a standard `ubuntu-latest` runner.** An earlier design kept
+> them in the environment of a dedicated **self-hosted** runner (label `tailscale-api`) — that runner
+> was **never provisioned**, so the lane queued forever and was auto-cancelled at 24h every week,
+> producing no signal at all (#160). Standing a self-hosted runner up on a PUBLIC repo is also a risk
+> GitHub warns against, since a fork PR can target it. Secrets are safe here precisely because the lane
+> is `schedule` + `workflow_dispatch` only, so a fork PR can never reach them; worst case on a leak is
+> "can read the tailnet". **Do not "restore" the self-hosted runner** — read the header comment in
+> `.github/workflows/live-contract.yml` first.
+
+> **The vendored OpenAPI spec is `spec/tailscale-api.json`** (~286 KB; 58 paths / 90 operations, 34 of
+> them GET), with provenance in `spec/README.md`. It is NOT at the repo root, and there is no `.yaml`
+> copy. Refreshing it is manual and is how you *acknowledge* a detected drift — the daily
+> `api-drift.yml` fetches the live spec to `/tmp` for comparison but never writes back.
+> `internal/oas.ParseSpec` keeps **only** `get` operations and silently drops every other verb, so
+> `Spec.Ops` never contains a POST/PUT/PATCH/DELETE.
 
 ## Config & secrets
 
@@ -218,9 +372,60 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
   validate record-type changes against real captures in `.capture/`.
 - **OTLP/HTTP endpoint path is used as-is:** the otlphttp exporter does NOT append `/v1/{metrics,logs}`
   — `internal/telemetry.otlpHTTPURL()` does. A bare gateway URL 404s silently without it.
+- **Pushing dashboards and alert rules to Grafana is PRE-AUTHORIZED — do not ask.** Standing
+  permission from Rob (2026-07-27): `gcx resources push -p deploy/alerts/grafana-managed`, dashboard
+  pushes, and deleting a rule the repo no longer ships are all his own stack and his call already
+  made. Just do it and report what changed. **`gcx resources push` is ADDITIVE** — it creates and
+  updates but never deletes, so a rule removed from the repo keeps evaluating forever until deleted
+  by hand. Run `python3 scripts/verify_deployment.py` (read-only; exit 0 in sync, 1 drift, 2
+  unreachable) after any push, and to find orphans. This permission covers Grafana only — it does
+  NOT extend to mutating the tailnet itself.
+- **Do NOT push DASHBOARDS with `gcx` — they are delivered by GitSync.** `.github/workflows/
+  grafana-sync.yml` commits `deploy/grafana/*.json` into `rknightion/gc-gitsync-m7kni`, which is a
+  Grafana GitSync source, and Grafana writes UI saves back into that repo. A direct API push is an
+  out-of-band edit and leaves the repo and the stack disagreeing with no way to tell which is right.
+  Only RULES go via `gcx resources push`. Deleting a dashboard through the API is likewise undone by
+  the next sync, which re-creates it from whatever file is still in the GitSync repo — retire one by
+  deleting it from `deploy/grafana/`, and the workflow prunes the far side.
+- **A green `grafana-sync` run is not proof it published anything.** Its commit step used
+  `git diff --quiet`, which sees only TRACKED files. When #526 renamed the single dashboard artifact
+  into a tailnet/health pair, both new filenames were untracked, so the check read "already matches"
+  and exited 0 — **three consecutive successful runs copied two files and published neither**
+  (fixed in `f167a1c`: stage first, then diff the index). If you change what
+  `deploy/grafana/` produces, verify the far side by listing
+  `repos/rknightion/gc-gitsync-m7kni/git/trees/main`, not by the workflow's conclusion.
 - **Live-tailnet verification:** keep lab-specific names, addresses, identifiers, credentials, and
   observability captures out of tracked files. Store secrets and raw captures only in ignored local
   paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a
   real/production tailnet.
 - **Conventional Commits:** commit messages follow `type(scope): subject` (see `git log`); Renovate and
   release tooling assume it.
+- **A breaking change (`!`) that cuts a new MAJOR needs the Go module path moved first.** release-please
+  does not maintain it, and a major tagged against a stale `/vN` path fails the GoReleaser binaries job
+  (this really happened at v2.0.0 — #174). Run `scripts/bump-module-major.sh` and land it on `main`
+  before merging the release PR; `TestModulePathMatchesReleaseVersion` fails the release PR if you
+  forget. See `deploy/CLAUDE.md`.
+
+<!-- BACKLOG.MD GUIDELINES START -->
+<!-- backlog.md-instructions-version: 1.50.1 -->
+<CRITICAL_INSTRUCTION>
+
+## Backlog.md Workflow
+
+This project uses Backlog.md for task and project management.
+
+**For every user request in this project, run `backlog instructions overview` before answering or taking action.**
+
+Use the overview to decide whether to search, read, create, or update Backlog tasks.
+
+Before task lifecycle actions, read the matching detailed guide:
+- `backlog instructions task-creation` before creating or splitting tasks
+- `backlog instructions task-execution` before planning, changing status or assignee, adding a plan or implementation notes, or implementing task work
+- `backlog instructions task-finalization` before checking acceptance criteria, writing final summaries, or moving tasks to terminal statuses
+
+Use `backlog <command> --help` before running unfamiliar commands. Help shows options, fields, and examples.
+
+Do not edit Backlog task, draft, document, decision, or milestone markdown files directly. Use the `backlog` CLI so metadata, relationships, and history stay consistent.
+
+</CRITICAL_INSTRUCTION>
+<!-- BACKLOG.MD GUIDELINES END -->

@@ -117,3 +117,12 @@ docs/assets/project-icon-solid.svg
 docs/assets/social-card.png
 docs/assets/social-card.svg
 docs/fonts/
+
+# Claude Code repo-local config. `settings.json` and `hooks/` ARE tracked — they
+# enforce the Backlog.md rules (bare --notes/--plan replaces a section silently;
+# hand-edited task markdown loses one at exit 0) for anyone working in this repo.
+# Everything else under .claude/ is per-machine state: worktrees, scheduler locks,
+# and settings.local.json.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/

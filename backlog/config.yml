@@ -1,0 +1,20 @@
+project_name: "tailscale2otel"
+default_status: "To Do"
+statuses: ["To Do", "In Progress", "Parked", "Done"]
+definition_of_done:
+  - "go build ./... && go vet ./... && go test -race ./..."
+  - "golangci-lint run"
+  - "scripts/regen-generated.sh (only if a generated artifact's inputs changed)"
+labels: []
+date_format: yyyy-mm-dd
+max_column_width: 20
+auto_open_browser: true
+default_port: 6420
+remote_operations: false
+auto_commit: false
+filesystem_only: false
+zero_padded_ids: 4
+bypass_git_hooks: false
+check_active_branches: false
+active_branch_days: 30
+task_prefix: "tso"
