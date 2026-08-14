@@ -3,7 +3,7 @@ id: doc-0001
 title: Agent fan-out protocol (canonical)
 type: specification
 created_date: '2026-08-14 14:02'
-updated_date: '2026-08-14 14:36'
+updated_date: '2026-08-14 15:21'
 ---
 > **Imported verbatim from `~/repos/agent-fanout-generic.md` on 2026-08-14.** This copy is
 > authoritative for tailscale2otel. It is deliberately not summarised, compressed or adapted —
@@ -151,6 +151,24 @@ This file is your goal. Re-read it after compaction and before each new lane.
 
 Prefer one immutable goal file per run. A correction or new phase gets a new file that explicitly
 supersedes the old one. Do not silently rewrite the instructions an earlier run received.
+
+### Re-check the STATE of every tracker item a goal names, not just its content
+
+A goal file is copied forward, and a stale fact inside one is invisible because it reads exactly like a
+current one. One goal said an interface change would be cut "together with" two sibling items as a
+single revision rather than three. That was true when the note was written on the tracker. By then both
+siblings had shipped, eleven and twenty-one runs earlier — the cluster had dissolved and only one item
+survived it. The line was copied into three consecutive goal drafts, into a decision comment posted
+back to the tracker, and into a question put to the operator, before anyone queried the item's state.
+
+**Before carrying any tracker reference from an old goal into a new one, query its state**, not its
+body. One loop covers a whole goal, and it costs seconds against a run that costs hours.
+
+The failure is asymmetric and that is what makes it dangerous: a *closed* item you believe is open
+produces confident work on something already delivered, and nothing in the repository contradicts you —
+the code is there, the tests pass, and the only signal is a tracker you did not read. Correct it on the
+item with the framing intact rather than quietly fixing the next goal; the stale version is what the
+previous goals said, and the next reader finds those first.
 
 ### Where the run's artefacts live: a gitignored `codex/` in the repository
 
@@ -309,6 +327,16 @@ exist. Both fail quietly overnight.
 Each lane then owns exactly one file, is testable in isolation, and blocks nobody. A lane that wants an
 identifier other than its assigned one **stops and says so** rather than choosing its own; that is the
 point of pre-assigning them.
+
+**Assigning an identifier to a lane does not assign the work to it — the owned-files list does, and
+that is the line that gets it wrong.** One wave pre-assigned both halves of a new read surface to a
+lane in the identifier table, then wrote that lane's ownership as its own front-end files and a
+registration stub. Nothing owned the server handlers. Every lane passed its acceptance check, the gate
+was green, and the feature shipped as a truthful "unavailable" page — the gap stayed invisible until a
+human opened the console. **Cross-check the identifier table against the owned-files line of the lane
+it names: if a row assigns a route, a migration or a generated key, that lane's ownership must include
+the file that implements it, in every repository and every language the identifier touches.** A route
+is two files when the server and the client are written in different languages.
 
 Where a digest, lockfile or checksum covers the whole registry, it belongs to the integration pass and
 is regenerated exactly once, at the end.
@@ -783,6 +811,40 @@ make the acceptance check name the entry point — the route, the menu item, the
 require evidence that it resolves. "It compiles and its tests pass" is not evidence that anyone can get
 to it.
 
+### Work parked between runs is preserved by patch identity, not by hope
+
+Two different situations hand one run's work to a later one, and both have a counter-intuitive rule.
+
+**A preserved stash is restored with `apply`, never `pop`.** When a run parks validated work in a named
+stash for a later run to land, the later run's goal must say this outright. `pop` deletes the stash the
+moment it succeeds, so any mistake afterwards — a bad merge, a wrong repair, a lane that overwrites a
+file — has nothing left to fall back to, and in the case that produced this rule that was two runs of
+security-reviewed work with no way to recover it. `apply` leaves it in place. Pair it with three more
+rules in the goal:
+
+- **Recompute the patch id before applying** and stop if it does not match the value frozen in the
+  goal. Applying a stash you cannot identify is the silent-corruption path.
+- **Never drop, clear or branch it**, even after the work has landed. Deleting it is the operator's
+  decision and it is not the run's to make.
+- **On conflict, reset the tree rather than fighting the apply.** The stash survives that; a
+  half-resolved working tree does not.
+
+**A crashed run is not a lost run — sweep by patch identity, not by worktree count.** One crashed main
+thread left 11 worktrees and 20 branches across three repositories, including a commit on a *primary*
+worktree that had never been pushed. It looked like carnage. Comparing
+
+```sh
+git show <commit> | git patch-id --stable
+```
+
+against the mainline proved **every** unique commit already had a byte-identical twin landed: nothing
+was lost and all of it was safe to delete. Run that sweep before believing either "we lost work" or
+"it's all fine" — both conclusions are cheap to reach and expensive to get wrong, and the count of
+stray refs supports neither.
+
+The same command is what makes a branch-and-worktree audit meaningful. "Redundant" and "unique" are
+claims about content, so require the evidence, not the adjective.
+
 ### Failure and counter
 
 | Failure | Counter |
@@ -825,6 +887,9 @@ to it.
 | A licence's ending condition has now been mispredicted three times | Stop predicting and ask the human for a cadence. A schedule makes no claim about the future and cannot be wrong about it (§8) |
 | A suite reaches nothing overnight and reports green | Reporting skips separately is enough for a run read the same day. For an unattended run, remove the skip paths so an unreachable surface fails (§8) |
 | A new test target's results are only ever the agent's own account of them | Check that CI actually executes the target. Creating a check and wiring a check are different pieces of work (§8) |
+| A goal carries a tracker reference that was true when it was written | Query every named item's **state**, not its body, before copying it into a new goal. A closed item you think is open produces confident work on something already delivered, and nothing in the repository contradicts you (§2) |
+| An identifier table assigns a route or key but no lane's owned-files list contains the file implementing it | Cross-check the table against each lane's ownership line. Every lane can pass, the gate can be green, and the feature can ship as a truthful "unavailable" page (§4) |
+| A run `pop`s the stash it was told to preserve | Say `apply`, never `pop`, in the goal, with the frozen patch id to re-verify before applying and an explicit ban on drop, clear and branch. `pop` deletes on success, so the next mistake has nothing to fall back to (§8) |
 
 ---
 
