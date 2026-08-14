@@ -3,12 +3,21 @@ id: doc-0003
 title: Closed GitHub issues (pre-Backlog history index)
 type: other
 created_date: '2026-08-14 14:04'
-updated_date: '2026-08-14 14:04'
+updated_date: '2026-08-14 15:44'
 ---
 > **Historical index of work tracked on GitHub Issues before this repo moved to Backlog.md on
-> 2026-08-14.** It is a pointer, not the record: every row's full body and comments still live at
-> `gh issue view <N> --comments`, and the load-bearing detail — closing decisions, corrections,
-> acceptance evidence — is in those comments, not here.
+> 2026-08-14.** The issues themselves were **deleted from GitHub** on that date, so `gh issue view
+> <N>` will 404. Their full bodies and all 481 replies are archived in
+> `archive/github-issues-2026-08-14.json` — that file is the record, this table is the index into it.
+> The load-bearing detail (closing decisions, corrections, acceptance evidence) is in the comments,
+> so read the archive, not just this table:
+>
+> ```sh
+> jq '.[] | select(.number == 526)' archive/github-issues-2026-08-14.json
+> ```
+>
+> The archive is redacted — host names, tailnet addresses and account identifiers were replaced with
+> stable placeholders before it was committed. `archive/README.md` has the mapping.
 
 **Why these were not imported as tasks.** Backlog IDs follow creation order, so an imported task
 could never carry the number the history already cites. `CLAUDE.md`, the commit log and code
