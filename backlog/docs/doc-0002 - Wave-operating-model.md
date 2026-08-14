@@ -3,14 +3,21 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-08-14 14:06'
+updated_date: '2026-08-14 14:36'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself — run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
 external-contract freezing, the blocker contract, the goal-file template, the run-end protocol and
-the pre-flight checklist — is the *Codex fan-out protocol (canonical)* doc, and that doc wins on any
+the pre-flight checklist — is the *Agent fan-out protocol (canonical)* doc, and that doc wins on any
 specific. Nothing here restates it. If a section below could be pasted into another repo unchanged,
 it is in the wrong document.
+
+That protocol is harness-neutral and names no model: it describes lanes by **role**, and its
+Appendix A (Codex) or Appendix B (Claude Code) resolves a role into a concrete route. Waves on this
+repo have historically been written by Claude and executed by Codex, so **name the harness in the
+run contract and resolve every lane's route from that harness's profile** — a lane brief carrying a
+role name alone is not routed. Appendix B defers Claude routing to the always-loaded global rules
+and carries only the structural differences; read it for those, not for model tiers.
 
 Every rule here exists because something failed. The failure is kept with the rule; a rule without
 its reason gets argued away by the next session.

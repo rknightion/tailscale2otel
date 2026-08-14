@@ -1,26 +1,48 @@
 ---
 id: doc-0001
-title: Codex fan-out protocol (canonical)
+title: Agent fan-out protocol (canonical)
 type: specification
 created_date: '2026-08-14 14:02'
-updated_date: '2026-08-14 14:02'
+updated_date: '2026-08-14 14:36'
 ---
-> **Imported verbatim from `~/repos/codex-fanout-generic.md` on 2026-08-14.** This copy is
+> **Imported verbatim from `~/repos/agent-fanout-generic.md` on 2026-08-14.** This copy is
 > authoritative for tailscale2otel. It is deliberately not summarised, compressed or adapted —
-> a compression drifts from its source while looking authoritative. When the source changes,
-> re-import deliberately and say so in the commit message.
+> a compression drifts from its source while looking authoritative. An edit to the source is not
+> finished until this copy is re-imported in the same change.
+>
+> Its body is harness-neutral and names no model: lanes are described by ROLE, and **Appendix A
+> (Codex) or Appendix B (Claude Code) resolves a role into a concrete route.** Read the profile for
+> the harness this run is on before writing lanes — the two differ in kind, not just in model names.
 
 ---
 
-# Prompting Codex for long-running fan-out workflows
+# Prompting a coding agent for long-running fan-out workflows
 
-Use this sourcebook when writing a launch prompt and goal file for a long-running Codex campaign. It
+Use this sourcebook when writing a launch prompt and goal file for a long-running agent campaign. It
 is intentionally project-neutral. Copy only the contracts and checks that apply to the run; unrelated
 history and generic ceremony make a goal harder to re-read after compaction.
 
 The durable unit of work is a goal Markdown file on disk. The launch message is a short pointer to
 that file. The root coordinates the campaign and owns integration; bounded children receive complete,
-self-contained lane briefs and the cheapest model route that can reliably satisfy them.
+self-contained lane briefs and the cheapest route that can reliably satisfy them.
+
+**This document is harness-neutral and deliberately names no model.** The body talks in **roles** —
+RETRIEVAL, MAPPING, GATE, EXECUTION, REVIEW, DESIGN+INTEGRATION, SECURITY — and in **capabilities**:
+how much context a spawn inherits, how many lanes may run at once, how deep delegation may go. A
+**harness profile** resolves those into concrete models, reasoning depths and spawn mechanics:
+
+- **Appendix A — Codex profile.** Complete: model and effort routes, `fork_turns`, the thread pool.
+- **Appendix B — Claude Code profile.** Deliberately thin. It carries the role mapping and the ways
+  Claude Code's dispatch surface differs *structurally* from Codex's, and defers routing itself to
+  the always-loaded global rules rather than keeping a second copy that can drift out of step.
+
+The run contract names the harness once. Every lane then states its role **and the route the profile
+resolves it to** — a lane brief carrying only a role name leaves the choice to whoever reads it next.
+
+The harnesses do not differ by a lookup table of model names. Context forking, reasoning effort,
+concurrency limits, delegation depth and the return path for a child's deliverable differ in **kind**,
+and a lane written against the wrong one fails in ways its acceptance check will not catch. Read the
+profile before writing lanes, not after.
 
 ---
 
@@ -34,7 +56,8 @@ Human availability: available | reachable but not to be asked | unavailable for 
 Terminal condition: stop after the listed lanes | continue into the fallback queue
 Current layer: research | design | implementation | review | live verification | deployment
 External-write authority: [exact trackers, hosts, deployments, databases or workflows]
-Root launch model / effort: [exact values]
+Harness: [the harness this run launches on; its profile resolves every route below]
+Root role / resolved route: [role, plus the exact values the profile resolves it to]
 Launch rationale: [one sentence]
 Run-end report: written to codex/report-[date]-[run-id].md as the final action, unprompted
 ```
@@ -74,28 +97,32 @@ Three rules make it work:
   section is the entire point of the mode: it is the batch. Say it must not be merged into another
   section and must not be omitted because nothing felt important enough.
 
-### Root launch model and effort
+### Root role and route
 
-Every generated goal and handoff must tell the operator what to launch:
+Every generated goal and handoff must tell the operator what to launch — as a role, and as the exact
+values that role resolves to on the named harness:
 
 ```text
-Launch model: gpt-5.6-sol
-Launch effort: medium
+Harness: [name]
+Root role: DESIGN+INTEGRATION
+Resolved route: [the profile's values for that role at standard depth]
 Why: this wave coordinates independent lanes, owns integration and may encounter uncovered seams.
 ```
 
-Use this table:
+The shape of the whole wave picks the root's role and how much reasoning depth it needs:
 
-| Shape of the whole wave | Launch model | Effort |
+| Shape of the whole wave | Root role | Depth |
 |---|---|---|
-| Normal multi-repository or multi-lane campaign; the root integrates Terra/Luna children | `gpt-5.6-sol` | `medium` |
-| Unresolved architecture, unknown-cause debugging or several interacting decisions | `gpt-5.6-sol` | `high` |
-| Authentication, authorisation, privilege, migration, secret or data-loss risk | `gpt-5.6-sol` | `high`; `xhigh` only for exceptional risk or ambiguity |
-| Execution wave whose seams, dependencies, ownership and acceptance are fully frozen | `gpt-5.6-terra` | `medium` |
-| Bounded read-only audit with a fixed evidence schema and no product decisions | `gpt-5.6-terra` | `medium`, with Luna retrieval lanes |
+| Normal multi-repository or multi-lane campaign; the root integrates bounded children | DESIGN+INTEGRATION | standard |
+| Unresolved architecture, unknown-cause debugging or several interacting decisions | DESIGN+INTEGRATION | raised |
+| Authentication, authorisation, privilege, migration, secret or data-loss risk | SECURITY | raised; the highest tier only for exceptional risk or ambiguity |
+| Execution wave whose seams, dependencies, ownership and acceptance are fully frozen | EXECUTION | standard |
+| Bounded read-only audit with a fixed evidence schema and no product decisions | EXECUTION, with RETRIEVAL lanes | standard |
 
-Do not launch an implementation or integration wave on Luna. Do not select `max` by default. If the
-shape is uncertain, use Sol/medium at the root and push bounded work down after the root freezes it.
+Never launch an implementation or integration wave on a RETRIEVAL route — it is the cheapest route
+precisely because it is not asked to decide anything. Do not select the maximum reasoning depth by
+default. If the shape is uncertain, put DESIGN+INTEGRATION at standard depth at the root and push
+bounded work down after the root has frozen it.
 
 ---
 
@@ -109,7 +136,7 @@ Put these in the goal file:
 - the run contract, outcome and measurable success criteria;
 - independently verified starting state, timestamps, repository heads and exact SHAs;
 - root, child and optional grandchild authority;
-- a dependency-aware lane table with model, effort, context fork, ownership and acceptance;
+- a dependency-aware lane table with role, resolved route, context scope, ownership and acceptance;
 - applicable constraints, corrections, false-pass traps and external side-effect boundaries;
 - validation, blocker defaults, terminal condition and required final report.
 
@@ -128,7 +155,10 @@ supersedes the old one. Do not silently rewrite the instructions an earlier run 
 ### Where the run's artefacts live: a gitignored `codex/` in the repository
 
 Every repository driven this way gets a **`codex/` directory at its root, listed in `.gitignore`**,
-holding one set of files per wave:
+holding one set of files per wave. **The name is historical and it is load-bearing — keep it whatever
+harness runs the wave.** `codex-sync.sh` mirrors run artefacts between machines by matching that exact
+directory name, so renaming it to something harness-neutral silently stops the syncing rather than
+failing loudly. Read `codex/` as "run artefacts", not as "Codex's directory".
 
 ```
 codex/goal-<date>-wave<N>.md      the goal file
@@ -157,9 +187,9 @@ named something the pattern did not anticipate.
 ### Fresh launch message
 
 ```text
-Launch this run with <root model> at <effort>. Read <absolute goal path> in full and adopt it as your
-goal. Start with the run contract and routing table. Do not begin a lane until its ownership and
-dependencies are satisfied.
+Launch this run with <root route, resolved from the harness profile>. Read <absolute goal path> in
+full and adopt it as your goal. Start with the run contract and routing table. Do not begin a lane
+until its ownership and dependencies are satisfied.
 ```
 
 ### Mid-run replacement
@@ -183,53 +213,60 @@ worktree, commit or external resource was touched when that is true.
 The root owns architecture, uncovered decisions, integration, tracker and other external mutations,
 commits, pushes, final gates and final synthesis unless a lane explicitly delegates an authority.
 
-Every fresh or partial-context spawn MUST state model, reasoning effort and fork_turns. Pass all three
-on spawn. A full-history fork inherits the parent's model and effort, so use full history only when
-that inherited route is exactly right. A follow-up continues on the thread's existing model and effort.
+Every spawn MUST state its role, the route the harness profile resolves that role to, and its
+context scope. Write the resolved values into the lane — a brief carrying only a role name leaves the
+choice to whoever reads it next. A spawn that inherits the parent's context normally inherits its
+route too, so inherit only when that route is exactly right for the lane.
 
-- gpt-5.6-luna, low: deterministic retrieval, inventories, extraction, CI or log reduction and exact
-  lookups. Read-only unless a narrowly specified write is explicitly authorised.
-- gpt-5.6-luna, medium: read-only code mapping, issue or document synthesis and structured summaries
-  whose completeness the root can check.
-- gpt-5.6-terra, low: deterministic gate execution, mechanical transforms and bounded validation.
-- gpt-5.6-terra, medium: implementation against a frozen seam, with explicit file ownership and a
-  written acceptance check. This is the normal implementation worker.
-- gpt-5.6-terra, high: bounded complex debugging or review across several sources where the result is
-  still externally checkable.
-- gpt-5.6-sol, medium: ambiguous design, freezing shared seams, integration, wiring and unknown-cause
+- RETRIEVAL: deterministic retrieval, inventories, extraction, CI or log reduction and exact lookups.
+  Read-only unless a narrowly specified write is explicitly authorised.
+- MAPPING: read-only code mapping, issue or document synthesis and structured summaries whose
+  completeness the root can check.
+- GATE: deterministic gate execution, mechanical transforms and bounded validation. Runs one named
+  gate once against one resolved state; reports failures verbatim and does not repair source.
+- EXECUTION: implementation against a frozen seam, with explicit file ownership and a written
+  acceptance check. This is the normal implementation worker.
+- REVIEW: bounded complex debugging, or correctness, regression and concurrency review across several
+  sources, where the result is still externally checkable.
+- DESIGN+INTEGRATION: ambiguous design, freezing shared seams, integration, wiring and unknown-cause
   debugging.
-- gpt-5.6-sol, high or xhigh: authentication, authorisation, permissions, migrations, data-loss risk,
-  security design and adversarial review of those changes.
+- SECURITY: authentication, authorisation, permissions, migrations, data-loss risk, security design
+  and adversarial review of those changes.
 
-Use the lowest effort that reliably satisfies the lane. Before raising effort, check whether the
-brief lacks a success criterion, frozen decision, dependency, tool route or verification loop.
+Use the cheapest route that reliably satisfies the lane. Before raising it, check whether the brief
+lacks a success criterion, frozen decision, dependency, tool route or verification loop.
 
-Use fork_turns="none" for a self-contained frozen lane and include the complete lane brief. Use a
-small positive fork only when recent orchestration decisions matter. Use full history only when the
-child genuinely needs it.
+Give a lane the narrowest context that lets it finish: a self-contained brief for a frozen lane, the
+recent orchestration context only where those decisions bear on the work, full inherited history only
+where the child genuinely needs it. The harness profile says how each is expressed, and whether the
+middle option exists at all.
 
-Terra and Luna return uncovered decisions to the root. They do not invent an answer, widen scope,
-commit, push or mutate external state unless the lane grants that exact authority.
+Every role except DESIGN+INTEGRATION and SECURITY returns uncovered decisions to the root. None of
+them invents an answer, widens scope, commits, pushes or mutates external state unless the lane
+grants that exact authority.
 ```
 
-The first routing question is: can the acceptance check be stated now? If not, use Sol to freeze the
-seam. If yes, use Luna for atomic/read-only work or Terra for implementation and tool-heavy work.
+The first routing question is: can the acceptance check be stated now? If not, use DESIGN+INTEGRATION
+to freeze the seam. If yes, use RETRIEVAL or MAPPING for read-only work and EXECUTION for
+implementation and tool-heavy work.
 
-Require a one-sentence reason for every Sol child. Difficulty, a long log or prior use of Sol is not
-by itself a reason. Before every follow-up, reclassify the work that remains. When Sol has settled the
-decision and only execution, evidence or validation remains, start a fresh Terra or Luna lane with
-the frozen facts instead of automatically continuing the Sol thread.
+Require a one-sentence reason for every DESIGN+INTEGRATION and SECURITY child. Difficulty, a long log
+or prior use of that route is not by itself a reason. Before every follow-up, reclassify the work that
+remains. When the design route has settled the decision and only execution, evidence or validation is
+left, start a fresh EXECUTION or RETRIEVAL lane carrying the frozen facts instead of automatically
+continuing the design thread.
 
 Do not put token budgets, cost targets, model-allocation quotas or artificial output allocations in
 the goal. Route by the shape and risk of the remaining work.
 
 ---
 
-## 4. Authority, ownership and the ten-thread pool
+## 4. Authority, ownership and the thread pool
 
-With `max_concurrent_threads_per_session = 10`, the pool is the root plus nine other simultaneous
-threads. `max_depth = 2` permits root to child to grandchild. It provides runway; it does not authorise
-delegation or make a deep tree desirable.
+Every harness caps how many lanes may run at once and how deep delegation may go; Appendix A and
+Appendix B give the exact numbers, and they are not the same number or even the same kind of limit.
+Whatever the cap, it provides runway — it does not authorise delegation, and a deep tree is not
+desirable merely because it is permitted.
 
 - The root freezes shared seams, assigns ownership, resolves decisions, integrates, performs
   authorised external writes, commits and pushes, owns the integrated gate and synthesises the run.
@@ -242,9 +279,11 @@ delegation or make a deep tree desirable.
 - Name resource mutexes such as a simulator, package manager, database migration lock or integration
   test environment. Name one integrated gate owner rather than having every worker repeat it.
 
-Flat, non-delegating fan-out may use all nine child slots. If any child may delegate, the root starts
-at most six direct children and reserves three slots for grandchildren, replacement lanes and urgent
-investigation. Never spawn merely to occupy a slot.
+Flat, non-delegating fan-out may use the whole pool. If any child may delegate, the root starts at
+roughly two-thirds of the pool as direct children and reserves the rest for grandchildren, replacement
+lanes and urgent investigation. Read that as a ratio rather than a count — the pool size is a harness
+fact, and on some harnesses excess spawns queue rather than fail, which hides saturation instead of
+surfacing it. Never spawn merely to occupy a slot.
 
 ### Append-only registries — the contention case one-owner does not solve
 
@@ -287,30 +326,31 @@ is pure carrying cost. That licence is temporary — record it with its expiry, 
 
 ### Standard campaign topologies
 
-- Research: Luna retrieval and mapping lanes, then one Terra synthesis lane.
-- Ordinary implementation: Sol freezes unresolved seams, Terra workers implement, a Terra reviewer
-  checks the bounded changes, then the root integrates and a single gate owner validates.
-- Security-sensitive implementation: the ordinary topology plus a Sol security review after
-  integration of authentication, permission, migration, secret or data-loss boundaries.
-- Premise or depth audit: independent Terra evidence lanes, with Sol synthesis only when evidence
-  exposes a genuine product, architecture or security decision.
-- CI and gates: workers run focused checks; one Terra/low gate lane validates the integrated state.
+- Research: RETRIEVAL and MAPPING lanes, then one EXECUTION synthesis lane.
+- Ordinary implementation: DESIGN+INTEGRATION freezes unresolved seams, EXECUTION workers implement,
+  a REVIEW lane checks the bounded changes, then the root integrates and a single GATE owner validates.
+- Security-sensitive implementation: the ordinary topology plus a SECURITY review after integration
+  of authentication, permission, migration, secret or data-loss boundaries.
+- Premise or depth audit: independent EXECUTION evidence lanes, with DESIGN+INTEGRATION synthesis only
+  when the evidence exposes a genuine product, architecture or security decision.
+- CI and gates: workers run focused checks; one GATE lane validates the integrated state.
 
 ### Optional narrow agent roles
 
 Custom agents are useful when the same contract recurs. Keep roles narrow:
 
-| Role shape | Default route | Contract |
+| Role shape | Routing role | Contract |
 |---|---|---|
-| Mapper | Luna/medium | Read-only maps, inventories and structured research with searched scope and completeness check |
-| Lane worker | Terra/medium | Frozen implementation, owned files, focused validation, no commit or external mutation |
-| Reviewer | Terra/high | Read-only correctness, regression, concurrency and false-pass review |
-| Security reviewer | Sol/high | Read-only review only for high-blast-radius security and data contracts |
-| Gate runner | Terra/low | Run one named gate once against one resolved state; report failures, do not repair source |
-| Worktree auditor | Terra/high | Prove dirty state, ancestry, unique commits, patch identity and cleanup safety; never clean up |
+| Mapper | MAPPING | Read-only maps, inventories and structured research with searched scope and completeness check |
+| Lane worker | EXECUTION | Frozen implementation, owned files, focused validation, no commit or external mutation |
+| Reviewer | REVIEW | Read-only correctness, regression, concurrency and false-pass review |
+| Security reviewer | SECURITY | Read-only review only for high-blast-radius security and data contracts |
+| Gate runner | GATE | Run one named gate once against one resolved state; report failures, do not repair source |
+| Worktree auditor | REVIEW | Prove dirty state, ancestry, unique commits, patch identity and cleanup safety; never clean up |
 
-Do not turn the security reviewer into a general quality reviewer. The role's fixed model and effort
-must agree with any explicit spawn override.
+Do not turn the security reviewer into a general quality reviewer. Where a harness lets a role carry
+a fixed route in its own definition, that fixed route must agree with any explicit spawn override —
+a definition and an override that disagree resolve differently per harness, and usually silently.
 
 ---
 
@@ -320,12 +360,13 @@ Every delegated lane gets all of these fields:
 
 ```text
 Lane: [stable task name]
-Role: [custom agent, or none]
-Model / effort / fork_turns: [exact values]
+Role: [one of the routing contract's roles; plus a custom agent name where the harness has one]
+Resolved route: [the exact values the harness profile gives that role]
+Context scope: [self-contained | recent orchestration context | full inherited history]
 Delegation: forbidden | [exact bounded grandchild authority]
 
 Objective: [one verifiable outcome]
-Why this model: [one sentence; mandatory for Sol]
+Why this route: [one sentence; mandatory for DESIGN+INTEGRATION and SECURITY]
 Prerequisites: [facts or lanes that must already be complete]
 Owned files: [exact paths or directory globs]
 Forbidden files/actions: [shared files, external state, commits, tracker writes]
@@ -358,8 +399,8 @@ ones: retry budget, stop rule, escalation evidence, required output.
 
 Write a **`5.0` lane contract** immediately before the lane list, stating every field that is identical
 across lanes, plus the sentence *"these apply to all lanes below and are not repeated"*. Each lane entry
-then carries only what genuinely varies: model, effort, `fork_turns`, owned files, objective and
-acceptance check. A lane needing a different value for a hoisted field overrides it in its own entry,
+then carries only what genuinely varies: role, resolved route, context scope, owned files, objective
+and acceptance check. A lane needing a different value for a hoisted field overrides it in its own entry,
 which makes the exception visible instead of hiding it in boilerplate.
 
 Two definitions worth stating in that block rather than assuming:
@@ -390,7 +431,8 @@ goal] where applicable; do not consult the superseded file unless this goal expl
 - Terminal condition: stop after the listed lanes | continue into the fallback queue
 - Current layer: research | design | implementation | review | live verification | deployment
 - External-write authority: [exact scope]
-- Root launch model / effort: [exact values]
+- Harness: [name; its profile resolves every route in this goal]
+- Root role / resolved route: [exact values]
 - Launch rationale: [why the whole wave needs this route]
 
 ## 1. Outcome and success criteria
@@ -418,7 +460,7 @@ Verified at [timestamp]. Do not re-derive unless a named check shows drift.
 - Children do not commit, push or mutate external state unless a lane delegates that exact action.
 - One file has one owner. Name integration files and resource mutexes.
 - State which lanes may overlap and which must remain sequential.
-- If nested delegation is allowed, start no more than six direct children and reserve three slots.
+- If nested delegation is allowed, start roughly two-thirds of the pool as direct children and reserve the rest.
 
 ## 4. Agent routing
 
@@ -426,7 +468,7 @@ Verified at [timestamp]. Do not re-derive unless a named check shows drift.
 
 ## 5. Lanes
 
-| Lane | Role | Model/effort/fork | Depends on | Owned files | May overlap | Acceptance |
+| Lane | Role | Route/context | Depends on | Owned files | May overlap | Acceptance |
 |---|---|---|---|---|---|---|
 | 1 | ... | ... | ... | ... | ... | ... |
 
@@ -571,9 +613,9 @@ that hides this.
 - Tell a running agent what changed under it and whether anything is fenced. It should not spend a
   lane rediscovering an intentional edit or restoring a deliberate deletion.
 - Scale context at the spawn boundary. A fresh root gets the whole goal; a frozen child normally gets
-  `fork_turns="none"` plus a complete lane brief; an existing root gets a short delta pointing to a
-  new immutable goal.
-- Export resources behind tools Codex cannot access and reference the exported artifact by absolute
+  a complete self-contained lane brief and no inherited context; an existing root gets a short delta
+  pointing to a new immutable goal.
+- Export resources behind tools the agent cannot access and reference the exported artifact by absolute
   path. Record decisions beside a generated snapshot rather than silently editing the snapshot.
 - State the cut order in advance. An unattended run cannot ask what to drop when it is running out of
   night, so name which lanes to park first and say that parking one cleanly beats half-building three.
@@ -606,9 +648,19 @@ that hides this.
   gets done.
 - Put decisions and evidence in a durable source. Chat and memory are routing aids, not authoritative
   present-tense state.
-- Keep the sourcebook in exactly **one** place, outside every working directory. A copy inside the
-  repository is read in preference to the canonical one by anything running with that repository as its
-  cwd, and it silently rots — an in-repo copy was found 126 lines and one whole wave behind.
+- **Carry an authoritative copy of this sourcebook inside every repository driven this way**, imported
+  whole into the repository's tracker docs with its source path and import date in a header. A
+  repository that carries its own copy is complete: an agent given only the checkout — in CI, on
+  another machine, or a year later — has the whole model without being told where a canonical file on
+  somebody's laptop lives. **Decided 2026-08-14, reversing the previous rule that the sourcebook must
+  exist in exactly one place outside every repository.**
+
+  The price is a re-import discipline, and it is not optional: **an edit to the canonical file is not
+  finished until every consuming repository has been re-imported in the same change.** That discipline
+  exists because the failure it prevents was measured, not imagined — before the copies were tracked
+  and dated, an in-repo copy was found **126 lines and one whole wave behind**. Import it as a tracker
+  document rather than a loose file at the repository root, so nothing resolves it by a cwd-relative
+  read in preference to the canonical one; a tracker doc is reachable only by an explicit view.
 
 ### Measure contention in files-per-new-thing before you fan out
 
@@ -740,7 +792,7 @@ to it.
 | An attractive disproved belief returns | Preserve the wrong belief and correction together: `X was WRONG; Y is verified` |
 | A check passes while proving nothing | Name the false-pass mechanism and the artifact or state transition that constitutes proof |
 | A lane burns time on an unavailable external prerequisite | Add a check-then-branch route, retry budget and stop rule |
-| Sol becomes the default child | Require a reason for Sol and reclassify resumed work after decisions are frozen |
+| The design route becomes the default child | Require a written reason for DESIGN+INTEGRATION and SECURITY, and reclassify resumed work once decisions are frozen |
 | Every child receives the full root history | Use fresh, self-contained briefs; fork only the recent context the lane needs |
 | Workers all run the same expensive gate | Workers run focused checks; one owner validates the integrated state once |
 | Children collide on shared files or resources | Assign one owner per file and name integration files and mutexes before spawning |
@@ -761,7 +813,7 @@ to it.
 | A test passes because its input was absent and it skipped | Report skips separately from passes, and state which inputs were present. An acceptance check whose evidence is "green" cannot distinguish proven from not-run |
 | An optimisation target is met by changing how the thing is measured | Require the before and after to come from the same harness at the same scale, and say that a better number from a changed method is a false pass, not a result |
 | A temporary licence is assumed to have expired on schedule | Re-check the ending condition at the start of the next run. The event that was supposed to end it may simply not have happened |
-| A stale copy of the guidance sits inside the working directory | Keep the sourcebook in one place outside every repository. An in-repo copy wins on cwd-relative reads and rots invisibly |
+| An in-repo copy of the guidance has rotted behind the canonical file | Re-import every consuming repository in the same change as the edit to the canonical file. An edit that lands without its re-imports is half-finished; the copies were measured 126 lines and one whole wave behind before this was a discipline |
 | A read-only audit finds a real defect it is forbidden to fix | Choose deliberately: give the audit ownership, add a named follow-up lane that owns the fixes, or state that findings land next run by design (§8) |
 | Several lanes each need to write one results document | One owner, scheduled last, with declared dependencies on the lanes feeding it. Do not shred a document into per-lane stubs and do not merge it at integration (§4) |
 | A new relational table is created and populated but nothing reads it | Make the acceptance check grep the query layer, not the schema. "The table exists and has rows" is not evidence the feature works |
@@ -875,19 +927,19 @@ the format alone:
 ## 11. Pre-flight checklist
 
 - [ ] Run mode, human availability, current layer, external-write authority and terminal condition are explicit.
-- [ ] The operator receives an exact root launch model and effort with a one-sentence rationale.
+- [ ] The run contract names the harness, and the operator receives the root's role and the exact route that harness's profile resolves it to, with a one-sentence rationale.
 - [ ] The brief is an immutable goal file on disk and the launch message points to its absolute path.
 - [ ] Outcome and measurable success criteria replace a mere activity list.
 - [ ] Starting state, repository heads and relevant CI are re-verified now, at exact SHAs.
 - [ ] The goal contains only constraints, corrections, traps and environment facts relevant to this run.
 - [ ] A mid-run replacement says `do not pivot on receipt` and states what changed underneath it.
-- [ ] Every lane names model, effort, `fork_turns`, dependency, ownership, acceptance and output.
-- [ ] Every Sol child states why Terra cannot safely own the remaining work.
+- [ ] Every lane names its role, its resolved route, its context scope, dependency, ownership, acceptance and output — a role name alone is not a route.
+- [ ] Every DESIGN+INTEGRATION and SECURITY child states why an EXECUTION lane cannot safely own the remaining work.
 - [ ] Frozen lanes receive self-contained briefs rather than full root history by default.
-- [ ] Every follow-up reclassifies the remaining work; settled Sol work moves to Terra or Luna.
+- [ ] Every follow-up reclassifies the remaining work; settled design work moves to EXECUTION or RETRIEVAL.
 - [ ] Root, child and optional grandchild authority are explicit; bounded workers do not commit.
 - [ ] One file has one owner; integration files, gate owners and resource mutexes are named.
-- [ ] Nested campaigns reserve three thread slots rather than saturating the pool at the root.
+- [ ] Nested campaigns reserve part of the pool rather than saturating it at the root, and the reserve is sized against the harness's real cap.
 - [ ] Every lane has a retry budget, stop rule and escalation-evidence requirement.
 - [ ] Rule Zero and a blocker path are present for unattended runs.
 - [ ] Expected false-pass mechanisms are named and the required proof is observable.
@@ -919,7 +971,7 @@ the format alone:
 - [ ] External side effects must be reported from a live count, not from what the run intended to create.
 - [ ] Any recurring problem must be disclosed in full rather than by its most notable instance.
 - [ ] Temporary licences granted by a previous run were re-checked against their actual ending condition, not their predicted one.
-- [ ] The sourcebook exists in exactly one place, outside every working directory.
+- [ ] Every repository driven this way carries an imported copy of this sourcebook in its tracker docs, and that copy matches the canonical file as of this run.
 - [ ] Every audit or review lane's findings have a named owner in this run, or the goal states they land next run by design.
 - [ ] Any document several lanes feed has a single late owner with declared dependencies, not a merge at integration.
 - [ ] A licence whose ending condition has failed to occur twice is restated as an observable check, not a predicted event.
@@ -933,3 +985,154 @@ the format alone:
 - [ ] Every test target or check a wave creates is verified to be executed by CI, not only by the agent that built it.
 - [ ] Every external format is frozen from at least two instances where they exist, with per-instance assertions and empty categories named.
 - [ ] A source that is really many datasets gets a declarative descriptor seam before fan-out, so a lane contributes rows rather than parsing code.
+
+---
+
+## Appendix A — Codex profile
+
+Complete. Everything the body defers to a profile is resolved here for Codex.
+
+### Root role → launch model and effort
+
+```text
+Launch model: gpt-5.6-sol
+Launch effort: medium
+Why: this wave coordinates independent lanes, owns integration and may encounter uncovered seams.
+```
+
+| Root role (§1) | Launch model | Effort |
+|---|---|---|
+| DESIGN+INTEGRATION, standard depth | `gpt-5.6-sol` | `medium` |
+| DESIGN+INTEGRATION, raised depth | `gpt-5.6-sol` | `high` |
+| SECURITY, raised depth | `gpt-5.6-sol` | `high`; `xhigh` only for exceptional risk or ambiguity |
+| EXECUTION, standard depth | `gpt-5.6-terra` | `medium` |
+| EXECUTION with RETRIEVAL lanes | `gpt-5.6-terra` | `medium`, with Luna retrieval lanes |
+
+Do not launch an implementation or integration wave on Luna. Do not select `max` by default. If the
+shape is uncertain, use Sol/medium at the root and push bounded work down after the root freezes it.
+
+### Role → model and effort
+
+| Role | Route |
+|---|---|
+| RETRIEVAL | `gpt-5.6-luna`, low |
+| MAPPING | `gpt-5.6-luna`, medium |
+| GATE | `gpt-5.6-terra`, low |
+| EXECUTION | `gpt-5.6-terra`, medium |
+| REVIEW | `gpt-5.6-terra`, high |
+| DESIGN+INTEGRATION | `gpt-5.6-sol`, medium |
+| SECURITY | `gpt-5.6-sol`, high or `xhigh` |
+
+The §4 narrow-role table resolves the same way: Mapper → Luna/medium, Lane worker → Terra/medium,
+Reviewer → Terra/high, Security reviewer → Sol/high, Gate runner → Terra/low, Worktree auditor →
+Terra/high.
+
+### Context scope → `fork_turns`
+
+| Context scope (§3) | Codex spawn |
+|---|---|
+| self-contained | `fork_turns="none"` plus the complete lane brief |
+| recent orchestration context | a small positive `fork_turns`, only where those decisions bear on the lane |
+| full inherited history | full history, only where the child genuinely needs it |
+
+**Every fresh or partial-context spawn must state model, reasoning effort and `fork_turns`, and pass
+all three on spawn.** A full-history fork inherits the parent's model and effort, so use full history
+only when that inherited route is exactly right. A follow-up continues on the thread's existing model
+and effort — which is why §3 requires reclassifying the remaining work before every follow-up rather
+than letting a settled design thread drift on at the design route.
+
+### Concurrency and depth
+
+`max_concurrent_threads_per_session = 10`, so the pool is the root plus nine other simultaneous
+threads. `max_depth = 2` permits root → child → grandchild.
+
+Flat, non-delegating fan-out may use all nine child slots. If any child may delegate, the root starts
+at most **six** direct children and reserves **three** slots for grandchildren, replacement lanes and
+urgent investigation. That is the concrete form of §4's two-thirds rule.
+
+---
+
+## Appendix B — Claude Code profile
+
+**Routing is deliberately not restated here.** A Claude Code session already loads
+`~/.claude-personal/rules/operating-model.md` § "Model routing for sub-agents" and
+`~/.claude-personal/rules/subagent-dispatch.md` on every request, before anything asks for this
+document. Those two own the routing test, the model tiers and the dispatch mechanics, and **they win
+on any conflict with this appendix** — a second copy of a contract that is already always-loaded is
+the drift hazard, not the safety net. Read them first; this appendix carries only what they do not:
+how the body's roles map onto them, and the ways Claude Code's dispatch surface differs in *kind*
+from Appendix A.
+
+### Role → route
+
+The routing test is `operating-model.md`'s, not a new one: **can you state the acceptance check now?**
+Yes → Sonnet. No — the lane must decide what "done" means, or the deliverable is a judgement → Opus,
+or do not delegate at all. Cross-check on blast radius: wrong-and-cheap-to-detect → Sonnet;
+wrong-and-silently-propagating (a frozen seam, a data model, a cardinality or PII call) → Opus.
+
+| Role | Route | Note |
+|---|---|---|
+| RETRIEVAL | Haiku, or Sonnet | Haiku only for single-fact lookups whose answer is self-evidently right or wrong. **Never where you would have to trust it finished** — it drops steps in long tool loops, so a partial sweep returns looking complete. Completeness matters → Sonnet. |
+| MAPPING | Sonnet | The `Explore` agent type is purpose-built for read-only fan-out search. |
+| GATE | Sonnet, low effort | Run the gate, report failures verbatim, repair nothing. |
+| EXECUTION | Sonnet | The normal parallel-build lane, once its seams are frozen. |
+| REVIEW | Sonnet, or Opus | Sonnet for spec conformance against a written contract; Opus where the review is the judgement. |
+| DESIGN+INTEGRATION | Opus | Normally the root keeps this rather than delegating it. |
+| SECURITY | Opus, raised effort | Never delegated to a cheaper tier to save a round trip. |
+
+### Six structural differences from Appendix A
+
+These are not naming differences. A lane written against Appendix A's mechanics and run on Claude
+Code fails in ways its own acceptance check will not catch.
+
+1. **There is no `fork_turns`, and the middle option does not exist.** Context scope is binary:
+   `subagent_type: "fork"` inherits the whole conversation, anything else starts fresh. There is no
+   "last N turns". A lane needing partial context gets a fresh agent and the relevant facts written
+   into its brief — which is what §3 prefers anyway. A fork also always runs on the parent's model;
+   a `model` override on a fork is ignored.
+
+2. **`effort` is not a parameter on the `Agent` tool.** It is settable only in an agent definition's
+   frontmatter or in `Workflow`'s `agent()` opts. A lane brief that specifies an effort through a
+   plain dispatch is a **silent no-op** — the lane runs at the session's effort and nothing reports
+   the discrepancy. Where a lane genuinely needs a different effort, it needs an agent definition or
+   a `Workflow`, not a sentence in the brief.
+
+3. **There is no ten-thread pool.** `Workflow` caps concurrent agents at `min(16, CPUs − 2)` and
+   **queues** the excess rather than refusing it, so saturation is invisible; the `Agent` tool has no
+   documented cap at all. §4's reserve is therefore a ratio here and not a count, and "we did not hit
+   the cap" is not evidence the fan-out was sized correctly.
+
+4. **Delegation depth is enforced differently at each surface.** `Workflow` forbids nesting outright
+   — a `workflow()` call inside a child throws. Agent-spawned subagents *can* spawn further, so
+   `Delegation: forbidden` in a lane brief is a real instruction there, not a restatement of a
+   platform limit.
+
+5. **Naming a background agent swallows its deliverable.** Passing `name:` promotes a one-shot
+   subagent into a persistent addressable teammate; teammates go **idle awaiting messages** instead
+   of completing, so no completion event fires and the final message never reaches the dispatcher —
+   only an idle notification. Re-asking by message produces another idle ping. This has no Codex
+   analogue, and it directly breaks §5's "Return exactly:" contract and §10's report chain. Dispatch
+   unnamed, or synchronously, or hand off through a file at an absolute path. `subagent-dispatch.md`
+   owns this, including the A/B experiment that isolated it.
+
+6. **A lane cannot clear a permission block the root could have cleared.** Subagents inherit the
+   parent's permission mode and cannot opt out, while a soft block clears only on the *user's own*
+   message naming the action — and a subagent's transcript contains no user message. A dispatch brief
+   is explicitly refused as consent. So a lane can be blocked on work the root was allowed to do,
+   with nothing able to unblock it, and re-dispatching is treated as bad faith. **Lanes do read-only
+   investigation, code edits, tests and inventory sweeps; SSH, deploys, tenant or cloud mutations,
+   secret-store writes and destructive git stay on the root.** If a lane returns blocked, the root
+   runs that step itself.
+
+### `Workflow` is a second orchestration mode Codex has no analogue for
+
+Where the fan-out shape is known before the run — the lanes, their dependencies, what verifies what —
+`Workflow` expresses the topology as a deterministic script (`pipeline()` without barriers,
+`parallel()` where a barrier is genuinely needed, per-agent `schema` for structured returns) instead
+of trusting a prompted root to hold it across a multi-hour campaign. It is also the only surface
+where per-lane `effort` and worktree isolation are settable.
+
+This does not replace the goal file. The goal still carries the run contract, ownership, frozen
+decisions, traps and the run-end protocol; the script carries only the topology. Use it when the
+shape is frozen, and a prompted root when the wave must still discover its own shape — which is the
+same DESIGN+INTEGRATION-versus-EXECUTION question §1 already asks about the root.

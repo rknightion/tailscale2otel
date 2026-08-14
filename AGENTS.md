@@ -180,9 +180,12 @@ is the queue; `backlog doc list --plain` lists the durable docs. GitHub Issues w
 repo on **2026-08-14** — closed issues stay on GitHub and are still cited as `#NNN` (the *Closed
 GitHub issues* doc indexes all 401), while new work is `tso-NNNN`. Two ID spaces, no overlap.
 
-Read the **Codex fan-out protocol (canonical)** doc before designing a wave, and the **Wave operating
+Read the **Agent fan-out protocol (canonical)** doc before designing a wave, and the **Wave operating
 model** doc for this project's own rules. Docs load on demand via `backlog doc view <id> --plain`, so
-neither costs context until something reads it.
+neither costs context until something reads it. The protocol is harness-neutral — it routes lanes by
+**role**, and its Appendix A (Codex) or Appendix B (Claude Code) resolves a role into a concrete
+model and reasoning depth. Name the harness in the run contract and resolve every lane from that
+profile; the two harnesses differ in kind, not just in model names.
 
 - **`backlog/` is committed, so no real identifiers in tasks or docs.** No email addresses, handles,
   usernames, account IDs, device names, addresses, or credential values — write the shape, not the
