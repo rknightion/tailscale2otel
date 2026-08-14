@@ -177,8 +177,15 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 
 Open work lives in `backlog/`, driven **only** through the `backlog` CLI. `backlog task list --plain`
 is the queue; `backlog doc list --plain` lists the durable docs. GitHub Issues was retired for this
-repo on **2026-08-14** — closed issues stay on GitHub and are still cited as `#NNN` (the *Closed
-GitHub issues* doc indexes all 401), while new work is `tso-NNNN`. Two ID spaces, no overlap.
+repo on **2026-08-14**, and the 401 issues we had filed were archived and then **deleted from
+GitHub** — so `gh issue view <N>` 404s. Historical work is still cited as `#NNN`: the *Closed GitHub
+issues* doc is the index, and `archive/github-issues-2026-08-14.json` holds every body and reply
+(redacted; `archive/README.md` has the placeholder mapping). New work is `tso-NNNN`. Two ID spaces,
+no overlap.
+
+**The GitHub tracker is still open, deliberately** — external contributors can file issues, and
+Renovate's dependency dashboard still lives there. Anything arriving that way becomes a `tso-NNNN`
+task; the board, not the issue, is where it is worked.
 
 Read the **Agent fan-out protocol (canonical)** doc before designing a wave, and the **Wave operating
 model** doc for this project's own rules. Docs load on demand via `backlog doc view <id> --plain`, so
