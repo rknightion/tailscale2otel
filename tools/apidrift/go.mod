@@ -3,7 +3,7 @@
 // tailscale2otel consumes, reporting drift with severity-ranked exit codes.
 module github.com/rknightion/tailscale2otel/v4/tools/apidrift
 
-go 1.26.5
+go 1.26.6
 
 require github.com/rknightion/tailscale2otel/v4 v4.0.0
 
