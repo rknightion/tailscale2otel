@@ -63,7 +63,7 @@ install_release_tools() {
     local lint_base="https://github.com/golangci/golangci-lint/releases/download/v${GOLANGCI_LINT_VERSION}"
     scripts/ci-retry.sh curl -fsSL --max-time 120 -o "$tmp/$lint_archive" "$lint_base/$lint_archive"
     scripts/ci-retry.sh curl -fsSL --max-time 60 -o "$tmp/golangci-checksums.txt" "$lint_base/golangci-lint-${GOLANGCI_LINT_VERSION}-checksums.txt"
-    (cd "$tmp" && sha256sum --check --ignore-missing golangci-checksums.txt)
+    (cd "$tmp" && grep -F "$lint_archive" golangci-checksums.txt | sha256sum --check)
     tar -xzf "$tmp/$lint_archive" -C "$tmp"
     install -m 0755 "$tmp/golangci-lint-${GOLANGCI_LINT_VERSION}-linux-${arch}/golangci-lint" \
       "$HOME/.local/bin/golangci-lint"
@@ -75,7 +75,7 @@ install_release_tools() {
     local gr_base="https://github.com/goreleaser/goreleaser/releases/download/v${GORELEASER_VERSION}"
     scripts/ci-retry.sh curl -fsSL --max-time 120 -o "$tmp/$gr_archive" "$gr_base/$gr_archive"
     scripts/ci-retry.sh curl -fsSL --max-time 60 -o "$tmp/goreleaser-checksums.txt" "$gr_base/checksums.txt"
-    (cd "$tmp" && sha256sum --check --ignore-missing goreleaser-checksums.txt)
+    (cd "$tmp" && grep -F "$gr_archive" goreleaser-checksums.txt | sha256sum --check)
     tar -xzf "$tmp/$gr_archive" -C "$tmp" goreleaser
     install -m 0755 "$tmp/goreleaser" "$HOME/.local/bin/goreleaser"
   fi
@@ -129,7 +129,7 @@ install_promtool() {
   trap 'rm -rf "$tmp"' RETURN
   scripts/ci-retry.sh curl -fsSL --max-time 120 -o "$tmp/$archive" "$base/$archive"
   scripts/ci-retry.sh curl -fsSL --max-time 60 -o "$tmp/sha256sums.txt" "$base/sha256sums.txt"
-  (cd "$tmp" && sha256sum --check --ignore-missing sha256sums.txt)
+  (cd "$tmp" && grep -F "$archive" sha256sums.txt | sha256sum --check)
   tar -xzf "$tmp/$archive" -C "$tmp"
   install -m 0755 "$tmp/prometheus-${PROMETHEUS_VERSION}.${os}-${arch}/promtool" "$HOME/.local/bin/promtool"
 }
