@@ -3,19 +3,23 @@ id: doc-0001
 title: Agent fan-out protocol (canonical)
 type: specification
 created_date: '2026-08-14 14:02'
-updated_date: '2026-08-17 07:57'
+updated_date: '2026-08-17 09:43'
 ---
-> **Imported verbatim from `~/repos/agent-fanout-generic.md` on 2026-08-14.** This copy is
-> authoritative for tailscale2otel. It is deliberately not summarised, compressed or adapted —
-> a compression drifts from its source while looking authoritative. An edit to the source is not
-> finished until this copy is re-imported in the same change.
+> **Generated file — do not edit this copy.** Rendered from `sources/fan-out-protocol.md` in
+> `rknightion/agent-docs` at commit `1b0c0e7`. This copy is authoritative for `tailscale2otel`, so an agent
+> with only this checkout has the whole document.
 >
-> Its body is harness-neutral and names no model: lanes are described by ROLE, and **Appendix A
-> (Codex) or Appendix B (Claude Code) resolves a role into a concrete route.** Read the profile for
-> the harness this run is on before writing lanes — the two differ in kind, not just in model names.
-
----
-
+> **To change anything below, edit the source in `agent-docs` and re-render.** An edit made here is
+> silently discarded by the next render, and worse, it makes this board disagree with every other one
+> until someone notices. That has happened: five boards were synced by hand and one diverged within
+> the hour.
+>
+> Corrections are expected and welcome — this document is meant to absorb what each run learns. Make
+> them at the source, where one edit reaches every consuming repository, and run `bin/doctor` to prove
+> nothing is stale.
+>
+> Do not summarise, compress or adapt the body. A compression drifts from its source while continuing
+> to look authoritative.
 # Prompting a coding agent for long-running fan-out workflows
 
 Use this sourcebook when writing a launch prompt and goal file for a long-running agent campaign. It
