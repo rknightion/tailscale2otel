@@ -391,7 +391,7 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   unreachable) after any push, and to find orphans. This permission covers Grafana only — it does
   NOT extend to mutating the tailnet itself.
 - **Do NOT push DASHBOARDS with `gcx` — they are delivered by GitSync.** `.github/workflows/
-  grafana-sync.yml` commits `deploy/grafana/*.json` into `rknightion/gc-gitsync-m7kni`, which is a
+  grafana-sync.yml` commits `deploy/grafana/*.json` into `m7kni/gc-gitsync-m7kni`, which is a
   Grafana GitSync source, and Grafana writes UI saves back into that repo. A direct API push is an
   out-of-band edit and leaves the repo and the stack disagreeing with no way to tell which is right.
   Only RULES go via `gcx resources push`. Deleting a dashboard through the API is likewise undone by
@@ -403,7 +403,7 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   and exited 0 — **three consecutive successful runs copied two files and published neither**
   (fixed in `f167a1c`: stage first, then diff the index). If you change what
   `deploy/grafana/` produces, verify the far side by listing
-  `repos/rknightion/gc-gitsync-m7kni/git/trees/main`, not by the workflow's conclusion.
+  `repos/m7kni/gc-gitsync-m7kni/git/trees/main`, not by the workflow's conclusion.
 - **Live-tailnet verification:** keep lab-specific names, addresses, identifiers, credentials, and
   observability captures out of tracked files. Store secrets and raw captures only in ignored local
   paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a
