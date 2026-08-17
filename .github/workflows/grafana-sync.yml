@@ -3,7 +3,7 @@ name: grafana-sync
 # Keep the m7kni Grafana stack in step with this repository's generated Grafana
 # artifacts. Two deliberately different delivery paths:
 #
-#   dashboard -> a commit into rknightion/gc-gitsync-m7kni, because that repo is a
+#   dashboard -> a commit into m7kni/gc-gitsync-m7kni, because that repo is a
 #                Grafana GitSync source and Grafana writes UI saves back into it. A
 #                direct API push would create out-of-band edits and make the repo and
 #                the stack diverge with no way to tell which is right.
@@ -71,7 +71,7 @@ jobs:
       - name: check out the GitSync repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: rknightion/gc-gitsync-m7kni
+          repository: m7kni/gc-gitsync-m7kni
           token: ${{ steps.bao.outputs.token }}
           path: gitsync
 
