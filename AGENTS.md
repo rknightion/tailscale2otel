@@ -163,7 +163,7 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
   `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and asserts the emitted metrics/logs.
 - After every change run `go build ./... && go vet ./... && go test -race ./...` and keep
   `golangci-lint run` clean; commit a **green** state between units of work.
-- Go 1.26 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
+- Go 1.27 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
 - **Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it** — the client
   surface has non-obvious shapes (see the gotchas below). gopls/LSP reports stale "undefined method"
