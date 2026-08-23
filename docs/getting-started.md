@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: From zero to your first tailscale2otel metrics in Grafana Cloud
+description: Configure Tailscale API access, run tailscale2otel, and send your first metrics and logs to Grafana Cloud over OTLP.
 tags:
   - Getting Started
   - Grafana Cloud

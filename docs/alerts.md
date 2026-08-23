@@ -1,6 +1,6 @@
 ---
 title: Alerts
-description: Grafana-managed alert and recording rules shipped with tailscale2otel
+description: Deploy and tune the Grafana-managed alert and recording rules supplied with tailscale2otel for tailnet monitoring.
 tags:
   - Alerting
 ---

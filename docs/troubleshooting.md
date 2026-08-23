@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Common tailscale2otel problems and how to diagnose them
+description: Diagnose tailscale2otel authentication, API, configuration, collection, and OTLP export failures with concrete checks.
 tags:
   - Troubleshooting
 ---

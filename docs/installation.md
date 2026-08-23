@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install tailscale2otel via Docker, the Helm chart, or a static binary
+description: Install tailscale2otel with Docker Compose, the Kubernetes Helm chart, or a locally built static binary.
 tags:
   - Deployment
 ---

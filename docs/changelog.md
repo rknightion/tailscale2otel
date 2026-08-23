@@ -1,6 +1,6 @@
 ---
 title: Changelog
-description: Release history for tailscale2otel
+description: Review tailscale2otel releases, Tailscale API coverage, OpenTelemetry signals, dashboards, alerts, and deployment changes.
 ---
 
 # Changelog

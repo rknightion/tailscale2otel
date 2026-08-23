@@ -1,6 +1,6 @@
 ---
 title: Dashboards
-description: Grafana dashboards shipped with tailscale2otel and how to import them
+description: Import and configure the Grafana dashboards supplied with tailscale2otel to explore tailnet devices, users, and health.
 tags:
   - Grafana
   - Dashboards
