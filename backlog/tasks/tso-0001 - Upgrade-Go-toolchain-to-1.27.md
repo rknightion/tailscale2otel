@@ -4,7 +4,7 @@ title: Upgrade Go toolchain to 1.27
 status: In Progress
 assignee: []
 created_date: '2026-08-23 19:06'
-updated_date: '2026-08-23 19:49'
+updated_date: '2026-08-23 20:21'
 labels: []
 dependencies: []
 ordinal: 1000
@@ -40,4 +40,6 @@ Adopt Go 1.27 consistently across the application, nested modules, build images,
 
 <!-- SECTION:NOTES:BEGIN -->
 Local Go 1.27.0 evidence: root build, vet, and golangci-lint passed with 0 issues; all four nested modules passed build, vet, and tests. The root race suite remains red only in workflow-contract tests for missing reusable-call exemptions and missing concurrency in arm-automerge.yml and ghcr-cleanup.yml. The same failures are present on prior main CI run 32145428038, so AC 3 and DoD 1 remain unchecked pending exact-head hosted CI. No generated input changed. CodeRabbit was skipped because the change is declarative toolchain, container, and documentation configuration only.
+
+Exact-head CI run 32662556980 retained two before-fix failures: the v2.12.2 Linux analyzer could not handle Go 1.27 in tools/configcheck, and deploy/Dockerfile still set the deleted goroutineleakprofile experiment. The lint and cloud setup pin is now current v2.13.1; the obsolete experiment was removed from Docker and GoReleaser, and current profiling comments/docs were updated for Go 1.27 general availability. Linux-target lint passed for the root and all four nested modules, focused profiling/cert/credential tests and root build passed, actionlint passed, and GoReleaser validated the configuration.
 <!-- SECTION:NOTES:END -->

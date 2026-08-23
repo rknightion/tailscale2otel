@@ -12,7 +12,7 @@
 set -euo pipefail
 
 readonly BACKLOG_VERSION="1.50.1"
-readonly GOLANGCI_LINT_VERSION="2.12.2"
+readonly GOLANGCI_LINT_VERSION="2.13.1"
 readonly GOVULNCHECK_VERSION="1.3.0"
 readonly GORELEASER_VERSION="2.16.0"
 readonly HELM_VERSION="3.19.0"

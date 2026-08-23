@@ -50,8 +50,8 @@ func TestPyroscopeConfig_UploadRate(t *testing.T) {
 }
 
 func TestPyroscopeProfileTypes(t *testing.T) {
-	// goroutine-leak is present only when built with GOEXPERIMENT=goroutineleakprofile,
-	// so the expected count shifts by one between CI (plain) and release builds.
+	// goroutine-leak is present when the runtime exposes it, so the expected
+	// count remains tolerant of runtimes without the profile.
 	leak := 0
 	if goroutineLeakAvailable() {
 		leak = 1

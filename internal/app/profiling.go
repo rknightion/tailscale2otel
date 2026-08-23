@@ -18,10 +18,9 @@ import (
 )
 
 // goroutineLeakAvailable reports whether the runtime exposes the goroutineleak
-// profile. It is registered only when the binary is built with
-// GOEXPERIMENT=goroutineleakprofile (Go 1.26+); a binary built without it simply
-// omits the type instead of pushing an empty/erroring profile. Release builds and
-// the container image set the experiment; a plain `go build` does not.
+// profile. It is generally available in Go 1.27. The lookup keeps the package
+// tolerant of a runtime that does not expose it instead of pushing an
+// empty/erroring profile.
 func goroutineLeakAvailable() bool {
 	return pprof.Lookup("goroutineleak") != nil
 }

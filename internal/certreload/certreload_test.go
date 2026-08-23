@@ -123,7 +123,7 @@ func TestReloader_InitialLoad(t *testing.T) {
 // mechanism: a rotated file is invisible to GetCertificate until at least
 // MinRecheckInterval has passed since the last check, and visible
 // immediately after. Uses synctest so the interval elapses without a real
-// sleep (Go 1.26 fake clock, matching internal/app/heartbeat_test.go).
+// sleep (Go 1.27 fake clock, matching internal/app/heartbeat_test.go).
 func TestReloader_RateLimitedUntilInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		certFile, keyFile := newTestCertPaths(t)

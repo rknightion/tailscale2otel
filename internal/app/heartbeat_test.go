@@ -30,7 +30,7 @@ func TestRunHeartbeat_ZeroIntervalClamped(t *testing.T) {
 }
 
 func TestRunHeartbeat_EmitsUp(t *testing.T) {
-	// synctest (Go 1.26) gives a fake clock so the ticker is deterministic and
+	// synctest (Go 1.27) gives a fake clock so the ticker is deterministic and
 	// the test runs instantly instead of waiting a real interval.
 	synctest.Test(t, func(t *testing.T) {
 		rec := telemetrytest.New()

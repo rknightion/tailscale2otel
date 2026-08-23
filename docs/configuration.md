@@ -1752,10 +1752,9 @@ Tailscale data. The pprof handlers mount on the admin server.
 > - A `grafana.net` `server_address` with an empty `basic_auth_password` triggers a **WARN** —
 >   Grafana Cloud Profiles requires the Basic-auth credentials.
 > - When enabled, Pyroscope pushes the full profile set: CPU, memory (alloc/inuse), goroutines,
->   mutex/block contention, and **goroutine-leak**. Goroutine-leak relies on the Go
->   `goroutineleakprofile` runtime experiment, which the release binaries and container image are
->   built with (`GOEXPERIMENT=goroutineleakprofile`); a binary built without it silently omits that
->   one profile type. The mutex/block sampling rates above are applied only when a consumer (`pprof`
+>   mutex/block contention, and **goroutine-leak**. Goroutine-leak is generally available in Go 1.27;
+>   the exporter retains a runtime availability check and silently omits that one profile type if
+>   unavailable. The mutex/block sampling rates above are applied only when a consumer (`pprof`
 >   or `pyroscope`) is enabled.
 
 ---

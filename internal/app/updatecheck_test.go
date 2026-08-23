@@ -34,7 +34,7 @@ func TestRunUpdateCheck_ZeroIntervalClamped(t *testing.T) {
 }
 
 func TestRunUpdateCheckEmits(t *testing.T) {
-	// synctest (Go 1.26) gives a fake clock so the immediate emit is observable
+	// synctest (Go 1.27) gives a fake clock so the immediate emit is observable
 	// deterministically without polling real wall-clock time.
 	synctest.Test(t, func(t *testing.T) {
 		rec := telemetrytest.New()

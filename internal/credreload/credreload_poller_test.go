@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// TestPoller_PicksUpRotationOnTick uses the Go 1.26 fake clock (synctest) so
+// TestPoller_PicksUpRotationOnTick uses the Go 1.27 fake clock (synctest) so
 // the bounded poller's interval advances deterministically instead of the
 // test sleeping in real time.
 func TestPoller_PicksUpRotationOnTick(t *testing.T) {
