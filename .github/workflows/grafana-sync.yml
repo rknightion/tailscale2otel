@@ -57,7 +57,7 @@ jobs:
       # note this lane pushes commits rather than firing a repository_dispatch.
       - name: Mint a scoped GitSync token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@06d6727487515cd6628e01696af6f886f1421e04
+        uses: rknightion/.github/.github/actions/broker-token@bc58399e49a8d8131a379f530fffe8c9659667f9
         with:
           permission-set: gitsync
           # One shared permission set — all three publisher repos target the same hub
