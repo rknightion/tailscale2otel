@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Never cancel a retention sweep halfway through; serialize overlapping runs.
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
 jobs:
   prune:
     permissions:

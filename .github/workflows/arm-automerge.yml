@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: arm-automerge-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   arm:
     # Quoted: the label text contains ": ", which YAML would otherwise parse as
