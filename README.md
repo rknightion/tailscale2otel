@@ -312,8 +312,9 @@ has broken decoders here before. Eight lanes guard it:
 | **Release completeness** | every release | reads the published release back and fails when its asset manifest is short. Two releases shipped permanently incomplete behind green workflows before this existed |
 
 Scheduled lanes are advisory — they open a deduplicated tracking issue and fail the run, but never
-block PRs. Of the PR-time lanes, only the schema-driven decode tests gate; exploratory fuzzing does
-not, for the reason in its row.
+block PRs. Exploratory fuzzing is advisory too, for the reason in its row, so it runs on pushes to
+`main` rather than on pull requests; of the PR-time lanes, the schema-driven decode tests gate. The
+seed corpora ride `go test -race`, so a *known* crasher still blocks a merge.
 
 The cadences and the advisory-versus-gating split in this table are asserted by
 `internal/ci/workflowcontract_test.go`, which reads the workflow files — two of these rows claimed

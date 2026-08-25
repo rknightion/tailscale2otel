@@ -738,10 +738,10 @@ func TestPythonGeneratorDirectoriesContainTests(t *testing.T) {
 	}
 }
 
-// Every fuzz target in the tree must run in BOTH lanes: the bounded PR matrix, so a
-// shallow crasher is found on the pull request, and the weekly scheduled matrix, so
-// the deeper search reaches it at all. A target added to neither is dead code that
-// only runs its seed corpus, and nothing else would say so (#434).
+// Every fuzz target in the tree must run in BOTH lanes: the bounded post-merge matrix
+// in ci.yml, so a shallow crasher surfaces within a push of landing, and the weekly
+// scheduled matrix, so the deeper search reaches it at all. A target added to neither
+// is dead code that only runs its seed corpus, and nothing else would say so (#434).
 func TestEveryFuzzTargetRunsInBothMatrices(t *testing.T) {
 	declared := fuzzTargetsInTree(t)
 	if len(declared) < 9 {
@@ -1460,6 +1460,116 @@ func TestDocumentedInstallCommandsAreChecked(t *testing.T) {
 	} {
 		if _, err := os.Stat(filepath.Join(repoDir, f)); err != nil {
 			t.Errorf("%s is missing; check_doc_commands.py validates against it: %v", f, err)
+		}
+	}
+}
+
+// nonGatingCILanes are ci.yml's jobs that are deliberately absent from
+// ci-success's `needs`. Both are advisory by design — `fuzz` explores for NEW
+// crashers (nondeterministic; the seed corpora gate inside go test -race) and
+// `coverage` reports to Codacy (a Codacy outage must never block a merge).
+//
+// Because they gate nothing, running them on `pull_request` buys no signal a
+// merge depends on, and it is not free: this account is on GitHub Free, so the
+// whole fleet shares ONE pool of 20 concurrent standard-runner jobs. The fuzz
+// matrix alone is 9 of ci.yml's 25 jobs. Multiplied across a Renovate batch,
+// these two lanes were the difference between a queue that drains and one that
+// does not — 15 open PRs x 30 jobs against 20 slots, with automerge unable to
+// free a slot because it was waiting on the same queue.
+//
+// They still run on every push to main, which is where a post-merge advisory
+// signal belongs.
+var nonGatingCILanes = map[string]bool{
+	"coverage": true,
+	"fuzz":     true,
+}
+
+// pushOnlyGuard is the exact expression a non-gating lane must carry, and it is
+// compared for EQUALITY, not containment. A substring check is worthless here:
+// `github.event_name == 'pull_request' || github.event_name == 'push'` contains
+// the guard verbatim while being true on exactly the event the guard exists to
+// exclude. Verified by mutation — the containment version of this test passed
+// that string.
+//
+// Equality means a lane that legitimately needs a compound condition trips this
+// test. That is the intended outcome: widening when one of these two runs is a
+// decision about the account's shared runner budget, not a refactor.
+const pushOnlyGuard = "github.event_name == 'push'"
+
+// A non-gating lane that runs on pull_request spends the account's scarcest
+// shared resource on a check no merge can depend on. This test is the reason
+// the comment above cannot quietly stop being true: the `if` guards are one
+// deletion away from restoring a 40%-larger PR fan-out, and nothing else in the
+// repository would notice, because removing them makes MORE checks report.
+func TestNonGatingCILanesDoNotRunOnPullRequests(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs := jobsOf(t, doc, "ci.yml")
+
+	success, ok := jobs["ci-success"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no ci-success job — branch protection depends on it")
+	}
+	rawNeeds, ok := success["needs"].([]any)
+	if !ok {
+		t.Fatalf("ci-success needs is %T, want a list", success["needs"])
+	}
+	gating := map[string]bool{"ci-success": true}
+	for _, n := range rawNeeds {
+		s, ok := n.(string)
+		if !ok {
+			t.Fatalf("ci-success needs entry is %T, want a string", n)
+		}
+		gating[s] = true
+	}
+
+	for job, raw := range jobs {
+		def, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("ci.yml/%s is %T, want a mapping", job, raw)
+		}
+
+		// Every ci.yml job is either required, or listed here as deliberately
+		// advisory. A third category is how an unbounded lane creeps back in.
+		if !gating[job] && !nonGatingCILanes[job] {
+			t.Errorf("ci.yml declares job %q, which is neither in ci-success's needs nor in "+
+				"nonGatingCILanes. Add it to ci-success if it should gate merges, or to "+
+				"nonGatingCILanes (and guard it with %q) if it is advisory — an unlisted "+
+				"advisory job runs on every PR while blocking nothing.", job, pushOnlyGuard)
+			continue
+		}
+		if !nonGatingCILanes[job] {
+			continue
+		}
+
+		if gating[job] {
+			t.Errorf("ci.yml/%s is in nonGatingCILanes but ci-success requires it. A lane cannot "+
+				"be advisory and required at once; if it should gate merges, drop the push-only "+
+				"guard too, or every PR blocks on a check that never reports.", job)
+			continue
+		}
+
+		cond, ok := def["if"].(string)
+		if !ok {
+			t.Errorf("ci.yml/%s has no `if` guard, so it runs on pull_request while sitting "+
+				"outside ci-success's needs — it consumes runner slots from the account-wide "+
+				"concurrency cap and no merge can depend on the result. Guard it with %q.",
+				job, pushOnlyGuard)
+			continue
+		}
+		if strings.TrimSpace(cond) != pushOnlyGuard {
+			t.Errorf("ci.yml/%s has `if: %s`, want exactly %q. Naming the event is not the same "+
+				"as restricting to it — an OR'd condition mentions `push` and still runs on "+
+				"every pull request, which is the whole cost this guard removes.",
+				job, cond, pushOnlyGuard)
+		}
+	}
+
+	// A lane listed here but deleted from the workflow leaves a stale exemption
+	// that would silently bless the next job to reuse the name.
+	for job := range nonGatingCILanes {
+		if _, declared := jobs[job]; !declared {
+			t.Errorf("nonGatingCILanes lists %q, which ci.yml no longer declares; drop the "+
+				"stale entry rather than leaving it to bless a future job of the same name", job)
 		}
 	}
 }

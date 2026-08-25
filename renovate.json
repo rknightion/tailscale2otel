@@ -3,6 +3,12 @@
   "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
+      "description": "Batch every non-major Go bump into ONE PR. This repo fans out ~30 CI jobs per PR (ci.yml alone is 25), and the account is on GitHub Free: 20 concurrent standard-runner jobs shared across the whole fleet. Ungrouped, a routine Renovate cycle opened ~15 PRs demanding ~450 jobs from a 20-slot pool, and automerge could not drain it because freeing a slot required checks that were themselves queued behind the same backlog. Majors stay ungrouped on purpose - in Go a major is a distinct module path, so it is a real code change that wants its own review and its own red build. This rule is FIRST so the more specific rules below still win: for groupName, the last matching rule takes effect.",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "Go dependencies"
+    },
+    {
       "description": "OpenTelemetry: update core (v1.x) and the 0.x log modules together in ONE PR and never automerge - a core bump without the log modules (or vice-versa) breaks the build. Repo rules run after the fleet-wide automerge in config.js, so this overrides it for these packages.",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["go.opentelemetry.io/otel{,/**}"],

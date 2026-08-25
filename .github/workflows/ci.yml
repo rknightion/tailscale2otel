@@ -458,6 +458,11 @@ jobs:
   # Renovate automerge. Builds a coverage profile over the root module and uploads it via the
   # pinned official reporter action (no curl|bash, which zizmor flags as a remote-script hazard).
   coverage:
+    # push-only, for the same reason as `fuzz` below: informational, outside
+    # ci-success, and one more job competing for the account-wide 20-slot cap on
+    # every PR. Codacy's project coverage is a trunk number anyway — reporting it
+    # once per merge is the signal, not once per Renovate bump.
+    if: github.event_name == 'push'
     timeout-minutes: 15
     name: coverage (Codacy)
     runs-on: ubuntu-latest
@@ -496,11 +501,21 @@ jobs:
   # 120s per target finds shallow crashers and nothing else. The deeper search is
   # fuzz-scheduled.yml, weekly, where a nondeterministic finding costs nobody a blocked merge.
   #
+  # Runs on push to main only. Being outside ci-success means no merge can wait on it, so on a
+  # pull request it was pure draw against the account-wide 20-job cap — 9 legs on each of a
+  # Renovate batch's PRs, starving the very queue automerge needed to drain.
+  #
   # Deliberately NOT in ci-success. Each target's SEED corpus already runs inside the normal
   # `go test -race ./...` leg, so a known crasher always gates a merge; this job only explores
   # for NEW ones, which is nondeterministic. Gating on it would let an unrelated PR randomly trip
   # a latent crasher and block Renovate automerge. A failure here is a real bug — read the log.
   fuzz:
+    # push-only. This gates nothing (see the note above), and on GitHub Free the
+    # whole fleet shares ONE pool of 20 concurrent runner jobs — a 9-leg matrix on
+    # every Renovate PR starved the queue that automerge needs in order to drain it.
+    # Post-merge is where an advisory signal belongs; the deep search is weekly.
+    # internal/ci.TestNonGatingCILanesDoNotRunOnPullRequests holds this.
+    if: github.event_name == 'push'
     timeout-minutes: 15
     name: fuzz (${{ matrix.package }} ${{ matrix.target }})
     runs-on: ubuntu-latest
