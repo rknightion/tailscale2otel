@@ -2,7 +2,7 @@ module github.com/rknightion/tailscale2otel/v4/tools/promqlcheck
 
 go 1.27.0
 
-require github.com/prometheus/prometheus v0.313.2
+require github.com/prometheus/prometheus v0.314.0
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -17,5 +17,5 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
 )
