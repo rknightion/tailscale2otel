@@ -143,6 +143,7 @@ func TestValidate_PrometheusClientAuthMode(t *testing.T) {
 func TestValidate_PrometheusHandlerLimits(t *testing.T) {
 	t.Run("negative max_requests_in_flight", func(t *testing.T) {
 		c := Default()
+		c.Prometheus.Enabled = true
 		c.Prometheus.MaxRequestsInFlight = -1
 		err := c.Validate()
 		if err == nil {
@@ -155,6 +156,7 @@ func TestValidate_PrometheusHandlerLimits(t *testing.T) {
 
 	t.Run("negative timeout", func(t *testing.T) {
 		c := Default()
+		c.Prometheus.Enabled = true
 		c.Prometheus.Timeout = Duration(-1)
 		err := c.Validate()
 		if err == nil {
@@ -167,6 +169,7 @@ func TestValidate_PrometheusHandlerLimits(t *testing.T) {
 
 	t.Run("zero max is rejected while zero timeout remains supported", func(t *testing.T) {
 		c := Default()
+		c.Prometheus.Enabled = true
 		c.Prometheus.MaxRequestsInFlight = 0
 		c.Prometheus.Timeout = Duration(0)
 		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "max_requests_in_flight") {
@@ -278,6 +281,42 @@ func TestValidate_PyroscopeClientTLS(t *testing.T) {
 		c.Profiling.Pyroscope.TLS.KeyFile = key
 		if err := c.Validate(); err != nil {
 			t.Fatalf("valid pyroscope client TLS rejected: %v", err)
+		}
+	})
+}
+
+// TestValidate_PrometheusMaxRequestsGatedOnEnabled pins the gate that keeps an
+// upgrade from becoming a crash loop. config.example.yaml shipped
+// `prometheus.enabled: false` alongside `max_requests_in_flight: 0` (then
+// documented as unlimited) until 45e489c made 0 invalid, so every config copied
+// from the project's own example carries that pair. The value bounds concurrent
+// gathers on a listener that is not running, so rejecting it when the endpoint
+// is off refuses to start over a key that controls nothing.
+func TestValidate_PrometheusMaxRequestsGatedOnEnabled(t *testing.T) {
+	t.Run("zero is accepted while the endpoint is off", func(t *testing.T) {
+		c := Default()
+		c.Prometheus.Enabled = false
+		c.Prometheus.MaxRequestsInFlight = 0
+		if err := c.Validate(); err != nil {
+			t.Fatalf("max_requests_in_flight is inert while prometheus.enabled is false: %v", err)
+		}
+	})
+
+	t.Run("zero is still rejected once the endpoint is on", func(t *testing.T) {
+		c := Default()
+		c.Prometheus.Enabled = true
+		c.Prometheus.Listen = "127.0.0.1:2112"
+		c.Prometheus.MaxRequestsInFlight = 0
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "max_requests_in_flight") {
+			t.Fatalf("Validate() = %v, want a named max_requests_in_flight failure", err)
+		}
+		// An operator hitting this copied the 0 from the old example, so the
+		// message has to say what changed and what to set.
+		for _, want := range []string{"unlimited", "4"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q should mention %q", err.Error(), want)
+			}
 		}
 	})
 }

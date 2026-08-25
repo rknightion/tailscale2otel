@@ -1385,9 +1385,21 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
-	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to a positive count.", func() error {
+	// Bounds concurrent gathers on the /metrics listener, so it is unchecked
+	// while that listener is off — mirroring events.max_events above. This is
+	// not pedantry: config.example.yaml paired `prometheus.enabled: false` with
+	// `max_requests_in_flight: 0` (then documented as unlimited) until 0 became
+	// invalid, so an ungated rule refuses to start every config copied from the
+	// project's own example over a value that controls nothing.
+	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to a positive count (4 is the default).", func() error {
+		if !c.Prometheus.Enabled {
+			return nil
+		}
 		if n := c.Prometheus.MaxRequestsInFlight; n <= 0 {
-			return fmt.Errorf("prometheus.max_requests_in_flight must be positive (got %d)", n)
+			return fmt.Errorf("prometheus.max_requests_in_flight must be positive (got %d): %d used to "+
+				"mean unlimited and is no longer accepted, because an unbounded /metrics handler lets "+
+				"concurrent slow scrapes each walk the whole registry. Set 4 (the current default), or "+
+				"a higher count if several scrapers hit this instance at once", n, n)
 		}
 		return nil
 	})

@@ -13,6 +13,34 @@ This page collects the behaviour changes worth knowing about when moving between
 [Configuration](configuration.md) for defaults and the `TS2OTEL_*` env-var equivalents,
 and [Metrics](metrics.md) for the signal catalogue.
 
+## Upgrading to v4.0.0
+
+### The Prometheus pull endpoint gained real defaults
+
+`prometheus.max_requests_in_flight`, `prometheus.timeout` and `prometheus.coalesce_gather`
+shipped as `0` / `0s` / `false` — an unbounded, untimed `/metrics` handler. A `Gather` walks
+every series in the registry, so concurrent slow scrapes each paid for a full walk with
+nothing to shed them. The three now default to `4`, `8s` and `true`, and
+`max_requests_in_flight: 0` is **no longer accepted** while `prometheus.enabled` is true: the
+old "0 = unlimited" reading is exactly the state the cap exists to prevent, so it is refused
+loudly rather than honoured silently.
+
+| Key | Old default | New default |
+| --- | --- | --- |
+| `prometheus.max_requests_in_flight` | `0` (unlimited) | `4` |
+| `prometheus.timeout` | `0s` (none) | `8s` |
+| `prometheus.coalesce_gather` | `false` | `true` |
+
+`prometheus.timeout: 0` still means "no timeout" and remains valid — only the request cap
+lost its zero.
+
+**Action:** if your config carries `prometheus.max_requests_in_flight: 0` and the endpoint is
+enabled, set it to `4` (or higher if several scrapers hit one instance). `config.example.yaml`
+recommended `0` until this release, so a config copied from it needs this edit. The value is
+**unchecked while `prometheus.enabled` is false**, so a copied example with the endpoint
+switched off starts unchanged; raise the other two only if a scrape legitimately runs longer
+than 8s.
+
 ## Upgrading to v2.0.0
 
 `v2.0.0` is a **breaking** release with a single, contained change: five telemetry

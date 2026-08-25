@@ -1699,7 +1699,8 @@ config: # @schema additionalProperties:false
       # identities. A loopback bind never needs this. Ignored when token is set.
       allow_unauthenticated: false
     # -- Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in
-    # the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive.
+    # the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive while
+    # prometheus.enabled is true; 0 meant unlimited before v4.0.0 and is now refused.
     max_requests_in_flight: 4
     # -- Give up on a single /metrics gather after this long, answering 503. Keep it below the
     # scraper's own timeout so this process, not the scraper, decides.

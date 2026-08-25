@@ -566,7 +566,7 @@ extraVolumeMounts:
 | config.prometheus.coalesce_gather | bool | `true` | Serve overlapping scrapes from the same in-flight gather instead of duplicating collection work. This costs slight staleness. |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
-| config.prometheus.max_requests_in_flight | int | `4` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive. |
+| config.prometheus.max_requests_in_flight | int | `4` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive while prometheus.enabled is true; 0 meant unlimited before v4.0.0 and is now refused. |
 | config.prometheus.timeout | string | `"8s"` | Give up on a single /metrics gather after this long, answering 503. Keep it below the scraper's own timeout so this process, not the scraper, decides. |
 | config.prometheus.tls.cert_file | string | `""` | HTTPS certificate for the Prometheus endpoint. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. |
 | config.prometheus.tls.client_auth | string | `""` | How strictly the client certificate is checked: require_and_verify (the default once client_ca_file is set), verify_if_given, require, request, or none. Only require_and_verify and verify_if_given actually validate the chain; the weaker modes are for staged rollouts. |

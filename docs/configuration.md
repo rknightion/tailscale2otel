@@ -43,8 +43,8 @@ Every config field is settable via an environment variable:
 
 ### Mapping examples
 
-| Config key | Environment variable / default | Description |
-|---|---|---|
+| Config key | Environment variable |
+|---|---|
 | `tailscale.auth.oauth.client_id` | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID` |
 | `tailscale.auth.oauth.client_secret` | `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET` |
 | `tailscale.auth.apikey` | `TS2OTEL_TAILSCALE__AUTH__APIKEY` |
@@ -56,14 +56,6 @@ Every config field is settable via an environment variable:
 | `webhook.secret` | `TS2OTEL_WEBHOOK__SECRET` |
 | `admin.auth.token` | `TS2OTEL_ADMIN__AUTH__TOKEN` |
 | `prometheus.auth.token` | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` |
-| `prometheus.auth.token_file` | `""` | Read `prometheus.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
-| `prometheus.tls.cert_file` | `""` | HTTPS certificate for the Prometheus pull endpoint. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
-| `prometheus.tls.key_file` | `""` | HTTPS key for `prometheus.tls.cert_file`. Both paths must exist and be readable at startup. |
-| `prometheus.tls.client_ca_file` | `""` | Require scrapers to present a client certificate signed by this CA (mutual TLS). Requires `cert_file`/`key_file` — TLS only ever asks for a client certificate during a handshake, so a client CA on a plaintext listener is silently inert and is refused at startup. Composes with `prometheus.auth.token`: when both are set a request must satisfy both. The bundle must contain at least one parseable certificate. |
-| `prometheus.tls.client_auth` | `""` | How strictly the client certificate is checked: `require_and_verify` (the default once `client_ca_file` is set), `verify_if_given`, `require`, `request`, or `none`. Only `require_and_verify` and `verify_if_given` validate the presented chain, and both require `client_ca_file`; the weaker modes exist for staged rollouts. |
-| `prometheus.max_requests_in_flight` | `4` | Cap concurrent `/metrics` gathers; excess scrapes are answered `503`. It must be positive while Prometheus is enabled; zero is invalid. |
-| `prometheus.timeout` | `8s` | Give up on a single `/metrics` gather after this long, answering `503`. Keep it below the scraper's own timeout. |
-| `prometheus.coalesce_gather` | `true` | Serve overlapping scrapes from the same in-flight gather rather than duplicating collection work. This costs a small amount of staleness. |
 | `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
 | `profiling.pyroscope.basic_auth_password_file` | `""` | Read `profiling.pyroscope.basic_auth_password` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
@@ -1701,6 +1693,14 @@ address. It serves only `GET /metrics`; no status page or probes are exposed her
 | `prometheus.listen` | `:2112` | Listen address for `/metrics`. Must differ from `admin.listen`. For defense-in-depth bind to loopback (`127.0.0.1:2112`) or a tailnet IP rather than a wildcard. |
 | `prometheus.auth.token` | `""` | Optional shared secret gating `/metrics`. Accepted as the HTTP Basic password (any username) **or** `Authorization: Bearer <token>`. Empty on a **network-reachable** bind is refused with HTTP 403 unless `allow_unauthenticated` is set; empty on a loopback bind stays open. Set via `TS2OTEL_PROMETHEUS__AUTH__TOKEN`. |
 | `prometheus.auth.allow_unauthenticated` | `false` | Acknowledge serving `/metrics` with **no** token on a network-reachable bind. `/metrics` carries every series this exporter produces — device names, flow endpoints, audit identities — so the default refuses that combination rather than inheriting it. In-cluster scraping behind a NetworkPolicy is a legitimate reason to set it. Ignored when `token` is set: a configured token is always enforced. |
+| `prometheus.auth.token_file` | `""` | Read `prometheus.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `prometheus.max_requests_in_flight` | `4` | Cap concurrent `/metrics` gathers; excess scrapes are answered `503`. A `Gather` walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. It must be positive while `prometheus.enabled` is true — `0` meant unlimited before v4.0.0 and is now refused, since unlimited is the state the cap exists to prevent. Unchecked while the endpoint is off. See [Upgrading](upgrading.md#the-prometheus-pull-endpoint-gained-real-defaults). |
+| `prometheus.timeout` | `8s` | Give up on a single `/metrics` gather after this long, answering `503`. Keep it below the scraper's own timeout. |
+| `prometheus.coalesce_gather` | `true` | Serve overlapping scrapes from the same in-flight gather rather than duplicating collection work. This costs a small amount of staleness. |
+| `prometheus.tls.cert_file` | `""` | HTTPS certificate for the Prometheus pull endpoint. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
+| `prometheus.tls.key_file` | `""` | HTTPS key for `prometheus.tls.cert_file`. Both paths must exist and be readable at startup. |
+| `prometheus.tls.client_ca_file` | `""` | Require scrapers to present a client certificate signed by this CA (mutual TLS). Requires `cert_file`/`key_file` — TLS only ever asks for a client certificate during a handshake, so a client CA on a plaintext listener is silently inert and is refused at startup. Composes with `prometheus.auth.token`: when both are set a request must satisfy both. The bundle must contain at least one parseable certificate. |
+| `prometheus.tls.client_auth` | `""` | How strictly the client certificate is checked: `require_and_verify` (the default once `client_ca_file` is set), `verify_if_given`, `require`, `request`, or `none`. Only `require_and_verify` and `verify_if_given` validate the presented chain, and both require `client_ca_file`; the weaker modes exist for staged rollouts. |
 
 > **WARN (advisory):** if `prometheus.enabled` is `true` on a wildcard bind (empty host, e.g.
 > `:2112`) with no `prometheus.auth.token`, a startup warning fires — the endpoint exposes every
