@@ -29,7 +29,7 @@ services:
     # change between minor versions, so an unpinned tag can turn a working
     # config.alloy into a container that refuses to start on the next pull.
     # config.alloy in this directory is validated against THIS tag.
-    image: grafana/alloy:v1.18.1
+    image: grafana/alloy:v1.19.0
     restart: unless-stopped
     # The image's default command already passes --storage.path; overriding it
     # means restating that flag alongside the two additions:
