@@ -30,6 +30,7 @@ var boundedStatusDescriptions = map[string]bool{
 	"failed to read request body":          true,
 	"failed to parse webhook body":         true,
 	"failed to parse webhook event":        true,
+	"webhook batch exceeds event limit":    true,
 	"failed to canonicalize webhook event": true,
 	"durability unavailable":               true,
 	// internal/webhook signature-verification reasons (Server.verify). Not string

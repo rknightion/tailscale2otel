@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"strings"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // secretFileField pairs a Secret-valued config field with its "*_file" sibling
@@ -107,7 +108,7 @@ func (c *Config) resolveSecretFiles() error {
 			c.secretFileConflicts = append(c.secretFileConflicts, fmt.Sprintf("%s and %s_file", f.name, f.name))
 			continue
 		}
-		data, err := os.ReadFile(f.file)
+		data, err := safefile.ReadRegular(f.file, safefile.MaxSecretBytes, safefile.AllowSymlink)
 		if err != nil {
 			// f.file already holds the #310-resolved path (resolveConfigPaths runs
 			// before resolveSecretFiles). When resolution actually rewrote it --

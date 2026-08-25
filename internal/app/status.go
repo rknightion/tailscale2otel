@@ -104,7 +104,7 @@ func (a *App) buildStatus() statusdata.Status {
 			// not echo credentials an operator embedded in it (GHSA-qch3-gwff-r6pf).
 			// Validate() rejects URL userinfo outright; this is the second line of
 			// defense and also strips query values and the fragment.
-			Endpoint:              redact.URL(a.cfg.OTLP.Endpoint),
+			Endpoint:              redact.URLOrigin(a.cfg.OTLP.Endpoint),
 			Insecure:              a.cfg.OTLP.TLS.Insecure,
 			MetricIntervalS:       int64(a.cfg.OTLP.MetricInterval.D().Seconds()),
 			MetricExportBatchSize: a.cfg.OTLP.MetricExportBatchSize,
@@ -728,7 +728,7 @@ func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
 		// typed bearer_token/headers fields exist for that; the active-target
 		// snapshot is always serialized by /api/status.json, so sanitize it here
 		// rather than trusting each renderer (GHSA-h5p7-qj62-m8qx).
-		nd.Targets = append(nd.Targets, statusdata.NodeTarget{Instance: t.Instance, URL: redact.URL(t.URL), Source: t.Source})
+		nd.Targets = append(nd.Targets, statusdata.NodeTarget{Instance: t.Instance, URL: redact.URLOrigin(t.URL), Source: t.Source})
 	}
 	return nd
 }

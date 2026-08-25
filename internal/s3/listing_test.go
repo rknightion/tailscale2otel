@@ -221,8 +221,8 @@ func TestList_ServerFaultsAreUnchanged(t *testing.T) {
 		if err == nil {
 			t.Fatal("List succeeded against a 403")
 		}
-		if !strings.Contains(err.Error(), "403") || !strings.Contains(err.Error(), "AccessDenied") {
-			t.Errorf("error = %v, want the status and the bucket's explanation", err)
+		if !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "AccessDenied") {
+			t.Errorf("error = %v, want status without peer-controlled response text", err)
 		}
 	})
 }

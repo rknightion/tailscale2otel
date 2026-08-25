@@ -23,6 +23,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/flowstore/sqlitestore"
 	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v4/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v4/internal/provider"
@@ -207,6 +208,19 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 	resolved := cfg.ResolvedTailnets()
 	multi := len(resolved) > 1
+	if cfg.Flows.Store.Directory != "" {
+		names := make([]string, 0, len(resolved))
+		if cfg.Provider == "headscale" {
+			names = append(names, "headscale")
+		} else {
+			for _, rt := range resolved {
+				names = append(names, rt.Name)
+			}
+		}
+		if err := sqlitestore.ValidateTailnetNames(names); err != nil {
+			return nil, fmt.Errorf("validate persistent flow-store identities: %w", err)
+		}
+	}
 
 	// Telemetry labels default to the configured tailnet name. For the single "-"
 	// placeholder (the "use my default tailnet" sentinel), best-effort resolve the

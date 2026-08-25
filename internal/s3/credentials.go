@@ -7,12 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // Credentials is one set of S3 credentials. SessionToken is set only for
@@ -130,6 +135,8 @@ func AmbientProvider(httpClient *http.Client, now func() time.Time) Provider {
 	// the environment, so that fetch alone refuses redirects and re-checks the
 	// destination at dial time.
 	containerHC := containerHTTPClient(httpClient)
+	stsHC := httpguard.NoRedirectClient(httpClient)
+	imdsHC := imdsHTTPClient(httpClient)
 	// Resolved separately from what cachingProvider is given, so the caching
 	// behavior of every existing provider is left exactly as it was.
 	containerNow := now
@@ -145,7 +152,7 @@ func AmbientProvider(httpClient *http.Client, now func() time.Time) Provider {
 			}, nil
 		}
 		if os.Getenv(envRoleARN) != "" && os.Getenv(envTokenFile) != "" {
-			return webIdentity(ctx, httpClient)
+			return webIdentity(ctx, stsHC)
 		}
 		// The container endpoint sits after web identity and before IMDS, which is
 		// where AWS puts it. That ordering is load-bearing on EKS: a workload
@@ -164,7 +171,7 @@ func AmbientProvider(httpClient *http.Client, now func() time.Time) Provider {
 			return Credentials{}, errors.New("no credentials: none in the environment, no web identity, " +
 				"no container credentials endpoint, and IMDS is disabled")
 		}
-		return instanceProfile(ctx, httpClient)
+		return instanceProfile(ctx, imdsHC)
 	}}
 }
 
@@ -188,7 +195,11 @@ type stsResponse struct {
 // The token file is re-read on every refresh rather than cached, because the
 // kubelet rotates it in place and a cached copy expires silently.
 func webIdentity(ctx context.Context, hc *http.Client) (Credentials, error) {
-	token, err := os.ReadFile(os.Getenv(envTokenFile)) //nolint:gosec // operator-supplied deployment config
+	endpoint, err := stsEndpoint()
+	if err != nil {
+		return Credentials{}, err
+	}
+	token, err := safefile.ReadRegular(os.Getenv(envTokenFile), safefile.MaxSecretBytes, safefile.AllowSymlink)
 	if err != nil {
 		return Credentials{}, fmt.Errorf("read web identity token: %w", err)
 	}
@@ -205,7 +216,7 @@ func webIdentity(ctx context.Context, hc *http.Client) (Credentials, error) {
 		"WebIdentityToken": {strings.TrimSpace(string(token))},
 	}
 	// Unsigned by definition: the OIDC token IS the credential being presented.
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, stsEndpoint(), strings.NewReader(q.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(q.Encode()))
 	if err != nil {
 		return Credentials{}, err
 	}
@@ -220,8 +231,7 @@ func webIdentity(ctx context.Context, hc *http.Client) (Credentials, error) {
 		return Credentials{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Credentials{}, fmt.Errorf("sts assume-role-with-web-identity: %s: %s",
-			resp.Status, strings.TrimSpace(string(body)))
+		return Credentials{}, fmt.Errorf("sts assume-role-with-web-identity: %s", resp.Status)
 	}
 	var out stsResponse
 	if err := xml.Unmarshal(body, &out); err != nil {
@@ -245,19 +255,55 @@ var stsHost = ""
 
 // stsEndpoint prefers the regional endpoint, which is what AWS recommends and
 // what a VPC endpoint policy is written against.
-func stsEndpoint() string {
+var awsRegionPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)+$`)
+
+func stsEndpoint() (string, error) {
 	if stsHost != "" {
-		return stsHost
+		return stsHost, nil
 	}
 	if region := os.Getenv(envRegion); region != "" && os.Getenv(envSTSLegacy) != "legacy" {
-		return "https://sts." + region + ".amazonaws.com/"
+		if len(region) > 63 || !awsRegionPattern.MatchString(region) {
+			return "", errors.New("AWS_REGION is not a valid AWS region identifier")
+		}
+		raw := "https://sts." + region + ".amazonaws.com/"
+		u, err := url.Parse(raw)
+		wantHost := "sts." + region + ".amazonaws.com"
+		if err != nil || u.Scheme != "https" || u.Host != wantHost || u.Hostname() != wantHost || u.Port() != "" {
+			return "", errors.New("AWS_REGION did not produce an approved STS endpoint")
+		}
+		return raw, nil
 	}
-	return "https://sts.amazonaws.com/"
+	return "https://sts.amazonaws.com/", nil
 }
 
 // imdsBase is the link-local address every EC2 instance serves its metadata on.
 // Overridden in tests.
-var imdsBase = "http://169.254.169.254"
+const imdsLiteralBase = "http://169.254.169.254"
+
+var imdsBase = imdsLiteralBase
+
+// imdsHTTPClient prevents proxies, redirects, DNS and caller transport policy
+// from moving metadata credentials off the literal IMDS address. Tests that
+// override imdsBase keep their injected transport so they can use httptest.
+func imdsHTTPClient(base *http.Client) *http.Client {
+	c := httpguard.NoRedirectClient(base)
+	if imdsBase != imdsLiteralBase {
+		return c
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if base != nil && base.Transport != nil {
+		if configured, ok := base.Transport.(*http.Transport); ok {
+			transport = configured.Clone()
+		}
+	}
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, "169.254.169.254:80")
+	}
+	c.Transport = transport
+	return c
+}
 
 // imdsCredentials is the JSON the instance-profile endpoint returns.
 type imdsCredentials struct {

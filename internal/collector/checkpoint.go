@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // ErrCorruptCheckpoint reports that a checkpoint file exists but its content
@@ -126,9 +128,9 @@ type fileStore struct {
 func NewFileStore(path string) (CheckpointStore, error) {
 	fs := &fileStore{path: path, m: map[string]time.Time{}}
 	sweepStagingFiles(path)
-	data, err := os.ReadFile(path)
+	data, err := safefile.ReadRegular(path, safefile.MaxCheckpointBytes, safefile.NoSymlink)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return fs, nil
 		}
 		return nil, err

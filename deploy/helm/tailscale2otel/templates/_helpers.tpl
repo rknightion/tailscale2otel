@@ -186,6 +186,9 @@ tailscale.auth.oauth.client_secret
 tailscale.auth.apikey
 otlp.grafana_cloud.token
 otlp.headers
+otlp.metrics.headers
+otlp.logs.headers
+otlp.traces.headers
 collectors.flowlogs.objectstore.access_key_id
 collectors.flowlogs.objectstore.secret_access_key
 collectors.flowlogs.objectstore.session_token
@@ -200,6 +203,7 @@ webhook.secret
 prometheus.auth.token
 admin.auth.token
 profiling.pyroscope.basic_auth_password
+profiling.pyroscope.headers
 grafana_annotations.token
 enrichment.geoip.download.license_key
 {{- end -}}
@@ -231,6 +235,18 @@ are never included, so this is safe to put in a `fail` message.
        (no TS2OTEL_* env path exists for it), so any entry is credential-bearing. */ -}}
 {{- if $.Values.config.tailnets -}}
   {{- $found = append $found "config.tailnets[]" -}}
+{{- end -}}
+{{- /* Receiver route lists contain per-route credentials and must be inspected
+       explicitly because dotted-path traversal cannot cross list elements. */ -}}
+{{- range $r := ($.Values.config.streaming.routes | default list) -}}
+  {{- if and (kindIs "map" $r) (index $r "token") -}}
+    {{- $found = append $found "config.streaming.routes[].token" -}}
+  {{- end -}}
+{{- end -}}
+{{- range $r := ($.Values.config.webhook.routes | default list) -}}
+  {{- if and (kindIs "map" $r) (index $r "secret") -}}
+    {{- $found = append $found "config.webhook.routes[].secret" -}}
+  {{- end -}}
 {{- end -}}
 {{- /* Node-metrics scrape targets may carry a per-target bearer token or headers. */ -}}
 {{- $nm := $.Values.config.collectors -}}

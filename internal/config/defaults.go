@@ -389,8 +389,11 @@ func Default() *Config {
 			MaxEvents: 5000,
 		},
 		Prometheus: PrometheusConfig{
-			Enabled: false,
-			Listen:  ":2112",
+			Enabled:             false,
+			Listen:              ":2112",
+			MaxRequestsInFlight: 4,
+			Timeout:             dur(8 * time.Second),
+			CoalesceGather:      true,
 		},
 		Profiling: ProfilingConfig{
 			Pyroscope: ProfilingPyroscope{

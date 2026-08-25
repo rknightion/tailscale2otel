@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 )
 
 // GrafanaAnnotationsConfig configures the opt-in Grafana annotation writer:
@@ -101,11 +103,16 @@ func (c GrafanaAnnotationsConfig) validate() error {
 	}
 	parsed, err := url.Parse(strings.TrimSpace(c.URL))
 	if err != nil {
-		return fmt.Errorf("grafana_annotations.url %q is not a valid URL: %w", c.URL, err)
+		return fmt.Errorf("grafana_annotations.url is not a valid URL")
 	}
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return fmt.Errorf("grafana_annotations.url %q must be a full http(s) URL, e.g. "+
-			"https://mystack.grafana.net (got scheme %q, host %q)", c.URL, parsed.Scheme, parsed.Host)
+		return fmt.Errorf("grafana_annotations.url must be a full http(s) URL, e.g. https://mystack.grafana.net")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("grafana_annotations.url must contain only a scheme and host; put credentials in the token field")
+	}
+	if parsed.Scheme != "https" && !httpguard.IsLoopbackHost(parsed.Host) {
+		return fmt.Errorf("grafana_annotations.url must use HTTPS except for a loopback development endpoint")
 	}
 	if c.Token.Reveal() == "" {
 		return fmt.Errorf("grafana_annotations.token (or token_file) must be set when " +

@@ -16,9 +16,9 @@
 //     (internal/audit, internal/webhook) call it AFTER emitting the
 //     corresponding OTLP log record and counters, so a full ring never
 //     affects what is exported.
-//   - Bounded in the one dimension that matters: total retained events.
-//     Overflow evicts the oldest event and is counted (Stats.Evicted), never
-//     silently dropped.
+//   - Bounded by both event count and attacker-controlled text bytes. Overflow
+//     evicts the oldest event and is counted (Stats.Evicted), never silently
+//     dropped.
 //   - Not a second telemetry pipeline. OTLP remains the system of record;
 //     this is a bounded, recent, admin-authenticated view for interactive use,
 //     and it is lost on restart.
@@ -28,6 +28,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
 )
 
 // DefaultCapacity is used when NewMemory is given a non-positive capacity.
@@ -40,7 +42,11 @@ const DefaultCapacity = 5000
 // is bounded. Truncated content is marked (Event.Truncated) so the page can
 // say the diff was cut rather than silently showing a partial one as if it
 // were complete.
-const MaxDetailBytes = 4096
+const (
+	MaxFieldBytes  = 4096
+	MaxEventBytes  = 32 << 10
+	MaxDetailBytes = MaxFieldBytes
+)
 
 // truncationSuffix marks a Details/Summary value cut to MaxDetailBytes.
 const truncationSuffix = "…[truncated]"
@@ -48,10 +54,12 @@ const truncationSuffix = "…[truncated]"
 // Truncate bounds s to MaxDetailBytes, appending truncationSuffix when cut.
 func Truncate(s string) (string, bool) {
 	if len(s) <= MaxDetailBytes {
-		return s, false
+		return boundedtext.String(s, MaxDetailBytes), !utf8Equivalent(s)
 	}
-	return s[:MaxDetailBytes] + truncationSuffix, true
+	return boundedtext.String(s, MaxDetailBytes-len(truncationSuffix)) + truncationSuffix, true
 }
+
+func utf8Equivalent(s string) bool { return boundedtext.String(s, len(s)) == s }
 
 // Source distinguishes which processor fed an event into the store.
 type Source string
@@ -149,8 +157,9 @@ type Memory struct {
 	start  int
 	seq    uint64
 
-	recorded int64
-	evicted  int64
+	recorded      int64
+	evicted       int64
+	retainedBytes int
 }
 
 // NewMemory returns a store retaining at most capacity events. A non-positive
@@ -192,11 +201,15 @@ func (m *Memory) Record(ev Event) {
 		ev.Summary = s
 		ev.Truncated = true
 	}
+	if normalizeEvent(&ev) {
+		ev.Truncated = true
+	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if len(m.liveLocked()) >= m.capacity {
+		m.retainedBytes -= eventStringBytes(m.events[m.start])
 		m.start++
 		m.evicted++
 	}
@@ -204,6 +217,7 @@ func (m *Memory) Record(ev Event) {
 	m.seq++
 	m.recorded++
 	m.events = append(m.events, ev)
+	m.retainedBytes += eventStringBytes(ev)
 
 	// Reclaim the dead prefix once it has grown to a full window, exactly as
 	// flowstore's recent ring does: the copy costs O(capacity) but happens at
@@ -213,6 +227,31 @@ func (m *Memory) Record(ev Event) {
 		m.events = m.events[:n]
 		m.start = 0
 	}
+}
+
+func normalizeEvent(ev *Event) bool {
+	values := []string{string(ev.Source), ev.Tailnet, ev.Action, ev.Type, ev.Origin,
+		ev.ActorID, ev.ActorName, ev.ActorType, ev.TargetID, ev.TargetName, ev.TargetType,
+		ev.TargetProperty, ev.Severity, ev.Error, ev.Summary, ev.Details}
+	original := append([]string(nil), values...)
+	boundedtext.StringsBudget(values, MaxFieldBytes, MaxEventBytes)
+	ev.Source = Source(values[0])
+	ev.Tailnet, ev.Action, ev.Type, ev.Origin = values[1], values[2], values[3], values[4]
+	ev.ActorID, ev.ActorName, ev.ActorType = values[5], values[6], values[7]
+	ev.TargetID, ev.TargetName, ev.TargetType, ev.TargetProperty = values[8], values[9], values[10], values[11]
+	ev.Severity, ev.Error, ev.Summary, ev.Details = values[12], values[13], values[14], values[15]
+	for i := range values {
+		if values[i] != original[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func eventStringBytes(ev Event) int {
+	return len(ev.Source) + len(ev.Tailnet) + len(ev.Action) + len(ev.Type) + len(ev.Origin) +
+		len(ev.ActorID) + len(ev.ActorName) + len(ev.ActorType) + len(ev.TargetID) + len(ev.TargetName) +
+		len(ev.TargetType) + len(ev.TargetProperty) + len(ev.Severity) + len(ev.Error) + len(ev.Summary) + len(ev.Details)
 }
 
 // Filter narrows Page to rows matching every non-empty field (an AND across
@@ -350,12 +389,14 @@ func (m *Memory) Page(q Query) Page {
 
 // Stats describes the store's own state, for the admin status/events surface.
 type Stats struct {
-	Capacity int       `json:"capacity"`
-	Retained int       `json:"retained"`
-	Recorded int64     `json:"recorded"`
-	Evicted  int64     `json:"evicted"`
-	Earliest time.Time `json:"earliest"`
-	Latest   time.Time `json:"latest"`
+	Capacity      int       `json:"capacity"`
+	Retained      int       `json:"retained"`
+	Recorded      int64     `json:"recorded"`
+	Evicted       int64     `json:"evicted"`
+	RetainedBytes int       `json:"retained_bytes"`
+	MaxBytes      int       `json:"max_bytes"`
+	Earliest      time.Time `json:"earliest"`
+	Latest        time.Time `json:"latest"`
 }
 
 // Stats returns the store's current state.
@@ -364,7 +405,8 @@ func (m *Memory) Stats() Stats {
 	defer m.mu.Unlock()
 
 	live := m.liveLocked()
-	s := Stats{Capacity: m.capacity, Retained: len(live), Recorded: m.recorded, Evicted: m.evicted}
+	s := Stats{Capacity: m.capacity, Retained: len(live), Recorded: m.recorded, Evicted: m.evicted,
+		RetainedBytes: m.retainedBytes, MaxBytes: m.capacity * MaxEventBytes}
 	for _, e := range live {
 		if s.Earliest.IsZero() || e.Time.Before(s.Earliest) {
 			s.Earliest = e.Time

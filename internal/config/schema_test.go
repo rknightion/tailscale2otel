@@ -298,6 +298,7 @@ var ruleApplications = []string{
 	"otlp.protocol",
 	"profiling.pyroscope.credential_reload.interval",
 	"profiling.pyroscope.tailnet_label",
+	"prometheus.max_requests_in_flight",
 	"provider",
 	"streaming.decompress",
 	"tailnets.auth.method",

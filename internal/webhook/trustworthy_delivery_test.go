@@ -120,7 +120,7 @@ func TestHandler_NoSecretRequiresLoopbackBeforeBodyRead(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := telemetrytest.New()
 			s := New(Options{Listen: tc.listen, Path: "/webhook"}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)))
-			payload := `[{"version":1,"type":"nodeCreated","data":{"nodeID":"n1"}}]`
+			payload := `[{"version":1,"type":"nodeCreated","tailnet":"example.test","data":{"nodeID":"n1"}}]`
 			if tc.want == http.StatusOK {
 				resp := doPost(t, s.Handler(), "/webhook", payload, "")
 				if resp.StatusCode != tc.want {

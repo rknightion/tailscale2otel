@@ -105,14 +105,21 @@ The keys that trigger this:
 | `headscale.api_key` | Headscale bearer key |
 | `otlp.grafana_cloud.token` | Grafana Cloud OTLP token |
 | `otlp.headers` | any raw OTLP header (this is where an `Authorization` header goes) |
+| `otlp.metrics.headers` / `otlp.logs.headers` / `otlp.traces.headers` | per-signal OTLP credentials |
 | `collectors.flowlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `collectors.auditlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `collectors.k8s_audit.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
 | `streaming.token` | HEC receiver token |
 | `webhook.secret` | webhook HMAC secret |
 | `prometheus.auth.token` | `/metrics` token |
 | `admin.auth.token` | admin/pprof token |
 | `profiling.pyroscope.basic_auth_password` | Pyroscope password |
+| `profiling.pyroscope.headers` | Pyroscope gateway credentials |
+| `grafana_annotations.token` | Grafana annotation token |
+| `enrichment.geoip.download.license_key` | MaxMind license key |
 | `tailnets[]` (any entry) | multi-tailnet inline auth — the list is file-only, there is no `TS2OTEL_*` path for it |
 | `collectors.node_metrics.targets[]` with `bearer_token` or `headers` | per-target scrape credentials |
+| `streaming.routes[]` with `token` / `webhook.routes[]` with `secret` | per-route receiver credentials |
 
 Identifiers are *not* on that list — `tailscale.auth.oauth.client_id`,
 `tailscale.auth.workload_identity.client_id`, `otlp.grafana_cloud.instance_id` and
@@ -128,12 +135,12 @@ the one combination the chart cannot make safe.
 
 ### Rotating credentials
 
-`checksum/config` and `checksum/secret` already roll the pod when the chart-managed
-config or the inline `secret:` values change. An **`existingSecret` you manage
-yourself is different**: it contributes only a name reference to the pod template,
-and Kubernetes never refreshes the environment of a running container, so rotating
-its values leaves the pod running the old credential indefinitely. Two supported
-ways to close that:
+The chart deliberately publishes no checksum of Secret material in the pod template:
+anyone with workload-read could use such a digest to test guesses offline. Therefore
+an inline `secret:`, a Secret-backed `config.yaml`, and an **`existingSecret` you
+manage yourself** all require an explicit rollout when their values change. Kubernetes
+does not refresh a running container's environment, and file-backed reload does not
+cover environment variables. Two supported rollout paths:
 
 ```sh
 # Manual: change rolloutTrigger to anything new. It is an opaque operator-chosen

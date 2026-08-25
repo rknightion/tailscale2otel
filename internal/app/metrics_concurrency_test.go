@@ -215,21 +215,21 @@ func TestMetricsCoalesceGatherSharesOneCollection(t *testing.T) {
 	}
 }
 
-// The guards default to off, so an operator who sets nothing keeps exactly the
-// pre-#377 behavior: unlimited concurrency, no deadline, one gather per request.
-func TestMetricsLoadGuardsDefaultOff(t *testing.T) {
+// The guards are secure by default: a default deployment must not turn every
+// overlapping scrape into an independent unbounded Gather.
+func TestMetricsLoadGuardsSecureByDefault(t *testing.T) {
 	cfg := config.Default()
-	if cfg.Prometheus.MaxRequestsInFlight != 0 {
-		t.Errorf("default max_requests_in_flight = %d, want 0 (unlimited)", cfg.Prometheus.MaxRequestsInFlight)
+	if cfg.Prometheus.MaxRequestsInFlight != 4 {
+		t.Errorf("default max_requests_in_flight = %d, want 4", cfg.Prometheus.MaxRequestsInFlight)
 	}
-	if cfg.Prometheus.Timeout.D() != 0 {
-		t.Errorf("default timeout = %v, want 0 (no timeout)", cfg.Prometheus.Timeout.D())
+	if cfg.Prometheus.Timeout.D() != 8*time.Second {
+		t.Errorf("default timeout = %v, want 8s", cfg.Prometheus.Timeout.D())
 	}
-	if cfg.Prometheus.CoalesceGather {
-		t.Error("default coalesce_gather = true, want false")
+	if !cfg.Prometheus.CoalesceGather {
+		t.Error("default coalesce_gather = false, want true")
 	}
 
-	a, _, _ := selfObsScrapeApp(t, nil)
+	a, rec, _ := selfObsScrapeApp(t, nil)
 	slow := newSlowScrapeCollector()
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(slow)
@@ -238,11 +238,15 @@ func TestMetricsLoadGuardsDefaultOff(t *testing.T) {
 	first := scrapeAsync(srv)
 	<-slow.entered
 	second := scrapeAsync(srv)
-	<-slow.entered // a second, independent Gather started: nothing is bounding it
+	waitForInFlight(t, rec, 2)
+	time.Sleep(100 * time.Millisecond)
+	if got := slow.calls.Load(); got != 1 {
+		t.Fatalf("Collect ran %d times for overlapping default scrapes, want one coalesced gather", got)
+	}
 	close(slow.release)
 	for _, ch := range []<-chan *httptest.ResponseRecorder{first, second} {
 		if rr := <-ch; rr.Code != http.StatusOK {
-			t.Errorf("code = %d, want 200 with the guards off; body:\n%s", rr.Code, rr.Body.String())
+			t.Errorf("code = %d, want 200 with secure defaults; body:\n%s", rr.Code, rr.Body.String())
 		}
 	}
 }

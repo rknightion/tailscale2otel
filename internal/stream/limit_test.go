@@ -70,3 +70,43 @@ func TestMaxBodyBytes_UnderLimitNotTooLarge(t *testing.T) {
 		t.Fatalf("rejected{reason=unparsable} = %v, want 1", p.Value)
 	}
 }
+
+func TestMaxBodyBytes_GzipWireRepresentationTooLargeRejected(t *testing.T) {
+	limit := int64(len(hecFlowBody) + 128)
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen, MaxBodyBytes: limit})
+
+	wire := gzipBytes(t, []byte(hecFlowBody))
+	emptyMember := gzipBytes(t, nil)
+	for int64(len(wire)) <= limit {
+		wire = append(wire, emptyMember...)
+	}
+	h := http.Header{"Content-Encoding": {"gzip"}}
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", h, bytes.NewReader(wire))
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 for %d compressed bytes over %d-byte wire budget", w.Code, len(wire), limit)
+	}
+	if p := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{attrReason: reasonTooLarge}); p.Value != 1 {
+		t.Fatalf("rejected{reason=too_large} = %v, want 1", p.Value)
+	}
+}
+
+func TestMaxBodyBytes_ZstdWireRepresentationTooLargeRejected(t *testing.T) {
+	limit := int64(len(hecFlowBody) + 128)
+	s, rec := newServer(t, stream.Options{Listen: loopbackListen, MaxBodyBytes: limit})
+
+	wire := zstdBytes(t, []byte(hecFlowBody))
+	emptyFrame := zstdBytes(t, nil)
+	for int64(len(wire)) <= limit {
+		wire = append(wire, emptyFrame...)
+	}
+	h := http.Header{"Content-Encoding": {"zstd"}}
+	w := post(t, s.Handler(), http.MethodPost, "/services/collector/event", h, bytes.NewReader(wire))
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 for %d compressed bytes over %d-byte wire budget", w.Code, len(wire), limit)
+	}
+	if p := findPoint(t, rec.MetricPoints(metricRejected), map[string]string{attrReason: reasonTooLarge}); p.Value != 1 {
+		t.Fatalf("rejected{reason=too_large} = %v, want 1", p.Value)
+	}
+}

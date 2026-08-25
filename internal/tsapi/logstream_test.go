@@ -87,8 +87,8 @@ func TestConfigureLogStream_Non2xxReturnsError(t *testing.T) {
 			if !strings.Contains(msg, http.StatusText(status)) && !strings.Contains(msg, statusCodeString(status)) {
 				t.Fatalf("error %q does not include status %d", msg, status)
 			}
-			if !strings.Contains(msg, "boom-detail") {
-				t.Fatalf("error %q does not include body snippet", msg)
+			if strings.Contains(msg, "boom-detail") {
+				t.Fatalf("error %q includes peer-controlled body snippet", msg)
 			}
 		})
 	}

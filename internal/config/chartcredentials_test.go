@@ -42,6 +42,7 @@ var chartCredentialExemptions = map[string]string{
 	"streaming.routes[*].token":                           "structural carrier, handled by the chart's own routes branch",
 	"webhook.routes[*].secret":                            "structural carrier, handled by the chart's own routes branch",
 	"collectors.node_metrics.targets[*].bearer_token":     "structural carrier, handled by the chart's own targets branch",
+	"collectors.node_metrics.targets[*].headers":          "structural carrier, handled by the chart's own targets branch",
 }
 
 // TestChartCredentialPathsCoversEverySecretField is the guard that should have
@@ -146,6 +147,8 @@ func secretFieldKeys(t reflect.Type, prefix string) []string {
 		ft := f.Type
 		switch {
 		case ft == secretType:
+			keys = append(keys, prefix+tag)
+		case ft.Kind() == reflect.Map && ft.Elem() == secretType:
 			keys = append(keys, prefix+tag)
 		case ft.Kind() == reflect.Struct:
 			keys = append(keys, secretFieldKeys(ft, prefix+tag+".")...)

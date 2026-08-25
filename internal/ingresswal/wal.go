@@ -170,6 +170,9 @@ type fileOps struct {
 	publishNoReplace  func(*os.File, string, string) error
 	removeAt          func(*os.File, string) error
 	modeAt            func(*os.File, string) (os.FileMode, error)
+	ownerUID          func(*os.File) (uint32, error)
+	ownerUIDAt        func(*os.File, string) (uint32, error)
+	effectiveUID      func() uint32
 	readDir           func(*os.File) ([]os.DirEntry, error)
 	lstat             func(string) (os.FileInfo, error)
 	write             func(*os.File, []byte) (int, error)
@@ -191,6 +194,9 @@ var realFileOps = fileOps{
 	publishNoReplace:  platformPublishNoReplace,
 	removeAt:          platformRemoveAt,
 	modeAt:            platformModeAt,
+	ownerUID:          platformOwnerUID,
+	ownerUIDAt:        platformOwnerUIDAt,
+	effectiveUID:      platformEffectiveUID,
 	readDir: func(directory *os.File) ([]os.DirEntry, error) {
 		if _, err := directory.Seek(0, io.SeekStart); err != nil {
 			return nil, err
@@ -285,6 +291,9 @@ func (s *Store) open() error {
 		return &OwnershipError{Reason: "WAL path is not a no-follow directory"}
 	}
 	s.dirFile = directory
+	if err := s.requireFileOwner(s.dirFile, "WAL directory is not owned by the effective service UID"); err != nil {
+		return err
+	}
 	if err := s.dirFile.Chmod(0o700); err != nil {
 		return fmt.Errorf("ingress WAL secure directory: %w", err)
 	}
@@ -328,6 +337,9 @@ func (s *Store) acquireLock() error {
 	if !info.Mode().IsRegular() {
 		return &OwnershipError{Reason: "owner lock is not a regular file"}
 	}
+	if err := s.requireFileOwner(file, "owner lock is not owned by the effective service UID"); err != nil {
+		return err
+	}
 	if err := file.Chmod(0o600); err != nil {
 		return fmt.Errorf("ingress WAL secure owner lock: %w", err)
 	}
@@ -361,6 +373,10 @@ func (s *Store) sweepStages() error {
 		}
 		if !mode.IsRegular() {
 			return &OwnershipError{Reason: "staging entry is not a regular file"}
+		}
+		uid, err := s.ops.ownerUIDAt(s.dirFile, name)
+		if err != nil || uid != s.ops.effectiveUID() {
+			return &OwnershipError{Reason: "staging entry is not owned by the effective service UID"}
 		}
 		if err := s.ops.removeAt(s.dirFile, name); err != nil {
 			return fmt.Errorf("ingress WAL remove staging file: %w", err)
@@ -972,6 +988,9 @@ func (s *Store) readBounded(name string) ([]byte, error) {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
 		return nil, &OwnershipError{Reason: "state file is not an owner-only regular file"}
 	}
+	if err := s.requireFileOwner(file, "state file is not owned by the effective service UID"); err != nil {
+		return nil, err
+	}
 	reader := io.LimitReader(file, s.opts.MaxBytes+1)
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -1000,6 +1019,17 @@ func (s *Store) revalidateDirectory() error {
 		!os.SameFile(held, current) {
 		return &OwnershipError{Reason: "configured directory was replaced"}
 	}
+	if err := s.requireFileOwner(s.dirFile, "WAL directory ownership changed"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *Store) requireFileOwner(file *os.File, reason string) error {
+	uid, err := s.ops.ownerUID(file)
+	if err != nil || uid != s.ops.effectiveUID() {
+		return &OwnershipError{Reason: reason}
+	}
 	return nil
 }
 
@@ -1023,6 +1053,10 @@ func (s *Store) requireOwnedRegularAt(name string) error {
 	}
 	if !mode.IsRegular() || mode.Perm()&0o077 != 0 {
 		return &OwnershipError{Reason: "state file is not an owner-only regular file"}
+	}
+	uid, err := s.ops.ownerUIDAt(s.dirFile, name)
+	if err != nil || uid != s.ops.effectiveUID() {
+		return &OwnershipError{Reason: "state file is not owned by the effective service UID"}
 	}
 	return nil
 }

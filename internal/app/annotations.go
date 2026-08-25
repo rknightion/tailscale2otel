@@ -8,6 +8,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/annotations"
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 )
 
 // defaultAnnotationStateFile is the dedupe set's filename when the operator did
@@ -78,7 +79,7 @@ func (a *App) startAnnotator(ctx context.Context, cfg *config.Config, version st
 	}
 	a.annotator = writer
 	a.logger.Info("grafana annotation writer started",
-		"url", gc.URL,
+		"url", redact.URLOrigin(gc.URL),
 		"dashboard_uid", gc.DashboardUID,
 		"max_per_minute", gc.MaxPerMinute,
 		"state_file", annotationStateFile(gc.StateFile, a.checkpointPath))

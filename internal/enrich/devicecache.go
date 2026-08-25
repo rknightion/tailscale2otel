@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
 )
 
 // DeviceMeta is the normalized subset of a Tailscale device used for enrichment.
@@ -115,6 +117,11 @@ const (
 	// an expired entry is never served regardless of when it is swept, and the
 	// memory ceiling is MaxUnverifiedEntries either way.
 	unverifiedPruneInterval = time.Minute
+	// MaxUnverifiedFieldBytes and MaxUnverifiedEntryBytes turn the count ceiling
+	// into a real memory ceiling for attacker-controlled flow-embedded identity.
+	MaxUnverifiedFieldBytes = 4096
+	MaxUnverifiedEntryBytes = 24 << 10
+	maxUnverifiedTags       = 64
 )
 
 // unverifiedEntry is one flow-claimed identity plus when it was last seen.
@@ -211,6 +218,18 @@ func (c *DeviceCache) Replace(metas []DeviceMeta) {
 	c.mu.Unlock()
 }
 
+func normalizeUnverifiedMeta(m *DeviceMeta) {
+	if len(m.Tags) > maxUnverifiedTags {
+		m.Tags = m.Tags[:maxUnverifiedTags]
+	}
+	values := []string{m.ID, m.NodeID, m.Name, m.Hostname, m.OS, m.OSVersion, m.User}
+	values = append(values, m.Tags...)
+	boundedtext.StringsBudget(values, MaxUnverifiedFieldBytes, MaxUnverifiedEntryBytes)
+	m.ID, m.NodeID, m.Name, m.Hostname = values[0], values[1], values[2], values[3]
+	m.OS, m.OSVersion, m.User = values[4], values[5], values[6]
+	m.Tags = append([]string(nil), values[7:]...)
+}
+
 // UpsertUnverified records device identity a node embedded in its own flow log
 // records, so flow enrichment still says something useful when the devices
 // collector is disabled, rate-limited, or has not yet completed its first poll.
@@ -245,6 +264,7 @@ func (c *DeviceCache) UpsertUnverified(metas []DeviceMeta) {
 	c.pruneUnverifiedLocked(now)
 	for i := range metas {
 		m := metas[i]
+		normalizeUnverifiedMeta(&m)
 		if m.NodeID == "" {
 			continue
 		}

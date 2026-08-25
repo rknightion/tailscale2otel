@@ -6,7 +6,10 @@
 // evicted and is added again counts as new.
 package dedup
 
-import "sync"
+import (
+	"crypto/sha256"
+	"sync"
+)
 
 // defaultCapacity is used when New is given a non-positive capacity.
 const defaultCapacity = 4096
@@ -16,12 +19,14 @@ const defaultCapacity = 4096
 type Set struct {
 	mu        sync.Mutex
 	capacity  int
-	seen      map[string]string
-	order     []string // insertion order, used to evict the oldest key first
+	seen      map[digest]digest
+	order     []digest // insertion order, used to evict the oldest key first
 	head      int      // index into order of the oldest live key
 	evictions uint64   // cumulative count of keys evicted for capacity
 	hits      uint64   // cumulative count of duplicate-key adds (key already present)
 }
+
+type digest [sha256.Size]byte
 
 // New returns a Set that remembers at most capacity keys. A capacity of zero or
 // less selects a sensible default.
@@ -31,8 +36,8 @@ func New(capacity int) *Set {
 	}
 	return &Set{
 		capacity: capacity,
-		seen:     make(map[string]string, capacity),
-		order:    make([]string, 0, capacity),
+		seen:     make(map[digest]digest, capacity),
+		order:    make([]digest, 0, capacity),
 	}
 }
 
@@ -63,19 +68,21 @@ const (
 // the same bounded FIFO retention and duplicate-hit accounting as Add. A
 // conflicting value never replaces the first observed value.
 func (s *Set) CompareAndAdd(key, value string) Result {
+	keyDigest := sha256.Sum256([]byte(key))
+	valueDigest := sha256.Sum256([]byte(value))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if prior, ok := s.seen[key]; ok {
+	if prior, ok := s.seen[keyDigest]; ok {
 		s.hits++
-		if prior == value {
+		if prior == valueDigest {
 			return ResultExact
 		}
 		return ResultConflict
 	}
 
-	s.seen[key] = value
-	s.order = append(s.order, key)
+	s.seen[keyDigest] = valueDigest
+	s.order = append(s.order, keyDigest)
 	s.evictLocked()
 	return ResultNew
 }
@@ -126,7 +133,7 @@ func (s *Set) evictLocked() {
 	for len(s.seen) > s.capacity {
 		oldest := s.order[s.head]
 		delete(s.seen, oldest)
-		s.order[s.head] = "" // release the string for GC
+		s.order[s.head] = digest{}
 		s.head++
 		s.evictions++
 	}

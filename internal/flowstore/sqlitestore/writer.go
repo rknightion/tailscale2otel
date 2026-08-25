@@ -29,6 +29,7 @@ func (s *Store) RecordResult(o flowstore.Observation) flowstore.Admission {
 	if s.opts.Redact != nil {
 		s.opts.Redact(&o)
 	}
+	o = flowstore.NormalizeObservationForRetention(o)
 
 	// Once Close has been called, the drain goroutine may already have made
 	// its final pass, so an item sent after that would sit in the queue

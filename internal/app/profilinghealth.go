@@ -314,7 +314,7 @@ func (a *App) profilingInfo() statusdata.ProfilingInfo {
 	info := statusdata.ProfilingInfo{
 		PprofEnabled:           a.cfg.Profiling.Pprof.Enabled,
 		PyroscopeEnabled:       p.Enabled,
-		PyroscopeServer:        redact.URL(p.ServerAddress),
+		PyroscopeServer:        redact.URLOrigin(p.ServerAddress),
 		PyroscopeHeaderNames:   topts.headerNames(),
 		PyroscopeTLSCustomCA:   topts.CAFile != "",
 		PyroscopeTLSClientCert: topts.CertFile != "" && topts.KeyFile != "",

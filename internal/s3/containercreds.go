@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // The ambient environment the container credential provider reads. AWS sets these
@@ -266,7 +268,7 @@ func containerAuthToken() (string, error) {
 		// Clean here is a no-op at runtime. Keep it: it is what gosec's taint
 		// analysis recognizes as the sanitizer for G703, and removing it turns the
 		// build red without changing behavior at all.
-		b, err := os.ReadFile(filepath.Clean(path))
+		b, err := safefile.ReadRegular(filepath.Clean(path), safefile.MaxSecretBytes, safefile.AllowSymlink)
 		if err != nil {
 			// The path is operator-supplied config, not a secret; the CONTENTS are,
 			// and os.ReadFile's error never carries them.
@@ -284,29 +286,6 @@ func containerAuthToken() (string, error) {
 		return "", fmt.Errorf("%s contains a control character; refusing to send it as a header value", source)
 	}
 	return token, nil
-}
-
-// redactContainerToken removes the authorization token from text that is about to
-// become an error string. The endpoint is only as trustworthy as whatever set the
-// variable pointing at it, and an agent that reflects the Authorization header back
-// in its error body would otherwise write the token straight into this process's
-// logs — an error is the one thing here a caller is expected to print.
-func redactContainerToken(s, token string) string {
-	if token == "" {
-		return s
-	}
-	return strings.ReplaceAll(s, token, "[redacted]")
-}
-
-// containerSnippet renders a response body for an error message: token scrubbed
-// FIRST, then trimmed to something that stays readable in a log line. The order
-// matters — truncating first could leave a partial token in place.
-func containerSnippet(body []byte, token string) string {
-	s := redactContainerToken(strings.TrimSpace(string(body)), token)
-	if len(s) > 300 {
-		s = s[:300] + "…"
-	}
-	return s
 }
 
 // containerStaticTTL is the lifetime given to a credential document that carries no
@@ -361,14 +340,15 @@ func containerCredentials(ctx context.Context, hc *http.Client, endpoint string,
 		return Credentials{}, fmt.Errorf("container credentials: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return Credentials{}, fmt.Errorf("container credentials: %s: %s",
-			resp.Status, containerSnippet(body, token))
+		return Credentials{}, fmt.Errorf("container credentials: %s", resp.Status)
 	}
 	// The document is identical in shape to the one IMDS serves.
 	var c imdsCredentials
 	if err := json.Unmarshal(body, &c); err != nil {
-		return Credentials{}, fmt.Errorf("decode container credentials: %w: %s",
-			err, containerSnippet(body, token))
+		// Decoder errors can quote attacker-controlled typed values (notably an
+		// invalid Expiration passed through time.ParseError). Keep the operational
+		// error closed rather than wrapping remote response material.
+		return Credentials{}, errors.New("decode container credentials: invalid credential document")
 	}
 	if c.AccessKeyID == "" {
 		return Credentials{}, errors.New("container credentials endpoint returned no credentials")

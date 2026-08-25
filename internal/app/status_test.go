@@ -180,7 +180,7 @@ func TestBuildStatus_RedactsOTLPEndpointCredentials(t *testing.T) {
 	if strings.Contains(got, statusTestSecret) {
 		t.Fatalf("Telemetry.Endpoint = %q leaks the credential", got)
 	}
-	if want := redact.URL(cfg.OTLP.Endpoint); got != want {
+	if want := redact.URLOrigin(cfg.OTLP.Endpoint); got != want {
 		t.Errorf("Telemetry.Endpoint = %q, want %q", got, want)
 	}
 	if !strings.Contains(got, "otlp.example.com") {
@@ -198,7 +198,7 @@ func TestBuildStatus_RedactsPyroscopeServerAddress(t *testing.T) {
 	if strings.Contains(got, statusTestSecret) {
 		t.Fatalf("Profiling.PyroscopeServer = %q leaks the credential", got)
 	}
-	if want := redact.URL(cfg.Profiling.Pyroscope.ServerAddress); got != want {
+	if want := redact.URLOrigin(cfg.Profiling.Pyroscope.ServerAddress); got != want {
 		t.Errorf("Profiling.PyroscopeServer = %q, want %q", got, want)
 	}
 }
@@ -218,7 +218,7 @@ func TestBuildStatus_RedactsNodeMetricsTargetURLs(t *testing.T) {
 	if strings.Contains(got, statusTestSecret) {
 		t.Fatalf("NodeDiscovery.Targets[0].URL = %q leaks the credential", got)
 	}
-	if want := redact.URL(raw); got != want {
+	if want := redact.URLOrigin(raw); got != want {
 		t.Errorf("NodeDiscovery.Targets[0].URL = %q, want %q", got, want)
 	}
 	if nd.Targets[0].Instance != "node-a" {

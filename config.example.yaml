@@ -32,7 +32,7 @@ provider: tailscale                   # control-plane backend: tailscale (defaul
 # run; the Tailscale-only collectors (flowlogs, auditlogs, services, webhooks,
 # contacts, posture_integrations, log_stream, oauth_apps, settings, dns) auto-disable.
 headscale:
-  url: ""                             # Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)
+  url: ""                             # Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)
   api_key: ""                         # Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY)
   api_key_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   http:                               # HTTP client used for all Headscale API calls
@@ -615,9 +615,9 @@ prometheus:
     token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
     allow_unauthenticated: false      # acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this
-  max_requests_in_flight: 0           # cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited
-  timeout: 0s                         # give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout
-  coalesce_gather: false              # serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness)
+  max_requests_in_flight: 4           # cap concurrent /metrics gathers (excess gets 503); must be positive while Prometheus is enabled
+  timeout: 8s                         # give up on a single /metrics gather after this long (503); keep below the scraper's own timeout
+  coalesce_gather: true               # serve overlapping scrapes from the same in-flight gather (bounds duplicate work; costs slight staleness)
   tls:
     cert_file: ""                     # serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
     key_file: ""                      # HTTPS key for prometheus.tls.cert_file

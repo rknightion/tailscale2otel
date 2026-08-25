@@ -29,6 +29,10 @@ func metricsApp(t *testing.T, listen, token string, ack bool) *App {
 }
 
 func getMetrics(t *testing.T, a *App, host, authHeader string) *httptest.ResponseRecorder {
+	return getMetricsWithHeaders(t, a, host, authHeader, nil)
+}
+
+func getMetricsWithHeaders(t *testing.T, a *App, host, authHeader string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	h := a.requireMetricsAuth(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,9 +43,41 @@ func getMetrics(t *testing.T, a *App, host, authHeader string) *httptest.Respons
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	return rec
+}
+
+func TestMetricsLoopbackEscapeHatchRejectsBrowserRebinding(t *testing.T) {
+	a := metricsApp(t, "127.0.0.1:2112", "", false)
+	tests := []struct {
+		name    string
+		host    string
+		headers map[string]string
+	}{
+		{name: "foreign host", host: "attacker.example:2112"},
+		{name: "foreign origin", host: "127.0.0.1:2112", headers: map[string]string{"Origin": "https://attacker.example"}},
+		{name: "cross site fetch", host: "127.0.0.1:2112", headers: map[string]string{"Sec-Fetch-Site": "cross-site"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if rec := getMetricsWithHeaders(t, a, tc.host, "", tc.headers); rec.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", rec.Code)
+			}
+		})
+	}
+}
+
+func TestMetricsExplicitOpenAndTokenModesDoNotRequireLoopbackHost(t *testing.T) {
+	if rec := getMetrics(t, metricsApp(t, "0.0.0.0:2112", "", true), "metrics.example.internal:2112", ""); rec.Code != http.StatusOK {
+		t.Fatalf("explicit unauthenticated status = %d, want 200", rec.Code)
+	}
+	if rec := getMetrics(t, metricsApp(t, "0.0.0.0:2112", "secret", false), "metrics.example.internal:2112", "Bearer secret"); rec.Code != http.StatusOK {
+		t.Fatalf("token-authenticated status = %d, want 200", rec.Code)
+	}
 }
 
 func TestMetricsFailsClosedOnNetworkBindWithNoToken(t *testing.T) {

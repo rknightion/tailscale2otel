@@ -26,6 +26,8 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // Exporter construction for the three OTLP signals. Split out of provider.go so
@@ -254,7 +256,7 @@ func tlsConfig(opts Options) (*tls.Config, error) {
 	}
 	cfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: opts.InsecureSkipVerify} //nolint:gosec // G402: opt-in skip-verify knob (otlp.tls.insecure_skip_verify), default false
 	if opts.CAFile != "" {
-		pem, err := os.ReadFile(opts.CAFile)
+		pem, err := safefile.ReadRegular(opts.CAFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 		if err != nil {
 			return nil, fmt.Errorf("read CA file: %w", err)
 		}
@@ -265,7 +267,7 @@ func tlsConfig(opts Options) (*tls.Config, error) {
 		cfg.RootCAs = pool
 	}
 	if opts.CertFile != "" && opts.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(opts.CertFile, opts.KeyFile)
+		cert, err := safefile.LoadX509KeyPair(opts.CertFile, opts.KeyFile, safefile.MaxPEMBytes)
 		if err != nil {
 			return nil, fmt.Errorf("load client cert/key: %w", err)
 		}

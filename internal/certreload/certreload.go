@@ -20,11 +20,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -139,12 +139,12 @@ func (r *Reloader) checkAndReload(now time.Time) {
 // swapping it in. Any failure along the way calls recordFailure and returns
 // with the previous r.cert (if any) left untouched.
 func (r *Reloader) reload(now time.Time) {
-	certStat, err := os.Stat(r.certFile)
+	certPEM, certStat, err := safefile.ReadRegularInfo(r.certFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 	if err != nil {
 		r.recordFailure(now, err)
 		return
 	}
-	keyStat, err := os.Stat(r.keyFile)
+	keyPEM, keyStat, err := safefile.ReadRegularInfo(r.keyFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 	if err != nil {
 		r.recordFailure(now, err)
 		return
@@ -163,7 +163,7 @@ func (r *Reloader) reload(now time.Time) {
 		return
 	}
 
-	cert, err := tls.LoadX509KeyPair(r.certFile, r.keyFile)
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		r.recordFailure(now, err)
 		return

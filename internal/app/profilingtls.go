@@ -5,12 +5,12 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"sort"
 	"strings"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // pyroscopeTransportOptions is the TLS + extra-header material for the Pyroscope
@@ -132,7 +132,7 @@ func (o pyroscopeTransportOptions) tlsConfig() (*tls.Config, error) {
 		InsecureSkipVerify: o.InsecureSkipVerify,
 	}
 	if o.CAFile != "" {
-		pem, err := os.ReadFile(o.CAFile)
+		pem, err := safefile.ReadRegular(o.CAFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 		if err != nil {
 			return nil, fmt.Errorf("read pyroscope tls ca_file: %w", err)
 		}
@@ -146,7 +146,7 @@ func (o pyroscopeTransportOptions) tlsConfig() (*tls.Config, error) {
 		if o.CertFile == "" || o.KeyFile == "" {
 			return nil, fmt.Errorf("pyroscope tls cert_file and key_file must be set together")
 		}
-		pair, err := tls.LoadX509KeyPair(o.CertFile, o.KeyFile)
+		pair, err := safefile.LoadX509KeyPair(o.CertFile, o.KeyFile, safefile.MaxPEMBytes)
 		if err != nil {
 			return nil, fmt.Errorf("load pyroscope tls client keypair: %w", err)
 		}

@@ -26,6 +26,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
 )
 
 // Resolution is the fixed bucket width. Everything is aggregated to the minute
@@ -88,6 +90,11 @@ const (
 // what a flood on the stream ingress would grow, and a time bound would not
 // bound it. At roughly 200 bytes per entry this is well under a megabyte.
 const MaxRecent = 2000
+
+const (
+	MaxRetainedFieldBytes       = 4096
+	MaxRetainedObservationBytes = 32 << 10
+)
 
 // Profile names a bounded capacity/memory policy for a Memory store: how many
 // entries each per-bucket dimension may hold, and how large the raw
@@ -362,6 +369,23 @@ type Observation struct {
 	// DERPRegion is the relay's region ID, set only when Path is PathDERP.
 	DERPRegion string
 	Counts     Counts
+}
+
+// NormalizeObservationForRetention returns the representation safe for any
+// retained flow store. Both the memory and SQLite backends call this shared
+// boundary so a sibling backend cannot retain larger attacker-controlled text.
+func NormalizeObservationForRetention(o Observation) Observation {
+	values := []string{o.TrafficType, o.Transport, o.SrcAddr, o.DstAddr, o.SrcNode, o.DstNode,
+		o.DstPort, o.DstService, o.SrcUser, o.DstUser, o.SrcTags, o.DstTags, o.SrcOS, o.DstOS,
+		o.ReporterNodeID, o.ReporterTrust, o.ReporterConsistency, o.Verdict, o.PolicyVersion, o.Path, o.DERPRegion}
+	boundedtext.StringsBudget(values, MaxRetainedFieldBytes, MaxRetainedObservationBytes)
+	o.TrafficType, o.Transport, o.SrcAddr, o.DstAddr = values[0], values[1], values[2], values[3]
+	o.SrcNode, o.DstNode, o.DstPort, o.DstService = values[4], values[5], values[6], values[7]
+	o.SrcUser, o.DstUser, o.SrcTags, o.DstTags = values[8], values[9], values[10], values[11]
+	o.SrcOS, o.DstOS = values[12], values[13]
+	o.ReporterNodeID, o.ReporterTrust, o.ReporterConsistency = values[14], values[15], values[16]
+	o.Verdict, o.PolicyVersion, o.Path, o.DERPRegion = values[17], values[18], values[19], values[20]
+	return o
 }
 
 // The verdict vocabulary, which is also the JSON API's. It mirrors the
@@ -1121,6 +1145,7 @@ func (m *Memory) RecordResult(o Observation) Admission {
 			return AdmissionFuture
 		}
 	}
+	o = NormalizeObservationForRetention(o)
 	key := bucketKey(o.Time)
 
 	m.mu.Lock()

@@ -5,15 +5,16 @@ import (
 	"crypto/subtle"
 	"crypto/tls"
 	"io"
-	"net"
+	"math"
 	"net/http"
 	"net/http/pprof"
-	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
 )
 
@@ -43,11 +44,65 @@ func registerProbes(mux *http.ServeMux, ready http.HandlerFunc) {
 // the admin auth gate — pprof can expose in-memory secrets, so config.Validate
 // requires admin.auth.token whenever pprof is enabled.
 func registerPprof(mux *http.ServeMux, wrap func(http.HandlerFunc) http.HandlerFunc) {
-	mux.HandleFunc("/debug/pprof/", wrap(pprof.Index))
-	mux.HandleFunc("/debug/pprof/cmdline", wrap(pprof.Cmdline))
-	mux.HandleFunc("/debug/pprof/profile", wrap(pprof.Profile))
-	mux.HandleFunc("/debug/pprof/symbol", wrap(pprof.Symbol))
-	mux.HandleFunc("/debug/pprof/trace", wrap(pprof.Trace))
+	mux.HandleFunc("/debug/pprof/", wrap(pprofGuard(pprof.Index)))
+	mux.HandleFunc("/debug/pprof/cmdline", wrap(pprofGuard(pprof.Cmdline)))
+	mux.HandleFunc("/debug/pprof/profile", wrap(pprofGuard(pprof.Profile)))
+	mux.HandleFunc("/debug/pprof/symbol", wrap(pprofGuard(pprof.Symbol)))
+	mux.HandleFunc("/debug/pprof/trace", wrap(pprofGuard(pprof.Trace)))
+}
+
+const (
+	maxPprofDurationSeconds = 60
+	maxPprofSymbolBodyBytes = 64 << 10
+)
+
+// pprofGuard bounds the work accepted by the standard-library handlers. The
+// stdlib deliberately extends write deadlines for requested profile durations,
+// so the server timeout alone is not a duration bound.
+func pprofGuard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !httpguard.SameOrigin(r) {
+			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			return
+		}
+		isSymbol := r.URL.Path == "/debug/pprof/symbol"
+		if r.Method != http.MethodGet && r.Method != http.MethodHead && (!isSymbol || r.Method != http.MethodPost) {
+			w.Header().Set("Allow", "GET, HEAD")
+			if isSymbol {
+				w.Header().Set("Allow", "GET, HEAD, POST")
+			}
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		if values, ok := r.URL.Query()["seconds"]; ok {
+			if len(values) != 1 {
+				http.Error(w, "invalid pprof duration", http.StatusBadRequest)
+				return
+			}
+			seconds, err := strconv.ParseFloat(values[0], 64)
+			if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds < 0 || seconds > maxPprofDurationSeconds {
+				http.Error(w, "invalid pprof duration", http.StatusBadRequest)
+				return
+			}
+		}
+		if isSymbol && r.Method == http.MethodPost {
+			if r.ContentLength > maxPprofSymbolBodyBytes {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+				return
+			}
+			body, err := io.ReadAll(io.LimitReader(r.Body, maxPprofSymbolBodyBytes+1))
+			if err != nil {
+				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			}
+			if len(body) > maxPprofSymbolBodyBytes {
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
+				return
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+		}
+		next(w, r)
+	}
 }
 
 // adminAuthorized reports whether r presents the configured admin token, either
@@ -92,20 +147,7 @@ const (
 // A name other than "localhost" is never resolved: a DNS answer is not a
 // security boundary, and resolving one is exactly the attack.
 func loopbackHostHeader(host string) bool {
-	if host == "" {
-		return false
-	}
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
-	// A rooted FQDN ("localhost.") is the same name.
-	host = strings.TrimSuffix(host, ".")
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip, err := netip.ParseAddr(host)
-	return err == nil && ip.IsLoopback()
+	return httpguard.IsLoopbackHost(host)
 }
 
 // requireLoopbackCaller gates the tokenless-loopback escape hatch on the

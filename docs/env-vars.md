@@ -34,7 +34,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_LOG_LEVEL` | `info` | exporter's own log verbosity: debug \| info \| warn \| error |
 | `TS2OTEL_LOG_FORMAT` | `text` | operational log encoding: text \| json (json = one record per line) |
 | `TS2OTEL_PROVIDER` | `tailscale` | control-plane backend: tailscale (default) \| headscale |
-| `TS2OTEL_HEADSCALE__URL` | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
+| `TS2OTEL_HEADSCALE__URL` | `""` | Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
 | `TS2OTEL_HEADSCALE__API_KEY` | `""` | Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY) |
 | `TS2OTEL_HEADSCALE__API_KEY_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_HEADSCALE__HTTP__TIMEOUT` | `30s` | per-request timeout (the ONLY http knob applied in v1) |
@@ -406,9 +406,9 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED` | `false` | acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this |
-| `TS2OTEL_PROMETHEUS__MAX_REQUESTS_IN_FLIGHT` | `0` | cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited |
-| `TS2OTEL_PROMETHEUS__TIMEOUT` | `0s` | give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout |
-| `TS2OTEL_PROMETHEUS__COALESCE_GATHER` | `false` | serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness) |
+| `TS2OTEL_PROMETHEUS__MAX_REQUESTS_IN_FLIGHT` | `4` | cap concurrent /metrics gathers (excess gets 503); must be positive while Prometheus is enabled |
+| `TS2OTEL_PROMETHEUS__TIMEOUT` | `8s` | give up on a single /metrics gather after this long (503); keep below the scraper's own timeout |
+| `TS2OTEL_PROMETHEUS__COALESCE_GATHER` | `true` | serve overlapping scrapes from the same in-flight gather (bounds duplicate work; costs slight staleness) |
 | `TS2OTEL_PROMETHEUS__TLS__CERT_FILE` | `""` | serve the Prometheus /metrics listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither) |
 | `TS2OTEL_PROMETHEUS__TLS__KEY_FILE` | `""` | HTTPS key for prometheus.tls.cert_file |
 | `TS2OTEL_PROMETHEUS__TLS__CLIENT_CA_FILE` | `""` | require scrapers to present a client certificate signed by this CA (mTLS); needs cert_file/key_file, composes with auth.token |

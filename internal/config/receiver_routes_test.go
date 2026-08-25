@@ -66,6 +66,10 @@ func TestValidateReceiverRoutes(t *testing.T) {
 			c.Webhook.Path = "/legacy"
 			c.Webhook.Routes = []config.WebhookRoute{{Tailnet: "alpha.example.com", Secret: "a"}}
 		}, "webhook.path"},
+		{"webhook routes cannot mix tokenless and signed auth", func(c *config.Config) {
+			c.Webhook.Enabled = true
+			c.Webhook.Routes = []config.WebhookRoute{{Tailnet: "alpha.example.com"}, {Tailnet: "beta.example.com", Secret: "b"}}
+		}, "mix tokenless and signed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := multiReceiverConfig()

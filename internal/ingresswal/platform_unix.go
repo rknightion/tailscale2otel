@@ -103,6 +103,27 @@ func platformModeAt(directory *os.File, name string) (os.FileMode, error) {
 	return mode, nil
 }
 
+func platformOwnerUID(file *os.File) (uint32, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstat(int(file.Fd()), &stat); err != nil {
+		return 0, err
+	}
+	return stat.Uid, nil
+}
+
+func platformOwnerUIDAt(directory *os.File, name string) (uint32, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(int(directory.Fd()), name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return 0, &os.PathError{Op: "fstatat", Path: name, Err: err}
+	}
+	return stat.Uid, nil
+}
+
+func platformEffectiveUID() uint32 {
+	// Unix exposes uid_t as uint32; os.Geteuid widens it to int for the Go API.
+	return uint32(os.Geteuid()) //nolint:gosec // bounded by the platform uid_t domain
+}
+
 func platformLockExclusive(file *os.File) error {
 	return unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 }

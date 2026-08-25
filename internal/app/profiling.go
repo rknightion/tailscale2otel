@@ -14,6 +14,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -69,15 +70,10 @@ var reservedPyroscopeTags = []string{"service_version", "service_instance_id", p
 // is unit-testable from a config value; the live logger is attached by
 // startProfiling.
 //
-// It is no longer side-effect free: it installs the health/TLS upload client
-// (HTTPClient), which records into the process-wide profilingHealthState. That is
-// deliberate — attaching it at the mapping means upload health cannot be lost by a
-// caller forgetting to opt in, and there is exactly one profiler per process.
+// Transport construction is deliberately separate in
+// pyroscopeConfigWithUploadClient so its TLS failure can be propagated rather
+// than silently leaving HTTPClient nil.
 func pyroscopeConfig(cfg *config.Config, version string, opts ...profilingOption) pyroscope.Config {
-	var po profilingOptions
-	for _, o := range opts {
-		o(&po)
-	}
 	p := cfg.Profiling.Pyroscope
 	tags := map[string]string{
 		"service_version":     version,
@@ -113,15 +109,33 @@ func pyroscopeConfig(cfg *config.Config, version string, opts ...profilingOption
 	if kept, _ := sanitizePyroscopeHeaders(topts.Headers, topts.BasicAuthSet, topts.TenantSet); len(kept) > 0 {
 		pc.HTTPHeaders = kept
 	}
-	// A TLS material failure is reported by startProfiling rather than here: the
-	// mapping has no logger, and a profiler that cannot upload is non-fatal.
-	if client, err := newProfilingUploadClient(topts, profilingHealthState, po.emitter, po.credReload); err == nil {
-		pc.HTTPClient = client
-	}
 	if d := p.UploadRate.D(); d > 0 {
 		pc.UploadRate = d
 	}
 	return pc
+}
+
+// pyroscopeConfigWithUploadClient binds the mapped SDK config to the exact TLS
+// and credential policy the operator requested. Construction failure is
+// returned; callers must never leave HTTPClient nil and let the SDK fall back
+// to system trust.
+func pyroscopeConfigWithUploadClient(cfg *config.Config, version string, opts ...profilingOption) (pyroscope.Config, error) {
+	var po profilingOptions
+	for _, o := range opts {
+		o(&po)
+	}
+	pc := pyroscopeConfig(cfg, version)
+	client, err := newProfilingUploadClient(
+		pyroscopeTransportOptionsFromConfig(cfg.Profiling.Pyroscope),
+		profilingHealthState,
+		po.emitter,
+		po.credReload,
+	)
+	if err != nil {
+		return pyroscope.Config{}, fmt.Errorf("construct pyroscope TLS upload client: %w", err)
+	}
+	pc.HTTPClient = client
+	return pc, nil
 }
 
 // profilingOptions are the live dependencies startProfiling threads into the
@@ -182,14 +196,6 @@ func startProfiling(cfg *config.Config, version string, logger *slog.Logger, opt
 		logger = slog.Default()
 	}
 	topts := pyroscopeTransportOptionsFromConfig(prof.Pyroscope)
-	// Surface unusable TLS material and dropped headers HERE rather than in the
-	// mapping, which has no logger. Neither is fatal: without a usable client the
-	// SDK falls back to its own (system roots, no client certificate), which is
-	// the right failure mode for a diagnostic side-channel — but an operator who
-	// configured a custom CA must be told it was not applied.
-	if _, err := topts.tlsConfig(); err != nil {
-		logger.Error("pyroscope TLS material unusable; uploading with default TLS settings", "error", err)
-	}
 	if _, dropped := sanitizePyroscopeHeaders(topts.Headers, topts.BasicAuthSet, topts.TenantSet); len(dropped) > 0 {
 		// Names only. A dropped header's VALUE is exactly the kind of credential
 		// this whole path is careful with.
@@ -197,12 +203,22 @@ func startProfiling(cfg *config.Config, version string, logger *slog.Logger, opt
 			"headers", strings.Join(dropped, ","))
 	}
 
-	pc := pyroscopeConfig(cfg, version, opts...)
+	pc, err := pyroscopeConfigWithUploadClient(cfg, version, opts...)
+	if err != nil {
+		return nil, err
+	}
 	// The SDK's logger formats server responses and its own configuration into
 	// messages with no notion of which parts are credentials, so wrap it in the
 	// secret redactor. The upload client already strips response BODIES before the
 	// SDK can see them; this covers the extra-header values, which only we know.
-	pc.Logger = pyroscopeLogger{l: logger, redact: redactSecretsFunc(topts.secretValues())}
+	secretRedact := redactSecretsFunc(topts.secretValues())
+	rawServer := strings.TrimSpace(prof.Pyroscope.ServerAddress)
+	pc.Logger = pyroscopeLogger{l: logger, redact: func(message string) string {
+		if rawServer != "" {
+			message = strings.ReplaceAll(message, rawServer, redact.URLOrigin(rawServer))
+		}
+		return secretRedact(message)
+	}}
 	return pyroscope.Start(pc)
 }
 

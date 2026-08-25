@@ -55,6 +55,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
@@ -106,6 +107,11 @@ const (
 	// unauthenticated memory use is bounded by MaxConcurrentRequests *
 	// MaxBodyBytes rather than by how many senders show up.
 	defaultMaxConcurrentRequests = 4
+	// maxEventsPerBatch bounds per-event allocation/canonicalization work after
+	// the byte cap. Tailscale deliveries are normally only a handful of events;
+	// 1,000 leaves ample compatibility headroom while preventing arrays of tiny
+	// objects/nulls from amplifying one accepted body into unbounded work.
+	maxEventsPerBatch = 1000
 
 	defaultDeliveryDedupTTL      = 25 * time.Hour
 	defaultDeliveryDedupCapacity = 65536
@@ -146,6 +152,11 @@ const (
 	// overflowType is the single bucket attacker/novel types collapse into once the
 	// distinct-type cap is reached.
 	overflowType = "other"
+)
+
+var (
+	errTooManyEvents     = errors.New("webhook batch exceeds event limit")
+	errInvalidRouteBatch = errors.New("webhook batch cannot be routed")
 )
 
 // admissionWait is how long a request will wait for an admission slot before
@@ -283,20 +294,36 @@ type Router struct {
 	routes map[string]*Server
 	base   *Server
 	admit  chan struct{}
+	// tokenless is true when any route relies on loopback reachability rather
+	// than a signing secret. Routing requires reading the body, so the shared
+	// listener must apply the browser/Host gate before that read.
+	tokenless bool
+	// invalidAuthMix prevents a shared listener from weakening a tokenless
+	// route's pre-body browser gate or applying that gate to a signed route.
+	// Config validation rejects this shape; the Router repeats the check for
+	// programmatic callers.
+	invalidAuthMix bool
 }
 
 // NewRouter composes per-tailnet webhook servers sharing one listener/path.
 func NewRouter(routes []Route) *Router {
 	r := &Router{routes: make(map[string]*Server, len(routes))}
+	hasSigned := false
 	for _, route := range routes {
 		if route.Tailnet == "" || route.Server == nil {
 			continue
 		}
 		r.routes[route.Tailnet] = route.Server
+		if route.Server.opts.Secret == "" {
+			r.tokenless = true
+		} else {
+			hasSigned = true
+		}
 		if r.base == nil {
 			r.base = route.Server
 		}
 	}
+	r.invalidAuthMix = r.tokenless && hasSigned
 	if r.base != nil && r.base.admit != nil {
 		r.admit = make(chan struct{}, cap(r.base.admit))
 	}
@@ -320,6 +347,17 @@ func (r *Router) Handler() http.Handler {
 		if r.base == nil {
 			http.Error(w, "receiver unavailable", http.StatusServiceUnavailable)
 			return
+		}
+		if r.invalidAuthMix {
+			http.Error(w, "webhook router cannot mix tokenless and signed routes", http.StatusServiceUnavailable)
+			return
+		}
+		if r.tokenless {
+			if reason := httpguard.TokenlessReceiverReason(req); reason != "" {
+				r.base.rejectStatus(w, http.StatusForbidden, "cross_site",
+					"webhook receiver rejected a browser-shaped tokenless request", errors.New(reason))
+				return
+			}
 		}
 		release, admitted := r.acquire(req.Context())
 		if !admitted {
@@ -346,9 +384,14 @@ func (r *Router) Handler() http.Handler {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
-		tailnet, ok := webhookTailnet(body)
+		tailnet, err := webhookTailnet(body)
+		if errors.Is(err, errTooManyEvents) {
+			r.base.rejectStatus(w, http.StatusRequestEntityTooLarge, "too_many_events",
+				"webhook batch exceeds event limit", err)
+			return
+		}
 		s, found := r.routes[tailnet]
-		if !ok || !found {
+		if err != nil || !found {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
@@ -391,6 +434,9 @@ func (r *Router) Run(ctx context.Context) error {
 	if r.base == nil {
 		return errors.New("webhook: router has no routes")
 	}
+	if r.invalidAuthMix {
+		return errors.New("webhook: router cannot mix tokenless and signed routes on one listener")
+	}
 	srv := &http.Server{
 		Addr:              r.base.opts.Listen,
 		Handler:           r.Handler(),
@@ -424,28 +470,49 @@ func (r *Router) Run(ctx context.Context) error {
 }
 
 // webhookTailnet performs the minimum parsing required for safe attribution.
-func webhookTailnet(body []byte) (string, bool) {
-	var raw []json.RawMessage
-	if err := json.Unmarshal(body, &raw); err != nil || len(raw) == 0 {
-		return "", false
+func webhookTailnet(body []byte) (string, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	tok, err := dec.Token()
+	if err != nil || tok != json.Delim('[') {
+		return "", errInvalidRouteBatch
 	}
 	var tailnet string
-	for _, event := range raw {
+	count := 0
+	for dec.More() {
+		if count >= maxEventsPerBatch {
+			return "", errTooManyEvents
+		}
+		count++
+		var event json.RawMessage
+		if err := dec.Decode(&event); err != nil || bytes.Equal(bytes.TrimSpace(event), []byte("null")) {
+			return "", errInvalidRouteBatch
+		}
 		var identity struct {
 			Tailnet string `json:"tailnet"`
+			Type    string `json:"type"`
 		}
-		if err := json.Unmarshal(event, &identity); err != nil || strings.TrimSpace(identity.Tailnet) == "" {
-			return "", false
+		if err := json.Unmarshal(event, &identity); err != nil || strings.TrimSpace(identity.Tailnet) == "" || strings.TrimSpace(identity.Type) == "" {
+			return "", errInvalidRouteBatch
 		}
 		if tailnet == "" {
 			tailnet = identity.Tailnet
 			continue
 		}
 		if tailnet != identity.Tailnet {
-			return "", false
+			return "", errInvalidRouteBatch
 		}
 	}
-	return tailnet, true
+	if count == 0 {
+		return "", errInvalidRouteBatch
+	}
+	if tok, err = dec.Token(); err != nil || tok != json.Delim(']') {
+		return "", errInvalidRouteBatch
+	}
+	var extra any
+	if !errors.Is(dec.Decode(&extra), io.EOF) {
+		return "", errInvalidRouteBatch
+	}
+	return tailnet, nil
 }
 
 // Option configures a Server at construction time.
@@ -658,6 +725,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			"webhook receiver refuses unauthenticated requests on a network-reachable bind", nil)
 		return
 	}
+	if s.opts.Secret == "" {
+		if reason := httpguard.TokenlessReceiverReason(r); reason != "" {
+			span.SetStatus(codes.Error, "cross-site request")
+			s.rejectStatus(w, http.StatusForbidden, "cross_site",
+				"webhook receiver rejected a browser-shaped tokenless request", errors.New(reason))
+			return
+		}
+	}
 	defer r.Body.Close()
 
 	// Aggregate admission control (GHSA-9547-8jpc-48h6): the per-request byte
@@ -700,6 +775,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	batch, err := decodeAcceptedBatch(body)
 	if err != nil {
+		if errors.Is(err, errTooManyEvents) {
+			span.SetStatus(codes.Error, "webhook batch exceeds event limit")
+			s.rejectStatus(w, http.StatusRequestEntityTooLarge, "too_many_events",
+				"webhook batch exceeds event limit", err)
+			return
+		}
 		span.SetStatus(codes.Error, "failed to parse webhook body")
 		s.reject(w, "invalid_body", "failed to parse webhook body", err)
 		return
@@ -740,7 +821,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // this route. It deliberately does not verify transport authentication,
 // timestamp tolerance, or route identity: those are request-time concerns.
 func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.Time) error {
-	batch, err := decodeAcceptedBatch(body)
+	batch, err := decodeAcceptedBatchContext(ctx, body)
 	if err != nil {
 		return fmt.Errorf("webhook apply durable body: %w", err)
 	}
@@ -752,18 +833,42 @@ func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.
 }
 
 func decodeAcceptedBatch(body []byte) (acceptedBatch, error) {
-	var rawEvents []json.RawMessage
-	if err := json.Unmarshal(body, &rawEvents); err != nil {
+	return decodeAcceptedBatchContext(context.Background(), body)
+}
+
+func decodeAcceptedBatchContext(ctx context.Context, body []byte) (acceptedBatch, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	tok, err := dec.Token()
+	if err != nil {
 		return acceptedBatch{}, err
 	}
-	batch := acceptedBatch{
-		events:  make([]event, 0, len(rawEvents)),
-		digests: make([]string, 0, len(rawEvents)),
+	if tok != json.Delim('[') {
+		return acceptedBatch{}, errors.New("webhook body must be a JSON array")
 	}
-	for _, raw := range rawEvents {
+	batch := acceptedBatch{
+		events:  make([]event, 0, min(maxEventsPerBatch, 16)),
+		digests: make([]string, 0, min(maxEventsPerBatch, 16)),
+	}
+	for dec.More() {
+		if err := ctx.Err(); err != nil {
+			return acceptedBatch{}, err
+		}
+		if len(batch.events) >= maxEventsPerBatch {
+			return acceptedBatch{}, errTooManyEvents
+		}
+		var raw json.RawMessage
+		if err := dec.Decode(&raw); err != nil {
+			return acceptedBatch{}, err
+		}
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return acceptedBatch{}, errors.New("webhook event must be an object")
+		}
 		ev, err := decodeEvent(raw)
 		if err != nil {
 			return acceptedBatch{}, err
+		}
+		if strings.TrimSpace(ev.Type) == "" || strings.TrimSpace(ev.Tailnet) == "" {
+			return acceptedBatch{}, errors.New("webhook event requires non-empty type and tailnet")
 		}
 		digest, err := canonicalDigest(raw)
 		if err != nil {
@@ -771,6 +876,22 @@ func decodeAcceptedBatch(body []byte) (acceptedBatch, error) {
 		}
 		batch.events = append(batch.events, ev)
 		batch.digests = append(batch.digests, digest)
+	}
+	if len(batch.events) == 0 {
+		return acceptedBatch{}, errors.New("webhook batch must contain at least one event")
+	}
+	if tok, err = dec.Token(); err != nil || tok != json.Delim(']') {
+		if err != nil {
+			return acceptedBatch{}, err
+		}
+		return acceptedBatch{}, errors.New("webhook body has invalid array terminator")
+	}
+	var extra any
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return acceptedBatch{}, errors.New("webhook body contains trailing JSON")
+		}
+		return acceptedBatch{}, err
 	}
 	return batch, nil
 }

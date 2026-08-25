@@ -636,7 +636,8 @@ config: # @schema additionalProperties:false
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a
   # Bearer token — set it via the secret TS2OTEL_HEADSCALE__API_KEY (above), not here.
   headscale: # @schema additionalProperties:false
-    # -- Headscale control-plane base URL, e.g. https://headscale.example.org.
+    # -- Headscale origin only (scheme + host, optional port; no path, credentials, query, or
+    # fragment), e.g. https://headscale.example.org.
     url: ""
     # -- Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value.
     api_key: ""
@@ -1698,14 +1699,14 @@ config: # @schema additionalProperties:false
       # identities. A loopback bind never needs this. Ignored when token is set.
       allow_unauthenticated: false
     # -- Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in
-    # the registry, so N simultaneous slow scrapes cost N times that walk. 0 = unlimited.
-    max_requests_in_flight: 0
-    # -- Give up on a single /metrics gather after this long, answering 503. 0 = no timeout. Keep
-    # it below the scraper's own timeout so this process, not the scraper, decides.
-    timeout: 0s
-    # -- Serve scrapes that arrive during an in-flight gather from that same gather instead of
-    # starting another. Useful for an HA scraper pair hitting one instance; costs slight staleness.
-    coalesce_gather: false
+    # the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive.
+    max_requests_in_flight: 4
+    # -- Give up on a single /metrics gather after this long, answering 503. Keep it below the
+    # scraper's own timeout so this process, not the scraper, decides.
+    timeout: 8s
+    # -- Serve overlapping scrapes from the same in-flight gather instead of duplicating collection
+    # work. This costs slight staleness.
+    coalesce_gather: true
     tls: # @schema additionalProperties:false
       # -- HTTPS certificate for the Prometheus endpoint. Set together with key_file
       # (both-or-neither); leaving both empty serves plain HTTP.

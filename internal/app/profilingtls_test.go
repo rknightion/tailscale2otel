@@ -621,7 +621,7 @@ func TestPyroscopeConfig_TLSFromConfigReachesTheClient(t *testing.T) {
 	cfg.Profiling.Pyroscope.ServerAddress = srv.URL
 	cfg.Profiling.Pyroscope.TLS.CAFile = pki.caPath
 
-	pc := pyroscopeConfig(cfg, "v1")
+	pc := mustPyroscopeConfigWithUploadClient(t, cfg, "v1")
 	client, ok := pc.HTTPClient.(*profilingUploadClient)
 	if !ok {
 		t.Fatalf("HTTPClient is %T, want *profilingUploadClient", pc.HTTPClient)

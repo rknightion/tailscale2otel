@@ -32,6 +32,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // Sources lists the files to watch and how to interpret them. A zero value
@@ -355,14 +357,10 @@ func (r *Reloader) statChanges() (bool, error) {
 // or an error is returned and nothing is touched.
 func (r *Reloader) buildSnapshot() (*snapshot, map[string]fileState, error) {
 	states := make(map[string]fileState, len(r.sources.files()))
-	readHashed := func(path string) ([]byte, error) {
-		data, err := os.ReadFile(path)
+	readHashed := func(path string, limit int64) ([]byte, error) {
+		data, fi, err := safefile.ReadRegularInfo(path, limit, safefile.AllowSymlink)
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", path, err)
-		}
-		fi, err := os.Stat(path)
-		if err != nil {
-			return nil, fmt.Errorf("stat %s: %w", path, err)
 		}
 		states[path] = fileState{
 			modTime: fi.ModTime().UnixNano(),
@@ -376,7 +374,7 @@ func (r *Reloader) buildSnapshot() (*snapshot, map[string]fileState, error) {
 	headers := make(map[string]string, len(r.sources.HeaderFiles)+1)
 
 	if r.sources.BearerTokenFile != "" {
-		data, err := readHashed(r.sources.BearerTokenFile)
+		data, err := readHashed(r.sources.BearerTokenFile, safefile.MaxSecretBytes)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -389,7 +387,7 @@ func (r *Reloader) buildSnapshot() (*snapshot, map[string]fileState, error) {
 
 	for _, name := range sortedKeys(r.sources.HeaderFiles) {
 		path := r.sources.HeaderFiles[name]
-		data, err := readHashed(path)
+		data, err := readHashed(path, safefile.MaxSecretBytes)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -406,7 +404,7 @@ func (r *Reloader) buildSnapshot() (*snapshot, map[string]fileState, error) {
 		tlsCfg = &tls.Config{InsecureSkipVerify: r.sources.InsecureSkipVerify} //nolint:gosec // caller-chosen, validated at config load
 
 		if r.sources.CAFile != "" {
-			data, err := readHashed(r.sources.CAFile)
+			data, err := readHashed(r.sources.CAFile, safefile.MaxPEMBytes)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -426,11 +424,11 @@ func (r *Reloader) buildSnapshot() (*snapshot, map[string]fileState, error) {
 				r.sources.CertFile, r.sources.KeyFile)
 		}
 		if r.sources.CertFile != "" {
-			certData, err := readHashed(r.sources.CertFile)
+			certData, err := readHashed(r.sources.CertFile, safefile.MaxPEMBytes)
 			if err != nil {
 				return nil, nil, err
 			}
-			keyData, err := readHashed(r.sources.KeyFile)
+			keyData, err := readHashed(r.sources.KeyFile, safefile.MaxPEMBytes)
 			if err != nil {
 				return nil, nil, err
 			}

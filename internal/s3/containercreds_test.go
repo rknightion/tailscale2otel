@@ -240,14 +240,14 @@ func TestAmbient_ContainerRefusesTokenWithControlCharacter(t *testing.T) {
 }
 
 // The endpoint is only as trustworthy as whatever set the environment variable
-// pointing at it. An agent that reflects the Authorization header back in an error
-// body must not be able to write the token into this process's logs, and the error
-// is the one thing here a caller will print.
-func TestAmbient_ContainerErrorRedactsReflectedToken(t *testing.T) {
+// pointing at it. Its response body must never enter a general-purpose error:
+// exact-token replacement cannot cover encoded or otherwise transformed secrets.
+func TestAmbient_ContainerErrorOmitsResponseBody(t *testing.T) {
 	clearAWSEnv(t)
+	const responseCanary = "BODY-CREDENTIAL-CANARY"
 	srv := containerTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
-		_, _ = io.WriteString(w, `{"code":"AccessDeniedException","message":"rejected `+r.Header.Get("Authorization")+`"}`)
+		_, _ = io.WriteString(w, `{"code":"`+responseCanary+`","message":"rejected `+r.Header.Get("Authorization")+`"}`)
 	})
 	t.Setenv(envContainerFullURI, srv.URL+"/v1/credentials")
 	t.Setenv(envContainerAuthToken, "Bearer SUPERSECRETPODTOKEN")
@@ -256,18 +256,47 @@ func TestAmbient_ContainerErrorRedactsReflectedToken(t *testing.T) {
 	if err == nil {
 		t.Fatal("a 403 from the credential endpoint was treated as success")
 	}
-	if strings.Contains(err.Error(), "SUPERSECRETPODTOKEN") {
-		t.Errorf("the authorization token leaked into the error: %q", err)
-	}
-	if !strings.Contains(err.Error(), "[redacted]") {
-		t.Errorf("error %q does not show the reflected token was scrubbed", err)
-	}
-	// Redaction must not cost diagnosability: the status and the agent's own error
-	// code are what tell an operator which of the two is misconfigured.
-	for _, want := range []string{"403", "AccessDeniedException"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not mention %q", err, want)
+	for _, leak := range []string{"SUPERSECRETPODTOKEN", responseCanary, "[redacted]"} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("remote response body material %q leaked into the error: %q", leak, err)
 		}
+	}
+	if !strings.Contains(err.Error(), "403") {
+		t.Errorf("error %q does not retain the diagnostic HTTP status", err)
+	}
+}
+
+func TestAmbient_ContainerDecodeErrorOmitsResponseBody(t *testing.T) {
+	clearAWSEnv(t)
+	const responseCanary = "MALFORMED-BODY-CREDENTIAL-CANARY"
+	srv := containerTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{not-json:"`+responseCanary+`"}`)
+	})
+	t.Setenv(envContainerFullURI, srv.URL+"/v1/credentials")
+
+	_, err := AmbientProvider(srv.Client(), nil).Retrieve(context.Background())
+	if err == nil {
+		t.Fatal("malformed credential response was accepted")
+	}
+	if strings.Contains(err.Error(), responseCanary) {
+		t.Fatalf("decode error leaked remote response body: %q", err)
+	}
+}
+
+func TestAmbient_ContainerTypedDecodeErrorOmitsRemoteValue(t *testing.T) {
+	clearAWSEnv(t)
+	const responseCanary = "REMOTE-TIME-VALUE-CREDENTIAL-CANARY"
+	srv := containerTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"AccessKeyId":"AKIA","SecretAccessKey":"secret","Expiration":"`+responseCanary+`"}`)
+	})
+	t.Setenv(envContainerFullURI, srv.URL+"/v1/credentials")
+
+	_, err := AmbientProvider(srv.Client(), nil).Retrieve(context.Background())
+	if err == nil {
+		t.Fatal("credential response with invalid typed value was accepted")
+	}
+	if strings.Contains(err.Error(), responseCanary) {
+		t.Fatalf("typed decode error leaked remote response value: %q", err)
 	}
 }
 
@@ -627,15 +656,5 @@ func TestContainerIPAllowed(t *testing.T) {
 		if containerIPAllowed(net.ParseIP(s)) {
 			t.Errorf("containerIPAllowed(%s) = true", s)
 		}
-	}
-}
-
-func TestRedactContainerToken(t *testing.T) {
-	// No token configured: nothing to scrub, and "" must not match everywhere.
-	if got := redactContainerToken("body text", ""); got != "body text" {
-		t.Errorf("redactContainerToken with no token = %q", got)
-	}
-	if got := redactContainerToken("a TOK b TOK", "TOK"); got != "a [redacted] b [redacted]" {
-		t.Errorf("redactContainerToken = %q, want every occurrence replaced", got)
 	}
 }

@@ -348,7 +348,9 @@ func TestEventStore_IsWiredIntoTheWebhookReceiver(t *testing.T) {
 	body := `[{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeCreated",` +
 		`"tailnet":"example.com","message":"wiring-probe","data":{"nodeID":"n-wiring"}}]`
 	w := httptest.NewRecorder()
-	a.webhookSrv.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body)))
+	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+	req.Host = "127.0.0.1:9099"
+	a.webhookSrv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("webhook POST status = %d, want 200", w.Code)
 	}

@@ -3,7 +3,6 @@ package hsapi
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // StatusError is a non-2xx response from the Headscale API, carrying the code
@@ -17,10 +16,9 @@ import (
 // (exit 3). The two exit codes exist to point at different next actions, so
 // getting the classification wrong is worse than not classifying at all.
 //
-// Body is truncated by the caller and holds the server's message. It is
-// included in Error() because Headscale's error bodies are diagnostic text,
-// not credentials — the API key travels in the request header, never the
-// response.
+// Body is truncated by the caller and retained only for explicitly sensitive
+// inspection. It is never included in Error because a peer can reflect request
+// credentials into its response.
 type StatusError struct {
 	Path string
 	Code int
@@ -28,7 +26,7 @@ type StatusError struct {
 }
 
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("headscale GET %s: status %d: %s", e.Path, e.Code, strings.TrimSpace(e.Body))
+	return fmt.Sprintf("headscale GET %s: status %d", e.Path, e.Code)
 }
 
 // StatusCode returns the HTTP status carried by err, if any error in its chain

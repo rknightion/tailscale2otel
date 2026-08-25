@@ -1800,7 +1800,7 @@
         },
         "url": {
           "default": "",
-          "description": "Headscale control-plane base URL, e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)",
+          "description": "Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)",
           "type": "string"
         }
       },
@@ -2812,8 +2812,8 @@
           "type": "object"
         },
         "coalesce_gather": {
-          "default": false,
-          "description": "serve scrapes arriving during an in-flight gather from that same gather (helps HA scraper pairs; costs slight staleness)",
+          "default": true,
+          "description": "serve overlapping scrapes from the same in-flight gather (bounds duplicate work; costs slight staleness)",
           "type": "boolean"
         },
         "enabled": {
@@ -2827,15 +2827,16 @@
           "type": "string"
         },
         "max_requests_in_flight": {
-          "default": 0,
-          "description": "cap concurrent /metrics gathers (excess gets 503); a Gather walks every series, so N slow scrapes cost N walks. 0 = unlimited",
+          "default": 4,
+          "description": "cap concurrent /metrics gathers (excess gets 503); must be positive while Prometheus is enabled",
+          "minimum": 1,
           "type": "integer"
         },
         "timeout": {
-          "default": "0s",
-          "description": "give up on a single /metrics gather after this long (503). 0 = no timeout; keep below the scraper's own timeout",
+          "default": "8s",
+          "description": "give up on a single /metrics gather after this long (503); keep below the scraper's own timeout",
           "examples": [
-            "0s"
+            "8s"
           ],
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"

@@ -1038,6 +1038,7 @@ func TestTLS_InsecureSkipVerifySucceeds(t *testing.T) {
 // must report 0, and an ERROR log naming the instance and the TLS error must be
 // emitted exactly once.
 func TestTLS_ConstructionFailureDisablesTargetNeverSendsCredentials(t *testing.T) {
+	const urlSecret = "URL-PATH-QUERY-CANARY"
 	var requests atomic.Int64
 	var gotAuth atomic.Value
 	gotAuth.Store("")
@@ -1054,7 +1055,7 @@ func TestTLS_ConstructionFailureDisablesTargetNeverSendsCredentials(t *testing.T
 
 	c := nodemetrics.New(nodemetrics.Options{
 		Targets: []nodemetrics.Target{{
-			URL:         srv.URL,
+			URL:         srv.URL + "/" + urlSecret + "/metrics?token=" + urlSecret,
 			Instance:    "leaky",
 			BearerToken: "super-secret-token",
 			TLS:         &nodemetrics.TLSClientConfig{CAFile: filepath.Join(t.TempDir(), "does-not-exist.pem")},
@@ -1091,6 +1092,9 @@ func TestTLS_ConstructionFailureDisablesTargetNeverSendsCredentials(t *testing.T
 	}
 	if !strings.Contains(logOut, "does-not-exist.pem") {
 		t.Fatalf("log output = %q, want it to carry the underlying TLS/CA error", logOut)
+	}
+	if strings.Contains(logOut, urlSecret) {
+		t.Fatalf("TLS failure log leaked URL path/query credentials: %q", logOut)
 	}
 }
 

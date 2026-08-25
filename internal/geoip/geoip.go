@@ -48,6 +48,7 @@ import (
 	"github.com/oschwald/maxminddb-golang/v2"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -302,7 +303,7 @@ func openAt(path string, fi os.FileInfo) (*reader, error) {
 	if fi.Size() > maxDatabaseBytes {
 		return nil, fmt.Errorf("geoip database %s is %d bytes, above the %d-byte limit", path, fi.Size(), int64(maxDatabaseBytes))
 	}
-	b, err := os.ReadFile(path)
+	b, err := safefile.ReadRegular(path, safefile.MaxDatabaseBytes, safefile.AllowSymlink)
 	if err != nil {
 		return nil, fmt.Errorf("read geoip database %s: %w", path, err)
 	}

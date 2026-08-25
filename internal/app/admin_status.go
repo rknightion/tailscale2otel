@@ -3,9 +3,9 @@ package app
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statushtml"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 )
 
 // handleIndex renders the HTML admin status/landing page. Because "/" is the
@@ -113,16 +113,5 @@ func (a *App) handleRDNSPurge(w http.ResponseWriter, r *http.Request) {
 // the request Host. A missing Origin (non-browser clients such as curl) is
 // allowed — the admin auth gate is the primary control for those.
 func sameOrigin(r *http.Request) bool {
-	if s := r.Header.Get("Sec-Fetch-Site"); s != "" {
-		return s == "same-origin" || s == "none"
-	}
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true
-	}
-	u, err := url.Parse(origin)
-	if err != nil {
-		return false
-	}
-	return u.Host == r.Host
+	return httpguard.SameOrigin(r)
 }

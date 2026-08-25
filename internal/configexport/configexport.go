@@ -191,7 +191,7 @@ func walkConfigField(v reflect.Value, path string, out map[string]statusdata.Con
 // them redacted.
 func renderStringValue(s string) statusdata.ConfigFieldValue {
 	if strings.Contains(s, "://") {
-		return statusdata.ConfigFieldValue{Value: redact.URL(s)}
+		return statusdata.ConfigFieldValue{Value: redact.URLOrigin(s)}
 	}
 	return statusdata.ConfigFieldValue{Value: s}
 }

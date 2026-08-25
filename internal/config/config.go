@@ -17,14 +17,14 @@ package config
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	env "github.com/knadh/koanf/providers/env/v2"
-	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // EnvPrefix is the prefix for every configuration environment variable.
@@ -37,6 +37,13 @@ const (
 	keyDelim     = "."
 	envNestDelim = "__"
 )
+
+type configBytesProvider []byte
+
+func (p configBytesProvider) ReadBytes() ([]byte, error) { return []byte(p), nil }
+func (configBytesProvider) Read() (map[string]any, error) {
+	return nil, fmt.Errorf("config byte provider requires a parser")
+}
 
 // Config is the root configuration document.
 type Config struct {
@@ -268,8 +275,9 @@ type PrometheusConfig struct {
 	TLS PrometheusTLS `yaml:"tls"`
 	// MaxRequestsInFlight bounds concurrent /metrics gathers. A Gather walks
 	// every series in the registry, so N simultaneous slow scrapes cost N times
-	// that walk; excess requests get 503 rather than piling up. 0 = unlimited
-	// (the promhttp default).
+	// that walk; excess requests get 503 rather than piling up. It must be
+	// positive while Prometheus is enabled; zero is rejected rather than
+	// inheriting promhttp's unlimited default.
 	MaxRequestsInFlight int `yaml:"max_requests_in_flight"`
 	// Timeout caps how long a single /metrics gather may run before the handler
 	// gives up with 503. 0 = no timeout (the promhttp default). Keep it below
@@ -1652,7 +1660,12 @@ func Load(path string) (*Config, error) {
 	// 2. Optional YAML file (overrides defaults).
 	var cfgFileWarning string
 	if path != "" {
-		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
+		configData, info, err := safefile.ReadRegularInfo(path, safefile.MaxConfigBytes, safefile.AllowSymlink)
+		if err != nil {
+			return nil, fmt.Errorf("read config %s: %w", path, err)
+		}
+		provider := configBytesProvider(configData)
+		if err := k.Load(provider, yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("read config %s: %w", path, err)
 		}
 		// 2b. Reject any key in the file that isn't a known config key (or a
@@ -1661,13 +1674,13 @@ func Load(path string) (*Config, error) {
 		//     Loaded into a SEPARATE koanf instance so fk.Keys() reflects only
 		//     the file's own keys, not the defaults layered on top of it.
 		fk := koanf.New(keyDelim)
-		if err := fk.Load(file.Provider(path), yaml.Parser()); err != nil {
+		if err := fk.Load(provider, yaml.Parser()); err != nil {
 			return nil, fmt.Errorf("read config %s: %w", path, err)
 		}
 		if u := unknownFileKeys(fk.Keys(), validKeys); len(u) > 0 {
 			return nil, unknownKeyError(u, validKeys)
 		}
-		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o044 != 0 {
+		if info.Mode().Perm()&0o044 != 0 {
 			cfgFileWarning = fmt.Sprintf("config file %s is readable by group/other (mode %04o); "+
 				"it may contain credentials — restrict it to 0600 (or keep secrets in TS2OTEL_* env vars)",
 				path, info.Mode().Perm())

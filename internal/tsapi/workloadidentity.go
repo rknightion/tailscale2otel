@@ -3,10 +3,11 @@ package tsapi
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"golang.org/x/oauth2"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // workloadIdentityTokenSource exchanges a workload's OIDC ID token for a
@@ -63,7 +64,7 @@ func (s *workloadIdentityTokenSource) Token() (*oauth2.Token, error) {
 // in the returned error so a missing or unreadable projected token is
 // diagnosable from the surfaced request error.
 func readIDTokenFile(path string) (string, error) {
-	b, err := os.ReadFile(path)
+	b, err := safefile.ReadRegular(path, safefile.MaxSecretBytes, safefile.AllowSymlink)
 	if err != nil {
 		return "", fmt.Errorf("tsapi: reading workload identity ID token file %q: %w", path, err)
 	}

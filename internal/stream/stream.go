@@ -109,8 +109,6 @@ import (
 	"io"
 	"log/slog"
 	"math"
-	"mime"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -126,6 +124,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/audit"
 	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
@@ -786,7 +785,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// body is read. A configured token makes this impossible already, so the gate
 	// is deliberately scoped to the tokenless mode — see crossSiteReason.
 	if s.token == "" {
-		if why := crossSiteReason(r); why != "" {
+		if why := httpguard.TokenlessReceiverReason(r); why != "" {
 			span.SetStatus(codes.Error, "cross-site request")
 			s.logger.Warn("stream: refusing browser-originated request to the untokened receiver", "cause", why)
 			s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
@@ -1241,95 +1240,6 @@ func (s *Server) authorized(r *http.Request) bool {
 	return false
 }
 
-// corsSafelistedMediaTypes are the media types a cross-origin browser request may
-// set WITHOUT triggering a CORS preflight. They are therefore exactly the set a
-// forged, no-preflight POST can carry — a request declaring one of them cannot
-// have been a deliberate JSON HEC submission and is refused in tokenless mode.
-// Anything else (including application/json) forces a preflight the receiver never
-// answers, so the browser never sends the real request.
-var corsSafelistedMediaTypes = map[string]bool{
-	"application/x-www-form-urlencoded": true,
-	"multipart/form-data":               true,
-	"text/plain":                        true,
-}
-
-// crossSiteReason reports why a request looks browser-originated or cross-site,
-// or "" when it does not (GHSA-cvp7-f3mx-m68x).
-//
-// The tokenless loopback mode is authorized by REACHABILITY alone: any process
-// that can open a socket to 127.0.0.1 may write flow and audit records. A browser
-// is such a process, and it will make the request on behalf of whatever page told
-// it to — so a remote web origin can use a victim's browser as a confused deputy
-// and forge records. The same-origin policy does not help: the attacker never
-// needs to read the response, only to have it accepted.
-//
-// The mode stays (it is the documented way to run the receiver locally without a
-// credential), so the gate instead refuses everything that carries a browser's
-// fingerprints. Each check is independently sufficient; together they cover both
-// current browsers (fetch metadata) and older ones (Origin, safelisted
-// Content-Type):
-//
-//   - Origin: attached to every cross-origin fetch/XHR and to form POSTs. Nothing
-//     that legitimately posts here sends one, so ANY value is refused rather than
-//     matched against an allowlist — there is no origin this endpoint serves.
-//   - Sec-Fetch-Site / -Mode / -Dest: fetch metadata, unforgeable by page script.
-//     Only the shapes a non-browser client produces (absent) or a genuinely
-//     same-origin one produces are let through.
-//   - Content-Type: see corsSafelistedMediaTypes.
-//   - Host: the DNS-rebinding case. `evil.example` resolving to 127.0.0.1 really
-//     does reach the loopback listener, but the browser sends the attacker's name
-//     in Host, so requiring a loopback Host refuses it. This is also why the gate
-//     is tokenless-mode only — a tokened receiver behind a reverse proxy has a
-//     legitimately non-loopback Host, and its token already makes CSRF impossible.
-func crossSiteReason(r *http.Request) string {
-	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" {
-		return "an Origin header (" + origin + ")"
-	}
-	switch site := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Site"))); site {
-	case "", "none", "same-origin":
-	default:
-		return "Sec-Fetch-Site: " + site
-	}
-	switch mode := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Mode"))); mode {
-	case "", "cors", "same-origin":
-	default:
-		return "Sec-Fetch-Mode: " + mode
-	}
-	if dest := strings.ToLower(strings.TrimSpace(r.Header.Get("Sec-Fetch-Dest"))); dest != "" && dest != "empty" {
-		return "Sec-Fetch-Dest: " + dest
-	}
-	if ct := r.Header.Get("Content-Type"); ct != "" {
-		mt, _, err := mime.ParseMediaType(ct)
-		if err != nil || corsSafelistedMediaTypes[strings.ToLower(mt)] {
-			return "a CORS-safelisted Content-Type (" + ct + ")"
-		}
-	}
-	if !hostIsLoopback(r.Host) {
-		return "a non-loopback Host header (" + r.Host + ")"
-	}
-	return ""
-}
-
-// hostIsLoopback reports whether an HTTP Host header names the loopback
-// interface. Unlike listenaddr.IsLoopback it accepts a bare host with no port
-// (Host may omit the default port) but is otherwise the same fail-closed rule: a
-// hostname is never resolved, so only the "localhost" literal passes by name.
-func hostIsLoopback(host string) bool {
-	h := strings.TrimSpace(host)
-	if h == "" {
-		return false
-	}
-	if hostOnly, _, err := net.SplitHostPort(h); err == nil {
-		h = hostOnly
-	}
-	h = strings.Trim(h, "[]")
-	if strings.EqualFold(h, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
-}
-
 // readBody reads and (per Decompress / Content-Encoding) decompresses the
 // request body.
 func (s *Server) readBody(r *http.Request) ([]byte, error) {
@@ -1347,26 +1257,63 @@ func (s *Server) readBody(r *http.Request) ([]byte, error) {
 
 	switch mode {
 	case "gzip":
-		zr, err := gzip.NewReader(r.Body)
+		wire, err := compressedWireReader(r, s.maxBody)
 		if err != nil {
 			return nil, err
 		}
+		zr, err := gzip.NewReader(wire)
+		if err != nil {
+			if wire.N == 0 {
+				return nil, errBodyTooLarge
+			}
+			return nil, err
+		}
 		defer zr.Close()
-		return readAllLimited(zr, s.maxBody)
+		body, err := readAllLimited(zr, s.maxBody)
+		if wire.N == 0 {
+			return nil, errBodyTooLarge
+		}
+		return body, err
 	case "zstd":
+		wire, err := compressedWireReader(r, s.maxBody)
+		if err != nil {
+			return nil, err
+		}
 		var dopts []zstd.DOption
 		if w := zstdMaxWindow(s.maxBody); w > 0 {
 			dopts = append(dopts, zstd.WithDecoderMaxWindow(w))
 		}
-		zr, err := zstd.NewReader(r.Body, dopts...)
+		zr, err := zstd.NewReader(wire, dopts...)
 		if err != nil {
+			if wire.N == 0 {
+				return nil, errBodyTooLarge
+			}
 			return nil, err
 		}
 		defer zr.Close()
-		return readAllLimited(zr, s.maxBody)
+		body, err := readAllLimited(zr, s.maxBody)
+		if wire.N == 0 {
+			return nil, errBodyTooLarge
+		}
+		return body, err
 	default:
 		return readAllLimited(r.Body, s.maxBody)
 	}
+}
+
+// compressedWireReader applies a raw-wire budget before a decompressor. A
+// negative decompressed limit remains a supported escape hatch, but it cannot
+// also make attacker-controlled compressed input unbounded; in that case the
+// normal 64 MiB receiver budget is retained for the wire representation.
+func compressedWireReader(r *http.Request, decompressedLimit int64) (*io.LimitedReader, error) {
+	wireLimit := decompressedLimit
+	if wireLimit <= 0 {
+		wireLimit = defaultMaxBodyBytes
+	}
+	if r.ContentLength > wireLimit {
+		return nil, errBodyTooLarge
+	}
+	return &io.LimitedReader{R: r.Body, N: wireLimit + 1}, nil
 }
 
 // readAllLimited reads all of r but fails with errBodyTooLarge when more than

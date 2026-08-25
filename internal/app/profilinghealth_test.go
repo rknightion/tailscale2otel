@@ -346,7 +346,7 @@ func TestPyroscopeConfig_HealthClientAttached(t *testing.T) {
 	cfg := config.Default()
 	cfg.Profiling.Pyroscope.Enabled = true
 	cfg.Profiling.Pyroscope.ServerAddress = "https://profiles.example"
-	pc := pyroscopeConfig(cfg, "v1")
+	pc := mustPyroscopeConfigWithUploadClient(t, cfg, "v1")
 	if pc.HTTPClient == nil {
 		t.Fatal("pyroscope.Config.HTTPClient is nil — upload health would never be recorded")
 	}
@@ -454,7 +454,7 @@ func TestStartProfiling_EmitterOptionWiresUploadMetrics(t *testing.T) {
 	cfg.Profiling.Pyroscope.ServerAddress = srv.URL
 
 	rec := telemetrytest.New()
-	pc := pyroscopeConfig(cfg, "v1", withProfilingEmitter(rec.Emitter()))
+	pc := mustPyroscopeConfigWithUploadClient(t, cfg, "v1", withProfilingEmitter(rec.Emitter()))
 	client, ok := pc.HTTPClient.(*profilingUploadClient)
 	if !ok {
 		t.Fatalf("HTTPClient is %T, want *profilingUploadClient", pc.HTTPClient)
@@ -497,7 +497,7 @@ func TestPyroscopeConfig_NoEmitterStillTracks(t *testing.T) {
 	cfg.Profiling.Pyroscope.Enabled = true
 	cfg.Profiling.Pyroscope.ServerAddress = srv.URL
 
-	pc := pyroscopeConfig(cfg, "v1") // no withProfilingEmitter
+	pc := mustPyroscopeConfigWithUploadClient(t, cfg, "v1") // no withProfilingEmitter
 	client, ok := pc.HTTPClient.(*profilingUploadClient)
 	if !ok {
 		t.Fatalf("HTTPClient is %T, want *profilingUploadClient", pc.HTTPClient)

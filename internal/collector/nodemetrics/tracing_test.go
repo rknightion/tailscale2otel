@@ -2,8 +2,10 @@ package nodemetrics_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,10 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 )
+
+type failingRoundTripper func(*http.Request) (*http.Response, error)
+
+func (f failingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func spanAttrMap(kvs []attribute.KeyValue) map[attribute.Key]attribute.Value {
 	m := make(map[attribute.Key]attribute.Value, len(kvs))
@@ -145,5 +151,37 @@ func TestScrape_NilTracerDoesNotPanic(t *testing.T) {
 	rec := telemetrytest.New()
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect() error = %v", err)
+	}
+}
+
+func TestScrape_TransportErrorSpanDoesNotLeakURLPathOrQuery(t *testing.T) {
+	const secret = "URL-PATH-QUERY-CANARY"
+	sr := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+
+	client := &http.Client{Transport: failingRoundTripper(func(*http.Request) (*http.Response, error) {
+		return nil, errors.New("dial failed")
+	})}
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: "https://node.example/" + secret + "/metrics?token=" + secret, Instance: "node-a"}},
+		Client:  client,
+		Tracer:  tp.Tracer("test"),
+	})
+	_ = c.Collect(context.Background(), telemetrytest.New().Emitter())
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+	if strings.Contains(spans[0].Status().Description, secret) {
+		t.Fatalf("span status leaked URL secret: %q", spans[0].Status().Description)
+	}
+	for _, event := range spans[0].Events() {
+		for _, attr := range event.Attributes {
+			if strings.Contains(attr.Value.String(), secret) {
+				t.Fatalf("span event %q leaked URL secret in %s=%q", event.Name, attr.Key, attr.Value.String())
+			}
+		}
 	}
 }

@@ -23,12 +23,12 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -39,6 +39,8 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -480,7 +482,7 @@ func resolveTargets(ts []Target, timeout time.Duration, logger *slog.Logger) []r
 		if err != nil {
 			out[i].tlsDisabled = true
 			logger.Error("nodemetrics: target TLS configuration failed to load; target disabled and will not be scraped (no fallback to a shared/untrusted client, so credentials are never sent)",
-				"instance", instance, "url", ts[i].URL, "error", err)
+				"instance", instance, "url", redact.URLOrigin(ts[i].URL), "error", err)
 			continue
 		}
 		tr := http.DefaultTransport.(*http.Transport).Clone()
@@ -572,7 +574,7 @@ func buildTLSConfig(t *TLSClientConfig) (*tls.Config, error) {
 		ServerName:         t.ServerName,
 	}
 	if t.CAFile != "" {
-		pem, err := os.ReadFile(t.CAFile)
+		pem, err := safefile.ReadRegular(t.CAFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 		if err != nil {
 			return nil, fmt.Errorf("read CA file: %w", err)
 		}
@@ -583,7 +585,7 @@ func buildTLSConfig(t *TLSClientConfig) (*tls.Config, error) {
 		cfg.RootCAs = pool
 	}
 	if t.CertFile != "" && t.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(t.CertFile, t.KeyFile)
+		cert, err := safefile.LoadX509KeyPair(t.CertFile, t.KeyFile, safefile.MaxPEMBytes)
 		if err != nil {
 			return nil, fmt.Errorf("load client cert/key: %w", err)
 		}
@@ -951,8 +953,9 @@ func (c *Collector) scrapeHTTP(ctx context.Context, t *Target, client *http.Clie
 
 	req, err := http.NewRequestWithContext(spanCtx, http.MethodGet, t.URL, nil)
 	if err != nil {
-		c.observeScrape(span, instance, t.URL, 0, err)
-		return nil, err
+		safeErr := errors.New("nodemetrics: invalid target URL")
+		c.observeScrape(span, instance, t.URL, 0, safeErr)
+		return nil, safeErr
 	}
 	if err := applyAuthHeaders(req, t); err != nil {
 		c.observeScrape(span, instance, t.URL, 0, err)
@@ -960,11 +963,12 @@ func (c *Collector) scrapeHTTP(ctx context.Context, t *Target, client *http.Clie
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.observeScrape(span, instance, t.URL, 0, err)
-		return nil, err
+		safeErr := errors.New("nodemetrics: scrape transport failed")
+		c.observeScrape(span, instance, t.URL, 0, safeErr)
+		return nil, safeErr
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		statusErr := fmt.Errorf("nodemetrics: GET %s: status %d", t.URL, resp.StatusCode)
+		statusErr := fmt.Errorf("nodemetrics: GET %s: status %d", redact.URLOrigin(t.URL), resp.StatusCode)
 		c.observeScrape(span, instance, t.URL, resp.StatusCode, statusErr)
 		_ = resp.Body.Close()
 		return nil, statusErr
@@ -980,7 +984,7 @@ func (c *Collector) observeScrape(span trace.Span, instance, url string, status 
 		span.SetAttributes(
 			attribute.String(attrInstance, instance),
 			attribute.String("http.request.method", http.MethodGet),
-			attribute.String("url.full", url),
+			attribute.String("url.full", redact.URLOrigin(url)),
 		)
 		if status != 0 {
 			span.SetAttributes(attribute.Int("http.response.status_code", status))
@@ -1006,7 +1010,7 @@ func applyAuthHeaders(req *http.Request, t *Target) error {
 	}
 	switch {
 	case t.BearerTokenFile != "":
-		b, err := os.ReadFile(t.BearerTokenFile)
+		b, err := safefile.ReadRegular(t.BearerTokenFile, safefile.MaxSecretBytes, safefile.AllowSymlink)
 		if err != nil {
 			return fmt.Errorf("nodemetrics: read bearer token file %s: %w", t.BearerTokenFile, err)
 		}

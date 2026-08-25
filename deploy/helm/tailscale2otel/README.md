@@ -93,14 +93,21 @@ The keys that trigger this:
 | `headscale.api_key` | Headscale bearer key |
 | `otlp.grafana_cloud.token` | Grafana Cloud OTLP token |
 | `otlp.headers` | any raw OTLP header (this is where an `Authorization` header goes) |
+| `otlp.metrics.headers` / `otlp.logs.headers` / `otlp.traces.headers` | per-signal OTLP credentials |
 | `collectors.flowlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `collectors.auditlogs.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
+| `collectors.k8s_audit.objectstore.access_key_id` / `.secret_access_key` / `.session_token` | object-store credentials |
 | `streaming.token` | HEC receiver token |
 | `webhook.secret` | webhook HMAC secret |
 | `prometheus.auth.token` | `/metrics` token |
 | `admin.auth.token` | admin/pprof token |
 | `profiling.pyroscope.basic_auth_password` | Pyroscope password |
+| `profiling.pyroscope.headers` | Pyroscope gateway credentials |
+| `grafana_annotations.token` | Grafana annotation token |
+| `enrichment.geoip.download.license_key` | MaxMind license key |
 | `tailnets[]` (any entry) | multi-tailnet inline auth — the list is file-only, there is no `TS2OTEL_*` path for it |
 | `collectors.node_metrics.targets[]` with `bearer_token` or `headers` | per-target scrape credentials |
+| `streaming.routes[]` with `token` / `webhook.routes[]` with `secret` | per-route receiver credentials |
 
 Identifiers are *not* on that list — `tailscale.auth.oauth.client_id`,
 `tailscale.auth.workload_identity.client_id`, `otlp.grafana_cloud.instance_id` and
@@ -116,12 +123,12 @@ the one combination the chart cannot make safe.
 
 ### Rotating credentials
 
-`checksum/config` and `checksum/secret` already roll the pod when the chart-managed
-config or the inline `secret:` values change. An **`existingSecret` you manage
-yourself is different**: it contributes only a name reference to the pod template,
-and Kubernetes never refreshes the environment of a running container, so rotating
-its values leaves the pod running the old credential indefinitely. Two supported
-ways to close that:
+The chart deliberately publishes no checksum of Secret material in the pod template:
+anyone with workload-read could use such a digest to test guesses offline. Therefore
+an inline `secret:`, a Secret-backed `config.yaml`, and an **`existingSecret` you
+manage yourself** all require an explicit rollout when their values change. Kubernetes
+does not refresh a running container's environment, and file-backed reload does not
+cover environment variables. Two supported rollout paths:
 
 ```sh
 # Manual: change rolloutTrigger to anything new. It is an opaque operator-chosen
@@ -431,7 +438,7 @@ extraVolumeMounts:
 | config.headscale.http.retry.max_delay | string | `"0s"` |  |
 | config.headscale.http.timeout | string | `"30s"` | Per-request timeout for Headscale API calls (the only http knob applied in v1). |
 | config.headscale.max_response_bytes | int | `4194304` | Cap on ONE Headscale API response body before it is decoded, in bytes. Sized from a measured ~715 B/node, so 4 MiB covers roughly 5,800 nodes. These endpoints are not paginated, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. A value above 64 MiB triggers a startup warning. |
-| config.headscale.url | string | `""` | Headscale control-plane base URL, e.g. https://headscale.example.org. |
+| config.headscale.url | string | `""` | Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org. |
 | config.ingress_wal.corruption | string | `"fail"` | Corruption policy. Only fail is supported: startup/drain stops rather than discarding data. |
 | config.ingress_wal.directory | string | `"/var/lib/tailscale2otel/ingress-wal"` | Absolute, clean, non-root WAL directory. Must live on the state volume for persistence. |
 | config.ingress_wal.enabled | bool | `false` | Persist accepted receiver bodies before acknowledging them. Off by default. |
@@ -556,11 +563,11 @@ extraVolumeMounts:
 | config.prometheus.auth.allow_unauthenticated | bool | `false` | Acknowledge serving /metrics with NO token on a network-reachable bind. In a cluster this is the normal case — the scrape is controlled by a NetworkPolicy rather than a credential — but it must be stated, because /metrics carries device names, flow endpoints and audit identities. A loopback bind never needs this. Ignored when token is set. |
 | config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
 | config.prometheus.auth.token_file | string | `""` | Read prometheus.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
-| config.prometheus.coalesce_gather | bool | `false` | Serve scrapes that arrive during an in-flight gather from that same gather instead of starting another. Useful for an HA scraper pair hitting one instance; costs slight staleness. |
+| config.prometheus.coalesce_gather | bool | `true` | Serve overlapping scrapes from the same in-flight gather instead of duplicating collection work. This costs slight staleness. |
 | config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
 | config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
-| config.prometheus.max_requests_in_flight | int | `0` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. 0 = unlimited. |
-| config.prometheus.timeout | string | `"0s"` | Give up on a single /metrics gather after this long, answering 503. 0 = no timeout. Keep it below the scraper's own timeout so this process, not the scraper, decides. |
+| config.prometheus.max_requests_in_flight | int | `4` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive. |
+| config.prometheus.timeout | string | `"8s"` | Give up on a single /metrics gather after this long, answering 503. Keep it below the scraper's own timeout so this process, not the scraper, decides. |
 | config.prometheus.tls.cert_file | string | `""` | HTTPS certificate for the Prometheus endpoint. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. |
 | config.prometheus.tls.client_auth | string | `""` | How strictly the client certificate is checked: require_and_verify (the default once client_ca_file is set), verify_if_given, require, request, or none. Only require_and_verify and verify_if_given actually validate the chain; the weaker modes are for staged rollouts. |
 | config.prometheus.tls.client_ca_file | string | `""` | Require scrapers to present a client certificate signed by this CA (mutual TLS). Needs cert_file/key_file — a client CA on a plaintext listener never runs. Composes with auth.token: when both are set a request must satisfy both. |

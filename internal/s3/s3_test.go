@@ -300,17 +300,17 @@ func TestGet_ReturnsTheBody(t *testing.T) {
 	}
 }
 
-// A 403 is the shape a wrong key, a wrong region or a clock skew takes, and it
-// must surface with the body S3 sent — that body is what names which of the
-// three it was.
+// A 403 is the shape a wrong key, a wrong region or a clock skew takes. The
+// status is safe to surface, but the peer-controlled body can reflect request
+// credentials and must stay out of the returned error.
 func TestGet_SurfacesTheServerError(t *testing.T) {
 	srv, _ := serve(t, `<Error><Code>SignatureDoesNotMatch</Code></Error>`, http.StatusForbidden)
 	_, err := newClient(t, srv.URL, true).Get(context.Background(), "k")
 	if err == nil {
 		t.Fatal("Get succeeded against a 403")
 	}
-	if !strings.Contains(err.Error(), "SignatureDoesNotMatch") {
-		t.Errorf("error = %v, want the server's explanation carried through", err)
+	if !strings.Contains(err.Error(), "403") || strings.Contains(err.Error(), "SignatureDoesNotMatch") {
+		t.Errorf("error = %v, want status without peer-controlled response text", err)
 	}
 }
 

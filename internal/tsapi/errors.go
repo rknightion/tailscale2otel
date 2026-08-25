@@ -3,6 +3,8 @@ package tsapi
 import (
 	"errors"
 	"fmt"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 )
 
 // StatusError is returned by the JSON helpers when the Tailscale API responds
@@ -17,7 +19,7 @@ type StatusError struct {
 }
 
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("tsapi: %s %s: status %d: %s", e.Method, e.URL, e.Code, e.Body)
+	return fmt.Sprintf("tsapi: %s %s: status %d", e.Method, redact.URLOrigin(e.URL), e.Code)
 }
 
 // StatusCode returns the HTTP status carried by err, if any error in its chain
@@ -30,10 +32,9 @@ func (e *StatusError) Error() string {
 // caller through one accessor (and, above it, apistate.Classify) is what stops
 // those readings from drifting apart again.
 //
-// Matching on the error TEXT is never acceptable: a StatusError's Body carries
-// up to 16KB of upstream response, so a substring test for "403" or
-// "forbidden" can match a proxy port (10.0.0.1:8403) or a 5xx error page that
-// merely says "Forbidden".
+// Matching on the error TEXT is never acceptable. Body may retain up to 16KB
+// for explicitly sensitive inspection, but Error deliberately omits it because
+// an upstream can reflect request credentials.
 func StatusCode(err error) (int, bool) {
 	if err == nil {
 		return 0, false

@@ -629,6 +629,7 @@ func TestNewApp_WiresWebhookAuditCrossDedup(t *testing.T) {
 	// A webhook for the SAME change must be suppressed by the shared set.
 	body := `[{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"m","data":{"nodeID":"n1"}}]`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+	req.Host = "127.0.0.1:9099"
 	w := httptest.NewRecorder()
 	a.webhookSrv.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -664,6 +665,7 @@ func TestNewApp_WebhookCrossDedupOffByDefault(t *testing.T) {
 
 	body := `[{"timestamp":"2024-06-06T15:25:26Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"m","data":{"nodeID":"n1"}}]`
 	req := httptest.NewRequest(http.MethodPost, "/webhook", strings.NewReader(body))
+	req.Host = "127.0.0.1:9099"
 	w := httptest.NewRecorder()
 	a.webhookSrv.Handler().ServeHTTP(w, req)
 

@@ -55,6 +55,7 @@ func newTestServer(t *testing.T) (*Server, *telemetrytest.Recorder) {
 func doPost(t *testing.T, h http.Handler, path, body, sig string) *http.Response {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Host = "127.0.0.1:9099"
 	if sig != "" {
 		req.Header.Set("Tailscale-Webhook-Signature", sig)
 	}

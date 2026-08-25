@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 )
 
 // annotationsPath is the ONLY Grafana path this package ever calls. It is a
@@ -50,9 +52,9 @@ func FailureCodes() []FailureCode {
 	}
 }
 
-// PublishError carries the bounded code alongside the human detail. Only Code
-// reaches a metric label; the detail reaches the log, because Grafana's own
-// response body is the single most useful line for a permission failure.
+// PublishError carries a bounded code plus local transport detail. Peer response
+// bodies never reach Detail or Error because a server can reflect request
+// credentials.
 type PublishError struct {
 	Code FailureCode
 	// Status is the HTTP status, or 0 when the request never got one.
@@ -68,7 +70,7 @@ type PublishError struct {
 
 func (e *PublishError) Error() string {
 	if e.Status != 0 {
-		return fmt.Sprintf("grafana annotation write failed (%s, HTTP %d): %s", e.Code, e.Status, e.Detail)
+		return fmt.Sprintf("grafana annotation write failed (%s, HTTP %d)", e.Code, e.Status)
 	}
 	return fmt.Sprintf("grafana annotation write failed (%s): %s", e.Code, e.Detail)
 }
@@ -107,10 +109,16 @@ type Client struct {
 func NewClient(cfg ClientConfig) (*Client, error) {
 	base, err := url.Parse(strings.TrimRight(strings.TrimSpace(cfg.URL), "/"))
 	if err != nil || base.Scheme == "" || base.Host == "" {
-		return nil, fmt.Errorf("grafana_annotations.url %q is not a valid absolute URL", cfg.URL)
+		return nil, errors.New("grafana_annotations.url is not a valid absolute URL")
 	}
 	if base.Scheme != "http" && base.Scheme != "https" {
-		return nil, fmt.Errorf("grafana_annotations.url %q must be http or https, got scheme %q", cfg.URL, base.Scheme)
+		return nil, fmt.Errorf("grafana_annotations.url must be http or https, got scheme %q", base.Scheme)
+	}
+	if base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
+		return nil, errors.New("grafana_annotations.url must contain only a scheme and host; put credentials in the token field")
+	}
+	if base.Scheme != "https" && !httpguard.IsLoopbackHost(base.Host) {
+		return nil, errors.New("grafana_annotations.url must use HTTPS except for a loopback development endpoint")
 	}
 	token := strings.TrimSpace(cfg.Token)
 	if token == "" {
@@ -120,7 +128,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		endpoint:     base.String() + annotationsPath,
 		token:        token,
 		dashboardUID: strings.TrimSpace(cfg.DashboardUID),
-		http:         &http.Client{Timeout: cfg.Timeout},
+		http:         httpguard.NoRedirectClient(&http.Client{Timeout: cfg.Timeout}),
 		now:          time.Now,
 	}, nil
 }
@@ -181,7 +189,7 @@ func (c *Client) Publish(ctx context.Context, a Annotation, extraTags []string) 
 	// Bounded read: a misconfigured URL pointing at something that is not
 	// Grafana must not stream an unbounded body into the process. Draining also
 	// lets the connection be reused.
-	detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
@@ -190,7 +198,6 @@ func (c *Client) Publish(ctx context.Context, a Annotation, extraTags []string) 
 		Code:       classify(resp.StatusCode),
 		Status:     resp.StatusCode,
 		RetryAfter: parseRetryAfter(resp.Header.Get("Retry-After"), c.now()),
-		Detail:     strings.TrimSpace(string(detail)),
 	}
 }
 

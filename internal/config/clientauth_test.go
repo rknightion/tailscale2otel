@@ -165,14 +165,16 @@ func TestValidate_PrometheusHandlerLimits(t *testing.T) {
 		}
 	})
 
-	// 0 is a meaningful value for both (unlimited / no timeout), not "unset and
-	// therefore wrong".
-	t.Run("zero is unlimited", func(t *testing.T) {
+	t.Run("zero max is rejected while zero timeout remains supported", func(t *testing.T) {
 		c := Default()
 		c.Prometheus.MaxRequestsInFlight = 0
 		c.Prometheus.Timeout = Duration(0)
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "max_requests_in_flight") {
+			t.Fatalf("zero max_requests_in_flight error = %v, want named validation failure", err)
+		}
+		c.Prometheus.MaxRequestsInFlight = 4
 		if err := c.Validate(); err != nil {
-			t.Fatalf("zero should mean unlimited/no-timeout, not invalid: %v", err)
+			t.Fatalf("zero timeout should remain valid with a finite gather cap: %v", err)
 		}
 	})
 }

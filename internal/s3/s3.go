@@ -38,6 +38,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/objectstore"
 )
 
@@ -99,10 +100,13 @@ func New(cfg Config) (*Client, error) {
 	}
 	base, err := url.Parse(cfg.Endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("s3: parse endpoint: %w", err)
+		return nil, errors.New("s3: endpoint is not a valid URL")
 	}
 	if base.Scheme != "http" && base.Scheme != "https" {
 		return nil, fmt.Errorf("s3: endpoint scheme %q is not http or https", base.Scheme)
+	}
+	if base.User != nil || base.RawQuery != "" || base.Fragment != "" {
+		return nil, errors.New("s3: endpoint must not contain userinfo, query credentials, or a fragment")
 	}
 	if base.Scheme == "http" && !loopbackHost(base.Hostname()) && !cfg.AllowInsecureHTTP {
 		return nil, errors.New("s3: plaintext remote endpoint requires Config.AllowInsecureHTTP; " +
@@ -120,7 +124,7 @@ func New(cfg Config) (*Client, error) {
 		cfg:      cfg,
 		base:     base,
 		signer:   signer{region: cfg.Region},
-		hc:       hc,
+		hc:       httpguard.NoRedirectClient(hc),
 		now:      now,
 		basePath: strings.TrimRight(base.Path, "/"),
 	}, nil
@@ -249,8 +253,8 @@ func (c *Client) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("s3: get %s: %w", key, err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		body, _ := readAllClose(resp)
-		return nil, fmt.Errorf("s3: get %s: %s: %s", key, resp.Status, snippet(body))
+		_, _ = readAllClose(resp)
+		return nil, fmt.Errorf("s3: get %s: %s", key, resp.Status)
 	}
 	return resp.Body, nil
 }
@@ -268,14 +272,13 @@ func (c *Client) listPage(ctx context.Context, rawQuery string, page *listRespon
 		return fmt.Errorf("s3: list: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		// A failure body is an XML fault document — small by nature, and worth
-		// having whole so the message can quote it. The buffering reader's own
-		// bound is the right one for that, not the listing bound.
-		body, readErr := readAllClose(resp)
+		// Drain the bounded failure body for connection reuse, but never return it:
+		// the peer can reflect request credentials into its response.
+		_, readErr := readAllClose(resp)
 		if readErr != nil {
 			return fmt.Errorf("s3: list: %w", readErr)
 		}
-		return fmt.Errorf("s3: list: %s: %s", resp.Status, snippet(body))
+		return fmt.Errorf("s3: list: %s", resp.Status)
 	}
 	return decodeListResponse(resp, page)
 }
@@ -366,16 +369,6 @@ func (c *Client) requestPath(path string) string {
 		return c.basePath + path
 	}
 	return c.basePath + "/" + c.cfg.Bucket + path
-}
-
-// snippet trims an error body to something loggable. S3 returns XML error
-// documents that are useful but occasionally long.
-func snippet(b []byte) string {
-	s := strings.TrimSpace(string(b))
-	if len(s) > 300 {
-		s = s[:300] + "…"
-	}
-	return s
 }
 
 // itoa avoids pulling strconv in for one call site.

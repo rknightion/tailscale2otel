@@ -69,6 +69,7 @@ func (b *blockingBody) Read(p []byte) (int, error) {
 // and returns the recorded response.
 func postBody(h http.Handler, body io.Reader) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/webhook", body)
+	req.Host = "127.0.0.1:9099"
 	rw := httptest.NewRecorder()
 	h.ServeHTTP(rw, req)
 	return rw

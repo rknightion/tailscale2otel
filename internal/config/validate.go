@@ -1,13 +1,11 @@
 package config
 
 import (
-	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"math"
 	"net"
 	"net/url"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -18,8 +16,10 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
 	"github.com/rknightion/tailscale2otel/v4/internal/redact"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 )
 
 // Bounds on flows.retention. The floor is one bucket; the ceiling reflects that
@@ -212,6 +212,7 @@ func (c *Config) validateReceiverRoutes() error {
 			return fmt.Errorf("webhook.secret/secret_file and webhook.routes are mutually exclusive")
 		}
 		seenTailnet := map[string]int{}
+		hasTokenless, hasSigned := false, false
 		for i, r := range routes {
 			if strings.TrimSpace(r.Tailnet) == "" {
 				return fmt.Errorf("webhook.routes[%d].tailnet: required", i)
@@ -226,6 +227,14 @@ func (c *Config) validateReceiverRoutes() error {
 			if r.Secret != "" && r.SecretFile != "" {
 				return fmt.Errorf("webhook.routes[%d].secret and secret_file are mutually exclusive", i)
 			}
+			if r.Secret == "" && r.SecretFile == "" {
+				hasTokenless = true
+			} else {
+				hasSigned = true
+			}
+		}
+		if hasTokenless && hasSigned {
+			return fmt.Errorf("webhook.routes cannot mix tokenless and signed routes on one listener")
 		}
 	} else if len(c.Tailnets) > 1 && c.Webhook.Enabled {
 		return fmt.Errorf("webhook.enabled in multi-tailnet mode requires webhook.routes")
@@ -805,6 +814,9 @@ func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 		return fmt.Errorf("%s.tls.cert_file and %s.tls.key_file must both be set or both be empty "+
 			"(got cert_file=%q, key_file=%q)", label, label, certFile, keyFile)
 	}
+	if certFile == "" {
+		return nil
+	}
 	for _, f := range [...]struct {
 		field string
 		path  string
@@ -812,21 +824,10 @@ func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 		{"cert_file", certFile},
 		{"key_file", keyFile},
 	} {
-		if f.path == "" {
-			continue
-		}
-		fh, err := os.Open(f.path)
-		if err != nil {
-			// Name both the configured and the resolved path (#310): a relative
-			// path here was rewritten against the config file's directory, and
-			// an error showing only one of them is the hardest kind to act on.
+		if _, err := safefile.ReadRegular(f.path, safefile.MaxPEMBytes, safefile.AllowSymlink); err != nil {
 			return fmt.Errorf("%s.tls.%s %s: %w", label, f.field,
 				c.pathForError(label+".tls."+f.field, f.path), err)
 		}
-		_ = fh.Close()
-	}
-	if certFile == "" {
-		return nil
 	}
 	// Readable is not the same as usable. /dev/null is readable and parses as an
 	// empty PEM; a certificate paired with a different key is readable twice over.
@@ -838,7 +839,7 @@ func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 	// LoadX509KeyPair says: its messages describe the FORM of the failure
 	// ("failed to find any PEM data", "private key does not match public key")
 	// and never echo key bytes. Config errors get logged and pasted into issues.
-	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+	if _, err := safefile.LoadX509KeyPair(certFile, keyFile, safefile.MaxPEMBytes); err != nil {
 		return fmt.Errorf("%s.tls cert_file %q + key_file %q do not form a usable keypair: %w",
 			label, certFile, keyFile, err)
 	}
@@ -852,7 +853,7 @@ func (c *Config) validateTLSFiles(label, certFile, keyFile string) error {
 // silently trusts nothing — so mutual TLS would reject every scraper, or an
 // outbound client would fail every handshake, with no hint why.
 func (c *Config) validateCAFile(field, path string) error {
-	pem, err := os.ReadFile(path)
+	pem, err := safefile.ReadRegular(path, safefile.MaxPEMBytes, safefile.AllowSymlink)
 	if err != nil {
 		return fmt.Errorf("%s %s: %w", field, c.pathForError(field, path), err)
 	}
@@ -876,7 +877,7 @@ func (c *Config) validateClientKeypair(field, certFile, keyFile string) error {
 	if certFile == "" {
 		return nil
 	}
-	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
+	if _, err := safefile.LoadX509KeyPair(certFile, keyFile, safefile.MaxPEMBytes); err != nil {
 		return fmt.Errorf("%s cert_file %q + key_file %q do not form a usable keypair: %w",
 			field, certFile, keyFile, err)
 	}
@@ -899,11 +900,10 @@ func validateWorkloadIdentity(label string, a TailscaleAuth) error {
 	if a.WorkloadIdentity.IDTokenFile == "" {
 		return fmt.Errorf("%s.workload_identity.id_token_file: required when %s.method is workload_identity", label, label)
 	}
-	fh, err := os.Open(a.WorkloadIdentity.IDTokenFile)
+	_, err := safefile.ReadRegular(a.WorkloadIdentity.IDTokenFile, safefile.MaxSecretBytes, safefile.AllowSymlink)
 	if err != nil {
 		return fmt.Errorf("%s.workload_identity.id_token_file %q: %w", label, a.WorkloadIdentity.IDTokenFile, err)
 	}
-	_ = fh.Close()
 	return nil
 }
 
@@ -985,6 +985,16 @@ func (c *Config) validationChecks() []configCheck {
 		if strings.TrimSpace(c.Headscale.URL) == "" {
 			return fmt.Errorf("headscale.url: required when provider=headscale")
 		}
+		u, err := url.Parse(strings.TrimSpace(c.Headscale.URL))
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("headscale.url must be a valid absolute HTTP(S) URL")
+		}
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("headscale.url must contain only a scheme and host; put credentials in headscale.api_key")
+		}
+		if u.Scheme != "https" && !httpguard.IsLoopbackHost(u.Host) {
+			return fmt.Errorf("headscale.url must use HTTPS except for a loopback development endpoint")
+		}
 		return nil
 	})
 	add("headscale.api_key", "Set headscale.api_key (or TS2OTEL_HEADSCALE__API_KEY).", func() error {
@@ -1040,9 +1050,9 @@ func (c *Config) validationChecks() []configCheck {
 	add("otlp.endpoint", "Use a bare host:port with no scheme or path for otlp.protocol=grpc.", func() error {
 		if c.OTLP.Protocol == "grpc" && c.OTLP.Endpoint != "" {
 			if strings.Contains(c.OTLP.Endpoint, "://") || strings.Contains(c.OTLP.Endpoint, "/") {
-				return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=grpc: use a host:port "+
-					"address with no scheme or path (e.g. otlp-gateway-prod-us-central-0.grafana.net:443); "+
-					"a full URL is only valid for protocol=http", c.OTLP.Endpoint)
+				return fmt.Errorf("otlp.endpoint invalid for otlp.protocol=grpc: use a host:port " +
+					"address with no scheme or path (e.g. otlp-gateway-prod-us-central-0.grafana.net:443); " +
+					"a full URL is only valid for protocol=http")
 			}
 		}
 		return nil
@@ -1055,10 +1065,10 @@ func (c *Config) validationChecks() []configCheck {
 		if c.OTLP.Protocol == "http" {
 			u, err := url.Parse(c.OTLP.Endpoint)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-				return fmt.Errorf("otlp.endpoint %q invalid for otlp.protocol=http: use a full URL with "+
-					"an http:// or https:// scheme and a host (e.g. "+
-					"https://otlp-gateway-prod-us-central-0.grafana.net/otlp); a scheme-less host:port "+
-					"is only valid for protocol=grpc", c.OTLP.Endpoint)
+				return fmt.Errorf("otlp.endpoint invalid for otlp.protocol=http: use a full URL with " +
+					"an http:// or https:// scheme and a host (e.g. " +
+					"https://otlp-gateway-prod-us-central-0.grafana.net/otlp); a scheme-less host:port " +
+					"is only valid for protocol=grpc")
 			}
 		}
 		return nil
@@ -1375,9 +1385,9 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
-	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to 0 (unlimited) or a positive count.", func() error {
-		if n := c.Prometheus.MaxRequestsInFlight; n < 0 {
-			return fmt.Errorf("prometheus.max_requests_in_flight must be 0 (unlimited) or positive (got %d)", n)
+	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to a positive count.", func() error {
+		if n := c.Prometheus.MaxRequestsInFlight; n <= 0 {
+			return fmt.Errorf("prometheus.max_requests_in_flight must be positive (got %d)", n)
 		}
 		return nil
 	})
@@ -1790,6 +1800,15 @@ func (c *Config) validationChecks() []configCheck {
 			if t.URL == "" {
 				return fmt.Errorf("collectors.node_metrics.targets[%d].url is required", i)
 			}
+			u, err := url.Parse(t.URL)
+			if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+				return fmt.Errorf("collectors.node_metrics.targets[%d].url must be a valid absolute HTTP(S) URL", i)
+			}
+			hasCredential := t.BearerToken.Reveal() != "" || t.BearerTokenFile != "" || len(t.Headers) > 0 ||
+				(t.TLS != nil && (t.TLS.CertFile != "" || t.TLS.KeyFile != ""))
+			if hasCredential && u.Scheme != "https" && !httpguard.IsLoopbackHost(u.Host) {
+				return fmt.Errorf("collectors.node_metrics.targets[%d].url must use HTTPS when credentials are configured, except for loopback", i)
+			}
 			// Reject two static targets that resolve to the same EFFECTIVE identity
 			// (normalized URL + node-identity label). Such a pair scrapes one endpoint
 			// twice under one identity and, for counters, corrupts each other's delta
@@ -1800,7 +1819,7 @@ func (c *Config) validationChecks() []configCheck {
 			if j, dup := seenTargetID[id]; dup {
 				return fmt.Errorf("collectors.node_metrics.targets[%d] duplicates targets[%d]: both resolve to "+
 					"the same target identity (url %q, instance %q) — remove one or give them distinct instances",
-					i, j, t.URL, effectiveNodeMetricsInstance(t))
+					i, j, redact.URLOrigin(t.URL), effectiveNodeMetricsInstance(t))
 			}
 			seenTargetID[id] = i
 		}
@@ -2020,7 +2039,7 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		u, err := url.Parse(g.Download.Endpoint)
 		if err != nil || !u.IsAbs() || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-			return fmt.Errorf("enrichment.geoip.download.endpoint %q invalid: must be an absolute http(s) URL", g.Download.Endpoint)
+			return fmt.Errorf("enrichment.geoip.download.endpoint invalid: must be an absolute http(s) URL")
 		}
 		return nil
 	})
@@ -2325,7 +2344,7 @@ func (c *Config) validateNoURLCredentials() error {
 	for _, ch := range checks {
 		if redact.HasUserinfo(ch.value) {
 			return fmt.Errorf("%s %q embeds credentials in the URL (the \"user:password@host\" form): "+
-				"remove them — %s", ch.key, redact.URL(ch.value), ch.useFmt)
+				"remove them — %s", ch.key, redact.URLOrigin(ch.value), ch.useFmt)
 		}
 	}
 	return nil

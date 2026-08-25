@@ -8,7 +8,9 @@
 package redact
 
 import (
+	"net"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -54,6 +56,39 @@ func URL(raw string) string {
 	}
 	u.Fragment = ""
 	u.RawFragment = ""
+	return u.String()
+}
+
+// URLOrigin renders only the parsed scheme and authority. It is the safe form
+// for lower-trust diagnostics because userinfo, path segments, query values and
+// fragments can all carry reusable credentials. Malformed input is never
+// echoed.
+func URLOrigin(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	// OTLP/gRPC conventionally uses an authority rather than a URL. Preserve a
+	// valid host:port endpoint, but reject anything that could smuggle URL
+	// credentials or path/query material through this compatibility form.
+	if !strings.Contains(raw, "://") {
+		host, port, err := net.SplitHostPort(raw)
+		portNumber, portErr := strconv.Atoi(port)
+		if err == nil && portErr == nil && host != "" && portNumber >= 1 && portNumber <= 65535 &&
+			!strings.ContainsAny(host, "/\\?#@\x00\r\n\t ") {
+			return raw
+		}
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return placeholder
+	}
+	u.User = nil
+	u.Path = ""
+	u.RawPath = ""
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.RawFragment = ""
+	u.ForceQuery = false
 	return u.String()
 }
 

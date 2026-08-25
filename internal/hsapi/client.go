@@ -9,10 +9,13 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
+	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -103,7 +106,7 @@ func NewClient(opts Options) *Client {
 	return &Client{
 		baseURL:          strings.TrimRight(opts.URL, "/"),
 		apiKey:           opts.APIKey,
-		http:             &http.Client{Timeout: opts.Timeout},
+		http:             httpguard.NoRedirectClient(&http.Client{Timeout: opts.Timeout}),
 		maxResponseBytes: maxBytes,
 		tracer:           tracer,
 		onRequest:        opts.OnRequest,
@@ -122,6 +125,22 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	start := time.Now()
 	label := endpointLabel(path)
 	spanCtx, span := c.tracer.Start(ctx, "headscale.api "+label, trace.WithSpanKind(trace.SpanKindClient))
+	base, parseErr := url.Parse(c.baseURL)
+	if parseErr != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
+		err := errors.New("headscale URL is not a valid absolute HTTP(S) origin")
+		c.observe(spanCtx, span, label, start, 0, err)
+		return err
+	}
+	if base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
+		err := errors.New("headscale URL must contain only a scheme and host")
+		c.observe(spanCtx, span, label, start, 0, err)
+		return err
+	}
+	if base.Scheme != "https" && !httpguard.IsLoopbackHost(base.Host) {
+		err := errors.New("headscale URL must use HTTPS except for a loopback development endpoint")
+		c.observe(spanCtx, span, label, start, 0, err)
+		return err
+	}
 
 	req, err := http.NewRequestWithContext(spanCtx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -192,7 +211,7 @@ func (c *Client) observe(spanCtx context.Context, span trace.Span, label string,
 		span.SetAttributes(
 			attribute.String("headscale.endpoint", label),
 			attribute.String("http.request.method", http.MethodGet),
-			attribute.String("server.address", c.baseURL),
+			attribute.String("server.address", redact.URLOrigin(c.baseURL)),
 		)
 		if status != 0 {
 			span.SetAttributes(attribute.Int("http.response.status_code", status))

@@ -2,7 +2,9 @@ package sqlitestore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -18,7 +20,7 @@ import (
 // by a NEWER binary is refused rather than migrated backwards: silently reading
 // a schema we do not understand would produce a plausible-looking but wrong
 // flow view, which is the one outcome this whole feature must avoid.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // columns is the insert column list, in the order the writer binds and the
 // order scanRecent expects. Every read and write in this package derives its
@@ -108,6 +110,10 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_flows_time_seq ON flows (time DESC, seq DESC)`,
 	// The retention sweep and the row cap both delete by oldest-first.
 	`CREATE INDEX IF NOT EXISTS idx_flows_time ON flows (time)`,
+	`CREATE TABLE IF NOT EXISTS metadata (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`,
 }
 
 // dbFileName derives this tailnet's filename. Tailnet names contain dots and
@@ -116,8 +122,21 @@ var migrations = []string{
 // harmless in practice because a process serves each tailnet once — but a
 // traversal in it would not be, so separators can never survive.
 func dbFileName(tailnet string) string {
+	slug := tailnetSlug(tailnet, 48)
+	digest := sha256.Sum256([]byte(tailnet))
+	return "flows-" + slug + "-" + hex.EncodeToString(digest[:16]) + ".db"
+}
+
+func legacyDBFileName(tailnet string) string {
+	return "flows-" + tailnetSlug(tailnet, 0) + ".db"
+}
+
+func tailnetSlug(tailnet string, max int) string {
 	var b strings.Builder
 	for _, r := range tailnet {
+		if max > 0 && b.Len() >= max {
+			break
+		}
 		switch {
 		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
 			b.WriteRune(r)
@@ -129,7 +148,22 @@ func dbFileName(tailnet string) string {
 	if name == "" {
 		name = "default"
 	}
-	return "flows-" + name + ".db"
+	return name
+}
+
+// ValidateTailnetNames rejects a configured set whose members shared one
+// legacy filename. That makes automatic migration attributable before any one
+// runtime can move a file that a later runtime might also claim.
+func ValidateTailnetNames(tailnets []string) error {
+	seen := make(map[string]string, len(tailnets))
+	for _, tailnet := range tailnets {
+		key := strings.ToLower(legacyDBFileName(tailnet))
+		if prior, ok := seen[key]; ok && prior != tailnet {
+			return fmt.Errorf("sqlitestore: tailnets %q and %q share legacy database filename %q; move or identify the legacy database before startup", prior, tailnet, legacyDBFileName(tailnet))
+		}
+		seen[key] = tailnet
+	}
+	return nil
 }
 
 // Open prepares this tailnet's database and starts the write-behind goroutine.
@@ -147,7 +181,15 @@ func Open(opts Options) (*Store, error) {
 		return nil, fmt.Errorf("sqlitestore: create %s: %w", opts.Dir, err)
 	}
 
-	path := filepath.Join(opts.Dir, dbFileName(opts.Tailnet))
+	path, existed, err := prepareDBPath(opts.Dir, opts.Tailnet)
+	if err != nil {
+		return nil, err
+	}
+	guard, err := openDatabaseGuard(path, existed)
+	if err != nil {
+		return nil, err
+	}
+	defer guard.Close()
 
 	// WAL keeps the single writer from blocking readers, which matters because
 	// the admin page reads while the drain goroutine writes. busy_timeout covers
@@ -163,19 +205,41 @@ func Open(opts Options) (*Store, error) {
 		return nil, fmt.Errorf("sqlitestore: open %s: %w", path, err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), opts.QueryTimeout)
+	defer cancel()
+
+	// Force SQLite to establish one connection while the no-follow guard is
+	// held, then prove the pathname still identifies that guarded file before
+	// any schema or metadata mutation. Keep the pool at one connection until
+	// migration completes so every startup statement uses that connection.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("sqlitestore: connect %s: %w", path, err)
+	}
+	if err := verifyDatabaseGuard(path, guard); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := migrate(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := ensureTailnetIdentity(ctx, db, opts.Tailnet, !existed); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := verifyDatabaseGuard(path, guard); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	// One writer goroutine and a handful of readers. Leaving this unbounded lets
 	// modernc open a connection per concurrent reader, each with its own page
 	// cache, which is a memory footprint nobody asked for.
 	db.SetMaxOpenConns(4)
 	db.SetMaxIdleConns(2)
-
-	ctx, cancel := context.WithTimeout(context.Background(), opts.QueryTimeout)
-	defer cancel()
-
-	if err := migrate(ctx, db); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
 
 	s := &Store{
 		opts:  opts,
@@ -189,6 +253,51 @@ func Open(opts Options) (*Store, error) {
 	go s.run()
 
 	return s, nil
+}
+
+func prepareDBPath(dir, tailnet string) (string, bool, error) {
+	path := filepath.Join(dir, dbFileName(tailnet))
+	legacy := filepath.Join(dir, legacyDBFileName(tailnet))
+	_, newErr := os.Lstat(path)
+	_, legacyErr := os.Lstat(legacy)
+	newExists := newErr == nil
+	legacyExists := legacyErr == nil
+	if newErr != nil && !os.IsNotExist(newErr) {
+		return "", false, fmt.Errorf("sqlitestore: inspect %s: %w", path, newErr)
+	}
+	if legacyErr != nil && !os.IsNotExist(legacyErr) {
+		return "", false, fmt.Errorf("sqlitestore: inspect legacy %s: %w", legacy, legacyErr)
+	}
+	if newExists && legacyExists {
+		return "", false, fmt.Errorf("sqlitestore: both new and legacy databases exist for tailnet %q; refusing ambiguous migration", tailnet)
+	}
+	if legacyExists {
+		return "", false, fmt.Errorf(
+			"sqlitestore: legacy database %s cannot prove its tailnet identity; refusing automatic migration for configured tailnet %q; archive it or explicitly migrate it after independently verifying ownership",
+			legacy, tailnet)
+	}
+	return path, newExists, nil
+}
+
+func ensureTailnetIdentity(ctx context.Context, db *sql.DB, tailnet string, allowInitialClaim bool) error {
+	var stored string
+	err := db.QueryRowContext(ctx, "SELECT value FROM metadata WHERE key = 'tailnet'").Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		if !allowInitialClaim {
+			return fmt.Errorf("sqlitestore: existing database has no tailnet identity; refusing to claim it for %q", tailnet)
+		}
+		if _, err := db.ExecContext(ctx, "INSERT INTO metadata(key, value) VALUES('tailnet', ?)", tailnet); err != nil {
+			return fmt.Errorf("sqlitestore: persist tailnet identity: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("sqlitestore: read tailnet identity: %w", err)
+	}
+	if stored != tailnet {
+		return fmt.Errorf("sqlitestore: tailnet identity mismatch: database belongs to %q, configured for %q", stored, tailnet)
+	}
+	return nil
 }
 
 // migrate brings the database up to schemaVersion, or refuses it.

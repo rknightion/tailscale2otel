@@ -125,10 +125,16 @@
           "format": "date-time",
           "type": "string"
         },
+        "max_bytes": {
+          "type": "integer"
+        },
         "recorded": {
           "type": "integer"
         },
         "retained": {
+          "type": "integer"
+        },
+        "retained_bytes": {
           "type": "integer"
         }
       },

@@ -82,6 +82,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tailscale2otel.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
       {{- /*
         The staged drain (receivers -> ingress WAL -> OTLP flush) can run to 30
         seconds, and each stage is bounded in Go. Kubernetes' default budget is

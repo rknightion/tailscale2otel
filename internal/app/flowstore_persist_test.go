@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,9 +56,10 @@ func TestNewFlowStoreBuildsPersistentBackend(t *testing.T) {
 	if !b.Healthy {
 		t.Fatalf("Backend.Healthy = false, error = %q", b.Error)
 	}
-	// The file is named per tailnet so multi-tailnet mode cannot collide.
-	if want := filepath.Join(dir, "flows-acme-example-com.db"); b.Path != want {
-		t.Fatalf("Backend.Path = %q, want %q", b.Path, want)
+	// The file keeps a readable slug but includes a digest so distinct tailnet
+	// names whose slugs collide cannot share a database.
+	if base := filepath.Base(b.Path); !strings.HasPrefix(base, "flows-acme-example-com-") || !strings.HasSuffix(base, ".db") {
+		t.Fatalf("Backend.Path = %q, want readable slug plus identity digest", b.Path)
 	}
 }
 

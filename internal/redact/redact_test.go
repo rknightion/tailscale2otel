@@ -70,6 +70,32 @@ func TestURLKeepsDiagnosticValue(t *testing.T) {
 	}
 }
 
+func TestURLOriginDropsEveryCredentialBearingComponent(t *testing.T) {
+	const secret = "path-query-fragment-secret"
+	raw := "https://user:password@gateway.example.com:8443/" + secret + "?token=" + secret + "#" + secret
+	got := redact.URLOrigin(raw)
+	if got != "https://gateway.example.com:8443" {
+		t.Fatalf("URLOrigin = %q", got)
+	}
+	if strings.Contains(got, secret) {
+		t.Fatalf("URLOrigin leaked secret: %q", got)
+	}
+	if got := redact.URLOrigin("https://[malformed-secret"); strings.Contains(got, "malformed-secret") {
+		t.Fatalf("malformed URL leaked raw input: %q", got)
+	}
+}
+
+func TestURLOriginPreservesBareHostPortEndpoints(t *testing.T) {
+	for _, endpoint := range []string{
+		"otlp-gateway.example.com:443",
+		"[2001:db8::1]:4317",
+	} {
+		if got := redact.URLOrigin(endpoint); got != endpoint {
+			t.Errorf("URLOrigin(%q) = %q, want unchanged host:port", endpoint, got)
+		}
+	}
+}
+
 func TestHasUserinfo(t *testing.T) {
 	cases := []struct {
 		raw  string

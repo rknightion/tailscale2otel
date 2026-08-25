@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,7 +16,9 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
@@ -54,8 +55,10 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 	// upstream of here bounds how fast a scraper (or several) may ask: without a
 	// cap, a scrape interval shorter than the gather time piles goroutines up,
 	// each holding its own full snapshot, until the process is spending its
-	// memory and CPU answering /metrics rather than collecting. All three default
-	// to off so the shipped behavior is byte-identical to before.
+	// memory and CPU answering /metrics rather than collecting. The shipped
+	// defaults keep the gather count finite, coalesce overlap, and time out slow
+	// scrapes; effectiveMetricsMaxRequests also fails safe for a Config assembled
+	// without the normal validation path.
 	//
 	// ErrorLog is the ONLY way a Gather error becomes visible, because
 	// ContinueOnError deliberately keeps the HTTP status at 200 — see
@@ -64,7 +67,7 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 		ErrorHandling:       promhttp.ContinueOnError,
 		EnableOpenMetrics:   true,
 		ErrorLog:            a.gatherErrorLogger(),
-		MaxRequestsInFlight: a.cfg.Prometheus.MaxRequestsInFlight,
+		MaxRequestsInFlight: effectiveMetricsMaxRequests(a.cfg.Prometheus.MaxRequestsInFlight),
 		Timeout:             a.cfg.Prometheus.Timeout.D(),
 		CoalesceGather:      a.cfg.Prometheus.CoalesceGather,
 	}))))
@@ -87,6 +90,13 @@ func (a *App) buildMetricsServer(g prometheus.Gatherer) *http.Server {
 		a.metricsCerts = reloader
 	}
 	return srv
+}
+
+func effectiveMetricsMaxRequests(configured int) int {
+	if configured <= 0 {
+		return 4
+	}
+	return configured
 }
 
 // applyMetricsClientAuth adds mutual-TLS client-certificate verification to the
@@ -116,7 +126,7 @@ func (a *App) applyMetricsClientAuth(tlsCfg *tls.Config) {
 	// checking certificates and reports nothing but a log line, which is exactly
 	// the silent downgrade mutual TLS was configured to prevent.
 	pool := x509.NewCertPool()
-	pem, err := os.ReadFile(caFile)
+	pem, err := safefile.ReadRegular(caFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
 	switch {
 	case err != nil:
 		a.logger.With(semconv.AttrComponent, appcatalog.ComponentMetrics).
@@ -462,8 +472,25 @@ func (a *App) metricsAuthRejected(reason string) {
 func (a *App) requireMetricsAuth(next http.Handler) http.Handler {
 	token := a.cfg.Prometheus.Auth.Token.Reveal()
 	if token == "" {
-		if a.cfg.Prometheus.Auth.AllowUnauthenticated || listenaddr.IsLoopback(a.cfg.Prometheus.Listen) {
+		if a.cfg.Prometheus.Auth.AllowUnauthenticated {
 			return next
+		}
+		if listenaddr.IsLoopback(a.cfg.Prometheus.Listen) {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				reason := ""
+				switch {
+				case !httpguard.IsLoopbackHost(r.Host):
+					reason = reasonUntrustedHost
+				case !httpguard.SameOrigin(r):
+					reason = reasonCrossSiteRequest
+				}
+				if reason != "" {
+					a.metricsAuthRejected(reason)
+					http.Error(w, "metrics access refused: tokenless loopback mode requires a loopback Host and same-origin browser request", http.StatusForbidden)
+					return
+				}
+				next.ServeHTTP(w, r)
+			})
 		}
 		var warnOnce sync.Once
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -657,7 +684,7 @@ func (a *App) metricsScrapeInfo() statusdata.MetricsServingInfo {
 	info.Enabled = a.cfg.Prometheus.Enabled
 	info.Config = statusdata.MetricsServingConfig{
 		Listen:               a.cfg.Prometheus.Listen,
-		MaxRequestsInFlight:  a.cfg.Prometheus.MaxRequestsInFlight,
+		MaxRequestsInFlight:  effectiveMetricsMaxRequests(a.cfg.Prometheus.MaxRequestsInFlight),
 		TimeoutMs:            a.cfg.Prometheus.Timeout.D().Milliseconds(),
 		CoalesceGather:       a.cfg.Prometheus.CoalesceGather,
 		AuthTokenSet:         a.cfg.Prometheus.Auth.Token.Reveal() != "",

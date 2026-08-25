@@ -322,15 +322,15 @@ func TestReadAllClose_MetadataBoundStaysSmallAndSeparate(t *testing.T) {
 // written against.
 func TestSTSEndpoint(t *testing.T) {
 	clearAWSEnv(t)
-	if got := stsEndpoint(); got != "https://sts.amazonaws.com/" {
+	if got, err := stsEndpoint(); err != nil || got != "https://sts.amazonaws.com/" {
 		t.Errorf("no region: %q", got)
 	}
 	t.Setenv(envRegion, "eu-west-2")
-	if got := stsEndpoint(); got != "https://sts.eu-west-2.amazonaws.com/" {
+	if got, err := stsEndpoint(); err != nil || got != "https://sts.eu-west-2.amazonaws.com/" {
 		t.Errorf("with region: %q", got)
 	}
 	t.Setenv(envSTSLegacy, "legacy")
-	if got := stsEndpoint(); got != "https://sts.amazonaws.com/" {
+	if got, err := stsEndpoint(); err != nil || got != "https://sts.amazonaws.com/" {
 		t.Errorf("legacy opt-out: %q", got)
 	}
 }

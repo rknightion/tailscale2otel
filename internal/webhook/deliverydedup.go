@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"crypto/sha256"
 	"sync"
 	"time"
 )
@@ -13,15 +14,17 @@ type deliveryDeduper struct {
 	ttl      time.Duration
 	capacity int
 	now      func() time.Time
-	seen     map[string]time.Time
+	seen     map[deliveryDigest]time.Time
 	order    []deliveryEntry
 	head     int
 }
 
 type deliveryEntry struct {
-	key     string
+	key     deliveryDigest
 	expires time.Time
 }
+
+type deliveryDigest [sha256.Size]byte
 
 func newDeliveryDeduper(ttl time.Duration, capacity int, now func() time.Time) *deliveryDeduper {
 	if ttl <= 0 {
@@ -35,23 +38,24 @@ func newDeliveryDeduper(ttl time.Duration, capacity int, now func() time.Time) *
 	}
 	return &deliveryDeduper{
 		ttl: ttl, capacity: capacity, now: now,
-		seen: make(map[string]time.Time, capacity), order: make([]deliveryEntry, 0, capacity),
+		seen: make(map[deliveryDigest]time.Time, capacity), order: make([]deliveryEntry, 0, capacity),
 	}
 }
 
 // Add reports whether key has not been observed within the deduplication TTL.
 // Expired entries and then the oldest live entries are evicted deterministically.
 func (d *deliveryDeduper) Add(key string) bool {
+	digest := sha256.Sum256([]byte(key))
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
 	d.evictExpiredLocked(now)
-	if _, ok := d.seen[key]; ok {
+	if _, ok := d.seen[digest]; ok {
 		return false
 	}
 	expires := now.Add(d.ttl)
-	d.seen[key] = expires
-	d.order = append(d.order, deliveryEntry{key: key, expires: expires})
+	d.seen[digest] = expires
+	d.order = append(d.order, deliveryEntry{key: digest, expires: expires})
 	for len(d.seen) > d.capacity {
 		entry := d.order[d.head]
 		delete(d.seen, entry.key)

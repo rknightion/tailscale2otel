@@ -28,6 +28,12 @@ func platformRemoveAt(*os.File, string) error { return ErrUnsupported }
 
 func platformModeAt(*os.File, string) (os.FileMode, error) { return 0, ErrUnsupported }
 
+func platformOwnerUID(*os.File) (uint32, error) { return 0, ErrUnsupported }
+
+func platformOwnerUIDAt(*os.File, string) (uint32, error) { return 0, ErrUnsupported }
+
+func platformEffectiveUID() uint32 { return 0 }
+
 func platformLockExclusive(*os.File) error { return ErrUnsupported }
 
 func platformUnlock(*os.File) error { return ErrUnsupported }
