@@ -3,10 +3,10 @@ id: TSO-0006
 title: >-
   Migrate to OpenTelemetry v1.46.0 / log v0.22.0 after the log attribute API
   removal
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-26 09:42'
-updated_date: '2026-08-26 10:05'
+updated_date: '2026-08-26 10:56'
 labels: []
 dependencies: []
 ordinal: 10000
@@ -20,17 +20,17 @@ The batched OpenTelemetry Renovate update is the only red pull request on the bo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every use of the removed log package attribute surface is ported onto the shared attribute package types
-- [ ] #2 The root module and all four nested tool modules pin the new OpenTelemetry release train and are tidy
-- [ ] #3 The endpoint-path and record-factory breaking changes in the same release train are confirmed inert or handled
-- [ ] #4 The full local gate passes and hosted CI is green on the default branch
+- [x] #1 Every use of the removed log package attribute surface is ported onto the shared attribute package types
+- [x] #2 The root module and all four nested tool modules pin the new OpenTelemetry release train and are tidy
+- [x] #3 The endpoint-path and record-factory breaking changes in the same release train are confirmed inert or handled
+- [x] #4 The full local gate passes and hosted CI is green on the default branch
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -58,3 +58,15 @@ Cleanup ordering is now explicit rather than dependent on registration sequence.
 
 The endpoint-path change is inert. This project has always appended the per-signal path itself because the exporter used the URL as-is, which is exactly the new behaviour. The record-factory change is inert because nothing here uses the log test factory.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Ported the emitter, the in-memory telemetry recorder and four telemetry test files off the log package's removed Kind/Value/KeyValue surface onto the shared attribute types, and moved the root module plus all four nested tool modules onto the new release train. The provider-scoped const attrs are already shared-attribute values, so their per-record conversion helper collapsed to an identity function and was deleted; constLabelAttrs only ever emits string values, so the emitted wire shape is unchanged.
+
+Two further changes in the same train are silent and cost a ten-minute package timeout each to find. The batch log processor now calls the decorated exporter's force flush from its shutdown path and the logger provider's shutdown drains in-flight operations, so a test fake parked until cancellation wedged an uncancellable cleanup forever; cleanup now opens the barrier and only then shuts down, in one registration so ordering cannot be got wrong. The processor also serialises force flush through a single worker and returns a bare context error on cancellation instead of joining the exporter's, so the concurrency test now asserts that both callers complete and reach the exporter, and the cancellation test asserts the log leg by exporter call count rather than by error text. Neither is a production regression: every production force flush runs under a bounded context and only distinguishes nil from non-nil, and each tailnet runtime owns its own logger provider.
+
+The endpoint-path change is inert because this project has always appended the per-signal path itself, which is exactly the new behaviour; the record-factory change is inert because nothing here uses the log test factory.
+
+Verified: go build, go vet and go test -race clean across the repository; golangci-lint 0 issues; scripts/verify-modules.sh green on all five modules including tidy diffs and govulncheck; no generated-artifact drift; CodeRabbit 0 findings. Landed as 613d0a3 with every hosted CI workflow green, which also closed the batched OpenTelemetry Renovate pull request.
+<!-- SECTION:FINAL_SUMMARY:END -->
