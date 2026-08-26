@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -492,8 +491,8 @@ func TestPIIFilterTailnetNameOmitsFromLogs(t *testing.T) {
 		t.Fatalf("got %d log records, want 1", len(rec.records))
 	}
 	found := map[string]string{}
-	rec.records[0].WalkAttributes(func(kv log.KeyValue) bool {
-		found[kv.Key] = kv.Value.AsString()
+	rec.records[0].WalkAttributes(func(kv attribute.KeyValue) bool {
+		found[string(kv.Key)] = kv.Value.AsString()
 		return true
 	})
 	if _, ok := found["tailscale.tailnet"]; ok {

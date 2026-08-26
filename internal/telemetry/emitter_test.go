@@ -186,8 +186,8 @@ func (e *recordingLogExporter) all() []sdklog.Record {
 
 func logAttrs(r sdklog.Record) map[string]string {
 	out := map[string]string{}
-	r.WalkAttributes(func(kv log.KeyValue) bool {
-		out[kv.Key] = kv.Value.AsString()
+	r.WalkAttributes(func(kv attribute.KeyValue) bool {
+		out[string(kv.Key)] = kv.Value.AsString()
 		return true
 	})
 	return out
@@ -442,9 +442,9 @@ func TestEmitter_LogEventTruncatesOversizedAttributeValue(t *testing.T) {
 		t.Fatalf("int_attr missing")
 	}
 	var sawInt64Kind bool
-	recs[0].WalkAttributes(func(kv log.KeyValue) bool {
+	recs[0].WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == "int_attr" {
-			sawInt64Kind = kv.Value.Kind() == log.KindInt64 && kv.Value.AsInt64() == 12345
+			sawInt64Kind = kv.Value.Type() == attribute.INT64 && kv.Value.AsInt64() == 12345
 		}
 		return true
 	})

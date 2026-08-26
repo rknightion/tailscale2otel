@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -253,8 +252,8 @@ func attrMap(set attribute.Set) map[string]string {
 // flattenLogRecord converts a captured sdklog.Record to a LogRecord.
 func flattenLogRecord(rec sdklog.Record) LogRecord {
 	attrs := map[string]string{}
-	rec.WalkAttributes(func(kv log.KeyValue) bool {
-		attrs[kv.Key] = kv.Value.AsString()
+	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
+		attrs[string(kv.Key)] = kv.Value.AsString()
 		return true
 	})
 	return LogRecord{

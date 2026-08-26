@@ -12,7 +12,6 @@ import (
 	"unicode/utf8"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/log/noop"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
@@ -196,7 +195,7 @@ func TestLogEventAppendsConstAttrs(t *testing.T) {
 		t.Fatalf("got %d records, want 1", len(rec.records))
 	}
 	found := false
-	rec.records[0].WalkAttributes(func(kv log.KeyValue) bool {
+	rec.records[0].WalkAttributes(func(kv attribute.KeyValue) bool {
 		if kv.Key == "tailscale.tailnet" && kv.Value.AsString() == "alpha" {
 			found = true
 		}

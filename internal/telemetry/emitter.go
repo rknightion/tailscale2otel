@@ -371,9 +371,9 @@ func (e *otelEmitter) observeLogTruncation(field string, droppedBytes int) {
 // LOG attributes (built from an Event's Attrs by toLogKV) — it never touches a
 // metric data-point attribute, so operational metric labels are never
 // truncated or merged by this path.
-func (e *otelEmitter) boundedLogKV(kvs []log.KeyValue) []log.KeyValue {
+func (e *otelEmitter) boundedLogKV(kvs []attribute.KeyValue) []attribute.KeyValue {
 	for i := range kvs {
-		if kvs[i].Value.Kind() != log.KindString {
+		if kvs[i].Value.Type() != attribute.STRING {
 			continue
 		}
 		s := kvs[i].Value.AsString()
@@ -381,7 +381,7 @@ func (e *otelEmitter) boundedLogKV(kvs []log.KeyValue) []log.KeyValue {
 		if !truncated {
 			continue
 		}
-		kvs[i].Value = log.StringValue(truncatedVal)
+		kvs[i].Value = attribute.StringValue(truncatedVal)
 		e.observeLogTruncation("attribute", dropped)
 	}
 	return kvs
@@ -424,7 +424,7 @@ func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
 	}
 	r.SetSeverity(toLogSeverity(ev.Severity))
 	r.SetSeverityText(ev.Severity.String())
-	r.SetBody(log.StringValue(body))
+	r.SetBody(attribute.StringValue(body))
 	// The log SDK exposes a native EventName field (log v0.20.0+); use it instead
 	// of carrying the event type as a separate "event.name" attribute.
 	if ev.Name != "" {
@@ -432,21 +432,10 @@ func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
 	}
 	r.AddAttributes(e.boundedLogKV(toLogKV(ev.Attrs))...)
 	if len(e.constAttrs) > 0 {
-		r.AddAttributes(constAttrsToLogKV(e.constAttrs)...)
+		r.AddAttributes(e.constAttrs...)
 	}
 	e.emittedLogs.Add(1)
 	e.logger.Emit(ctx, r)
-}
-
-// constAttrsToLogKV converts provider-scoped const attrs (string-valued) to log
-// key-values. The const attrs are always attribute.String, so a direct conversion
-// suffices.
-func constAttrsToLogKV(attrs []attribute.KeyValue) []log.KeyValue {
-	kvs := make([]log.KeyValue, 0, len(attrs))
-	for _, a := range attrs {
-		kvs = append(kvs, log.String(string(a.Key), a.Value.AsString()))
-	}
-	return kvs
 }
 
 func toLogSeverity(s Severity) log.Severity {
@@ -461,27 +450,27 @@ func toLogSeverity(s Severity) log.Severity {
 }
 
 // toLogKV converts an Attrs map to OTEL log attributes.
-func toLogKV(attrs Attrs) []log.KeyValue {
+func toLogKV(attrs Attrs) []attribute.KeyValue {
 	if len(attrs) == 0 {
 		return nil
 	}
-	kvs := make([]log.KeyValue, 0, len(attrs)+1)
+	kvs := make([]attribute.KeyValue, 0, len(attrs)+1)
 	for k, v := range attrs {
 		switch val := v.(type) {
 		case string:
-			kvs = append(kvs, log.String(k, val))
+			kvs = append(kvs, attribute.String(k, val))
 		case bool:
-			kvs = append(kvs, log.Bool(k, val))
+			kvs = append(kvs, attribute.Bool(k, val))
 		case int:
-			kvs = append(kvs, log.Int64(k, int64(val)))
+			kvs = append(kvs, attribute.Int64(k, int64(val)))
 		case int64:
-			kvs = append(kvs, log.Int64(k, val))
+			kvs = append(kvs, attribute.Int64(k, val))
 		case float64:
-			kvs = append(kvs, log.Float64(k, val))
+			kvs = append(kvs, attribute.Float64(k, val))
 		case []string:
-			kvs = append(kvs, log.String(k, strings.Join(val, ",")))
+			kvs = append(kvs, attribute.String(k, strings.Join(val, ",")))
 		default:
-			kvs = append(kvs, log.String(k, fmt.Sprint(val)))
+			kvs = append(kvs, attribute.String(k, fmt.Sprint(val)))
 		}
 	}
 	return kvs
