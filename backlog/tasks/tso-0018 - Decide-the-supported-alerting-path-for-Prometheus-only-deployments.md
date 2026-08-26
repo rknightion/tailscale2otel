@@ -1,9 +1,11 @@
 ---
 id: TSO-0018
 title: Decide the supported alerting path for Prometheus-only deployments
-status: To Do
-assignee: []
+status: Parked
+assignee:
+  - '@codex'
 created_date: '2026-08-26 11:02'
+updated_date: '2026-08-26 16:58'
 labels:
   - needs-triage
   - user-friendliness
@@ -25,14 +27,32 @@ The project exports Prometheus metrics but ships only Grafana-managed alert rule
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The task records whether Prometheus-compatible rule deployment is supported, deliberately unsupported, or deferred with named blockers
-- [ ] #2 The decision covers normalized metric-name portability, recording rules, runbook links, and how generated artifacts avoid drift
-- [ ] #3 User-facing alert and Prometheus documentation states the chosen support boundary without presenting test fixtures as deployable
+- [x] #1 The task records whether Prometheus-compatible rule deployment is supported, deliberately unsupported, or deferred with named blockers
+- [x] #2 The decision covers normalized metric-name portability, recording rules, runbook links, and how generated artifacts avoid drift
+- [x] #3 User-facing alert and Prometheus documentation states the chosen support boundary without presenting test fixtures as deployable
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Promote the Prometheus rule rendering to the frozen committed artifact, preserve normalized names/recording rules/runbooks, and execute it with promtool fixtures.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Supported Prometheus rules, drift generation, normalized names, recording rules, runbooks, and semantic fixtures are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Promtool execution passed with the pinned Prometheus container. Resume with exact-head CI and live rule deployment verification.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Supported Prometheus alert rules are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending CI and live deployment proof.
+<!-- SECTION:FINAL_SUMMARY:END -->

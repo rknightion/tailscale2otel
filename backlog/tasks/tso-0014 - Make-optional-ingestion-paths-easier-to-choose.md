@@ -1,9 +1,11 @@
 ---
 id: TSO-0014
 title: Make optional ingestion paths easier to choose
-status: To Do
-assignee: []
+status: Parked
+assignee:
+  - '@codex'
 created_date: '2026-08-26 11:02'
+updated_date: '2026-08-26 16:58'
 labels:
   - needs-triage
   - user-friendliness
@@ -25,15 +27,33 @@ Streaming, object-store ingestion, and webhooks are accurately documented in det
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Streaming and Webhooks opens with a choice between default poll, low-latency stream, durable/backfill object storage, and event-only webhooks
-- [ ] #2 Kubernetes audit is linked from primary feature navigation as an advanced optional feed, with prerequisites before configuration
-- [ ] #3 Kubernetes audit, configuration, metrics, dashboards, and alert context link to each other
-- [ ] #4 The authoritative compatibility matrix and no-double-counting warning remain intact
+- [x] #1 Streaming and Webhooks opens with a choice between default poll, low-latency stream, durable/backfill object storage, and event-only webhooks
+- [x] #2 Kubernetes audit is linked from primary feature navigation as an advanced optional feed, with prerequisites before configuration
+- [x] #3 Kubernetes audit, configuration, metrics, dashboards, and alert context link to each other
+- [x] #4 The authoritative compatibility matrix and no-double-counting warning remain intact
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Add the ingestion-path chooser and cross-links while preserving the compatibility matrix and no-double-counting warning; return any root-owned nav block.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The ingestion chooser and cross-links are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; the compatibility matrix and no-double-counting warning were preserved. Resume with exact-head CI.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Optional ingestion-path guidance is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

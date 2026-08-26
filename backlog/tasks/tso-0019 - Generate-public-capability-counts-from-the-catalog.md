@@ -1,9 +1,11 @@
 ---
 id: TSO-0019
 title: Generate public capability counts from the catalog
-status: To Do
-assignee: []
+status: Parked
+assignee:
+  - '@codex'
 created_date: '2026-08-26 11:02'
+updated_date: '2026-08-26 16:58'
 labels:
   - needs-triage
   - user-friendliness
@@ -26,14 +28,32 @@ README and entry pages repeatedly hard-code metric, log-event, collector, dashbo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A deterministic source provides the public metric, log-event, collector, dashboard, alert-rule, and recording-rule counts
-- [ ] #2 README, docs index, Comparison, FAQ, and navigation summaries cannot drift silently from those sources
-- [ ] #3 The check fails with an actionable regeneration or edit instruction
+- [x] #1 A deterministic source provides the public metric, log-event, collector, dashboard, alert-rule, and recording-rule counts
+- [x] #2 README, docs index, Comparison, FAQ, and navigation summaries cannot drift silently from those sources
+- [x] #3 The check fails with an actionable regeneration or edit instruction
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Derive six public capability counts from catalog and shipped artifacts, add the frozen generated source/checker, then reconcile every owned numeric summary.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Generated capability counts and public-summary drift checks are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Current derived values are 293 metrics, 17 log events, 16 collectors, 2 dashboards, 100 alert rules, and 23 recording rules. Resume with exact-head CI.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Generated capability counts are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+<!-- SECTION:FINAL_SUMMARY:END -->
