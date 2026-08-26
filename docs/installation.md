@@ -11,12 +11,17 @@ tags:
 Pick the method that fits your environment — Docker Compose for a quick single-host
 deployment, Helm for Kubernetes, or a local binary build for testing.
 
+Choose the telemetry destination before copying an install command. [Getting Started](getting-started.md)
+contains the canonical runnable configuration and launch command for Grafana Cloud OTLP, Prometheus
+pull, and stdout on Docker, Compose, Helm, and a local binary. This page covers installation,
+persistence, health checks, and production secret handling for those commands.
+
 Before you start, you will need:
 
 - A Tailscale [OAuth client](https://tailscale.com/kb/1215/oauth-clients) (recommended) or an API key.
-- An OTLP destination — Grafana Cloud, a self-hosted Alloy/Collector, or `stdout` for local debug.
-  Exporting through a Collector gateway rather than straight to the backend has its own validated
-  recipe: see [Collector Gateway](gateway.md).
+- The [destination route you chose](getting-started.md#choose-a-destination): Grafana Cloud or an
+  OTLP receiver, Prometheus pull, or stdout for local debug. Exporting through a Collector gateway
+  rather than straight to the backend has its own validated recipe: see [Collector Gateway](gateway.md).
 
 See [Configuration](configuration.md) for the full list of options once you are up and running.
 

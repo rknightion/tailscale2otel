@@ -537,6 +537,7 @@ assert_rc0 "N: default renders"
 # Each listener, enabled with its credential, gets exactly one Service mapping
 # exactly its own port.
 render --set config.prometheus.enabled=true \
+       --set-string config.prometheus.listen=:2112 \
        --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set service.prometheus.enabled=true
 assert_rc0 "N: prometheus Service renders"
@@ -602,12 +603,54 @@ render --set service.admin.enabled=true
 # A *_file credential is just as valid as an inline one; requiring the inline
 # form would push operators back to the thing #341 just removed.
 render --set config.prometheus.enabled=true \
+       --set-string config.prometheus.listen=:2112 \
        --set-string config.prometheus.auth.token_file=/run/secrets/promtok \
        --set service.prometheus.enabled=true
 assert_rc0 "N: token_file satisfies the credential requirement"
 
+render --set config.prometheus.enabled=true \
+       --set-string config.prometheus.listen=:2112 \
+       --set-string "secret.TS2OTEL_PROMETHEUS__AUTH__TOKEN=${SENTINEL}" \
+       --set service.prometheus.enabled=true
+assert_rc0 "N: chart-managed Prometheus env token satisfies the Service credential requirement"
+
+render --set config.prometheus.enabled=true \
+       --set-string config.prometheus.listen=:2112 \
+       --set-string existingSecret=external-creds \
+       --set-string metrics.externalPrometheusToken=present \
+       --set service.prometheus.enabled=true
+assert_rc0 "N: declared opaque Prometheus token satisfies the Service credential requirement"
+
+for external_config in existingConfigMap existingConfigSecret; do
+  for ignored_credential in token token_file; do
+    render --set-string "${external_config}=opaque-config" \
+           --set-string config.delivery.mode=prometheus \
+           --set-string config.prometheus.listen=:2112 \
+           --set-string "config.prometheus.auth.${ignored_credential}=ignored" \
+           --set-string metrics.externalPrometheusToken=absent \
+           --set service.prometheus.enabled=true
+    if [[ $RENDER_RC -ne 0 ]] && grep -q 'requires a Prometheus credential' <<<"$RENDER"; then
+      ok "N: ${external_config} ignores config prometheus auth ${ignored_credential} for the Service gate"
+    else
+      bad "N: discarded ${ignored_credential} bypassed the Service credential gate under ${external_config} (rc=$RENDER_RC)"
+    fi
+  done
+done
+
+# A Service cannot forward into another container's loopback namespace. The
+# chart must reject this instead of publishing a target that stays down.
+render --set config.prometheus.enabled=true \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set service.prometheus.enabled=true
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'loopback-only' <<<"$RENDER"; then
+  ok "N: prometheus Service rejects the unreachable loopback default"
+else
+  bad "N: prometheus Service rendered against pod loopback (rc=$RENDER_RC)"
+fi
+
 # No aggregate Service, and LoadBalancer must never be a default.
-render --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set service.prometheus.enabled=true \
        --set config.webhook.enabled=true --set-string "config.webhook.secret=${SENTINEL}" \
        --set service.webhook.enabled=true
@@ -632,7 +675,8 @@ assert_rc0 "O: default renders"
   && ok "O: no PodMonitor by default (a cluster without the CRDs is unaffected)" \
   || bad "O: a PodMonitor rendered by default"
 
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
 assert_rc0 "O: PodMonitor renders"
 [[ "$(n_kind PodMonitor)" == "1" ]] && ok "O: exactly one PodMonitor" || bad "O: PodMonitor count is $(n_kind PodMonitor)"
 pm() { yq 'select(.kind == "PodMonitor") | '"$1" <<<"$RENDER"; }
@@ -645,7 +689,8 @@ pm() { yq 'select(.kind == "PodMonitor") | '"$1" <<<"$RENDER"; }
   && ok "O: PodMonitor works with no Service rendered" || bad "O: a Service was required"
 
 # Follows the listener's TLS, same rule as the probes (#342).
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true \
        --set-string config.prometheus.tls.cert_file=/tls/tls.crt \
        --set-string config.prometheus.tls.key_file=/tls/tls.key
 assert_rc0 "O: TLS listener renders"
@@ -653,7 +698,8 @@ assert_rc0 "O: TLS listener renders"
   && ok "O: scheme follows listener TLS" || bad "O: scheme did not follow listener TLS"
 
 # Auth is REFERENCED, never embedded.
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
        --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
        --set-string metrics.podMonitor.bearerTokenSecret.key=token
@@ -664,9 +710,57 @@ grep -q -- "$SENTINEL" <<<"$(yq 'select(.kind == "PodMonitor")' <<<"$RENDER")" \
   && bad "O: the token VALUE was embedded in the PodMonitor" \
   || ok "O: no token value in the PodMonitor (reference only)"
 
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set-string config.prometheus.auth.token_file=/run/secrets/promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.key=token
+assert_rc0 "O: token_file with bearerTokenSecret renders"
+
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set-string "secret.TS2OTEL_PROMETHEUS__AUTH__TOKEN=${SENTINEL}" \
+       --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.key=token
+assert_rc0 "O: chart-managed Prometheus env token with bearerTokenSecret renders"
+
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set config.prometheus.auth.allow_unauthenticated=true \
+       --set-string "secret.TS2OTEL_PROMETHEUS__AUTH__TOKEN=${SENTINEL}"
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "O: chart-managed Prometheus env token still requires bearerTokenSecret" \
+  || bad "O: env-token-protected PodMonitor rendered without bearerTokenSecret"
+
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set config.prometheus.auth.allow_unauthenticated=true \
+       --set-string existingSecret=external-creds
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'metrics.externalPrometheusToken' <<<"$RENDER"; then
+  ok "O: opaque auth source requires an explicit Prometheus token posture"
+else
+  bad "O: opaque auth source rendered with an unknown Prometheus token posture (rc=$RENDER_RC)"
+fi
+
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set config.prometheus.auth.allow_unauthenticated=true \
+       --set-string existingSecret=external-creds \
+       --set-string metrics.externalPrometheusToken=absent
+assert_rc0 "O: explicit absent token posture permits acknowledged unauthenticated scraping"
+
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
+       --set-string existingSecret=external-creds \
+       --set-string metrics.externalPrometheusToken=present \
+       --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.key=token
+assert_rc0 "O: explicit present token posture with bearerTokenSecret renders"
+
 # A scrape that cannot authenticate does not fail loudly — it silently reports
 # no data. That must be a render error.
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
        --set-string "config.prometheus.auth.token=${SENTINEL}"
 [[ $RENDER_RC -ne 0 ]] \
   && ok "O: token set without bearerTokenSecret fails" \
@@ -678,6 +772,47 @@ render --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_
 [[ $RENDER_RC -ne 0 ]] \
   && ok "O: PodMonitor without the prometheus listener fails" || bad "O: PodMonitor rendered with no listener to scrape"
 
+# delivery.mode is a first-class listener toggle. A monitor must recognize it,
+# but the safe loopback default is intentionally not reachable from a scraper
+# pod and must fail until the operator chooses a network bind plus auth posture.
+render --set-string config.delivery.mode=prometheus --set metrics.podMonitor.enabled=true
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'loopback' <<<"$RENDER"; then
+  ok "O: delivery.mode prometheus rejects an unreachable loopback PodMonitor"
+else
+  bad "O: delivery.mode prometheus allowed a PodMonitor against loopback (rc=$RENDER_RC)"
+fi
+
+# Match every loopback spelling the Go runtime recognizes, not merely the
+# shortest textual forms. A scraper pod cannot reach any of them.
+for loopback_listen in \
+  '[0:0:0:0:0:0:0:1]:2112' \
+  '[::ffff:127.0.0.1]:2112' \
+  '[::ffff:7f00:1]:2112' \
+  'LOCALHOST:2112'; do
+  render --set-string config.delivery.mode=prometheus \
+         --set-string "config.prometheus.listen=${loopback_listen}" \
+         --set metrics.podMonitor.enabled=true
+  if [[ $RENDER_RC -ne 0 ]] && grep -q 'loopback-only' <<<"$RENDER"; then
+    ok "O: PodMonitor rejects runtime-equivalent loopback ${loopback_listen}"
+  else
+    bad "O: PodMonitor rendered against loopback ${loopback_listen} (rc=$RENDER_RC)"
+  fi
+done
+render --set-string config.delivery.mode=prometheus \
+       --set-string config.prometheus.listen=127.example.com:2112 \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set metrics.podMonitor.enabled=true \
+       --set-string metrics.podMonitor.bearerTokenSecret.name=promtok \
+       --set-string metrics.podMonitor.bearerTokenSecret.key=token
+assert_rc0 "O: a DNS name beginning 127 is not misclassified as an IP loopback"
+render --set-string config.delivery.mode=prometheus --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
+assert_rc0 "O: delivery.mode prometheus renders a network-reachable PodMonitor"
+[[ "$(n_kind PodMonitor)" == "1" ]] \
+  && ok "O: delivery.mode prometheus enables the listener" || bad "O: mode listener produced no PodMonitor"
+[[ "$(dep_field '[.spec.template.spec.containers[] | select(.name == "tailscale2otel") | .ports[] | select(.name == "prometheus")] | length')" == "1" ]] \
+  && ok "O: delivery.mode prometheus declares the named port" || bad "O: mode listener omitted named port"
+
 # --------------------------------------------------------------------------
 case_ "P. Prometheus Operator ServiceMonitor (#458)"
 sm() { yq 'select(.kind == "ServiceMonitor") | '"$1" <<<"$RENDER"; }
@@ -687,7 +822,8 @@ assert_rc0 "P: default renders"
 [[ "$(n_kind ServiceMonitor)" == "0" ]] \
   && ok "P: no ServiceMonitor by default" || bad "P: a ServiceMonitor rendered by default"
 
-render --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set service.prometheus.enabled=true --set metrics.serviceMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true \
        --set-string metrics.serviceMonitor.bearerTokenSecret.name=promtok \
        --set-string metrics.serviceMonitor.bearerTokenSecret.key=token
@@ -707,7 +843,8 @@ grep -q -- "$SENTINEL" <<<"$(yq 'select(.kind == "ServiceMonitor")' <<<"$RENDER"
   || ok "P: no token value in the ServiceMonitor (reference only)"
 
 # A ServiceMonitor with no Service matches nothing and reports no data.
-render --set config.prometheus.enabled=true --set metrics.serviceMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.serviceMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
 [[ $RENDER_RC -ne 0 ]] && ok "P: ServiceMonitor without its Service fails" \
   || bad "P: rendered a ServiceMonitor that would match no Service"
 grep -q 'podMonitor' <<<"$RENDER" \
@@ -999,7 +1136,8 @@ case_ "V. admin and prometheus can NEVER produce an Ingress or HTTPRoute (#346)"
 # gateway.prometheus key to even attempt setting.
 render --set config.admin.enabled=true --set-string "config.admin.auth.token=${SENTINEL}" \
        --set service.admin.enabled=true \
-       --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set service.prometheus.enabled=true \
        --set config.streaming.enabled=true --set-string "config.streaming.token=${SENTINEL}" \
        --set service.streaming.enabled=true \
@@ -1244,7 +1382,8 @@ assert_rc0 "Y: bare enable renders"
 # Ingress must match enabled Services/PodMonitor/probes exactly (acceptance: "Enabled
 # Services/PodMonitor/probes have matching ingress").
 render --set networkPolicy.enabled=true \
-       --set config.prometheus.enabled=true --set-string "config.prometheus.auth.token=${SENTINEL}" \
+       --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set-string "config.prometheus.auth.token=${SENTINEL}" \
        --set service.prometheus.enabled=true
 assert_rc0 "Y: prometheus Service renders with policy on"
 [[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 2112)] | length')" == "1" ]] \
@@ -1252,7 +1391,8 @@ assert_rc0 "Y: prometheus Service renders with policy on"
   || bad "Y: prometheus Service enabled but no matching ingress rule"
 
 render --set networkPolicy.enabled=true \
-       --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
+       --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
 assert_rc0 "Y: PodMonitor renders with policy on"
 [[ "$(netpol '[.spec.ingress[] | select(.ports[0].port == 2112)] | length')" == "1" ]] \
   && ok "Y: PodMonitor enablement opens an ingress rule for the prometheus port" \
@@ -1412,7 +1552,8 @@ assert_rc0 "Z: resources.requests accepts an arbitrary (custom) resource-name ke
   && ok "Z: resources.requests custom key rendered" || bad "Z: resources.requests custom key missing"
 
 render --set-json 'metrics.podMonitor.labels={"release":"prometheus"}' \
-       --set metrics.podMonitor.enabled=true --set config.prometheus.enabled=true --set config.prometheus.auth.allow_unauthenticated=true
+       --set metrics.podMonitor.enabled=true --set config.prometheus.enabled=true \
+       --set-string config.prometheus.listen=:2112 --set config.prometheus.auth.allow_unauthenticated=true
 assert_rc0 "Z: metrics.podMonitor.labels accepts an arbitrary key"
 
 # --- Root-level strictness. `--set secrets.foo=bar` is the issue's own repro: a
@@ -1435,12 +1576,14 @@ grep -q "additional properties 'secrets' not allowed" <<<"$RENDER" \
 
 # --- AA: a monitor that scrapes an unauthenticated, network-bound /metrics.
 #
-# config.prometheus.listen defaults to ":2112" — a WILDCARD bind — and the app
+# For the checks below, config.prometheus.listen is explicitly set to a wildcard
+# bind. The safe chart default is loopback and is rejected separately above. The app
 # refuses /metrics there with 403 when no token is set and the exposure is not
 # acknowledged (#315). A PodMonitor/ServiceMonitor pointed at that listener scrapes
 # a 403 forever and reports "no data", which looks like an exporter problem rather
 # than a chart misconfiguration. The chart names it at render time instead.
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true
 [[ $RENDER_RC -ne 0 ]] \
   && ok "AA: podMonitor over an unauthenticated network bind is rejected" \
   || bad "AA: podMonitor over an unauthenticated network bind rendered"
@@ -1454,18 +1597,21 @@ grep -q 'allow_unauthenticated=true to acknowledge' <<<"$RENDER" \
   && ok "AA: the rejection names the acknowledgement knob" \
   || bad "AA: the rejection does not name allow_unauthenticated"
 
-render --set config.prometheus.enabled=true --set service.prometheus.enabled=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set service.prometheus.enabled=true \
        --set metrics.serviceMonitor.enabled=true
 [[ $RENDER_RC -ne 0 ]] \
   && ok "AA: serviceMonitor over an unauthenticated network bind is rejected" \
   || bad "AA: serviceMonitor over an unauthenticated network bind rendered"
 
 # The three ways out, each of which must render.
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
        --set config.prometheus.auth.allow_unauthenticated=true
 assert_rc0 "AA: acknowledging the exposure lets the podMonitor render"
 
-render --set config.prometheus.enabled=true --set metrics.podMonitor.enabled=true \
+render --set config.prometheus.enabled=true --set-string config.prometheus.listen=:2112 \
+       --set metrics.podMonitor.enabled=true \
        --set config.prometheus.auth.token=s3cret \
        --set-json 'metrics.podMonitor.bearerTokenSecret={"name":"t","key":"k"}'
 assert_rc0 "AA: a token plus a matching bearerTokenSecret lets the podMonitor render"

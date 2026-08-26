@@ -30,13 +30,13 @@ go generate ./...                    # regenerate portservice data + install the
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Eight files are committed but **generated** — each a pure function of its inputs and each gated in CI
+Ten artifact families are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
 without the README). `scripts/regen-generated.sh` reproduces them all locally, byte-for-byte with CI:
 
 ```sh
 scripts/regen-generated.sh tools  # ONCE PER MACHINE: install the pinned helm tools (see below)
-scripts/regen-generated.sh        # all (pass helm / helm-docs / helm-schema / metrics / envref to scope)
+scripts/regen-generated.sh        # all (also accepts promrules / counts to scope)
 go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just docs/metrics.md
 go test ./internal/config -run TestEnvReferenceDocInSync -update       # just docs/env-vars.md
 ```
@@ -50,6 +50,8 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
 | `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
 | `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
+| `deploy/alerts/prometheus/tailscale2otel.rules.yaml` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --prom-out …` (stdlib only) |
+| `internal/catalog/capability_counts.json` | in-code catalog + shipped dashboard/rule artifacts | `scripts/check-capability-counts.py --write` (stdlib only) |
 
 > **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
 > CI pins the *actions*, and each action installs one specific tool binary; a local tool of any other
@@ -79,12 +81,13 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all eight via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+CI re-validates all ten artifact families via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
 `docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
 `TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
 normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's
-`dashboards-drift` job, which runs `scripts/regen-generated.sh dashboards` and then
-`git diff --exit-code`). The local tools above are installed on this machine.
+`dashboards-drift` job, which runs `scripts/regen-generated.sh dashboards promrules counts` and then
+`git diff --exit-code`, including the shipped Prometheus rules and public capability-count source).
+The local tools above are installed on this machine.
 
 > **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
 > `scripts/regen-generated.sh coverage` rebuilds only the *page* from the manifest. The manifest itself
@@ -110,7 +113,8 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > its name is an option VALUE in a dropdown. Do not fold the two back together.
 
 > **Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained any more.** The four legacy
-> classic-schema dashboards and the Prometheus-ruler `tailscale2otel.rules.yaml` were **deleted**
+> classic-schema dashboards and the former hand-maintained Prometheus-ruler
+> `deploy/alerts/tailscale2otel.rules.yaml` were **deleted**
 > (#394) — sitting outside the drift gate is exactly why they rotted. The project is **Grafana v2 /
 > Grafana 13+ only and will never ship a Classic export**; do not reintroduce a v1 path (v1 cannot
 > express `conditionalRendering`, so every feature-gated tab would render permanently EMPTY rather
@@ -134,10 +138,10 @@ normal `go test -race ./...` run — no extra workflow step; the two Grafana art
 > `gcx resources push` proves a rule is deployable**, and pushing is pre-authorized here — so push
 > and read the result rather than trusting a green offline run.
 >
-> `build_rules.py --prom-out` renders the same catalogue as throwaway Prometheus rules **purely so
-> `promtool test rules` can execute them** against the fixtures in `deploy/alerts/tests/`. That file
-> is gitignored and never shipped. Parsing proves an expression is well-formed; only execution
-> proves it fires when it should.
+> `build_rules.py --prom-out` renders the same catalogue as the committed, supported Prometheus rule
+> artifact at `deploy/alerts/prometheus/tailscale2otel.rules.yaml`. CI drift-checks that file and
+> `promtool test rules` executes it against the fixtures in `deploy/alerts/tests/`. Parsing proves an
+> expression is well-formed; only execution proves it fires when it should.
 >
 > Separately, `internal/catalog/dashboardrefs_test.go` checks every metric name the generated dashboard
 > and the rule manifests QUERY against the in-code catalog's normalized Prometheus spellings. Nothing else

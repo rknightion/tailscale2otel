@@ -380,6 +380,8 @@ extraVolumeMounts:
 | config.collectors.webhooks.desired_events | list | `[]` | Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked. |
 | config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
 | config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
+| config.delivery | object | `{"mode":"otlp"}` | Process-wide telemetry topology. otlp preserves historical push-only delivery; prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces; dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus. |
+| config.delivery.mode | string | `"otlp"` | Delivery mode: otlp \| prometheus \| dual. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
 | config.enrichment.geoip.acknowledge_cardinality | bool | `false` | Acknowledge the cardinality cost of cardinality.flow.geo_dims on the RAW flow families and silence the startup advisory. Set true once cardinality.metric_limit is sized for it. |
 | config.enrichment.geoip.asn_database | string | `""` | Path to a GeoLite2/GeoIP2 ASN .mmdb. The AS number and organization ride flow LOGS only. |
@@ -567,8 +569,8 @@ extraVolumeMounts:
 | config.prometheus.auth.token | string | `""` | Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>"). Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret). |
 | config.prometheus.auth.token_file | string | `""` | Read prometheus.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.prometheus.coalesce_gather | bool | `true` | Serve overlapping scrapes from the same in-flight gather instead of duplicating collection work. This costs slight staleness. |
-| config.prometheus.enabled | bool | `false` | Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener. |
-| config.prometheus.listen | string | `":2112"` | Address the Prometheus endpoint binds. Keep distinct from admin.listen. |
+| config.prometheus.enabled | bool | `false` | Backwards-compatible pull opt-in alongside OTLP. delivery.mode=prometheus or dual also enables it. |
+| config.prometheus.listen | string | `"127.0.0.1:2112"` | Address the Prometheus endpoint binds. Default loopback only. Keep distinct from admin.listen. |
 | config.prometheus.max_requests_in_flight | int | `4` | Cap concurrent /metrics gathers; excess scrapes get 503. A Gather walks every series in the registry, so N simultaneous slow scrapes cost N times that walk. Must be positive while prometheus.enabled is true; 0 meant unlimited before v4.0.0 and is now refused. |
 | config.prometheus.timeout | string | `"8s"` | Give up on a single /metrics gather after this long, answering 503. Keep it below the scraper's own timeout so this process, not the scraper, decides. |
 | config.prometheus.tls.cert_file | string | `""` | HTTPS certificate for the Prometheus endpoint. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. |
@@ -686,6 +688,7 @@ extraVolumeMounts:
 | ingress.webhook.pathType | string | `"Prefix"` | Ingress pathType. |
 | ingress.webhook.tls.enabled | bool | `true` | Terminate TLS at the Ingress (the default). Tailscale webhooks are HTTPS-only, so disabling this only makes sense when a mesh upstream of the controller terminates TLS instead — Tailscale itself will not deliver to a plaintext endpoint. |
 | ingress.webhook.tls.secretName | string | `""` | Secret holding the TLS cert/key. Leave empty when relying solely on a cert-manager (or similar) annotation — but at least one of secretName or an annotation must be set. |
+| metrics.externalPrometheusToken | string | `"auto"` | Whether an opaque source (`existingSecret`, `extraEnvFrom`, existingConfigMap, or existingConfigSecret) supplies a Prometheus auth token: `auto` when no opaque source owns it, otherwise declare `present` or `absent`. Helm cannot inspect those resources. A remote Service/monitor fails to render while this remains `auto`, avoiding a silent 401 or an unauthenticated Service. |
 | metrics.podMonitor.bearerTokenSecret | object | `{}` | Bearer token for prometheus.auth.token, read from a Secret you manage. REQUIRED when that listener has a token: a scrape without it gets 401 and the target silently reports no data. Only a reference is rendered — never the value. |
 | metrics.podMonitor.enabled | bool | `false` | Render a PodMonitor. Requires config.prometheus.enabled. A PodMonitor scrapes pods DIRECTLY, so it needs no Service — prefer it over serviceMonitor unless you specifically want the Service in the path. |
 | metrics.podMonitor.interval | string | `""` | Scrape interval (e.g. 60s). Empty ("") inherits the Prometheus default. |

@@ -12,14 +12,15 @@ Same credential rule as the PodMonitor: references only, never values.
 {{- if .Values.metrics.serviceMonitor.enabled }}
 {{- include "tailscale2otel.validateMetricsExposure" . }}
 {{- $sm := .Values.metrics.serviceMonitor }}
-{{- if not .Values.config.prometheus.enabled }}
-{{- fail "metrics.serviceMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}
+{{- $prometheusEnabled := or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) }}
+{{- if not $prometheusEnabled }}
+{{- fail "metrics.serviceMonitor.enabled requires config.prometheus.enabled or delivery.mode=prometheus/dual: there is no /metrics listener to scrape" }}
 {{- end }}
 {{- if not .Values.service.prometheus.enabled }}
 {{- fail "metrics.serviceMonitor.enabled requires service.prometheus.enabled: a ServiceMonitor selects a Service, so with none rendered it matches nothing and silently reports no data. Enable the Service, or use metrics.podMonitor which scrapes pods directly and needs no Service." }}
 {{- end }}
-{{- if and (or .Values.config.prometheus.auth.token .Values.config.prometheus.auth.token_file) (not $sm.bearerTokenSecret) }}
-{{- fail "config.prometheus.auth.token is set but metrics.serviceMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
+{{- if and (eq (include "tailscale2otel.prometheusTokenConfigured" .) "true") (not $sm.bearerTokenSecret) }}
+{{- fail "a Prometheus token is configured but metrics.serviceMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
 {{- end }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

@@ -83,12 +83,21 @@ Cadences are tiered by how fast the data changes: `devices`, `flowlogs`, `auditl
 `node_metrics` poll every 60s by default, as does opt-in `k8s_audit`; `users`, `keys`, and
 `oauth_apps` run every 300s; and slow-moving collectors
 (`settings`, `acl`, `dns`, `contacts`, `webhooks`, `posture_integrations`, `log_stream`, `services`)
-every 600s. Each of the sixteen collectors runs in its own goroutine with a small randomised
+every 600s. Each of the 16 collectors runs in its own goroutine with a small randomised
 start-up stagger so they don't all hit the API in the same instant, and the API client has built-in
 retry and rate-limit handling. See [Getting Started](getting-started.md) and
 [Architecture](architecture.md).
 
 ## Operation
+
+### Which delivery mode should I start with?
+
+Choose Grafana Cloud OTLP when Grafana Cloud (or another OTLP receiver) is the backend,
+Prometheus pull when an existing scraper is the backend, and stdout when proving collection locally.
+`delivery.mode: prometheus` disables inherited OTLP export; `dual` is for separate pull and OTLP
+destinations, not two ingest paths into the same backend. Follow the runnable routes in
+[Getting Started](getting-started.md#choose-a-destination) and the exact behavior in
+[Configuration](configuration.md#delivery-modes).
 
 ### Can I run multiple replicas for high availability?
 

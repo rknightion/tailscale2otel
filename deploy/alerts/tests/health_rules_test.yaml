@@ -4,19 +4,18 @@
 # against synthetic series and assert what actually fires, which is the only way
 # to catch a rule that is syntactically valid and semantically wrong (#407).
 #
-# THE RULE FILE IS GENERATED AND NOT COMMITTED. tailscale2otel ships
-# Grafana-managed manifests (deploy/alerts/grafana-managed/), which promtool
-# cannot read, so the catalogue is re-rendered as throwaway Prometheus rules
-# first. Generate it before running:
+# These execute the committed, generated Prometheus-compatible artifact. It
+# contains the Prometheus-backed portion of the recommended catalogue; see
+# deploy/alerts/README.md for its support boundary. Regenerate it before running:
 #
-#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   scripts/regen-generated.sh promrules
 #   promtool test rules deploy/alerts/tests/*.yaml
 #
 # Alert names are the CamelCased rule titles (`prom_alertname` in the generator),
 # derived rather than hand-listed — a retitled rule fails to match here instead of
 # quietly losing its coverage.
 rule_files:
-  - ../.generated-prom-rules.yaml
+  - ../prometheus/tailscale2otel.rules.yaml
 
 evaluation_interval: 1m
 

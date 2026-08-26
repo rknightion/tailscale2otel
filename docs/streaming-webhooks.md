@@ -12,10 +12,22 @@ an object store. Two optional receivers cover the Tailscale push mechanisms: a
 **Splunk-HEC-compatible stream receiver** for network flow and configuration audit logs, and an
 **HMAC-verified webhook receiver** for real-time Tailscale events. Both are off by default.
 
-The default is API polling. Choose streaming when low latency matters and Tailscale can reach your
-receiver, object storage when you need a durable batch source or backfill, and webhooks for tailnet
-events rather than flow or audit delivery. The matrix below carries the exact compatibility and
-durability rules.
+## Choose an ingestion path {#choose-an-ingestion-path}
+
+Pick the source that matches the operational requirement. Set one source per `flowlogs` and
+`auditlogs`; the webhook receiver is event-only and is configured separately.
+
+| Requirement | Path | Choose it when... |
+|---|---|---|
+| Default collection | `poll` | You want the simplest setup with no inbound listener. The API checkpoint handles restart overlap, and history is bounded by API retention. |
+| Low latency | `stream` | Tailscale can reach an authenticated HEC receiver and you want pushed flow/audit logs. There is no history or backfill, and delivery remains at Tailscale's discretion. |
+| Durable/backfill source | `objectstore` | You can give the exporter read access to Tailscale's S3-compatible export. The cursor and gaps are durable; partitioned exports reach 14 days, while flat layout supports an unbounded scan subject to bucket retention. |
+| Event-only notifications | `webhook` receiver | You need real-time Tailscale events, not flow/audit logs. Configure HMAC and register the endpoint manually; there is no history. |
+
+Set the choice in the [Configuration reference](configuration.md). For the resulting series and logs,
+see the [Metrics catalog](metrics.md), [Dashboards](dashboards.md), and [Alerts](alerts.md). The
+separate advanced tsrecorder feed is documented in [Kubernetes audit](kubernetes-audit.md#prerequisites).
+The matrix below carries the exact compatibility and durability rules.
 
 ## Ingestion paths: the compatibility matrix
 

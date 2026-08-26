@@ -237,14 +237,17 @@ jobs:
           done
 
       - name: regenerate the generated dashboard and rule artifacts
-        run: scripts/regen-generated.sh dashboards
+        run: scripts/regen-generated.sh dashboards promrules counts
 
       - name: fail on diff
         run: |
-          if ! git diff --exit-code -- deploy/grafana deploy/alerts; then
-            echo "::error::deploy/grafana or deploy/alerts is out of date with its generator — run 'scripts/regen-generated.sh dashboards' and commit the result"
+          if ! git diff --exit-code -- deploy/grafana deploy/alerts internal/catalog/capability_counts.json; then
+            echo "::error::generated dashboards, rules, or capability counts are out of date — run 'scripts/regen-generated.sh dashboards promrules counts' and commit the result"
             exit 1
           fi
+
+      - name: check public capability-count summaries
+        run: python3 scripts/check-capability-counts.py
 
       # promtool parses every PromQL expression and validates the rule structure,
       # which no Go-side check does: the reference tests in internal/catalog check
@@ -282,16 +285,8 @@ jobs:
       - name: promqlcheck (dashboard + rule expressions)
         run: go run -C tools/promqlcheck . -root "$PWD"
 
-      # The shipped rules are Grafana-managed manifests, which promtool cannot
-      # read. promtool is still the only thing that EXECUTES a rule, so the
-      # generator re-renders the same catalogue as throwaway Prometheus rules
-      # purely for the fixtures below. This file is never committed and never
-      # shipped — see the header comment in deploy/alerts/tests/.
-      - name: render the test-only Prometheus rules (never committed)
-        run: python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
-
       - name: promtool check rules
-        run: promtool check rules deploy/alerts/.generated-prom-rules.yaml
+        run: promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 
       # `check rules` only proves the expressions parse. These execute them
       # against synthetic series and assert what actually fires — the only way to

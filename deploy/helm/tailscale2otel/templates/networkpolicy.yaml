@@ -39,6 +39,7 @@ which breaks a bare structural equality check like `.spec.egress[0] == "{}"`.
 {{- if .Values.networkPolicy.enabled }}
 {{- $anyProbe := or .Values.probes.liveness.enabled (or .Values.probes.readiness.enabled .Values.probes.startup.enabled) }}
 {{- $prometheusConsumed := or .Values.service.prometheus.enabled (or .Values.metrics.podMonitor.enabled .Values.metrics.serviceMonitor.enabled) }}
+{{- $prometheusEnabled := or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -60,7 +61,7 @@ spec:
         - protocol: TCP
           port: {{ include "tailscale2otel.listenPort" .Values.config.admin.listen }}
     {{- end }}
-    {{- if and .Values.config.prometheus.enabled $prometheusConsumed }}
+    {{- if and $prometheusEnabled $prometheusConsumed }}
     {{- /* prometheus: opened by an enabled Service and/or a PodMonitor/ServiceMonitor
            scrape. Same "no portable peer" reasoning as admin above. */}}
     - ports:

@@ -25,7 +25,7 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and dispatches to one of eight modes: -version (print and
+// run parses flags and dispatches to one of nine modes: -version (print and
 // exit), -healthcheck (probe the local admin readiness endpoint and exit),
 // -validate (load+validate the config and exit without starting the server),
 // -print-effective-config (render the redacted effective config, optionally
@@ -33,6 +33,8 @@ func main() {
 // (build the tailnet runtimes and run one collection cycle of every enabled
 // collector, side-effect-free by default; see preflight.go), -once (the same
 // single cycle, but with the real export/checkpoint behavior),
+// -prometheus-check (run one side-effect-free cycle, then validate the local
+// Prometheus exposition without binding its listener),
 // -adopt-flow-db (claim one tailnet's pre-hardening flow database and exit;
 // see adoptflowdb.go), or the normal server run. -preflight and -once are
 // mutually exclusive. Splitting it out
@@ -49,8 +51,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	preflight := fs.Bool("preflight", false, "load+validate the config, build the tailnet runtimes, authenticate, and run one collection cycle of every enabled collector, then exit; no listener is started, nothing is exported unless -preflight-export, and no checkpoint is persisted")
 	once := fs.Bool("once", false, "run one real collection cycle (configured export path and checkpoint behavior) and exit; no listener is started")
 	preflightExport := fs.Bool("preflight-export", false, "with -preflight, actually export through the configured OTLP path instead of discarding it (ignored without -preflight)")
-	preflightTimeout := fs.Duration("preflight-timeout", defaultPfDeadline, "overall deadline for -preflight or -once")
-	jsonOut := fs.Bool("json", false, "with -preflight or -once, emit one machine-readable JSON report instead of the human-readable one; with -validate, emit the config.Diagnostics() array instead of human-readable lines (#307)")
+	preflightTimeout := fs.Duration("preflight-timeout", defaultPfDeadline, "overall deadline for -preflight, -once, or -prometheus-check")
+	prometheusCheck := fs.Bool("prometheus-check", false, "run one side-effect-free collection cycle and validate the local Prometheus exposition without starting its listener")
+	jsonOut := fs.Bool("json", false, "with -preflight, -once, or -prometheus-check, emit one machine-readable JSON report instead of the human-readable one; with -validate, emit the config.Diagnostics() array instead of human-readable lines (#307)")
 	warningsAsErrors := fs.Bool("warnings-as-errors", false, "with -validate, exit 1 if any advisory warning is present, not just hard errors (#307)")
 	printEffectiveConfig := fs.Bool("print-effective-config", false, "load the config, render every effective key through the same redaction rules the admin status page uses, print it, and exit; never exposes secret values (#309)")
 	effectiveConfigFormat := fs.String("print-effective-config-format", "json", "output format for -print-effective-config: \"json\" or \"yaml\"")
@@ -92,6 +95,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if *preflight && *once {
 		fmt.Fprintln(stderr, "-preflight and -once are mutually exclusive")
 		return 2
+	}
+	if *prometheusCheck && (*preflight || *once) {
+		fmt.Fprintln(stderr, "-prometheus-check is mutually exclusive with -preflight and -once")
+		return 2
+	}
+	if *prometheusCheck {
+		return runPrometheusCheck(*configPath, *jsonOut, *preflightTimeout, version, stdout, stderr)
 	}
 	if *preflight || *once {
 		return runPreflight(*configPath, *once, *preflightExport, *jsonOut, *preflightTimeout, version, stdout, stderr)

@@ -6,13 +6,13 @@
 # on the flow-log drop counter, and the two-value regex selector that is the
 # whole point of the IP-forwarding rule.
 #
-# THE RULE FILE IS GENERATED AND NOT COMMITTED — see health_rules_test.yaml for
-# the two commands. In short:
+# The committed Prometheus-compatible rule artifact is generated; see
+# health_rules_test.yaml for the support boundary and commands. In short:
 #
-#   python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+#   scripts/regen-generated.sh promrules
 #   promtool test rules deploy/alerts/tests/*.yaml
 rule_files:
-  - ../.generated-prom-rules.yaml
+  - ../prometheus/tailscale2otel.rules.yaml
 
 evaluation_interval: 1m
 

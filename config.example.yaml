@@ -249,6 +249,10 @@ otlp:
       max_interval: 0s
       max_elapsed_time: 0s
 
+# ── Delivery topology ──────────────────────────────────────────────────────────
+delivery:
+  mode: otlp                         # otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.<signal>.endpoint explicitly opts that signal back in under prometheus mode
+
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:
   cache_ttl: 5m                       # staleness alarm threshold for the IP/nodeID -> name device cache
@@ -609,10 +613,10 @@ events:
   enabled: true                       # keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise)
   max_events: 5000                    # how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record
 
-# ── Prometheus pull endpoint (OPTIONAL: off by default, dedicated listener) ─────
+# ── Prometheus pull endpoint (OPTIONAL: dedicated listener) ─────────────────────
 prometheus:
-  enabled: false                      # run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push
-  listen: ":2112"                     # bind for /metrics (default :2112); keep distinct from admin.listen
+  enabled: false                      # backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it
+  listen: "127.0.0.1:2112"            # bind for /metrics (default loopback-only 127.0.0.1:2112); keep distinct from admin.listen
   auth:
     token: ""                         # gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed

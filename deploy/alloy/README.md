@@ -1,7 +1,7 @@
 # Alloy gateway recipe
 
 A production OTLP gateway for `tailscale2otel` built on [Grafana
-Alloy](https://grafana.com/docs/alloy/), pinned to **v1.18.0**.
+Alloy](https://grafana.com/docs/alloy/), pinned to **v1.19.1**.
 
 ```
 tailscale2otel --OTLP/gRPC--> Alloy ------------------------------> your OTLP backend
@@ -14,7 +14,7 @@ tailscale2otel --OTLP/gRPC--> Alloy ------------------------------> your OTLP ba
 
 | File | What it is |
 | --- | --- |
-| `config.alloy` | The gateway pipeline. Validated against `grafana/alloy:v1.18.0`. |
+| `config.alloy` | The gateway pipeline. Validated against `grafana/alloy:v1.19.1`. |
 | `docker-compose.yaml` | Alloy + `tailscale2otel` wired together in gateway mode. |
 
 The operator-facing guide, including the direct-vs-gateway tradeoff and the
@@ -97,7 +97,7 @@ its default `false`, so the last few writes can be lost on an unclean stop.
 
 ## Outage and restart smoke test
 
-Everything below was run against `grafana/alloy:v1.18.0` and the committed
+Everything below was run against `grafana/alloy:v1.19.1` and the committed
 `config.alloy`, with a local stub backend standing in for Grafana Cloud. The
 observed numbers are quoted from that run.
 
@@ -204,17 +204,17 @@ component arguments change between minor versions, so an unpinned tag can turn a
 working `config.alloy` into a container that refuses to start on the next pull.
 
 Two specific traps found while building this recipe, both verified against
-v1.18.0:
+v1.19.1:
 
 - **`otelcol.storage.file` is public preview.** It is subject to breaking
   changes, and Alloy refuses to load a config using it unless
   `--stability.level=public-preview` (or lower) is passed. Without the flag the
   startup error names the component and the line.
-- **`otelcol.auth.basic` credentials are flat attributes on v1.18.0, not a
+- **`otelcol.auth.basic` credentials are flat attributes on v1.19.1, not a
   `client_auth` block.** The published `grafana.com/docs/alloy/latest` page
   documents a `client_auth {}` sub-block and marks the flat form deprecated, but
   those docs are built from Alloy's `main` branch and are ahead of this release.
-  On v1.18.0 the `client_auth` form fails at startup with `building component:
+  On v1.19.1 the `client_auth` form fails at startup with `building component:
   no credential source provided`. Worse, **`alloy validate` accepts it** — the
   block name parses and only the credential wiring is missing — so the offline
   gate cannot catch this. Move to `client_auth` only when the pin moves to a
@@ -229,12 +229,12 @@ loads.**
 ```sh
 # Syntax and attribute names. Necessary, NOT sufficient - see the trap above.
 docker run --rm -v "$PWD/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
-  --entrypoint /bin/alloy grafana/alloy:v1.18.0 \
+  --entrypoint /bin/alloy grafana/alloy:v1.19.1 \
   validate --stability.level=public-preview /etc/alloy/config.alloy
 
 # Canonical formatting - this file is byte-identical to `alloy fmt` output.
 docker run --rm -v "$PWD/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
-  --entrypoint /bin/alloy grafana/alloy:v1.18.0 fmt /etc/alloy/config.alloy \
+  --entrypoint /bin/alloy grafana/alloy:v1.19.1 fmt /etc/alloy/config.alloy \
   | diff - deploy/alloy/config.alloy
 
 # The one that actually matters: does it build and become ready?

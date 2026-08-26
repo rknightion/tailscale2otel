@@ -64,6 +64,7 @@ type Config struct {
 	Tailnets          []TailnetConfig         `yaml:"tailnets"`
 	Headscale         HeadscaleConfig         `yaml:"headscale"`
 	OTLP              OTLPConfig              `yaml:"otlp"`
+	Delivery          DeliveryConfig          `yaml:"delivery"`
 	Enrichment        EnrichmentConfig        `yaml:"enrichment"`
 	Cardinality       CardinalityConfig       `yaml:"cardinality"`
 	Collectors        Collectors              `yaml:"collectors"`
@@ -107,6 +108,26 @@ type Config struct {
 	// run, so both can report a "no such file" error naming both paths.
 	pathResolutions map[string]pathResolution
 }
+
+// DeliveryConfig selects the process-wide telemetry delivery topology. The
+// default OTLP mode preserves the historical push-only behavior; prometheus
+// suppresses inherited OTLP delivery and serves a pull endpoint, while dual
+// enables both paths.
+type DeliveryConfig struct {
+	Mode string `yaml:"mode"`
+}
+
+// PrometheusPullEnabled reports whether the pull reader and listener are in
+// use. prometheus.enabled remains a backwards-compatible opt-in to dual
+// delivery when delivery.mode is left at its default of otlp.
+func (c *Config) PrometheusPullEnabled() bool {
+	return c.Prometheus.Enabled || c.Delivery.Mode == "prometheus" || c.Delivery.Mode == "dual"
+}
+
+// PrometheusOnly reports whether inherited OTLP delivery is suppressed. A
+// per-signal endpoint can opt one signal back in; Validate requires that
+// endpoint when the signal is explicitly enabled in this mode.
+func (c *Config) PrometheusOnly() bool { return c.Delivery.Mode == "prometheus" }
 
 // AdminConfig configures the optional always-on admin HTTP server that exposes
 // liveness/readiness endpoints (/healthz, /readyz).

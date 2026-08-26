@@ -13,7 +13,190 @@ This page collects the behaviour changes worth knowing about when moving between
 [Configuration](configuration.md) for defaults and the `TS2OTEL_*` env-var equivalents,
 and [Metrics](metrics.md) for the signal catalogue.
 
+## Upgrade and rollback checklist {#upgrade-and-rollback-checklist}
+
+Use this procedure for every release, image, or binary change. The version-specific sections
+below describe only behaviour changes and link back here for the operational sequence.
+
+### 1. Record the current state
+
+- Choose the target artifact and read its version-specific entry below. Keep the previous artifact,
+  its configuration, and the deployment manifest available until post-upgrade verification passes.
+- Confirm that only one instance targets each tailnet. A replacement must not overlap the old
+  instance: both would poll and emit the same data.
+- Record the running version before stopping it:
+
+  ```sh
+  tailscale2otel -version
+  ```
+
+- Identify every state path in the effective configuration. Back up the paths that exist before
+  changing the artifact or configuration:
+
+  | State | When to back it up | Consideration |
+  | --- | --- | --- |
+  | `checkpoint.file_path` | `checkpoint.store: file` | Preserves polled log high-water marks. Copy the containing persistent volume or directory while the service is stopped. |
+  | `ingress_wal.directory` | `ingress_wal.enabled: true` | Contains accepted receiver bodies waiting for replay. Preserve it if those bodies must survive the change; do not edit or discard entries by hand. |
+  | `flows.store.directory` | The path is non-empty | Contains SQLite flow history, including the `-wal`/`-shm` sidecars when present. Stop the service before copying the directory. The rows can contain user identities, so protect this backup like the live data. |
+  | In-memory stores | No persistent path is configured | There is no file to back up; that history is lost on restart. |
+
+  A volume or filesystem snapshot is suitable when it is consistent. Keep the backup and the
+  restore procedure available until the new instance has passed delivery verification. A backup is
+  a recovery point, not evidence that the new artifact can read the state.
+
+### 2. Validate and review the target
+
+Install or unpack the target artifact beside the running one, then run the target binary against the
+configuration it will use. If the deployment is env-only, omit `-config <file>` from both commands.
+
+```sh
+/path/to/target/tailscale2otel -validate -config <file>
+/path/to/target/tailscale2otel -print-effective-config \
+  -print-effective-config-provenance -config <file> > effective-config.target.json
+```
+
+`-validate` does not start the exporter or touch the network. It exits `0` after reporting any
+advisories when there are no hard errors; an error exits `1`. Treat a validation error as a stop
+condition. Use `-warnings-as-errors` when the deployment policy requires a warning-free rollout.
+
+Review the effective configuration before the restart. Compare it with a copy captured from the
+current artifact if useful:
+
+```sh
+tailscale2otel -print-effective-config -print-effective-config-provenance \
+  -config <file> > effective-config.current.json
+diff -u effective-config.current.json effective-config.target.json
+```
+
+The output uses the same redaction as the admin status page: secret values are represented by their
+redacted state and source, never their contents. It can still contain tailnet names, endpoints,
+paths, and enabled features. Keep these files local and redact those identifiers before sharing
+them.
+
+Pay particular attention to `checkpoint`, `ingress_wal`, `flows.store.directory`, listener binds,
+delivery mode, and whether the target is reading the intended environment variables. A green
+`-validate` proves configuration validity only; it does not prove credentials, collection, state
+compatibility, or backend delivery.
+
+### 3. Classify the rollback boundary
+
+**Rollback-safe change.** A binary/image replacement or compatible configuration change can use the
+previous artifact again when no persistent-format or persistent-path migration has run and the
+previous artifact is documented to read the retained state. If the target fails validation,
+startup, or readiness, stop it first, restore the previous artifact and configuration, and reuse
+the unchanged state volume. If the target may have written state before failing, restore the
+pre-upgrade backup before starting the previous artifact.
+
+**Forward-only migration.** Treat a change as forward-only once it has stamped, renamed, migrated,
+or otherwise changed persistent state in a way the previous artifact does not document as
+compatible. Stop the failed target and follow the target release's recovery procedure. Do not
+point the previous artifact at a migrated database just because the process did not become ready.
+The pre-v4 flow-store adoption below is the worked example.
+
+### 4. Replace one instance and wait for readiness
+
+- Stop the current instance gracefully and wait for it to exit. Preserve the configured state
+  volume, including any persistent checkpoint, ingress-WAL, or flow-store paths.
+- Replace the image or binary and apply the already-validated configuration. Start exactly one
+  target instance. Use the deployment supervisor's controlled replacement operation; for example,
+  a Compose deployment can stop and start the service, while a Kubernetes deployment can wait for
+  its rollout:
+
+  ```sh
+  # Compose: stop and start the service with the same state volume.
+  docker compose stop tailscale2otel
+  docker compose up -d tailscale2otel
+  # Kubernetes: after applying the image/config change, wait for the rollout.
+  kubectl rollout status deployment/<deployment> --timeout=5m
+  ```
+
+  The commands are examples; use the equivalent operation for the actual deployment and keep its
+  persistent volume attached.
+- Wait for `/readyz` to return `2xx`. For a local binary or a container with the admin listener in
+  its own network namespace, the built-in probe is:
+
+  ```sh
+  tailscale2otel -healthcheck -healthcheck-timeout 10s
+  ```
+
+  A direct probe is also possible when the admin listener is reachable:
+
+  ```sh
+  curl --fail http://127.0.0.1:9091/readyz
+  ```
+
+  A successful readiness check means the process has completed its startup readiness conditions
+  and its enabled components are serving. It does not prove that the OTLP backend accepted data.
+  Inspect startup logs and the admin status page for configuration advisories, authentication
+  failures, checkpoint fallback, receiver/WAL failures, and flow-store errors.
+
+### 5. Verify delivery after the restart
+
+Choose the delivery path the deployment actually uses. Do not call a local listener check proof of
+an external scrape or OTLP ingest.
+
+**OTLP push.** After at least one normal export interval, query the OTLP backend for a fresh
+`tailscale2otel_up_ratio` sample. When self-observability is enabled, also check that
+`tailscale2otel_build_info_ratio{version="<target-version>"}` is present and that
+`tailscale2otel_export_failures_total` is not increasing. Confirm the expected log signal as well
+when OTLP logs are enabled. These backend observations prove delivery from the running target;
+`-validate` and `/readyz` cannot.
+
+**Prometheus pull.** When `prometheus.enabled` or a Prometheus/dual delivery mode is configured,
+run the bounded local check with the target binary and then check the actual scraper:
+
+```sh
+/path/to/target/tailscale2otel -prometheus-check -json -config <file>
+PROMETHEUS_URL=http://127.0.0.1:2112 # default example; replace with prometheus.listen and scheme
+curl --fail "$PROMETHEUS_URL/metrics"
+```
+
+`-prometheus-check` runs one side-effect-free collection cycle and validates the exposition without
+binding the listener. A successful `curl` proves only that the listener responds. Verify the
+scraper target is healthy and query its store for a fresh `tailscale2otel_up_ratio`; check
+`tailscale2otel_build_info_ratio{version="<target-version>"}` when self-observability is enabled.
+Use the configured TLS and authentication for a non-loopback metrics listener.
+
+If readiness or delivery verification fails, stop the target before attempting recovery. Use the
+rollback-safe path above only when no forward-only migration has run; otherwise stay on the target
+format and follow its forward-recovery instructions.
+
+### Worked forward-only migration: pre-v4 flow-store adoption
+
+A persistent flow store written before v4 uses `flows-<tailnet>.db` and has no tailnet identity
+row. v4 and later require the identity and a digest-qualified filename, so the service refuses the
+legacy file automatically rather than guessing which tailnet owns its user and device identities.
+This migration is forward-only for the running state.
+
+1. Stop `tailscale2otel` and every other reader of the flow-store directory. Back up the entire
+   directory before changing it. Adoption refuses a non-empty legacy `-wal`; ensure no writer or
+   other reader is active, then rerun it.
+2. Confirm that the target configuration uses the same `flows.store.directory` and that the named
+   tailnet is present in `tailscale:` or `tailnets:`. Run the target `-validate` command from step 2.
+3. With the service still stopped, run the target binary once:
+
+   ```sh
+   /path/to/target/tailscale2otel -config <file> -adopt-flow-db <tailnet>
+   ```
+
+   The command asserts ownership from the supplied tailnet name, migrates the database schema,
+   stamps its identity row, moves the legacy file to the digest-qualified name, reports the rows
+   retained, and exits. It is safe to interrupt and rerun. It refuses an owner mismatch, both
+   legacy and qualified files, or a live write-ahead log; resolve the named condition and rerun it.
+4. Start the target once the command succeeds, then complete the readiness and OTLP or Prometheus
+   verification above. A no-op adoption result means the legacy file is absent, because it was
+   already adopted or there was no persistent database for that tailnet.
+
+After adoption, a pre-v4 binary expects the legacy filename and must not be pointed at the migrated
+database. If the target fails after adoption, keep the target format and recover forward. Returning
+to the pre-v4 artifact requires stopping the target and restoring the untouched pre-adoption backup,
+including its legacy filename, before starting the old artifact; that is a deliberate state restore,
+not a rollback of the migrated file in place.
+
 ## Upgrading to v4.0.0
+
+Before applying the version-specific changes in this section, follow the
+[upgrade and rollback checklist](#upgrade-and-rollback-checklist).
 
 ### The Prometheus pull endpoint gained real defaults
 
@@ -42,6 +225,9 @@ switched off starts unchanged; raise the other two only if a scrape legitimately
 than 8s.
 
 ## Upgrading to v2.0.0
+
+Before applying the version-specific changes in this section, follow the
+[upgrade and rollback checklist](#upgrade-and-rollback-checklist).
 
 `v2.0.0` is a **breaking** release with a single, contained change: five telemetry
 attributes carrying user/actor identity and error text are renamed to their stable
@@ -90,6 +276,9 @@ post-Span-Events mechanism, and it did not change in `2.0.0`. It is called out h
 the pre-2.0 behaviour is on record.
 
 ## Upgrading to v1.0.0
+
+Before applying the version-specific changes in this section, follow the
+[upgrade and rollback checklist](#upgrade-and-rollback-checklist).
 
 `v1.0.0` is the first **stable** release. It contains **no new breaking changes** over the
 `0.6.0` line — every fix and behaviour change below already shipped across the `0.x`

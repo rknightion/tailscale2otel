@@ -1,0 +1,1202 @@
+# GENERATED — supported Prometheus-compatible alert and recording rules.
+#
+# This is the committed recommended-profile artifact for Prometheus, Mimir, and
+# Cortex rulers. Regenerate it with:
+#   scripts/regen-generated.sh promrules
+#
+# It contains every Prometheus-backed rule in the catalogue, including recording
+# rules and runbook_url annotations. Loki-backed rules are omitted because a
+# Prometheus ruler cannot parse LogQL. Prometheus has no Grafana-equivalent
+# per-rule `paused` field, so loading this file evaluates every included rule.
+# Use deploy/alerts/grafana-managed/ when you need Grafana's paused state or
+# Loki-backed rules.
+groups:
+  - name: "tailscale2otel-health"
+    rules:
+      - alert: "ExporterDown"
+        expr: "((tailscale2otel_up_ratio) < 1) or absent(tailscale2otel_up_ratio)"
+        for: "10m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          summary: "tailscale2otel exporter is down"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
+      - alert: "TLSCertificateExpiring"
+        expr: "(min by (component) (tailscale2otel_tls_cert_not_after_seconds - time())) < 1209600"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "TLS certificate for {{ $labels.component }} expires within 14 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tls-certificate-rotation"
+      - alert: "TLSCertificateReloadFailing"
+        expr: "(sum by (component) (increase(tailscale2otel_tls_cert_reload_failures_total[1h]))) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "TLS certificate reload failing for {{ $labels.component }}"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tls-certificate-rotation"
+      - alert: "CollectorScrapeFailing"
+        expr: "(min by (tailscale_collector) (tailscale2otel_scrape_success_ratio)) < 1"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape failing"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+      - alert: "CollectorScrapeStale"
+        expr: "(max by (tailscale_collector) (time() - tailscale2otel_scrape_last_timestamp_seconds)) > 3600"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} has not completed a scrape recently"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+      - alert: "CollectorScrapeErrorRateHigh"
+        expr: "(sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total[5m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape errors elevated"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+      - alert: "MetricCardinalityCapped"
+        expr: "(max(tailscale2otel_series_overflowing_ratio)) > 0"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A tailscale2otel metric hit the per-metric series cap"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#cardinality-and-series-budget"
+      - alert: "SeriesBudgetHigh"
+        expr: "(max by (metric_name)(tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit)) > 0.8"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Busiest tailscale2otel metric approaching the per-metric series cap"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#cardinality-and-series-budget"
+      - alert: "TailscaleAPICredentialRejected"
+        expr: "(max by (tailscale_collector, tailscale_api_operation) (tailscale2otel_api_availability_ratio{tailscale_api_state=\"credential_rejected\"})) > 0"
+        for: "10m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Tailscale API returning 401 for {{ $labels.tailscale_collector }} ({{ $labels.tailscale_api_operation }}) — the credential is invalid, expired or revoked"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "TailscaleAPIOperationDeniedByScope"
+        expr: "(max by (tailscale_collector, tailscale_api_operation) (tailscale2otel_api_availability_ratio{tailscale_api_state=\"scope_denied\"})) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "{{ $labels.tailscale_api_operation }} is returning 403 — the credential lacks its scope"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "TailscaleAPIRateLimited"
+        expr: "(sum(rate(tailscale2otel_api_requests_total{http_response_status_code=\"429\"}[10m]))) > 0"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailscale API returning 429 (rate limited)"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "TailscaleAPIServerErrors"
+        expr: "(sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~\"5..\"}[10m]))) > 0.05"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailscale API returning 5xx"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "TailscaleAPIRetriesElevated"
+        expr: "(sum(rate(tailscale2otel_api_retries_total[10m]))) > 0.1"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Elevated Tailscale API retry rate"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "CheckpointPersistErrors"
+        expr: "(sum by (tailscale_collector) (rate(tailscale2otel_checkpoint_persist_errors_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} cannot persist its checkpoint"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "ComponentErrors"
+        expr: "(sum by (component) (rate(tailscale2otel_component_errors_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "tailscale2otel component {{ $labels.component }} erroring"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "DedupSetSaturated"
+        expr: "(sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Cross-source dedup set {{ $labels.dedup_set }} is evicting"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "EnrichmentCacheStale"
+        expr: "(max(tailscale2otel_enrich_cache_age_seconds)) > 3600"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Device-enrichment cache is stale"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery"
+      - alert: "NodeMetricsDiscoveryFailing"
+        expr: "(max(tailscale2otel_nodemetrics_discovery_success_ratio)) < 1"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Node-metrics dynamic discovery is failing"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery"
+      - alert: "AdminAuthRejectionsHigh"
+        expr: "(sum(rate(tailscale2otel_admin_auth_rejected_total[10m]))) > 0.2"
+        for: "10m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Elevated admin auth rejections"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "GCCPUFractionHigh"
+        expr: "(max(tailscale2otel_runtime_gc_cpu_fraction_ratio)) > 0.25"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Go GC using a high CPU fraction"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "ExportLatencyHigh"
+        expr: "(histogram_quantile(0.99, sum by (le, signal) (rate(tailscale2otel_export_duration_seconds_bucket[10m])))) > 2"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "OTLP export p99 latency is high"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+      - alert: "ExportFailures"
+        expr: "(sum by (outcome) (rate(tailscale2otel_export_duration_seconds_count{outcome=\"failure\"}[10m]))) > 0"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "OTLP exports are failing"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+      - alert: "OTLPExportFailures"
+        expr: "(sum by (error_type) (rate(tailscale2otel_export_failures_total[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "tailscale2otel OTLP export failures ({{ $labels.error_type }})"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+      - alert: "ScrapeStalenessHigh"
+        expr: "(max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds)) > 1800"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} scrape data is stale"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+      - alert: "ScrapeBudgetOverrun"
+        expr: "(max by (tailscale_collector) (tailscale2otel_scrape_budget_ratio)) > 1"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector {{ $labels.tailscale_collector }} is exceeding its scrape budget"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health"
+      - alert: "ConfigWarningsPresent"
+        expr: "(max(tailscale2otel_config_warnings_ratio)) > 0"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "tailscale2otel has configuration warnings"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health"
+      - alert: "ConfigInvalid"
+        expr: "(max(tailscale2otel_config_valid_ratio)) < 1"
+        for: "10m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          summary: "tailscale2otel config is invalid"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health"
+      - alert: "CheckpointPersistStalled"
+        expr: "(max(tailscale2otel_checkpoint_persist_age_seconds)) > 1800"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Checkpoint has not been persisted recently"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "ExportVolumeHigh"
+        expr: "(rate(tailscale2otel_export_datapoints_total[10m])) > 5000"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Exported datapoint rate is high"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#cardinality-and-series-budget"
+      - alert: "ExporterUpdateAvailable"
+        expr: "(max(tailscale2otel_update_available_ratio)) > 0"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A tailscale2otel exporter update is available"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health"
+      - alert: "APIRateLimiterWaitHigh"
+        expr: "(histogram_quantile(0.95, sum by (le) (rate(tailscale2otel_api_rate_limit_wait_seconds_bucket[10m])))) > 5"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "API requests are waiting on the client-side rate limiter"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "SLOAvailabilityFastBurn"
+        expr: "((1 - avg_over_time(tailscale2otel:sli_availability:ratio[5m]) > bool 0.0144) * (1 - avg_over_time(tailscale2otel:sli_availability:ratio[1h]) > bool 0.0144)) > 0"
+        for: "2m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          summary: "Exporter availability is burning its error budget 14.4x too fast"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+      - alert: "SLOAvailabilitySlowBurn"
+        expr: "((1 - avg_over_time(tailscale2otel:sli_availability:ratio[30m]) > bool 0.006) * (1 - avg_over_time(tailscale2otel:sli_availability:ratio[6h]) > bool 0.006)) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Exporter availability is burning its error budget 6x too fast"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+      - alert: "SLOFreshnessFastBurn"
+        expr: "((1 - avg_over_time(tailscale2otel:sli_freshness:ratio[5m]) > bool 0.144) * (1 - avg_over_time(tailscale2otel:sli_freshness:ratio[1h]) > bool 0.144)) > 0"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Collector freshness is burning its error budget 14.4x too fast"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+      - alert: "SLODeliveryFastBurn"
+        expr: "((1 - avg_over_time(tailscale2otel:sli_delivery:ratio[5m]) > bool 0.144) * (1 - avg_over_time(tailscale2otel:sli_delivery:ratio[1h]) > bool 0.144)) > 0"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "OTLP delivery is burning its error budget 14.4x too fast"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#slo-burn-rate"
+  - name: "tailscale2otel-security"
+    rules:
+      - alert: "TailnetLockErrors"
+        expr: "(max(tailscale_tailnet_lock_errors_ratio)) > 0"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Devices have tailnet-lock errors"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-lock"
+      - alert: "TaggedDeviceKeyExpiring48h"
+        expr: "((max by (host_name, host_id, tailscale_user, tailscale_tags) (tailscale_device_key_expiry_seconds{tailscale_tags!=\"\"}) - time()) > 0) < 172800"
+        for: "1h"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Tagged device node key for {{ $labels.host_name }} expires in <48h"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "AuthAPIKeyExpiring48h"
+        expr: "((max by (tailscale_key_id, tailscale_key_type, tailscale_key_description) (tailscale_key_expiry_seconds) - time()) > 0) < 172800"
+        for: "1h"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Auth/API key {{ $labels.tailscale_key_id }} expires in <48h"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "PostureAutoUpdateCoverageLow"
+        expr: "(count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)) < 0.8"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Fleet auto-update coverage below 80%"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+      - alert: "PostureStateEncryptionCoverageLow"
+        expr: "(count(max by (host_id) (tailscale_device_posture_ratio{encrypted=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)) < 0.8"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Fleet state-encryption coverage below 80%"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+      - alert: "ManyDevicesNeedUpdates"
+        expr: "(count(max by (host_id) (tailscale_device_update_available_ratio) == 1)) > 5"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "More than 5 devices have a client update available"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#fleet-version-hygiene"
+      - alert: "TailnetContactUnverified"
+        expr: "(max(tailscale_contact_needs_verification_ratio)) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A tailnet contact needs verification"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift"
+      - alert: "DevicesFarBehindLatestVersion"
+        expr: "(max(tailscale_device_version_skew_ratio)) > 3"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "At least one device is >3 minor versions behind the fleet latest"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#fleet-version-hygiene"
+      - alert: "ManyDevicesOutdated"
+        expr: "(max(tailscale_devices_outdated_ratio)) > 5"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "More than 5 devices are running an outdated client"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#fleet-version-hygiene"
+      - alert: "DeviceKeysExpiring7d"
+        expr: "(count((max by (host_id) (tailscale_device_key_expiry_seconds) - time() < 7*86400) and (max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))) > 0"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Device node keys are expiring within 7 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "DevicePostureAttributeExpiring14d"
+        expr: "(count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and (max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))) > 0"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Device posture attributes are expiring within 14 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "AuthAPIKeysExpiring7d"
+        expr: "(count((max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() < 7*86400) and (max by (tailscale_key_id) (tailscale_key_expiry_seconds) - time() > 0))) > 0"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Auth/API keys are expiring within 7 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "UnrestrictedACLRulesPresent"
+        expr: "(sum(tailscale_acl_unrestricted_rules_ratio)) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "The tailnet policy has unrestricted (wide-open) rules"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#acl-policy-hygiene"
+      - alert: "ACLAutoApprovesExitNodes"
+        expr: "(sum(tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind=\"exit_node\"})) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "The tailnet policy auto-approves exit nodes"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#acl-policy-hygiene"
+      - alert: "SecretScannerFired"
+        expr: "(sum(rate(tailscale_config_audit_changes_total{tailscale_actor_type=\"SECRET_SCANNER\"}[15m]))) > 0"
+        for: "0m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Tailscale secret scanner detected an exposed credential"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#audit-events"
+      - alert: "TailnetLockDisabled"
+        expr: "(sum(rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"tailnet_lock\", tailscale_audit_action=\"DISABLE\"}[15m]))) > 0"
+        for: "0m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Tailnet lock was disabled"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-lock"
+      - alert: "UserRoleChange"
+        expr: "(sum(rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"user_role\"}[15m]))) > 0"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A user role was changed"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#audit-events"
+      - alert: "ACLChanged"
+        expr: "(sum(rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"acl\"}[15m]))) > 0"
+        for: "5m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The tailnet ACL policy was changed"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#acl-policy-hygiene"
+      - alert: "KeyWithUnrestrictedWriteScope"
+        expr: "(max(tailscale_key_scope_class_ratio{tailscale_key_scope_class=\"all\"})) > 0"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A credential holds the unrestricted `all` scope"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-scope-hygiene"
+      - alert: "TrustCredentialHasNoTagRestriction"
+        expr: "(max(tailscale_key_tag_scope_ratio{tailscale_key_tag_scope=\"none\"})) > 0"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "An OAuth client's trust credential is unrestricted by tags"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-scope-hygiene"
+      - alert: "DeviceShareGrantsExitNode"
+        expr: "(sum(tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node=\"true\"})) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A device share allows exit-node use"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-sharing"
+      - alert: "NetworkFlowLoggingDisabled"
+        expr: "(min(tailscale_feature_enabled_ratio{tailscale_feature=\"network_flow_logging\"})) < 1"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailnet network flow logging is disabled"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift"
+      - alert: "DeviceApprovalDisabled"
+        expr: "(min(tailscale_setting_enabled_ratio{tailscale_setting_name=\"devices_approval\"})) < 1"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailnet device approval is disabled"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift"
+      - alert: "LogStreamingSIEMExportConfigChanged"
+        expr: "(sum(rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"logstream_endpoint\"}[15m]))) > 0"
+        for: "0m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A configuration-log / SIEM streaming endpoint was changed"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailnet-settings-drift"
+      - alert: "NewDeviceWithKeyExpiryDisabled"
+        expr: "(max(delta(tailscale_devices_key_expiry_disabled_ratio[1h]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A device had node-key expiry disabled in the last hour"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "DeviceKeyUsedByMultipleClients"
+        expr: "(count(max by (host_id) (tailscale_device_multiple_connections_ratio) == 1)) > 0"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A node key has been used by more than one client simultaneously"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+      - alert: "UnauthorizedDevicesAwaitingApproval"
+        expr: "(sum(tailscale:devices_unauthorized:count)) > 0"
+        for: "2h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          page: "false"
+        annotations:
+          summary: "Devices have been awaiting admin approval for over 2h"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval"
+      - alert: "UserInvitesAwaitingAcceptance"
+        expr: "(histogram_quantile(0.9, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket[6h])))) > 604800"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+          page: "false"
+        annotations:
+          summary: "User invites have been outstanding for over 7 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-and-user-approval"
+  - name: "tailscale2otel-integrations"
+    rules:
+      - alert: "PostureIntegrationSyncStale"
+        expr: "(max by (tailscale_posture_provider, tailscale_posture_integration) (time() - tailscale_posture_integration_last_sync_seconds)) > 86400"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Posture integration {{ $labels.tailscale_posture_provider }} sync is stale"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#posture-integrations"
+      - alert: "PostureIntegrationSyncFailing"
+        expr: "(max by (tailscale_posture_provider, tailscale_posture_integration) (tailscale_posture_integration_error_ratio)) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Posture integration {{ $labels.tailscale_posture_provider }} sync is failing"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#posture-integrations"
+      - alert: "LogStreamDeliveryFailing"
+        expr: "(sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Log streaming to the SIEM sink is failing ({{ $labels.tailscale_logstream_type }})"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#log-streaming"
+      - alert: "LogStreamStalled"
+        expr: "(max by (tailscale_logstream_type) (time() - tailscale_logstream_last_activity_seconds)) > 3600"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Log stream {{ $labels.tailscale_logstream_type }} has no recent delivery activity"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#log-streaming"
+      - alert: "LogStreamBackpressure"
+        expr: "(sum by (tailscale_logstream_type) (rate(tailscale_logstream_max_body_requests_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Log stream {{ $labels.tailscale_logstream_type }} hitting max body size"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#log-streaming"
+      - alert: "LogStreamSpoofedEntries"
+        expr: "(sum by (tailscale_logstream_type) (rate(tailscale_logstream_spoofed_entries_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Log stream {{ $labels.tailscale_logstream_type }} rejecting spoofed entries"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#log-streaming"
+      - alert: "ReceiverRejectingIngest"
+        expr: "((sum(rate(tailscale_stream_rejected_total[10m])) or vector(0)) + (sum(rate(tailscale_webhook_rejected_total[10m])) or vector(0))) > 0"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Stream/webhook receiver is rejecting inbound ingest"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "ReceiverRequestLatencyHighP99"
+        expr: "(histogram_quantile(0.99, sum by (le) (rate(tailscale_stream_request_duration_seconds_bucket[10m])))) > 5"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Stream-receiver p99 request latency is above 5s"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "AcceptedIngestDataStale"
+        expr: "(clamp_min(time() - max by (source, signal) (last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)) > 3600"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Accepted {{ $labels.source }}/{{ $labels.signal }} events are over 1h stale"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "PostureIntegrationMatchRateLow"
+        expr: "(min(tailscale_posture_integration_matched_ratio / (tailscale_posture_integration_possible_matched_ratio > 0))) < 0.8"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "A posture integration is matching <80% of possible devices"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+      - alert: "ObjectStoreFeedUndecodable"
+        expr: "(sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\"}[15m]))) > 0"
+        for: "5m"
+        labels:
+          severity: "critical"
+          service: "tailscale2otel"
+          domain: "observability"
+        annotations:
+          summary: "An object-store object decoded no records at all"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+      - alert: "ObjectStoreGapAging"
+        expr: "(max(tailscale2otel_objectstore_gap_oldest_age_seconds)) > 86400"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The oldest unresolved object-store gap is over 24h old"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+      - alert: "ObjectStoreExportStale"
+        expr: "(max(clamp_min(last_over_time(tailscale2otel_objectstore_discovered_newest_age_seconds[10m]), 0) + 86400 * (last_over_time(tailscale2otel_objectstore_discovered_newest_age_seconds[10m]) == bool -1))) > 3600"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "No recently-written object has been discovered in the bucket"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+      - alert: "ObjectStoreBacklogStuck"
+        expr: "(max(min_over_time(tailscale2otel_objectstore_backlog_ratio[1h]))) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The object-store backlog has not drained to zero in an hour"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion"
+      - alert: "RDNSCacheOverflowing"
+        expr: "(sum(rate(tailscale_rdns_cache_overflows_total[15m]))) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The reverse-DNS cache is too small for the address churn it sees"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery"
+      - alert: "GeoIPDatabaseStale"
+        expr: "(max by (geoip_database) (time() - tailscale_geoip_database_build_time_seconds)) > 1209600"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The {{ $labels.geoip_database }} GeoIP database has not been rebuilt in over 14 days"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery"
+      - alert: "StreamRecordsSkipped"
+        expr: "(sum by (reason) (rate(tailscale_stream_skipped_total[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Stream receiver is discarding {{ $labels.reason }} records"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "WebhookPayloadSchemaDrift"
+        expr: "(sum by (field) (rate(tailscale_webhook_schema_drift_total{status=\"unknown\"}[15m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Webhook field {{ $labels.field }} moved to an unknown schema status"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "NodeMetricsNameBudgetExhausted"
+        expr: "(sum(rate(tailscale2otel_nodemetrics_metric_names_dropped_total[15m]))) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Forwarded node metrics are being dropped by the metric-name budget"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets"
+  - name: "tailscale2otel-network"
+    rules:
+      - alert: "FlowReporterIdentityMismatch"
+        expr: "(sum(rate(tailscale_network_reporter_observations_total{consistency=\"mismatch\"}[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Verified flow reporter disagrees with embedded source identity"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+      - alert: "AuditSchemaDriftDetected"
+        expr: "(sum by (field) (rate(tailscale_config_audit_schema_drift_total{status=\"unknown\"}[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Unknown configuration-audit {{ $labels.field }} values are arriving"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#audit-events"
+      - alert: "HighDERPRelayUsage"
+        expr: "(sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)) > 0.5"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Most tailnet traffic is relayed via DERP, not direct"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity"
+      - alert: "DERPRegionLatencyHigh"
+        expr: "(max by (tailscale_derp_region) (tailscale_derp_region_latency_min_seconds)) > 0.15"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Best latency to DERP region {{ $labels.tailscale_derp_region }} is high"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity"
+      - alert: "NoFlowData"
+        expr: "(sum(rate(tailscale_network_flows_total[30m]))) < 0.0001"
+        for: "1h"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "No network flow records for an hour"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+      - alert: "UnapprovedSubnetRoutes"
+        expr: "(max(tailscale_subnet_routes_unapproved)) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Subnet routes are advertised but unapproved"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+      - alert: "SubnetRouteHasNoFailover"
+        expr: "(count(tailscale_subnet_routes_routers_ratio == 1)) > 0"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A subnet/CIDR is served by a single router (no failover)"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+      - alert: "FleetHardNATFractionHigh"
+        expr: "(sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)) > 0.5"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "More than 50% of fleet devices are behind hard NAT"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity"
+      - alert: "TailscaledDroppingOutboundPackets"
+        expr: "(sum(rate(tailscaled_outbound_dropped_packets_total[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Nodes are dropping outbound packets (sustained)"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity"
+      - alert: "VIPServiceHasNoHostRedundancy"
+        expr: "(count(sum by (tailscale_service_name) (tailscale_service_hosts_ratio) == 1)) > 0"
+        for: "30m"
+        labels:
+          severity: "info"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "One or more VIP services are backed by a single host (no HA)"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+      - alert: "NodeClientHealthWarnings"
+        expr: "(max by (tailscale_node, tailscale_health_type) (tailscale_node_health_messages_ratio)) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Node {{ $labels.tailscale_node }} reporting health warnings ({{ $labels.tailscale_health_type }})"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#node-client-health"
+      - alert: "NodeMetricsTargetDown"
+        expr: "(min by (tailscale_node) (tailscale_node_up_ratio)) < 1"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Node-metrics target {{ $labels.tailscale_node }} is down"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#nodemetrics-scrape-targets"
+      - alert: "FlowLogsDropped"
+        expr: "(sum(rate(tailscale_network_flow_logs_dropped_total[10m]))) > 0"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailscale flow log records being dropped by the volume guard"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+      - alert: "NodeIPForwardingMisconfigured"
+        expr: "(sum by (tailscale_webhook_type) (rate(tailscale_webhook_events_total{tailscale_webhook_type=~\"exitNodeIPForwardingNotEnabled|subnetIPForwardingNotEnabled\"}[15m]))) > 0"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailscale node IP forwarding misconfigured ({{ $labels.tailscale_webhook_type }})"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#subnet-routing-and-services"
+      - alert: "PerTailnetAPIErrors"
+        expr: "(sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\"}[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Tailscale API errors for tailnet {{ $labels.tailscale_tailnet }}"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - alert: "NodeErrorAndMalformedPacketDrops"
+        expr: "(sum by (tailscale_drop_reason) (rate(tailscale_node_packets_dropped_total{tailscale_drop_reason=~\"error|unknown_protocol|other\"}[15m]))) > 0"
+        for: "30m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "tailscaled is dropping {{ $labels.tailscale_drop_reason }} packets"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#node-client-health"
+      - alert: "PeerRelayEndpointsStuckConnecting"
+        expr: "(sum(last_over_time(tailscale_node_peer_relay_endpoints_ratio{tailscale_peer_relay_state=\"connecting\"}[15m]))) > 0"
+        for: "1h"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "infra"
+          skipinvestigation: "true"
+        annotations:
+          summary: "A peer-relay endpoint has been connecting for over an hour"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#node-client-health"
+  - name: "tailscale2otel-recording"
+    rules:
+      - record: "tailscale:devices_online:count"
+        expr: "count(max by (host_id) (tailscale_device_online_ratio) == 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale:posture_autoupdate:ratio"
+        expr: "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "security"
+      - record: "tailscale:posture_encrypted:ratio"
+        expr: "count(max by (host_id) (tailscale_device_posture_ratio{encrypted=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "security"
+      - record: "tailscale:derp_relay:byte_fraction"
+        expr: "sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale:flow_throughput:bytes:rate5m"
+        expr: "sum(rate(tailscale_network_io_rollup_bytes_total[5m])) or sum(rate(tailscale_network_io_bytes_total[5m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale2otel:series_active:sum"
+        expr: "sum(max by (metric_name) (tailscale2otel_series_active))"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:ingest_event_freshness_seconds"
+        expr: "clamp_min(time() - max by (source, signal) (last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale:device_keys_expiring_7d:count"
+        expr: "count((max by (host_id) (tailscale_device_key_expiry_seconds) - time() < 7*86400) and (max by (host_id) (tailscale_device_key_expiry_seconds) - time() > 0))"
+        labels:
+          service: "tailscale2otel"
+          domain: "security"
+      - record: "tailscale2otel:series_active:by_group"
+        expr: "sum by (metric_group) (tailscale2otel_series_by_group)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale:devices_hard_nat:fraction"
+        expr: "sum(tailscale_devices_hard_nat_ratio) / sum(tailscale_devices_count_ratio)"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale2otel:api_requests:error_ratio"
+        expr: "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(tailscale2otel_api_requests_total[5m])), 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale:node_dropped_packets:rate5m"
+        expr: "sum by (tailscale_node) (rate(tailscaled_outbound_dropped_packets_total[5m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale:devices_unauthorized:count"
+        expr: "sum by (tailscale_tailnet) (last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"false\", tailscale_external=\"false\"}[10m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "security"
+      - record: "tailscale2otel:export:success_ratio"
+        expr: "sum by (signal) (rate(tailscale2otel_export_duration_seconds_count{outcome=\"success\"}[5m])) / sum by (signal) (rate(tailscale2otel_export_duration_seconds_count[5m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:scrape_freshness:seconds"
+        expr: "max by (tailscale_collector) (tailscale2otel_scrape_staleness_seconds)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:objectstore_backlog:max"
+        expr: "max(tailscale2otel_objectstore_backlog_ratio)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale:direct_path:byte_fraction"
+        expr: "sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"direct\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"direct\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)"
+        labels:
+          service: "tailscale2otel"
+          domain: "infra"
+      - record: "tailscale2otel:sli_availability:ratio"
+        expr: "max(tailscale2otel_up_ratio)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:sli_freshness:ratio"
+        expr: "avg(tailscale2otel_scrape_success_ratio)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:sli_delivery:ratio"
+        expr: "sum(rate(tailscale2otel_export_duration_seconds_count{outcome=\"success\"}[5m])) / sum(rate(tailscale2otel_export_duration_seconds_count[5m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:ingest_records:rate5m"
+        expr: "sum by (source, signal, tailscale_tailnet) (rate(tailscale2otel_ingest_records_total[5m]))"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:ingest_rejected:rate5m"
+        expr: "sum by (source, tailscale_tailnet) (label_replace(rate(tailscale_stream_rejected_total[5m]), \"source\", \"stream\", \"\", \"\") or label_replace(rate(tailscale_webhook_rejected_total[5m]), \"source\", \"webhook\", \"\", \"\") or label_replace(rate(tailscale2otel_objectstore_skipped_total[5m]), \"source\", \"objectstore\", \"\", \"\"))"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"
+      - record: "tailscale2otel:ingest_freshness:by_tailnet"
+        expr: "clamp_min(time() - max by (source, signal, tailscale_tailnet) (last_over_time(tailscale2otel_ingest_last_event_timestamp_seconds[30d])), 0)"
+        labels:
+          service: "tailscale2otel"
+          domain: "observability"

@@ -142,6 +142,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TRACES__RETRY__INITIAL_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_OTLP__TRACES__RETRY__MAX_INTERVAL` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_OTLP__TRACES__RETRY__MAX_ELAPSED_TIME` | `0s` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_DELIVERY__MODE` | `otlp` | otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.<signal>.endpoint explicitly opts that signal back in under prometheus mode |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | staleness alarm threshold for the IP/nodeID -> name device cache |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |
@@ -401,8 +402,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__STORE__SWEEP_INTERVAL` | `1h` | how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set |
 | `TS2OTEL_EVENTS__ENABLED` | `true` | keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_EVENTS__MAX_EVENTS` | `5000` | how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record |
-| `TS2OTEL_PROMETHEUS__ENABLED` | `false` | run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push |
-| `TS2OTEL_PROMETHEUS__LISTEN` | `:2112` | bind for /metrics (default :2112); keep distinct from admin.listen |
+| `TS2OTEL_PROMETHEUS__ENABLED` | `false` | backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it |
+| `TS2OTEL_PROMETHEUS__LISTEN` | `127.0.0.1:2112` | bind for /metrics (default loopback-only 127.0.0.1:2112); keep distinct from admin.listen |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED` | `false` | acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this |

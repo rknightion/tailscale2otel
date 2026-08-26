@@ -306,8 +306,11 @@ func TestPrometheusDefaults(t *testing.T) {
 	if c.Prometheus.Enabled {
 		t.Errorf("prometheus.enabled default = true, want false")
 	}
-	if c.Prometheus.Listen != ":2112" {
-		t.Errorf("prometheus.listen default = %q, want \":2112\"", c.Prometheus.Listen)
+	if c.Prometheus.Listen != "127.0.0.1:2112" {
+		t.Errorf("prometheus.listen default = %q, want loopback 127.0.0.1:2112", c.Prometheus.Listen)
+	}
+	if c.Delivery.Mode != "otlp" {
+		t.Errorf("delivery.mode default = %q, want otlp", c.Delivery.Mode)
 	}
 }
 

@@ -93,6 +93,7 @@ var rulesBySuffix = map[string]schemaRule{
 	"provider":         {enum: []string{"tailscale", "headscale"}},
 	"log_format":       {enum: []string{"text", "json"}},
 	"log_level":        {enum: []string{"debug", "info", "warn", "error"}},
+	"delivery.mode":    {enum: []string{"otlp", "prometheus", "dual"}},
 	"otlp.protocol":    {enum: []string{"grpc", "http", "stdout"}},
 	"checkpoint.store": {enum: []string{"memory", "file"}},
 	"source":           {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source

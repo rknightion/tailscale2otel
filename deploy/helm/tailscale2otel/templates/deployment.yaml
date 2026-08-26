@@ -158,7 +158,7 @@ spec:
           {{- if .Values.config.admin.enabled }}
           {{- $ports = append $ports (dict "name" "admin" "listen" .Values.config.admin.listen) }}
           {{- end }}
-          {{- if .Values.config.prometheus.enabled }}
+          {{- if or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) }}
           {{- $ports = append $ports (dict "name" "prometheus" "listen" .Values.config.prometheus.listen) }}
           {{- end }}
           {{- if .Values.config.streaming.enabled }}

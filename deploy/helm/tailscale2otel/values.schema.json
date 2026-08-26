@@ -713,6 +713,15 @@
                     },
                     "additionalProperties": false
                 },
+                "delivery": {
+                    "type": "object",
+                    "properties": {
+                        "mode": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "enrichment": {
                     "type": "object",
                     "properties": {
@@ -2158,6 +2167,14 @@
         "metrics": {
             "type": "object",
             "properties": {
+                "externalPrometheusToken": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "present",
+                        "absent"
+                    ]
+                },
                 "podMonitor": {
                     "type": "object",
                     "properties": {

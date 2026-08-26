@@ -15,16 +15,27 @@ ONLY its own port.
 `type` defaults to ClusterIP for all four. A LoadBalancer default would put a
 receiver on the public internet from a single `enabled: true`.
 */ -}}
+{{- $prometheusEnabled := or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) -}}
 {{- $listeners := list
   (dict "name" "admin"      "enabled" .Values.config.admin.enabled      "listen" .Values.config.admin.listen      "cred" .Values.config.admin.auth.token      "credFile" .Values.config.admin.auth.token_file      "credKey" "config.admin.auth.token")
-  (dict "name" "prometheus" "enabled" .Values.config.prometheus.enabled "listen" .Values.config.prometheus.listen "cred" .Values.config.prometheus.auth.token "credFile" .Values.config.prometheus.auth.token_file "credKey" "config.prometheus.auth.token")
+  (dict "name" "prometheus" "enabled" $prometheusEnabled "listen" .Values.config.prometheus.listen "cred" .Values.config.prometheus.auth.token "credFile" .Values.config.prometheus.auth.token_file "credKey" "config.prometheus.auth.token")
   (dict "name" "streaming"  "enabled" .Values.config.streaming.enabled  "listen" .Values.config.streaming.listen  "cred" .Values.config.streaming.token      "credFile" .Values.config.streaming.token_file      "credKey" "config.streaming.token")
   (dict "name" "webhook"    "enabled" .Values.config.webhook.enabled    "listen" .Values.config.webhook.listen    "cred" .Values.config.webhook.secret       "credFile" .Values.config.webhook.secret_file       "credKey" "config.webhook.secret")
 -}}
 {{- range $l := $listeners }}
 {{- $svc := index $.Values.service $l.name }}
 {{- if $svc.enabled }}
+{{- if eq $l.name "prometheus" }}
+{{- if not $l.enabled }}
+{{- fail "service.prometheus.enabled requires config.prometheus.enabled or delivery.mode=prometheus/dual: there is no /metrics listener to publish" }}
+{{- end }}
+{{- if ne (include "tailscale2otel.prometheusTokenConfigured" $) "true" }}
+{{- fail "service.prometheus.enabled requires a Prometheus credential. Set config.prometheus.auth.token/token_file, secret.TS2OTEL_PROMETHEUS__AUTH__TOKEN, or declare metrics.externalPrometheusToken=present for an opaque source; otherwise leave the Service disabled and reach the pod directly." }}
+{{- end }}
+{{- include "tailscale2otel.validateMetricsExposure" $ }}
+{{- else }}
 {{- include "tailscale2otel.requireListenerCredential" (dict "name" $l.name "enabled" $l.enabled "cred" $l.cred "credFile" $l.credFile "credKey" $l.credKey) }}
+{{- end }}
 ---
 apiVersion: v1
 kind: Service

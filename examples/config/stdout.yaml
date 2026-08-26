@@ -1,0 +1,33 @@
+# Minimal stdout smoke-test starter.
+#
+# This is a hand-maintained, delivery-specific starter, not a generated copy of
+# the exhaustive config.example.yaml. Use that file as the authoritative
+# reference when you need settings beyond this first-run path.
+#
+# Credential forms:
+# - tailscale.auth.oauth.client_id is an identifier (a value, not a secret):
+#   set TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID.
+# - tailscale.auth.oauth.client_secret is a secret. Supply it as the value form
+#   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET, or set client_secret_file to
+#   a mounted Docker/Kubernetes secret file. Choose exactly one form.
+#   stdout needs no OTLP or Grafana Cloud credential.
+#
+# After supplying Tailscale auth, prove authenticated access and one collection
+# cycle before a rollout with:
+#   tailscale2otel -preflight -config examples/config/stdout.yaml
+
+tailscale:
+  tailnet: "-"                       # Use the authenticated principal's default tailnet, or set its name.
+  auth:
+    method: oauth
+    oauth:
+      client_id: ""
+      client_secret: ""
+      # client_secret_file: /run/secrets/tailscale-oauth-client-secret
+      scopes: [all:read]
+
+otlp:
+  protocol: stdout
+  endpoint: ""                       # No backend is used by this debugging sink.
+  stdout:
+    metric_interval: 5s               # Emit a metric promptly during the smoke test.

@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -165,6 +167,49 @@ func TestRun_Preflight_SucceedsAndReportsJSON(t *testing.T) {
 	}
 }
 
+func TestRun_PrometheusCheck_DoesNotWriteAnnotationsOrOTLP(t *testing.T) {
+	headscale := fakeHeadscaleServer(t, false)
+	var annotationPosts atomic.Int32
+	annotations := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		annotationPosts.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	t.Cleanup(annotations.Close)
+	var otlpPosts atomic.Int32
+	otlp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otlpPosts.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(otlp.Close)
+
+	path := writeTempConfig(t, headscaleDevicesYAML(headscale.URL, filepath.Join(t.TempDir(), "checkpoint.json"), "")+fmt.Sprintf(`
+delivery:
+  mode: prometheus
+otlp:
+  metrics:
+    protocol: http
+    endpoint: %q
+    tls:
+      insecure: true
+grafana_annotations:
+  url: %q
+  token: "test-token"
+`, otlp.URL, annotations.URL))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-prometheus-check", "-json", "-preflight-timeout", "10s", "-config", path}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+	if got := annotationPosts.Load(); got != 0 {
+		t.Errorf("annotation POSTs = %d, want 0", got)
+	}
+	if got := otlpPosts.Load(); got != 0 {
+		t.Errorf("OTLP POSTs = %d, want 0", got)
+	}
+}
+
 func TestRun_Once_SucceedsAndPersistsCheckpoint(t *testing.T) {
 	srv := fakeHeadscaleServer(t, false)
 	otlpSrv := fakeOTLPServer(t)
@@ -252,4 +297,163 @@ func TestRun_Preflight_HumanReport(t *testing.T) {
 	if !strings.Contains(stdout.String(), "preflight: OK") {
 		t.Errorf("human report = %q, want a preflight: OK summary line", stdout.String())
 	}
+}
+
+func TestRun_PrometheusCheck_SucceedsWithSentinelAndValidExposition(t *testing.T) {
+	srv := fakeHeadscaleServer(t, false)
+	checkpointPath := filepath.Join(t.TempDir(), "checkpoint.json")
+	path := writeTempConfig(t, headscaleDevicesYAML(srv.URL, checkpointPath, ""))
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-prometheus-check", "-json", "-preflight-timeout", "10s", "-config", path}, &stdout, &stderr)
+	if code != pfOK {
+		t.Fatalf("exit code = %d, want %d; stdout=%s stderr=%s", code, pfOK, stdout.String(), stderr.String())
+	}
+
+	var rep prometheusCheckReport
+	if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v; stdout=%s", err, stdout.String())
+	}
+	if !rep.OK || rep.ExitCode != pfOK {
+		t.Errorf("report = %+v, want an OK report", rep)
+	}
+	if rep.Sentinel != prometheusCheckSentinel || !rep.ExpositionValid {
+		t.Errorf("report sentinel/exposition = %q/%t, want %q/true", rep.Sentinel, rep.ExpositionValid, prometheusCheckSentinel)
+	}
+	if len(rep.FailureClasses) != 0 {
+		t.Errorf("failure_classes = %v, want none", rep.FailureClasses)
+	}
+	if len(rep.Results) != 1 || !rep.Results[0].OK {
+		t.Fatalf("results = %+v, want one successful collector", rep.Results)
+	}
+	if _, err := os.Stat(checkpointPath); !os.IsNotExist(err) {
+		t.Errorf("checkpoint file %s exists (or Stat errored: %v); -prometheus-check must never persist it", checkpointPath, err)
+	}
+}
+
+func TestRun_PrometheusCheck_ClassifiesAuthenticationAndCollectionFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		server    *httptest.Server
+		wantCode  int
+		wantClass prometheusCheckFailureClass
+	}{
+		{
+			name:      "authentication",
+			server:    fakeHeadscaleServer(t, true),
+			wantCode:  pfAuthFailure,
+			wantClass: prometheusCheckAuthentication,
+		},
+		{
+			name: "collection",
+			server: httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "upstream unavailable", http.StatusInternalServerError)
+			})),
+			wantCode:  pfCollectFailure,
+			wantClass: prometheusCheckCollection,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.name == "collection" {
+				t.Cleanup(tc.server.Close)
+			}
+			path := writeTempConfig(t, headscaleDevicesYAML(tc.server.URL, filepath.Join(t.TempDir(), "checkpoint.json"), ""))
+
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"-prometheus-check", "-json", "-preflight-timeout", "10s", "-config", path}, &stdout, &stderr)
+			if code != tc.wantCode {
+				t.Fatalf("exit code = %d, want %d; stdout=%s stderr=%s", code, tc.wantCode, stdout.String(), stderr.String())
+			}
+			var rep prometheusCheckReport
+			if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v; stdout=%s", err, stdout.String())
+			}
+			if !slices.Contains(rep.FailureClasses, tc.wantClass) {
+				t.Errorf("failure_classes = %v, want %q", rep.FailureClasses, tc.wantClass)
+			}
+		})
+	}
+}
+
+func TestRun_PrometheusCheck_ClassifiesGatherAndAccessPostureFailures(t *testing.T) {
+	srv := fakeHeadscaleServer(t, false)
+	tests := []struct {
+		name      string
+		config    string
+		wantCode  int
+		wantClass prometheusCheckFailureClass
+	}{
+		{
+			name:      "missing documented sentinel",
+			config:    headscaleDevicesYAML(srv.URL, filepath.Join(t.TempDir(), "checkpoint.json"), "") + "\nself_observability:\n  enabled: false\n",
+			wantCode:  pfPrometheusGatherFailure,
+			wantClass: prometheusCheckGather,
+		},
+		{
+			name: "unauthenticated network bind",
+			config: strings.Replace(
+				headscaleDevicesYAML(srv.URL, filepath.Join(t.TempDir(), "checkpoint.json"), ""),
+				"prometheus:\n  enabled: true\n  listen: \"127.0.0.1:0\"",
+				"prometheus:\n  enabled: true\n  listen: \":2112\"",
+				1,
+			),
+			wantCode:  pfPrometheusAccessFailure,
+			wantClass: prometheusCheckAccessPosture,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeTempConfig(t, tc.config)
+			var stdout, stderr bytes.Buffer
+			code := run([]string{"-prometheus-check", "-json", "-preflight-timeout", "10s", "-config", path}, &stdout, &stderr)
+			if code != tc.wantCode {
+				t.Fatalf("exit code = %d, want %d; stdout=%s stderr=%s", code, tc.wantCode, stdout.String(), stderr.String())
+			}
+			var rep prometheusCheckReport
+			if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v; stdout=%s", err, stdout.String())
+			}
+			if !slices.Contains(rep.FailureClasses, tc.wantClass) {
+				t.Errorf("failure_classes = %v, want %q", rep.FailureClasses, tc.wantClass)
+			}
+		})
+	}
+}
+
+func TestRun_PrometheusCheck_ClassifiesConfigurationAndReportsHumanAccessPosture(t *testing.T) {
+	t.Run("configuration", func(t *testing.T) {
+		path := writeTempConfig(t, invalidYAML)
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-prometheus-check", "-json", "-config", path}, &stdout, &stderr)
+		if code != pfConfigInvalid {
+			t.Fatalf("exit code = %d, want %d; stdout=%s stderr=%s", code, pfConfigInvalid, stdout.String(), stderr.String())
+		}
+		var rep prometheusCheckReport
+		if err := json.Unmarshal(stdout.Bytes(), &rep); err != nil {
+			t.Fatalf("stdout is not valid JSON: %v; stdout=%s", err, stdout.String())
+		}
+		if !slices.Contains(rep.FailureClasses, prometheusCheckConfiguration) {
+			t.Errorf("failure_classes = %v, want %q", rep.FailureClasses, prometheusCheckConfiguration)
+		}
+	})
+
+	t.Run("human access posture", func(t *testing.T) {
+		srv := fakeHeadscaleServer(t, false)
+		cfg := strings.Replace(
+			headscaleDevicesYAML(srv.URL, filepath.Join(t.TempDir(), "checkpoint.json"), ""),
+			"prometheus:\n  enabled: true\n  listen: \"127.0.0.1:0\"",
+			"prometheus:\n  enabled: true\n  listen: \":2112\"",
+			1,
+		)
+		path := writeTempConfig(t, cfg)
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-prometheus-check", "-config", path}, &stdout, &stderr)
+		if code != pfPrometheusAccessFailure {
+			t.Fatalf("exit code = %d, want %d; stdout=%s stderr=%s", code, pfPrometheusAccessFailure, stdout.String(), stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "failure_classes=access_posture") {
+			t.Errorf("human output = %q, want access posture classification", stdout.String())
+		}
+	})
 }

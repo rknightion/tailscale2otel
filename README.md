@@ -74,67 +74,20 @@ cardinality controls keep flow-log metrics within a fixed series budget.
   gates every PR and three scheduled lanes diff the live OpenAPI spec, track the upstream client
   library, and hit the real API read-only. See [API drift CI](#api-drift-ci).
 
-## Quick start
+## Start with a destination
 
-### Docker
+- **[Grafana Cloud over OTLP](https://m7kni.io/tailscale2otel/getting-started/#grafana-cloud-over-otlp)**
+  pushes OpenTelemetry data to Grafana Cloud.
+- **[Prometheus pull](https://m7kni.io/tailscale2otel/getting-started/#prometheus-pull)** exposes
+  `/metrics` for a scraper you already operate.
+- **[stdout](https://m7kni.io/tailscale2otel/getting-started/#stdout)** prints telemetry locally,
+  with no observability backend.
 
-```sh
-docker run --rm --stop-timeout 45 \
-  -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
-  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
-  -e TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id> \
-  -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
-  ghcr.io/rknightion/tailscale2otel:latest
-```
-
-No config file is needed for the common settings: scalar fields and simple lists have `TS2OTEL_*`
-environment variables. Mount a YAML file and pass `-config /etc/tailscale2otel/config.yaml` for maps
-or structured lists.
-
-### Kubernetes (Helm)
-
-Put the credentials in a Secret first, then point the chart at it. They never
-reach your shell history, and never pass through Helm at all:
-
-```sh
-cat > creds.env <<'EOF'
-TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=...
-TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=...
-TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=...
-TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=...
-EOF
-chmod 600 creds.env
-
-kubectl create secret generic tailscale2otel-creds --from-env-file=creds.env
-rm creds.env
-
-helm install tailscale2otel oci://ghcr.io/rknightion/charts/tailscale2otel \
-  --set-string config.tailscale.tailnet=example.com \
-  --set-string existingSecret=tailscale2otel-creds
-```
-
-Do **not** pass a credential as an inline `--set secret.<KEY>` value: it lands in your
-shell history and is visible in `ps` to every other user on the machine.
-`scripts/check_doc_commands.py` fails CI if any documented command does.
-
-See [Installation](https://m7kni.io/tailscale2otel/installation/) for docker-compose, prebuilt
-binaries (Linux/macOS/Windows × amd64/arm64), and the full chart values.
-
-### Binary
-
-```sh
-go build -o tailscale2otel ./cmd/tailscale2otel
-cp config.example.yaml config.yaml   # then edit; secrets stay in env vars
-./tailscale2otel -config config.yaml
-
-./tailscale2otel -version                      # print version and exit
-./tailscale2otel -validate -config config.yaml # lint a config without starting
-```
-
-### No backend? Run it locally
-
-Set `TS2OTEL_OTLP__PROTOCOL=stdout` to print metrics and logs to the console.
+The canonical runnable Docker, Compose, Helm, and binary commands live in
+[Getting Started](https://m7kni.io/tailscale2otel/getting-started/). It explains the terms, how to
+supply Tailscale authentication, and what result proves each path works. For installation details
+such as release binaries, persistence, and secret mounts, see
+[Installation](https://m7kni.io/tailscale2otel/installation/).
 
 ## Where the telemetry goes
 
@@ -142,9 +95,9 @@ Set `TS2OTEL_OTLP__PROTOCOL=stdout` to print metrics and logs to the console.
   `otlp.grafana_cloud.{instance_id,token}` and the Basic-auth header is built for you. Full TLS/mTLS
   knobs. Metrics and logs always; **traces are opt-in** (`tracing.enabled`) for the exporter's own
   self-observability, with exemplars linking API-duration histograms to the originating span.
-- **Prometheus pull endpoint** (`prometheus.enabled`, off by default) — `GET /metrics` on its own
-  dedicated listener (default `:2112`), served *alongside* OTLP push, with optional bearer/basic auth
-  and TLS. Use it if you already run Prometheus and don't want an OTLP pipeline.
+- **Prometheus pull endpoint** (`delivery.mode: prometheus` or `prometheus.enabled`) — `GET /metrics`
+  on its own loopback-only listener by default (`127.0.0.1:2112`), with bearer/basic auth and TLS
+  available for remote scrapers. Use it if you already run Prometheus and don't want an OTLP pipeline.
 - **stdout** for local debugging.
 
 > **OTLP→Prometheus naming:** query the *normalized* name. Dots become underscores, monotonic
@@ -225,7 +178,7 @@ receiver auth, object-gap handling, and `auto_configure` are in
 
 ## Dashboards, alerts & the admin UI
 
-- **Dashboards** — [`deploy/grafana/`](./deploy/grafana/) ships two dashboards on Grafana's **v2
+- **Dashboards** — [`deploy/grafana/`](./deploy/grafana/) ships 2 dashboards on Grafana's **v2
   schema** (Grafana 13+): **Tailnet** (is my tailnet healthy — devices, network, security, policy)
   and **Exporter health** (is the exporter healthy — collection, ingestion, delivery, runtime, cost),
   cross-linked to each other, with dynamic rendering so a section only appears when its data is

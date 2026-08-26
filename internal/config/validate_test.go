@@ -1073,6 +1073,30 @@ func TestPrometheusOpenWildcardWarning(t *testing.T) {
 	}
 }
 
+func TestValidatePrometheusDeliveryMode(t *testing.T) {
+	t.Run("unknown mode", func(t *testing.T) {
+		c := config.Default()
+		c.Delivery.Mode = "push"
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "delivery.mode") {
+			t.Fatalf("Validate() = %v, want delivery.mode error", err)
+		}
+	})
+
+	t.Run("explicit OTLP opt-in needs an endpoint", func(t *testing.T) {
+		c := config.Default()
+		c.Delivery.Mode = "prometheus"
+		enabled := true
+		c.OTLP.Metrics.Enabled = &enabled
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "otlp.metrics.endpoint") {
+			t.Fatalf("Validate() = %v, want explicit metrics endpoint error", err)
+		}
+		c.OTLP.Metrics.Endpoint = "https://metrics.example/otlp"
+		if err := c.Validate(); err != nil {
+			t.Fatalf("explicit metrics endpoint should opt back in: %v", err)
+		}
+	})
+}
+
 func TestPrometheusListenConflict(t *testing.T) {
 	c := config.Default()
 	c.Admin.Enabled = true

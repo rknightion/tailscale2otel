@@ -1,0 +1,39 @@
+# Minimal Grafana Cloud OTLP starter.
+#
+# This is a hand-maintained, delivery-specific starter, not a generated copy of
+# the exhaustive config.example.yaml. Use that file as the authoritative
+# reference when you need settings beyond this first-run path.
+#
+# Credential forms:
+# - tailscale.auth.oauth.client_id is an identifier (a value, not a secret):
+#   set TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID.
+# - tailscale.auth.oauth.client_secret is a secret. Supply it as the value form
+#   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET, or set client_secret_file to
+#   a mounted Docker/Kubernetes secret file. Choose exactly one form.
+# - otlp.grafana_cloud.instance_id is a stack identifier (a value, not a secret):
+#   set TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID.
+# - otlp.grafana_cloud.token is a secret. Supply the value with
+#   TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN, or set token_file to a mounted secret
+#   file. Choose exactly one form. Never commit real credentials here.
+#
+# After supplying the values or mounting the files, prove authenticated access
+# before a rollout with:
+#   tailscale2otel -preflight -config examples/config/grafana-cloud-otlp.yaml
+
+tailscale:
+  tailnet: "-"                       # Use the authenticated principal's default tailnet, or set its name.
+  auth:
+    method: oauth
+    oauth:
+      client_id: ""
+      client_secret: ""
+      # client_secret_file: /run/secrets/tailscale-oauth-client-secret
+      scopes: [all:read]
+
+otlp:
+  protocol: http
+  endpoint: https://otlp-gateway-REGION.grafana.net/otlp
+  grafana_cloud:
+    instance_id: ""
+    token: ""
+    # token_file: /run/secrets/grafana-cloud-otlp-token

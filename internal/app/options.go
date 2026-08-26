@@ -33,6 +33,14 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 	if prov == "" {
 		prov = "tailscale"
 	}
+	signals := telemetry.SignalOptions{
+		Metrics: signalOverride(cfg.OTLP.Metrics),
+		Logs:    signalOverride(cfg.OTLP.Logs),
+		Traces:  signalOverride(cfg.OTLP.Traces),
+	}
+	if cfg.PrometheusOnly() {
+		signals = prometheusOnlySignals(cfg.OTLP)
+	}
 	return telemetry.Options{
 		ServiceName:              serviceName,
 		ServiceVersion:           version,
@@ -57,15 +65,11 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		TraceSampler:             cfg.Tracing.Sampler,
 		TraceSamplerArg:          cfg.Tracing.SamplerArg,
 		PIIFilter:                piiCategories(cfg.PIIFilter),
-		PrometheusEnabled:        cfg.Prometheus.Enabled,
+		PrometheusEnabled:        cfg.PrometheusPullEnabled(),
 
 		Transport: transportOptions(cfg.OTLP.Compression, cfg.OTLP.Timeout, cfg.OTLP.MaxRequestSize,
 			cfg.OTLP.GRPCReconnectionPeriod, cfg.OTLP.Retry),
-		Signals: telemetry.SignalOptions{
-			Metrics: signalOverride(cfg.OTLP.Metrics),
-			Logs:    signalOverride(cfg.OTLP.Logs),
-			Traces:  signalOverride(cfg.OTLP.Traces),
-		},
+		Signals: signals,
 		Batch: telemetry.BatchOptions{
 			Logs:   queueOptions(cfg.OTLP.Batch.Logs),
 			Traces: queueOptions(cfg.OTLP.Batch.Traces),
@@ -94,6 +98,30 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 				cfg.Tracing.Enabled && cfg.Profiling.Pyroscope.Enabled,
 		},
 	}
+}
+
+// prometheusOnlySignals disables inherited OTLP exporters in prometheus mode.
+// A signal names an explicit endpoint to opt back in; the common endpoint never
+// leaks back into this mode. An explicit enabled:false continues to win.
+func prometheusOnlySignals(cfg config.OTLPConfig) telemetry.SignalOptions {
+	return telemetry.SignalOptions{
+		Metrics: prometheusOnlySignal(cfg.Metrics),
+		Logs:    prometheusOnlySignal(cfg.Logs),
+		Traces:  prometheusOnlySignal(cfg.Traces),
+	}
+}
+
+func prometheusOnlySignal(cfg config.OTLPSignalConfig) *telemetry.SignalOverride {
+	if cfg.Endpoint != "" {
+		o := signalOverride(cfg)
+		if cfg.Enabled == nil {
+			enabled := true
+			o.Enabled = &enabled
+		}
+		return o
+	}
+	disabled := false
+	return &telemetry.SignalOverride{Enabled: &disabled}
 }
 
 // transportOptions maps the shared OTLP transport knobs (#360). Every zero value

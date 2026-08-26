@@ -75,6 +75,26 @@ func TestAdminAuth_StatusPageRejectsWrongToken(t *testing.T) {
 	}
 }
 
+func TestConstantTimeTokenEqual(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		candidate string
+		token     string
+		want      bool
+	}{
+		{name: "equal", candidate: "secret", token: "secret", want: true},
+		{name: "same length wrong", candidate: "xxxxxx", token: "secret"},
+		{name: "shorter", candidate: "x", token: "secret"},
+		{name: "longer", candidate: "a much longer candidate", token: "secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := constantTimeTokenEqual(tc.candidate, tc.token); got != tc.want {
+				t.Errorf("constantTimeTokenEqual(%q, %q) = %t, want %t", tc.candidate, tc.token, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAdminAuth_DefaultConfigNoTokenIsRejected(t *testing.T) {
 	// Default config binds the wildcard :9091 with no token: this must now fail
 	// closed (#227) rather than serve the status page to any network peer.

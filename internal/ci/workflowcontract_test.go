@@ -589,14 +589,16 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 		t.Error("dashboards-drift never runs `promtool check rules`, so no rule expression is " +
 			"ever parsed by a Prometheus-native checker")
 	}
-	// The shipped rules are Grafana-managed manifests, which promtool cannot read.
-	// The generator re-renders them as throwaway Prometheus rules purely so the
-	// fixtures can EXECUTE them. Without this step `promtool test rules` has no
-	// rule file: it either errors confusingly, or worse, silently uses a stale one
-	// left behind locally.
-	if !strings.Contains(body, "--prom-out") {
-		t.Error("dashboards-drift never renders the test-only Prometheus rules " +
-			"(build_rules.py --prom-out), so `promtool test rules` has nothing to execute")
+	// Prometheus-only deployments consume the committed rendering directly, and
+	// the semantic fixtures must execute that same shipped file. Checking a
+	// throwaway sibling would allow the deliverable to drift while CI stayed green.
+	if !strings.Contains(body, "promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml") {
+		t.Error("dashboards-drift does not check the committed Prometheus rule artifact, " +
+			"so a stale or malformed deployable file can ship")
+	}
+	if strings.Contains(body, ".generated-prom-rules.yaml") {
+		t.Error("dashboards-drift still executes a throwaway Prometheus rendering instead of " +
+			"deploy/alerts/prometheus/tailscale2otel.rules.yaml")
 	}
 	// The tarball is verified against the release's own published sums rather than
 	// a checksum pasted here, which would silently rot on the next version bump.

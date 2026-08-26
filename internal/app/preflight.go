@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
@@ -34,9 +35,9 @@ import (
 //   - checkpoint.store=memory, so no window collector's replay-seen state and
 //     no scheduler checkpoint can touch disk. Applied to -preflight always,
 //     independent of -preflight-export.
-//   - profiling.pyroscope.enabled off. The push agent starts during New()
-//     itself (pyroscope.Start is not deferred to Run()), so leaving it on
-//     would have -preflight push real profiling data over the network.
+//   - profiling.pyroscope.enabled and grafana_annotations off. Both start
+//     during New(), before Run(): Pyroscope can push profiles and the annotation
+//     writer synchronously POSTs a lifecycle marker to prove its token.
 //   - collectors.acl.validate off. This is the ONE non-GET request the
 //     exporter makes: POST /tailnet/{t}/acl/validate (internal/tsapi). It
 //     mutates nothing — it asks the control plane to check the policy — but
@@ -55,12 +56,14 @@ func PrepareConfig(cfg *config.Config, preflight bool) *config.Config {
 	out := *cfg
 	out.Admin.Enabled = false
 	out.Prometheus.Enabled = false
+	out.Delivery.Mode = "otlp"
 	out.Streaming.Enabled = false
 	out.Webhook.Enabled = false
 	out.IngressWAL.Enabled = false
 	if preflight {
 		out.Checkpoint.Store = "memory"
 		out.Profiling.Pyroscope.Enabled = false
+		out.GrafanaAnnotations = config.GrafanaAnnotationsConfig{}
 		out.Collectors.Acl.Validate = false
 	}
 	return &out
@@ -122,6 +125,14 @@ func (a *App) RunOnce(ctx context.Context) []CollectorRunResult {
 		}
 	}
 	return results
+}
+
+// RunPrometheusOnce runs the bounded collection cycle and returns the same
+// process-wide Gatherer served by /metrics. It never starts a listener or
+// delivers OTLP itself; callers may gather the returned registry directly.
+// A nil Gatherer means Prometheus pull delivery is unavailable on this App.
+func (a *App) RunPrometheusOnce(ctx context.Context) ([]CollectorRunResult, prometheus.Gatherer) {
+	return a.RunOnce(ctx), a.promGatherer
 }
 
 // runOnceEntry runs a single registered collector exactly once and classifies

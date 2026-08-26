@@ -25,6 +25,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DEPLOY_DIR="${SCRIPT_DIR}/.."
 BASE="${DEPLOY_DIR}/docker-compose.yaml"
 OVERRIDE="${DEPLOY_DIR}/docker-compose.config.yaml"
+PROMETHEUS_OVERRIDE="${DEPLOY_DIR}/docker-compose.prometheus.yaml"
 SERVICE=tailscale2otel
 CHECKPOINT_TARGET=/var/lib/tailscale2otel
 CONFIG_TARGET=/etc/tailscale2otel/config.yaml
@@ -222,6 +223,22 @@ assert_rc0 "F: resolves"
 [[ "$(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""')" == "true" ]] \
   && ok "F: TS2OTEL_ADMIN__ENABLED resolves to true by default" \
   || bad "F: TS2OTEL_ADMIN__ENABLED is $(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""'), want true"
+
+# --------------------------------------------------------------------------
+case_ "G. Prometheus override publishes a working host-loopback scrape path"
+RESOLVED="$(TS2OTEL_PROMETHEUS__LISTEN=:2112 \
+  TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED=true \
+  docker compose -f "$BASE" -f "$OVERRIDE" -f "$PROMETHEUS_OVERRIDE" config 2>&1)"; RESOLVED_RC=$?
+assert_rc0 "G: resolves"
+[[ "$(svc '.environment.TS2OTEL_PROMETHEUS__LISTEN')" == ":2112" ]] \
+  && ok "G: process binds the container interface" \
+  || bad "G: process kept a container-loopback bind"
+[[ "$(svc '.environment.TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED')" == "true" ]] \
+  && ok "G: container-network exposure is explicitly acknowledged" \
+  || bad "G: Prometheus exposure lacks an explicit auth posture"
+[[ "$(svc '[.ports[] | select(.target == 2112 and .published == "2112" and .host_ip == "127.0.0.1")] | length')" == "1" ]] \
+  && ok "G: host publishes 127.0.0.1:2112 to container port 2112" \
+  || bad "G: Prometheus port is not published on host loopback"
 
 # --------------------------------------------------------------------------
 # --self-test mutates the inputs to prove each assertion above can actually

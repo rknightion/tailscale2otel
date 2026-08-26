@@ -255,7 +255,7 @@ func (a *App) componentStatuses(failures []string) []statusdata.ComponentStatus 
 	}
 	rows := []statusdata.ComponentStatus{
 		{Name: appcatalog.ComponentAdmin, Enabled: a.cfg.Admin.Enabled},
-		{Name: appcatalog.ComponentMetrics, Enabled: a.cfg.Prometheus.Enabled},
+		{Name: appcatalog.ComponentMetrics, Enabled: a.cfg.PrometheusPullEnabled()},
 		{Name: appcatalog.ComponentStream, Enabled: a.cfg.Streaming.Enabled},
 		{Name: appcatalog.ComponentWebhook, Enabled: a.cfg.Webhook.Enabled},
 		{Name: appcatalog.ComponentIngressWAL, Enabled: a.ingressWAL != nil},

@@ -681,7 +681,7 @@ func (h *metricsScrapeHealth) snapshot() statusdata.MetricsServingInfo {
 // in force (#377). Called from buildStatus (status.go).
 func (a *App) metricsScrapeInfo() statusdata.MetricsServingInfo {
 	info := metricsScrapeHealthState.snapshot()
-	info.Enabled = a.cfg.Prometheus.Enabled
+	info.Enabled = a.cfg.PrometheusPullEnabled()
 	info.Config = statusdata.MetricsServingConfig{
 		Listen:               a.cfg.Prometheus.Listen,
 		MaxRequestsInFlight:  effectiveMetricsMaxRequests(a.cfg.Prometheus.MaxRequestsInFlight),

@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Generate the tailscale2otel **Grafana-managed** alerting + recording rules.
+"""Generate the tailscale2otel alerting + recording-rule artifacts.
 
 Emits one ``rules.alerting.grafana.app/v0alpha1`` manifest per rule (plus a
 ``folder.grafana.app/v1beta1`` folder manifest) into ``../grafana-managed/``. That
 is the resource form ``gcx resources push`` consumes. Grafana evaluates these
 itself (multi-datasource, ``noDataState``/``execErrState``, ``paused``); they are
-NOT Prometheus/Loki *ruler* ("datasource-managed") rules, and this repo
-deliberately no longer ships a ruler-compatible file.
+NOT Prometheus/Loki *ruler* ("datasource-managed") rules. The generated,
+committed Prometheus-compatible companion at
+``deploy/alerts/prometheus/tailscale2otel.rules.yaml`` is for a Prometheus,
+Mimir, or Cortex ruler. It contains only Prometheus-backed rules; Grafana's
+per-rule ``paused`` state and Loki-backed rules remain Grafana-managed-only.
 
 Dashboards-as-code style: edit this generator, regenerate, commit the manifests.
 Only the Python standard library is required (PyYAML is intentionally NOT a
-dependency — a tiny block-YAML emitter lives in ``yamlify`` below, used solely by
-the throwaway ``--prom-out`` rendering).
+dependency — a tiny block-YAML emitter lives in ``yamlify`` below, used by the
+Prometheus-compatible rendering).
 
 Usage:
-    python3 build_rules.py --out ../grafana-managed          # the shipped artifact
-    python3 build_rules.py --prom-out /tmp/prom-rules.yaml   # TEST-ONLY, never committed
+    python3 build_rules.py --out ../grafana-managed          # Grafana-managed artifact
+    python3 build_rules.py --prom-out ../prometheus/tailscale2otel.rules.yaml
 
 Deploy with (folder first, so the rules resolve it)::
 
@@ -68,11 +71,12 @@ Conventions baked in here:
     the UI when you want them). Starter-set + the explicitly-requested 48h key
     tiers ship enabled.
 
-``--prom-out`` renders the SAME catalogue as a plain Prometheus rule file. It is
-a **test fixture, not a deliverable**: it is never committed and never shipped.
-It exists because ``promtool test rules`` is the only thing in this repo that
-EXECUTES a rule against synthetic series, and promtool understands no other
-format. Loki-backed rules are omitted from it (promtool cannot parse LogQL).
+``--prom-out`` renders the Prometheus-backed part of the same catalogue as a
+plain, committed Prometheus rule file. It is the supported rule path for a
+Prometheus, Mimir, or Cortex ruler, and is also what ``promtool test rules``
+executes against synthetic series. Loki-backed rules are omitted because a
+Prometheus ruler cannot parse LogQL. Prometheus has no equivalent of Grafana's
+per-rule ``paused`` field, so loading this file evaluates every included rule.
 """
 
 import argparse
@@ -421,7 +425,7 @@ def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
         annotations["__panelId__"] = str(panel_id)
     return {
         # `uid` and `_prom` are GENERATOR-INTERNAL. `uid` becomes metadata.name;
-        # `_prom` carries what the test-only Prometheus rendering needs and what
+        # `_prom` carries what the Prometheus-compatible rendering needs and what
         # `rule_expr()` reads. Neither is emitted into a manifest.
         "uid": uid,
         "title": title,
@@ -2304,15 +2308,14 @@ def emit_grafana_managed(outdir, profile="recommended"):
 
 
 # ---------------------------------------------------------------------------
-# emit: the TEST-ONLY Prometheus rendering (--prom-out)
+# emit: the supported Prometheus-compatible rendering (--prom-out)
 # ---------------------------------------------------------------------------
 #
-# NEVER COMMITTED, NEVER SHIPPED. The project ships Grafana-managed rules only.
-# This rendering exists for exactly one reason: `promtool test rules` is the only
-# thing in the repo that EXECUTES a rule against synthetic series, and promtool
-# understands no format but Prometheus's. It has already earned its keep — it is
-# what proved that dropping the `> 0` guard on a key-expiry rule makes every
-# long-dead host alert forever.
+# This is committed at deploy/alerts/prometheus/tailscale2otel.rules.yaml for
+# Prometheus, Mimir, and Cortex rulers. It also lets `promtool test rules`
+# execute the shipped expressions against synthetic series. It has already
+# earned its keep — it proved that dropping the `> 0` guard on a key-expiry rule
+# makes every long-dead host alert forever.
 
 _WORD = re.compile(r"[A-Za-z0-9]+")
 
@@ -2394,16 +2397,18 @@ def build_prom_rules(profile="recommended"):
 
 
 _PROM_HEADER = """\
-# TEST FIXTURE — GENERATED, NEVER COMMITTED, NEVER SHIPPED.
+# GENERATED — supported Prometheus-compatible alert and recording rules.
 #
-# tailscale2otel ships Grafana-managed rule manifests only
-# (deploy/alerts/grafana-managed/, pushed with `gcx resources push`). This file
-# is a throwaway Prometheus rendering of the same catalogue, produced by
-#   python3 deploy/alerts/gen/build_rules.py --prom-out <path>
-# purely so `promtool test rules` can EXECUTE the expressions. Do not load it
-# into a ruler, do not add it to git, do not link to it from the docs.
+# This is the committed recommended-profile artifact for Prometheus, Mimir, and
+# Cortex rulers. Regenerate it with:
+#   scripts/regen-generated.sh promrules
 #
-# Loki-backed rules are omitted: promtool cannot parse LogQL.
+# It contains every Prometheus-backed rule in the catalogue, including recording
+# rules and runbook_url annotations. Loki-backed rules are omitted because a
+# Prometheus ruler cannot parse LogQL. Prometheus has no Grafana-equivalent
+# per-rule `paused` field, so loading this file evaluates every included rule.
+# Use deploy/alerts/grafana-managed/ when you need Grafana's paused state or
+# Loki-backed rules.
 """
 
 
@@ -2422,9 +2427,9 @@ def main():
                     help="directory to write the rules.alerting.grafana.app manifests into "
                          "(one JSON per rule + _folder.json). Existing *.json are deleted first.")
     ap.add_argument("--prom-out", metavar="FILE",
-                    help="ALSO render a TEST-ONLY Prometheus rule file to FILE. This artifact is "
-                         "never committed and never shipped — it exists only so `promtool test "
-                         "rules` can execute the expressions. Loki rules are omitted from it.")
+                    help="ALSO render the supported Prometheus-compatible rule file to FILE. "
+                         "Commit the recommended artifact at deploy/alerts/prometheus/; Loki "
+                         "rules are omitted and Prometheus cannot represent per-rule pauses.")
     ap.add_argument("--docs-out", metavar="FILE",
                     help="write the generated docs/alert-profiles.md installation-profile guide "
                          "to FILE. Independent of --profile: it always documents all profiles.")
@@ -2459,7 +2464,7 @@ def main():
     if args.prom_out:
         doc = emit_prom_rules(args.prom_out, args.profile)
         n = sum(len(g["rules"]) for g in doc["groups"])
-        print("wrote %s  (profile=%s, %d rules, TEST-ONLY — not shipped, not committed)"
+        print("wrote %s  (profile=%s, %d Prometheus-compatible rules)"
               % (args.prom_out, args.profile, n))
 
     if args.docs_out:

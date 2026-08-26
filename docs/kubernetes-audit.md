@@ -7,6 +7,32 @@ The intent is SIEM-shaped: answer *who reached which resource in which namespace
 with which client* — and surface the request patterns worth investigating, such as secret reads,
 `exec` into a pod, and permission enumeration.
 
+This is an advanced, opt-in feed. It reads the object-store exports written by tsrecorder, not
+Tailscale flow/audit logs and not the Kubernetes API server's own audit log. For the general choice
+among poll, stream, object storage, and event-only webhooks, see [Streaming & Webhooks](streaming-webhooks.md#choose-an-ingestion-path).
+
+## Prerequisites {#prerequisites}
+
+Before adding `collectors.k8s_audit`, verify these prerequisites:
+
+1. **The operator and recorder path exist.** The Kubernetes operator must proxy API-server requests
+   through Tailscale and a tsrecorder must be configured to record them. This feed can only show what
+   tsrecorder writes; it cannot recover response outcomes.
+2. **The ACL grant enables API events.** The `tailscale.com/cap/kubernetes` capability must name the
+   recorder and set `enableEvents: true`. This is a beta upstream feature; the complete grant is in
+   [Enabling it](#enabling-it) below.
+3. **The exporter can read the recorder's object store.** The recorder's endpoint, region, bucket,
+   and `layout: recorder` are required, and the exporter needs permission to list and read objects.
+   Use the ambient credential chain or environment/file-backed credentials; keep secrets out of YAML.
+   See the [Configuration reference](configuration.md) and [environment-variable reference](env-vars.md).
+4. **Restart durability is intentional.** The object-store cursor and failed-object gaps use the
+   shared checkpoint store. Keep the default file store on a persistent volume when the collector
+   must resume across pod or host replacement; an in-memory store loses that cursor on restart. The
+   checkpoint and storage trade-offs are covered in [Configuration](configuration.md).
+5. **The privacy policy is deliberate.** Kubernetes identities and, by default, verbatim `kubectl
+   exec` command text are emitted on logs. Review `pii_filter.emails` and `pii_filter.command_text`
+   in [Configuration](configuration.md) before sending this feed to a shared backend.
+
 ## Read this first: there is no response side
 
 The records tsrecorder writes carry **no response status, no latency and no byte count**. The
@@ -26,7 +52,8 @@ source with a different pipeline.
 
 ## Enabling it
 
-Two things must be true.
+Once the prerequisites are satisfied, enable the recording grant and point the collector at the
+recorder's bucket.
 
 **1. Tailscale must be recording the events.** This is an ACL grant, not a chart value. Add
 `enableEvents` to the `tailscale.com/cap/kubernetes` app capability:
@@ -164,9 +191,9 @@ detail. Some starting points:
 
 ### The dashboard
 
-The bundled dashboard has a **Kubernetes Audit** tab, under the *Security & Policy* group. It hides
-itself entirely when the feed is absent, so it costs nothing on a tailnet with no recorder — as do
-individual rows whose signal has no data.
+The [bundled dashboards](dashboards.md) have a **Kubernetes Audit** tab under the *Security & Policy*
+group. It hides itself entirely when the feed is absent, so it costs nothing on a tailnet with no
+recorder — as do individual rows whose signal has no data.
 
 Rows that surface a Kubernetes identity hide when `pii_filter.emails` is off, and the log panels
 carrying the raw command line hide when `pii_filter.command_text` is off. The `command_class`
@@ -176,7 +203,8 @@ breakdown stays visible either way, since the classification carries no free tex
 the obvious candidates, but a useful threshold depends heavily on a cluster's own baseline — a
 `selfsubjectrulesreview` sweep is routine for UI clients such as Freelens — and an arbitrary one
 would page on ordinary operator traffic. Watch the tab for a week, then set thresholds from what you
-actually see.
+actually see. See [Alerts](alerts.md) for the evaluation model and [alert profiles](alert-profiles.md)
+when deciding which optional rules to enable.
 
 ## Schema stability
 
@@ -188,4 +216,5 @@ upstream's type, and tsrecorder's server is not open source.
 `type` other than `kubernetes-api-request`, which is the only value upstream emits. A healthy feed
 reports nothing at all, so watch it after upgrading the operator or the recorder.
 
-See [Metrics](metrics.md#kubernetes-audit) for the full signal catalog.
+See [Metrics](metrics.md#kubernetes-audit) for the full signal catalog, [Dashboards](dashboards.md)
+for the conditional Kubernetes Audit tab, and [Alerts](alerts.md) for alerting context.

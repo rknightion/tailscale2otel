@@ -1,0 +1,41 @@
+# Minimal Prometheus-only starter.
+#
+# This is a hand-maintained, delivery-specific starter, not a generated copy of
+# the exhaustive config.example.yaml. Use that file as the authoritative
+# reference when you need settings beyond this first-run path.
+#
+# Credential forms:
+# - tailscale.auth.oauth.client_id is an identifier (a value, not a secret):
+#   set TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID.
+# - tailscale.auth.oauth.client_secret is a secret. Supply it as the value form
+#   TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET, or set client_secret_file to
+#   a mounted Docker/Kubernetes secret file. Choose exactly one form.
+# - This starter deliberately binds /metrics to loopback, so it needs no scrape
+#   token for a local Prometheus. For a network-reachable scrape, change listen
+#   and choose one explicit exposure form: set auth.token as a value (or
+#   auth.token_file for a mounted secret), or set allow_unauthenticated: true
+#   only when the surrounding network policy is the intended protection.
+#
+# After supplying Tailscale auth, prove authenticated access before a rollout
+# with:
+#   tailscale2otel -preflight -config examples/config/prometheus-only.yaml
+
+tailscale:
+  tailnet: "-"                       # Use the authenticated principal's default tailnet, or set its name.
+  auth:
+    method: oauth
+    oauth:
+      client_id: ""
+      client_secret: ""
+      # client_secret_file: /run/secrets/tailscale-oauth-client-secret
+      scopes: [all:read]
+
+delivery:
+  mode: prometheus                   # Pull /metrics; inherited OTLP metrics, logs, and traces stay off.
+
+prometheus:
+  listen: "127.0.0.1:2112"           # Explicit safe default: local scraping only.
+  auth:
+    allow_unauthenticated: false      # Set true only for an intentional, network-controlled open scrape.
+    # token: ""                       # Value form for remote scrapers; keep it in TS2OTEL_* instead.
+    # token_file: /run/secrets/prometheus-scrape-token

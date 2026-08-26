@@ -9,6 +9,8 @@
 #   docs/metrics.md     <- the in-code telemetry catalog                 (tools/metricscatalog)
 #   docs/env-vars.md    <- config.example.yaml                           (TestEnvReferenceDocInSync -update)
 #   docs/signal-coverage.md <- internal/catalog/signal_dispositions.json (TestSignalCoverageDocInSync -update)
+#   deploy/alerts/prometheus/tailscale2otel.rules.yaml <- alerts catalogue (build_rules.py --prom-out)
+#   internal/catalog/capability_counts.json <- catalog + shipped artifacts (check-capability-counts.py)
 #
 # The commands here mirror CI exactly (.github/workflows/helm.yml, the
 # metricscatalog step in CLAUDE.md, and the `go test` gate for env-vars.md) so
@@ -25,6 +27,8 @@
 #   scripts/regen-generated.sh metrics          # just docs/metrics.md
 #   scripts/regen-generated.sh envref           # just docs/env-vars.md
 #   scripts/regen-generated.sh coverage         # just docs/signal-coverage.md
+#   scripts/regen-generated.sh promrules        # just the shipped Prometheus rules
+#   scripts/regen-generated.sh counts           # just the public capability-count source
 #
 # A missing OR VERSION-MISMATCHED tool is a loud SKIP (not a failure) so the hook
 # never blocks a commit — CI's fail-on-diff checks remain the hard backstop. A
@@ -214,21 +218,41 @@ regen_dashboards() {
   # ordering), so rerunning them is a no-op on a clean tree, which is what makes
   # the CI fail-on-diff gate possible.
   #
-  # The test-only Prometheus rendering (--prom-out) is deliberately NOT produced
-  # here: it is never committed, exists only so promtool can execute the rules in
-  # CI, and is gitignored.
+  # The supported Prometheus rendering is generated separately by the
+  # `promrules` target below. Keeping it out of this function lets a rule-only
+  # lane regenerate and validate its artifact without rebuilding dashboards.
+}
+
+regen_promrules() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    skip "python3 not installed -> deploy/alerts/prometheus/tailscale2otel.rules.yaml not regenerated (CI will gate it)"
+    return 0
+  fi
+  note "deploy/alerts/prometheus/tailscale2otel.rules.yaml (alerts/gen/build_rules.py --prom-out)"
+  mkdir -p "$ROOT/deploy/alerts/prometheus"
+  python3 "$ROOT/deploy/alerts/gen/build_rules.py" \
+    --prom-out "$ROOT/deploy/alerts/prometheus/tailscale2otel.rules.yaml" >/dev/null
+}
+
+regen_counts() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    skip "python3 not installed -> internal/catalog/capability_counts.json not regenerated (CI will gate it)"
+    return 0
+  fi
+  note "internal/catalog/capability_counts.json (public capability counts)"
+  python3 "$ROOT/scripts/check-capability-counts.py" --write
 }
 
 main() {
   local targets=("$@")
   [ ${#targets[@]} -eq 0 ] && targets=(all)
 
-  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0 do_cov=0
+  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0 do_cov=0 do_promrules=0 do_counts=0
   for t in "${targets[@]}"; do
     case "$t" in
       # `all` deliberately does NOT install tools — it must stay side-effect-free
       # for the pre-commit hook. Run `tools` explicitly (once per machine).
-      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1; do_cov=1 ;;
+      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1; do_cov=1; do_promrules=1; do_counts=1 ;;
       tools)       do_tools=1 ;;
       helm)        do_docs=1; do_schema=1 ;;
       helm-docs)   do_docs=1 ;;
@@ -237,6 +261,8 @@ main() {
       envref)      do_envref=1 ;;
       coverage)    do_cov=1 ;;
       dashboards)  do_dash=1 ;;
+      promrules)   do_promrules=1 ;;
+      counts)      do_counts=1 ;;
       *) printf 'regen-generated.sh: unknown target %q\n' "$t" >&2; exit 2 ;;
     esac
   done
@@ -247,6 +273,8 @@ main() {
   [ "$do_metrics" = 1 ] && regen_metrics
   [ "$do_envref" = 1 ]  && regen_envref
   [ "$do_dash" = 1 ]    && regen_dashboards
+  [ "$do_promrules" = 1 ] && regen_promrules
+  [ "$do_counts" = 1 ]  && regen_counts
   # After the dashboards: the coverage page reports on what they reference.
   [ "$do_cov" = 1 ]     && regen_coverage
   return 0

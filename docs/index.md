@@ -21,29 +21,18 @@ The source, releases and issue tracker live on
 
 ## Quickstart
 
-Needs a Tailscale OAuth client, and a Grafana Cloud stack if you want the data to
-land somewhere:
-
-```sh
-docker run --rm --stop-timeout 45 \
-  -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
-  -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
-  -e TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=<stack-id> \
-  -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
-  ghcr.io/rknightion/tailscale2otel:latest
-```
-
-No config file is needed for the common settings: scalar fields and simple lists have `TS2OTEL_*`
-environment variables. Maps and structured lists stay in YAML. To try it with no backend at all,
-set `TS2OTEL_OTLP__PROTOCOL=stdout` and it prints to the console.
+Choose a destination before collecting credentials: [Grafana Cloud over
+OTLP](getting-started.md#grafana-cloud-over-otlp), [Prometheus
+pull](getting-started.md#prometheus-pull), or [stdout](getting-started.md#stdout). The
+[Getting Started](getting-started.md) page is the canonical command reference for Docker, Compose,
+Helm, and a local binary; it states the expected first result for each route.
 
 ## Start here
 
 <div class="grid cards" markdown>
 
-- **[Getting started](getting-started.md)** — from zero to metrics landing in
-  Grafana Cloud, including creating the OAuth client.
+- **[Getting started](getting-started.md)** — choose a destination, create Tailscale authentication,
+  and reach a first observable signal.
 - **[Installation](installation.md)** — Docker, Helm, docker-compose, or a
   prebuilt binary for Linux, macOS and Windows.
 - **[Configuration](configuration.md)** — every key, its default, and the `TS2OTEL_*`
@@ -55,7 +44,7 @@ set `TS2OTEL_OTLP__PROTOCOL=stdout` and it prints to the console.
 
 ## What it collects
 
-Sixteen collectors run on independent schedules, each isolated so one failing source cannot stall
+16 collectors run on independent schedules, each isolated so one failing source cannot stall
 the others:
 
 | Area | What you get |

@@ -315,9 +315,10 @@ air-gapped tailnets.
 
 ### Prometheus pull endpoint
 
-A second, independent HTTP listener — off by default, `prometheus.enabled` (default `:2112`,
+A second, independent HTTP listener — off by default and enabled by `prometheus.enabled`,
+`delivery.mode: prometheus`, or `delivery.mode: dual` (default bind `127.0.0.1:2112`,
 `internal/app/metrics.go`) — serves a single `GET /metrics` in the standard Prometheus exposition
-format, for scrapers that can't consume OTLP push. It is separate from the admin server so pull
+format. The delivery modes enable it even when the legacy boolean is false. It is separate from the admin server so pull
 scraping works even with the status page/pprof disabled, and it gathers from every provider in the
 `telemetry.ProviderSet` (process + each tailnet) merged into one `prometheus.Gatherers`. Optionally
 gated by `prometheus.auth.token` (same Basic/Bearer constant-time check as the admin token). With no

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
 	"io"
@@ -111,12 +112,22 @@ func pprofGuard(next http.HandlerFunc) http.HandlerFunc {
 // admin surface and the log-stream receiver verify shared secrets the same way.
 func adminAuthorized(r *http.Request, token string) bool {
 	if _, pass, ok := r.BasicAuth(); ok {
-		return subtle.ConstantTimeCompare([]byte(pass), []byte(token)) == 1
+		return constantTimeTokenEqual(pass, token)
 	}
 	if fields := strings.Fields(r.Header.Get("Authorization")); len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
-		return subtle.ConstantTimeCompare([]byte(fields[1]), []byte(token)) == 1
+		return constantTimeTokenEqual(fields[1], token)
 	}
 	return false
+}
+
+// constantTimeTokenEqual compares fixed-size digests so a wrong-length
+// credential follows the same ConstantTimeCompare path as an equal-length one.
+// The caller already knows the candidate length; hashing removes the configured
+// token length from the comparison primitive's early-return behavior.
+func constantTimeTokenEqual(candidate, token string) bool {
+	candidateHash := sha256.Sum256([]byte(candidate))
+	tokenHash := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(candidateHash[:], tokenHash[:]) == 1
 }
 
 // Additional admin auth-rejection reasons, in the same closed-set shape as the

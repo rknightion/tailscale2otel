@@ -149,6 +149,7 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 
 ## Contents
 
+- [Delivery modes](#delivery-modes)
 - [Top level](#top-level)
 - [`headscale` — Headscale control-plane connection](#headscale-headscale-control-plane-connection)
 - [`tailscale` — API connection & authentication](#tailscale-api-connection-authentication)
@@ -172,6 +173,25 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 - [`flows` — built-in flow view](#flows-built-in-flow-view)
 - [`events` — built-in event explorer](#events-built-in-auditwebhook-event-explorer)
 - [`grafana_annotations` — Grafana annotations](#grafana_annotations-publish-tailnet-events-as-grafana-annotations)
+
+---
+
+## Delivery modes {#delivery-modes}
+
+`delivery.mode` selects the first-class metrics delivery path. Its default is `otlp`, which preserves
+the existing OTLP exporter behaviour. Valid values are:
+
+| Value | Metrics | Logs and traces |
+|---|---|---|
+| `otlp` | OTLP push. Setting `prometheus.enabled: true` additionally enables pull metrics for backwards-compatible dual delivery. | Existing OTLP settings apply. |
+| `prometheus` | Enables the Prometheus reader and `/metrics`; inherited OTLP metrics are disabled. | Inherited OTLP export is disabled. An explicit `otlp.<signal>.endpoint` opts that signal back in when `enabled` is unset; `enabled: false` disables it. No default endpoint is contacted. |
+| `dual` | Enables both Prometheus pull and the existing OTLP metrics disposition. | Existing OTLP settings apply. |
+
+The environment-variable spelling is `TS2OTEL_DELIVERY__MODE`. Prometheus-only mode deliberately
+does not turn operational logs into an exported log signal: process logs still go to stderr in the
+configured `log_format`, while OTLP logs and traces stay off unless explicitly configured as above.
+For runnable first-run configurations and evidence for each destination, start at
+[Getting Started](getting-started.md#choose-a-destination).
 
 ---
 
@@ -1672,10 +1692,10 @@ Notes:
 
 ## `prometheus` — Prometheus pull endpoint
 
-An opt-in, off-by-default `GET /metrics` endpoint on a **dedicated listener** (`prometheus.listen`,
-default `:2112`). When enabled it attaches an additional `metric.Reader` (a per-provider Prometheus
-registry) alongside the OTLP push path, so **both export paths are active at once** — Prometheus
-scraping and OTLP push are independent and complementary; enabling one does not disable the other.
+An opt-in `GET /metrics` endpoint on a **dedicated listener** (`prometheus.listen`, default
+`127.0.0.1:2112`). `delivery.mode: prometheus` enables this pull path and disables inherited OTLP
+export; `delivery.mode: dual` deliberately enables both. The legacy `otlp` default also preserves
+the existing dual-delivery opt-in when `prometheus.enabled: true` is set.
 
 > **Pick one delivery path per backend.** "Complementary" means the two paths can run side by side
 > without one breaking the other — it is not a recommendation to point both at the *same* backend.
@@ -1701,7 +1721,7 @@ address. It serves only `GET /metrics`; no status page or probes are exposed her
 | Key | Default | Description |
 |-----|---------|-------------|
 | `prometheus.enabled` | `false` | Run the Prometheus pull endpoint on its own dedicated listener. Off by default. |
-| `prometheus.listen` | `:2112` | Listen address for `/metrics`. Must differ from `admin.listen`. For defense-in-depth bind to loopback (`127.0.0.1:2112`) or a tailnet IP rather than a wildcard. |
+| `prometheus.listen` | `127.0.0.1:2112` | Listen address for `/metrics`. Must differ from `admin.listen`. Keep the loopback default unless a scraper requires another reachable address. |
 | `prometheus.auth.token` | `""` | Optional shared secret gating `/metrics`. Accepted as the HTTP Basic password (any username) **or** `Authorization: Bearer <token>`. Empty on a **network-reachable** bind is refused with HTTP 403 unless `allow_unauthenticated` is set; empty on a loopback bind stays open. Set via `TS2OTEL_PROMETHEUS__AUTH__TOKEN`. |
 | `prometheus.auth.allow_unauthenticated` | `false` | Acknowledge serving `/metrics` with **no** token on a network-reachable bind. `/metrics` carries every series this exporter produces — device names, flow endpoints, audit identities — so the default refuses that combination rather than inheriting it. In-cluster scraping behind a NetworkPolicy is a legitimate reason to set it. Ignored when `token` is set: a configured token is always enforced. |
 | `prometheus.auth.token_file` | `""` | Read `prometheus.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |

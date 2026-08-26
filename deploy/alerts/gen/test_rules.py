@@ -22,9 +22,9 @@ What this file exists to pin down, none of which any other gate covers:
     what catches a renamed rule leaving a dead section behind). Panel links are
     emitted as the paired ``__dashboardUid__``/``__panelId__`` ANNOTATIONS, which
     is the only form this API has, and always resolve in the generated dashboard.
-  * **The test-only Prometheus rendering.** It is the only thing that can be
-    EXECUTED (by ``promtool test rules``), so its alert names must be unique and
-    its expressions must be renderable for every non-Loki rule.
+  * **The shipped Prometheus-compatible rendering.** ``promtool test rules``
+    executes this committed artifact, so its alert names must be unique and its
+    expressions must be renderable for every non-Loki rule.
 
 Run: ``python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen``
 """
@@ -42,6 +42,7 @@ RUNBOOKS = ROOT / "docs" / "runbooks.md"
 DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
               ROOT / "deploy" / "grafana" / "tailscale2otel-health.json"]
 MANIFEST_DIR = ROOT / "deploy" / "alerts" / "grafana-managed"
+PROM_RULES = ROOT / "deploy" / "alerts" / "prometheus" / "tailscale2otel.rules.yaml"
 
 
 def load_module(name, path):
@@ -945,8 +946,34 @@ class ValidatorTest(unittest.TestCase):
 
 
 class PrometheusRenderingTest(unittest.TestCase):
-    """The TEST-ONLY rendering. Never committed, never shipped — but promtool is
-    the only thing in the repo that EXECUTES a rule, so it has to be renderable."""
+    """The committed Prometheus-compatible rendering, which promtool executes."""
+
+    def test_committed_rules_match_the_generator(self):
+        self.assertTrue(PROM_RULES.is_file(), f"{PROM_RULES} is missing")
+        want = rules._PROM_HEADER + rules.yamlify(rules.build_prom_rules()) + "\n"
+        self.assertEqual(
+            want, PROM_RULES.read_text(),
+            "committed Prometheus rules are out of date with the generator -- run "
+            "'scripts/regen-generated.sh promrules' and commit the result",
+        )
+
+    def test_shipped_groups_are_the_stable_public_names(self):
+        doc = rules.build_prom_rules()
+        self.assertEqual(
+            ["tailscale2otel-health", "tailscale2otel-security",
+             "tailscale2otel-integrations", "tailscale2otel-network",
+             "tailscale2otel-recording"],
+            [group["name"] for group in doc["groups"]],
+        )
+
+    def test_rendered_alerts_keep_their_runbook_links(self):
+        doc = rules.build_prom_rules()
+        alerts = [rule for group in doc["groups"] for rule in group["rules"]
+                  if "alert" in rule]
+        self.assertTrue(alerts)
+        for alert in alerts:
+            with self.subTest(alert=alert["alert"]):
+                self.assertIn("runbook_url", alert["annotations"])
 
     def test_alert_names_are_unique_and_identifier_shaped(self):
         names = [rules.prom_alertname(r["title"]) for r in alert_rules()]
@@ -983,7 +1010,7 @@ class PrometheusRenderingTest(unittest.TestCase):
     def test_coverage_critical_rules_gain_an_absent_arm(self):
         # Grafana expresses "absence is the alert" with noDataState: Alerting.
         # Prometheus has no such concept, so the only faithful rendering is an
-        # explicit `or absent(...)`. Without it the test-only file would quietly
+        # explicit `or absent(...)`. Without it the shipped file would quietly
         # drop the exact semantics the absent() fixture case exists to prove.
         doc = rules.build_prom_rules()
         by_name = {r.get("alert"): r for g in doc["groups"] for r in g["rules"]}

@@ -1,14 +1,19 @@
 package app
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 // TestInstanceID_PIIFilter covers the three cases for the hostname-redaction
@@ -105,6 +110,77 @@ func TestTelemetryOptions_MetricExportBatchSizeWired(t *testing.T) {
 	cfg.OTLP.MetricExportBatchSize = 4321
 	if got := telemetryOptions(cfg, "v1").MetricExportBatchSize; got != 4321 {
 		t.Fatalf("MetricExportBatchSize = %d, want 4321", got)
+	}
+}
+
+func TestTelemetryOptions_DeliveryModeDispositions(t *testing.T) {
+	t.Run("prometheus disables inherited OTLP and enables pull", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Delivery.Mode = "prometheus"
+		opts := telemetryOptions(cfg, "v1")
+		if !opts.PrometheusEnabled {
+			t.Fatal("PrometheusEnabled = false, want true for delivery.mode=prometheus")
+		}
+		for _, signal := range []struct {
+			name     string
+			override *telemetry.SignalOverride
+		}{
+			{"metrics", opts.Signals.Metrics},
+			{"logs", opts.Signals.Logs},
+			{"traces", opts.Signals.Traces},
+		} {
+			if signal.override == nil || signal.override.Enabled == nil || *signal.override.Enabled {
+				t.Errorf("%s OTLP disposition = %+v, want disabled override", signal.name, signal.override)
+			}
+		}
+	})
+
+	t.Run("dual preserves inherited OTLP and enables pull", func(t *testing.T) {
+		cfg := config.Default()
+		cfg.Delivery.Mode = "dual"
+		opts := telemetryOptions(cfg, "v1")
+		if !opts.PrometheusEnabled {
+			t.Fatal("PrometheusEnabled = false, want true for delivery.mode=dual")
+		}
+		if opts.Signals.Metrics != nil || opts.Signals.Logs != nil || opts.Signals.Traces != nil {
+			t.Errorf("dual signal overrides = %+v, want inherited OTLP", opts.Signals)
+		}
+	})
+}
+
+func TestTelemetryOptions_PrometheusOnlyDoesNotAttemptOTLP(t *testing.T) {
+	var otlpRequests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		otlpRequests.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	cfg := config.Default()
+	cfg.Delivery.Mode = "prometheus"
+	cfg.OTLP.Endpoint = srv.URL
+	cfg.Tracing.Enabled = true
+	p, err := telemetry.NewProvider(context.Background(), telemetryOptions(cfg, "v1"))
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	p.Emitter().Counter("tailscale.test.counter", "1", "test", 1, nil)
+	p.Emitter().LogEvent(telemetry.Event{Name: "tailscale.test.log", Body: "test"})
+	_, span := p.Tracer().Start(context.Background(), "test")
+	span.End()
+	if err := p.ForceFlush(context.Background()); err != nil {
+		t.Fatalf("ForceFlush: %v", err)
+	}
+	if g := p.PromGatherer(); g == nil {
+		t.Fatal("PromGatherer = nil, want a pull reader in prometheus delivery mode")
+	} else if _, err := g.Gather(); err != nil {
+		t.Fatalf("PromGatherer.Gather: %v", err)
+	}
+	if err := p.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if got := otlpRequests.Load(); got != 0 {
+		t.Errorf("OTLP requests = %d, want 0 in delivery.mode=prometheus", got)
 	}
 }
 

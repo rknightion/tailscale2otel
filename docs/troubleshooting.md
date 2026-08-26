@@ -10,6 +10,8 @@ tags:
 This page covers the most common `tailscale2otel` problems, their root causes, and concrete fixes.
 All config keys reference the full key path; see [Configuration](configuration.md) for defaults and
 env-var equivalents.
+For release changes, start with the [upgrade and rollback checklist](upgrading.md#upgrade-and-rollback-checklist),
+then use this page for symptoms observed after the restart.
 
 ---
 
@@ -65,6 +67,27 @@ tailscale:
 ---
 
 ## No data arriving
+
+### Prometheus endpoint is empty, refused, or never appears in the scraper
+
+Start with the pull-only starter and run the checks in order:
+
+```sh
+tailscale2otel -config examples/config/prometheus-only.yaml
+curl --fail http://127.0.0.1:2112/metrics
+tailscale2otel -prometheus-check -config examples/config/prometheus-only.yaml
+```
+
+The first command must remain running while the other two execute. A successful `curl` proves the
+listener; a successful `-prometheus-check` proves a bounded first exposition. Finally inspect the
+scraper's target status — that is the proof its network path and scrape configuration work. For a
+remote listener, configure `prometheus.auth.token` (or `token_file`) and use the same Bearer token
+in the scraper. An unauthenticated non-loopback bind requires the explicit
+`allow_unauthenticated: true` acknowledgement.
+
+If the same backend also receives this exporter over OTLP, switch to `delivery.mode: prometheus` or
+stop the duplicate scrape. See [Getting Started](getting-started.md#prometheus-pull) and
+[Delivery modes](configuration.md#delivery-modes).
 
 ### Bare gateway URL returns 404 silently
 
@@ -196,6 +219,8 @@ been deleted — the file is untouched.
 
 **Fix:** stop the service and tell the binary which tailnet the database belongs to. Verify that is
 right before running it; naming the tailnet is the ownership assertion the filename cannot make.
+
+This is the forward-only migration in the [upgrade and rollback checklist](upgrading.md#upgrade-and-rollback-checklist).
 
 ```sh
 tailscale2otel -config config.yaml -adopt-flow-db your-tailnet.example

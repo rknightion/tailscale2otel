@@ -3,10 +3,16 @@
 Alerting + recording rules that complement the Grafana dashboards in
 [`../grafana/`](../grafana/).
 
-**One delivery model: Grafana-managed rules, as `rules.alerting.grafana.app`
-manifests.** [`grafana-managed/`](grafana-managed/) holds one JSON manifest per
-rule plus a folder manifest, and the whole directory is pushed with
-[`gcx`](https://github.com/grafana/gcx):
+The committed default is the **recommended** profile; see
+[`docs/alert-profiles.md`](../../docs/alert-profiles.md) before choosing a
+smaller baseline or a locally materialized strict profile. An alert rule opens
+an incident when its condition remains true; a recording rule writes a derived
+series for other queries and does not notify by itself. Grafana's `paused` state
+retains a rule without evaluating it.
+
+**Grafana-managed rules.** [`grafana-managed/`](grafana-managed/) holds one
+`rules.alerting.grafana.app` JSON manifest per rule plus a folder manifest, and
+the whole directory is pushed with [`gcx`](https://github.com/grafana/gcx):
 
 ```bash
 gcx resources push -p deploy/alerts/grafana-managed
@@ -15,15 +21,14 @@ gcx resources push -p deploy/alerts/grafana-managed
 Grafana evaluates these itself, so they can span Prometheus and Loki in one
 ruleset and carry `noDataState` / `execErrState` / `paused`.
 
-> **This repo no longer ships a Prometheus/Mimir *ruler* rules file.** The old
-> hand-maintained `tailscale2otel.rules.yaml` and the generated
-> `tailscale2otel.grafana-rules.yaml` (Grafana *file-provisioning*,
-> `apiVersion: 1`) are both gone. File provisioning is not what
-> `gcx resources push` consumes, and maintaining a second, drifting,
-> ruler-compatible copy of the same catalogue was not worth it. If you need
-> datasource-managed rules, render them yourself from the generator — see
-> [the test-only Prometheus rendering](#the-test-only-prometheus-rendering) —
-> and own the result.
+**Prometheus-compatible rules.**
+[`prometheus/tailscale2otel.rules.yaml`](prometheus/tailscale2otel.rules.yaml)
+is the generated, committed, supported rule file for Prometheus, Mimir, and
+Cortex rulers. Load it through that ruler's normal rule-file configuration. It
+contains normalized Prometheus metric names, alert and recording rules, and
+`runbook_url` annotations. It deliberately omits Loki-backed rules; Prometheus
+also has no equivalent of Grafana's per-rule `paused` field, so every included
+rule evaluates when loaded.
 
 ## Important: metric names assume OTLP → Prometheus normalization
 
@@ -145,26 +150,25 @@ rule structurally cannot alert on its own non-evaluation. See
 [the runbook page](../../docs/runbooks.md) for the honest version and the three
 external mechanisms that do cover it.
 
-### The test-only Prometheus rendering
+### Prometheus-compatible rules
 
-`promtool test rules` is the only thing in the repo that **executes** a rule
-against synthetic series — it already caught a rule that was valid PromQL and
-semantically wrong (dropping the lower bound on the key-expiry window makes every
-long-dead host alert forever). promtool understands no format but Prometheus's,
-so the generator can re-render the same catalogue as plain rule groups:
+`prometheus/tailscale2otel.rules.yaml` is the supported, committed rendering of
+the Prometheus-backed rule groups. `promtool test rules` executes this exact
+artifact against synthetic series — it already caught a rule that was valid
+PromQL and semantically wrong (dropping the lower bound on the key-expiry window
+makes every long-dead host alert forever):
 
 ```bash
-python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
+scripts/regen-generated.sh promrules
+promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```
 
-**That file is a fixture, not a deliverable: gitignored, never committed, never
-shipped.** Do not load it into a ruler. It omits the Loki-backed rules (promtool
-cannot parse LogQL), carries only the `summary` and `runbook_url` annotations
-(promtool matches annotations exactly, and panel ids renumber on any dashboard
-edit), and renders `coverage_critical`'s "absence is the alert" semantics as an
-explicit `or absent(...)` arm, which Grafana expresses as `noDataState: Alerting`.
-Fixture alert names are the CamelCased rule titles.
+The file omits Loki-backed rules (a Prometheus ruler cannot parse LogQL), carries
+the `summary` and `runbook_url` annotations, and renders `coverage_critical`'s
+"absence is the alert" semantics as an explicit `or absent(...)` arm, which
+Grafana expresses as `noDataState: Alerting`. Alert names are the CamelCased rule
+titles.
 
 Generator tests live in [`gen/test_rules.py`](gen/test_rules.py) — they pin the
 manifest format (including the two state casings), the policy matrix, the
@@ -335,9 +339,9 @@ python3 deploy/alerts/gen/validate_manifests.py
 # 2. generator + manifest contract tests
 python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 
-# 3. EXECUTE the rules (test-only rendering; the .yaml is gitignored)
-python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
-promtool check rules deploy/alerts/.generated-prom-rules.yaml
+# 3. EXECUTE the committed Prometheus-compatible rules
+scripts/regen-generated.sh promrules
+promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```
 

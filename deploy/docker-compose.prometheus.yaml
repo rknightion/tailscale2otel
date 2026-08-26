@@ -1,0 +1,8 @@
+# Optional Prometheus pull override. Pass this after the base and config files.
+# The host-side bind stays loopback-only; the process must bind the container
+# interface, and explicitly acknowledges that its container-network listener is
+# unauthenticated. Use a token instead on a shared or untrusted Docker network.
+services:
+  tailscale2otel:
+    ports:
+      - "127.0.0.1:2112:2112"

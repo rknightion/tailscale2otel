@@ -330,16 +330,20 @@ func (c *Config) Warnings() []string {
 	// With the tailnet distinguisher dropped, per-tailnet Prometheus series become
 	// byte-identical and collapse on the pull path (the handler serves 200 via
 	// first-wins rather than 500 — see #103). Flag the silent per-tailnet data loss.
-	if c.Prometheus.Enabled && !c.PIIFilter.TailnetName && len(c.Tailnets) > 1 {
-		w = append(w, "prometheus.enabled with pii_filter.tailnet_name=false in multi-tailnet mode: "+
+	prometheusDeliveryKey := "prometheus.enabled"
+	if c.Delivery.Mode != "otlp" {
+		prometheusDeliveryKey = "delivery.mode=" + c.Delivery.Mode
+	}
+	if c.PrometheusPullEnabled() && !c.PIIFilter.TailnetName && len(c.Tailnets) > 1 {
+		w = append(w, prometheusDeliveryKey+" with pii_filter.tailnet_name=false in multi-tailnet mode: "+
 			"the tailscale_tailnet label is the only per-tailnet distinguisher on /metrics, so with it "+
 			"disabled the per-tailnet series are identical and collapse to one on the pull path (the "+
 			"scrape still returns 200, but per-tailnet breakdowns are lost). Keep pii_filter.tailnet_name "+
 			"enabled, or rely on the OTLP push path where each tailnet is a distinct target.")
 	}
 
-	if c.Prometheus.Enabled && c.Prometheus.Auth.Token == "" && isWildcardListen(c.Prometheus.Listen) {
-		w = append(w, "prometheus.enabled with no prometheus.auth.token on "+c.Prometheus.Listen+": "+
+	if c.PrometheusPullEnabled() && c.Prometheus.Auth.Token == "" && isWildcardListen(c.Prometheus.Listen) {
+		w = append(w, prometheusDeliveryKey+" with no prometheus.auth.token on "+c.Prometheus.Listen+": "+
 			"the /metrics page exposes every series (incl. device/flow identifiers) to anyone who can "+
 			"reach the port. Set prometheus.auth.token, or bind prometheus.listen to a loopback/tailnet "+
 			"address (e.g. 127.0.0.1:2112).")
@@ -1042,6 +1046,31 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("delivery.mode", oneOfRemediation("delivery.mode", "otlp", "prometheus", "dual"), func() error {
+		if !oneOf(c.Delivery.Mode, "otlp", "prometheus", "dual") {
+			return fmt.Errorf("delivery.mode %q invalid: must be one of otlp, prometheus, dual", c.Delivery.Mode)
+		}
+		return nil
+	})
+	add("otlp", "Set an explicit per-signal otlp.*.endpoint before opting that signal back into delivery.mode=prometheus.", func() error {
+		if !c.PrometheusOnly() {
+			return nil
+		}
+		for _, signal := range []struct {
+			name string
+			cfg  OTLPSignalConfig
+		}{
+			{"metrics", c.OTLP.Metrics},
+			{"logs", c.OTLP.Logs},
+			{"traces", c.OTLP.Traces},
+		} {
+			if signal.cfg.Enabled != nil && *signal.cfg.Enabled && signal.cfg.Endpoint == "" {
+				return fmt.Errorf("otlp.%s.enabled=true under delivery.mode=prometheus requires otlp.%s.endpoint: "+
+					"the common otlp.endpoint is intentionally not inherited", signal.name, signal.name)
+			}
+		}
+		return nil
+	})
 	// The gRPC OTLP exporter (otlp*grpc.WithEndpoint) dials a host:port address,
 	// NOT a URL: a scheme or path (e.g. "https://gw.example/otlp", which is the
 	// correct shape for the http protocol) makes the gRPC dialer fail to connect.
@@ -1108,7 +1137,7 @@ func (c *Config) validationChecks() []configCheck {
 			enabled bool
 		}{
 			{"admin.listen", c.Admin.Listen, c.Admin.Enabled},
-			{"prometheus.listen", c.Prometheus.Listen, c.Prometheus.Enabled},
+			{"prometheus.listen", c.Prometheus.Listen, c.PrometheusPullEnabled()},
 			{"streaming.listen", c.Streaming.Listen, c.Streaming.Enabled},
 			{"webhook.listen", c.Webhook.Listen, c.Webhook.Enabled},
 		}
@@ -1392,7 +1421,7 @@ func (c *Config) validationChecks() []configCheck {
 	// invalid, so an ungated rule refuses to start every config copied from the
 	// project's own example over a value that controls nothing.
 	add("prometheus.max_requests_in_flight", "Set prometheus.max_requests_in_flight to a positive count (4 is the default).", func() error {
-		if !c.Prometheus.Enabled {
+		if !c.PrometheusPullEnabled() {
 			return nil
 		}
 		if n := c.Prometheus.MaxRequestsInFlight; n <= 0 {

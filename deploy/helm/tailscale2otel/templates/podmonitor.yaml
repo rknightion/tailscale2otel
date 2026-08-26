@@ -17,16 +17,17 @@ a cluster without the CRDs is unaffected.
 {{- if .Values.metrics.podMonitor.enabled }}
 {{- include "tailscale2otel.validateMetricsExposure" . }}
 {{- $pm := .Values.metrics.podMonitor }}
-{{- if not .Values.config.prometheus.enabled }}
-{{- fail "metrics.podMonitor.enabled requires config.prometheus.enabled: there is no /metrics listener to scrape" }}
+{{- $prometheusEnabled := or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) }}
+{{- if not $prometheusEnabled }}
+{{- fail "metrics.podMonitor.enabled requires config.prometheus.enabled or delivery.mode=prometheus/dual: there is no /metrics listener to scrape" }}
 {{- end }}
 {{- /*
   A scrape that cannot authenticate does not fail loudly — the target just goes
   down/401 and the series silently stop. That is the failure mode this project
   keeps designing against, so it is a render error instead.
 */ -}}
-{{- if and (or .Values.config.prometheus.auth.token .Values.config.prometheus.auth.token_file) (not $pm.bearerTokenSecret) }}
-{{- fail "config.prometheus.auth.token is set but metrics.podMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
+{{- if and (eq (include "tailscale2otel.prometheusTokenConfigured" .) "true") (not $pm.bearerTokenSecret) }}
+{{- fail "a Prometheus token is configured but metrics.podMonitor.bearerTokenSecret is not: the scrape would be rejected with 401 and the target would silently report no data. Point bearerTokenSecret at a Secret holding the same token." }}
 {{- end }}
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor

@@ -555,28 +555,78 @@ another string to keep in sync by hand.
 {{- end -}}
 
 {{/*
-tailscale2otel.validateMetricsExposure — a monitor must not scrape a /metrics the
-app will refuse.
+tailscale2otel.prometheusListenIsLoopback — keep the chart's reachability
+classification aligned with internal/listenaddr. Helm has no net.ParseIP, so
+normalize every textual spelling of IPv4, IPv6, and IPv4-mapped loopback that
+the runtime accepts. The helper emits "true" for loopback and nothing otherwise.
+*/}}
+{{- define "tailscale2otel.prometheusListenIsLoopback" -}}
+{{- $listen := lower (trim (toString .)) -}}
+{{- $host := "" -}}
+{{- if hasPrefix "[" $listen -}}
+  {{- $host = trimAll "[]" (regexFind "^\\[[^]]+\\]" $listen) -}}
+{{- else -}}
+  {{- $host = regexReplaceAll ":[0-9]+$" $listen "" -}}
+{{- end -}}
+{{- if or (eq $host "localhost") (or (regexMatch "^127(?:\\.[0-9]{1,3}){3}$" $host) (or (regexMatch "^[0:]*1$" $host) (or (regexMatch "^[0:]*ffff:127(?:\\.[0-9]{1,3}){3}$" $host) (regexMatch "^[0:]*ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}$" $host)))) -}}true{{- end -}}
+{{- end -}}
 
-config.prometheus.listen defaults to ":2112", a wildcard bind. Since #315 the app
+{{/*
+tailscale2otel.prometheusTokenConfigured — resolve token posture across config,
+the chart-managed secret, and resources Helm cannot inspect. Opaque sources must
+declare whether they provide the token; guessing either way can publish an
+unauthenticated Service or render a monitor that receives 401 forever.
+*/}}
+{{- define "tailscale2otel.prometheusTokenConfigured" -}}
+{{- $auth := .Values.config.prometheus.auth | default dict -}}
+{{- $configToken := "" -}}
+{{- $configTokenFile := "" -}}
+{{- if not (or .Values.existingConfigMap .Values.existingConfigSecret) -}}
+  {{- $configToken = $auth.token | default "" -}}
+  {{- $configTokenFile = $auth.token_file | default "" -}}
+{{- end -}}
+{{- $chartSecretToken := "" -}}
+{{- if not .Values.existingSecret -}}
+  {{- $chartSecretToken = index (.Values.secret | default dict) "TS2OTEL_PROMETHEUS__AUTH__TOKEN" | default "" -}}
+{{- end -}}
+{{- $opaque := or .Values.existingSecret (or (gt (len (.Values.extraEnvFrom | default list)) 0) (or .Values.existingConfigMap .Values.existingConfigSecret)) -}}
+{{- $external := .Values.metrics.externalPrometheusToken | default "auto" -}}
+{{- if and $opaque (eq $external "auto") -}}
+{{- fail "a remote Prometheus consumer is enabled while existingSecret, extraEnvFrom, existingConfigMap, or existingConfigSecret can override its auth posture. Helm cannot inspect that source; set metrics.externalPrometheusToken=present when it supplies TS2OTEL_PROMETHEUS__AUTH__TOKEN (and configure the monitor bearerTokenSecret), or =absent to assert that it does not." -}}
+{{- end -}}
+{{- if and (not $opaque) (ne $external "auto") -}}
+{{- fail "metrics.externalPrometheusToken is present/absent but no opaque existingSecret, extraEnvFrom, existingConfigMap, or existingConfigSecret is configured; leave it at auto." -}}
+{{- end -}}
+{{- if or $configToken (or $configTokenFile (or $chartSecretToken (eq $external "present"))) -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+tailscale2otel.validateMetricsExposure — a remote consumer must not target a
+/metrics listener the app will refuse or that is reachable only inside its pod.
+
+config.prometheus.listen defaults to "127.0.0.1:2112", a loopback bind. Since #315 the app
 answers /metrics there with 403 whenever no token is set and the exposure is not
 acknowledged, because /metrics carries every series it produces — device names,
 flow endpoints, audit identities. A PodMonitor or ServiceMonitor aimed at that
 listener scrapes a 403 forever and shows up as a target reporting "no data",
 which reads as a broken exporter rather than a chart misconfiguration.
 
-Three ways out, all legitimate, so this names all of them: set a token (with the
+Two remote-scrape postures are legitimate: set a token (with the
 matching bearerTokenSecret, which the monitor templates already require),
-acknowledge the exposure for in-cluster scraping behind a NetworkPolicy, or bind
-the listener to loopback — though a loopback bind is not scrapable from another
-pod, so it is only listed for completeness.
+or acknowledge the exposure for in-cluster scraping behind a NetworkPolicy.
+Loopback stays the safe default for same-host scraping, but a monitor pod cannot
+reach another pod's loopback and the chart must reject that silent no-data state.
 */}}
 {{- define "tailscale2otel.validateMetricsExposure" -}}
 {{- $p := .Values.config.prometheus -}}
 {{- $auth := $p.auth | default dict -}}
-{{- $listen := $p.listen | default ":2112" -}}
-{{- $loopback := or (hasPrefix "127." $listen) (or (hasPrefix "localhost:" $listen) (hasPrefix "[::1]:" $listen)) -}}
-{{- if and (not $auth.token) (not $auth.allow_unauthenticated) (not $loopback) -}}
-{{- fail (printf "a metrics monitor is enabled but config.prometheus.listen (%s) is a network-reachable bind with no config.prometheus.auth.token: the app REFUSES /metrics there with HTTP 403, so the scrape target would report no data forever and look like a broken exporter. Set config.prometheus.auth.token (plus the monitor's bearerTokenSecret), or set config.prometheus.auth.allow_unauthenticated=true to acknowledge scraping it unauthenticated behind a NetworkPolicy." $listen) -}}
+{{- $listen := $p.listen | default "127.0.0.1:2112" -}}
+{{- $loopback := eq (include "tailscale2otel.prometheusListenIsLoopback" $listen) "true" -}}
+{{- $tokenConfigured := eq (include "tailscale2otel.prometheusTokenConfigured" .) "true" -}}
+{{- if $loopback -}}
+{{- fail (printf "a remote metrics consumer cannot scrape config.prometheus.listen (%s) because it is loopback-only. Set a pod-reachable bind such as :2112, then set config.prometheus.auth.token/config.prometheus.auth.token_file or config.prometheus.auth.allow_unauthenticated=true." $listen) -}}
+{{- end -}}
+{{- if and (not $tokenConfigured) (not $auth.allow_unauthenticated) (not $loopback) -}}
+{{- fail (printf "a remote metrics consumer is enabled but config.prometheus.listen (%s) is a network-reachable bind with no config.prometheus.auth.token or config.prometheus.auth.token_file: the app REFUSES /metrics there with HTTP 403, so the scrape target would report no data forever and look like a broken exporter. Set a token (plus the monitor's bearerTokenSecret when applicable), or set config.prometheus.auth.allow_unauthenticated=true to acknowledge scraping it unauthenticated behind a NetworkPolicy." $listen) -}}
 {{- end -}}
 {{- end -}}

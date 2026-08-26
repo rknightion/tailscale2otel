@@ -1326,6 +1326,22 @@
       },
       "type": "object"
     },
+    "delivery": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "otlp",
+          "description": "otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.\u003csignal\u003e.endpoint explicitly opts that signal back in under prometheus mode",
+          "enum": [
+            "otlp",
+            "prometheus",
+            "dual"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "enrichment": {
       "additionalProperties": false,
       "properties": {
@@ -2818,12 +2834,12 @@
         },
         "enabled": {
           "default": false,
-          "description": "run the Prometheus pull endpoint (GET /metrics) on its own listener, alongside OTLP push",
+          "description": "backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it",
           "type": "boolean"
         },
         "listen": {
-          "default": ":2112",
-          "description": "bind for /metrics (default :2112); keep distinct from admin.listen",
+          "default": "127.0.0.1:2112",
+          "description": "bind for /metrics (default loopback-only 127.0.0.1:2112); keep distinct from admin.listen",
           "type": "string"
         },
         "max_requests_in_flight": {

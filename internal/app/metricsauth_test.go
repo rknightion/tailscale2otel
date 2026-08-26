@@ -98,12 +98,23 @@ func TestMetricsFailsClosedOnNetworkBindWithNoToken(t *testing.T) {
 }
 
 func TestMetricsStaysOpenOnLoopbackWithNoToken(t *testing.T) {
-	a := metricsApp(t, "127.0.0.1:2112", "", false)
-	rec := getMetrics(t, a, "127.0.0.1:2112", "")
-	if rec.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200. Local development against a loopback bind must stay "+
-			"credential-free — only this host can reach it, which is the deliberate escape hatch.",
-			rec.Code)
+	for _, tc := range []struct {
+		name   string
+		listen string
+		host   string
+	}{
+		{"default IPv4 loopback", config.Default().Prometheus.Listen, "127.0.0.1:2112"},
+		{"IPv6 loopback", "[::1]:2112", "[::1]:2112"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := metricsApp(t, tc.listen, "", false)
+			rec := getMetrics(t, a, tc.host, "")
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want 200. Local development against a loopback bind must stay "+
+					"credential-free — only this host can reach it, which is the deliberate escape hatch.",
+					rec.Code)
+			}
+		})
 	}
 }
 
@@ -138,5 +149,15 @@ func TestAcknowledgementDoesNotDisableAConfiguredToken(t *testing.T) {
 	if rec := getMetrics(t, a, "example.internal:2112", ""); rec.Code == http.StatusOK {
 		t.Error("allow_unauthenticated bypassed a configured token; it must only cover the " +
 			"no-token case")
+	}
+}
+
+func TestMetricsTokenStillGatesLoopback(t *testing.T) {
+	a := metricsApp(t, "[::1]:2112", "s3cret", false)
+	if rec := getMetrics(t, a, "[::1]:2112", ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tokenless loopback request = %d, want 401", rec.Code)
+	}
+	if rec := getMetrics(t, a, "[::1]:2112", "Bearer s3cret"); rec.Code != http.StatusOK {
+		t.Errorf("authorized loopback request = %d, want 200", rec.Code)
 	}
 }

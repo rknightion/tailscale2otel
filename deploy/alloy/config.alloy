@@ -6,9 +6,9 @@
 //                            -> otelcol.exporter.otlphttp  (retry + persistent sending queue)
 //                            --OTLP/HTTP--> your backend
 //
-// Validated against grafana/alloy:v1.18.0 with:
+// Validated against grafana/alloy:v1.19.1 with:
 //   docker run --rm -v "$PWD/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
-//     grafana/alloy:v1.18.0 validate --stability.level=public-preview /etc/alloy/config.alloy
+//     grafana/alloy:v1.19.1 validate --stability.level=public-preview /etc/alloy/config.alloy
 //
 // NO CREDENTIAL IS STORED IN THIS FILE. Every secret is read from the process
 // environment at startup via sys.env(). See README.md in this directory.
@@ -163,11 +163,11 @@ otelcol.exporter.otlphttp "backend" {
 // the Grafana Cloud Portal (organization Overview -> Launch stack -> Configure
 // on the OpenTelemetry tile).
 //
-// TRAP, VERIFIED THE HARD WAY AGAINST v1.18.0 — do not "modernise" this block.
+// TRAP, VERIFIED THE HARD WAY AGAINST v1.19.1 — do not "modernise" this block.
 // The current grafana.com/docs/alloy/latest page documents a `client_auth {}`
 // sub-block here and marks the flat `username`/`password` attributes below as
 // deprecated. Those docs are built from Alloy's main branch and are AHEAD of the
-// pinned release. On v1.18.0 the flat form is correct and NOT deprecated, and
+// pinned release. On v1.19.1 the flat form is correct and NOT deprecated, and
 // the `client_auth` form fails at startup with:
 //
 //   Failed to build component: building component: no credential source provided

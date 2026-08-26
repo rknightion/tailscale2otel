@@ -215,6 +215,12 @@ workloadIdentity: # @schema additionalProperties:false
 # `helm template` never emits the resource, and there is nothing for the API server to
 # reject. The chart cannot detect whether a CRD exists, so this is opt-in by design.
 metrics: # @schema additionalProperties:false
+  # -- Whether an opaque source (`existingSecret`, `extraEnvFrom`,
+  # existingConfigMap, or existingConfigSecret) supplies a Prometheus auth token:
+  # `auto` when no opaque source owns it, otherwise declare `present` or `absent`.
+  # Helm cannot inspect those resources. A remote Service/monitor fails to render
+  # while this remains `auto`, avoiding a silent 401 or an unauthenticated Service.
+  externalPrometheusToken: auto # @schema enum:["auto","present","absent"]
   podMonitor: # @schema additionalProperties:false
     # -- Render a PodMonitor. Requires config.prometheus.enabled. A PodMonitor scrapes
     # pods DIRECTLY, so it needs no Service — prefer it over serviceMonitor unless you
@@ -933,6 +939,13 @@ config: # @schema additionalProperties:false
         initial_interval: 0s
         max_interval: 0s
         max_elapsed_time: 0s
+
+  # -- Process-wide telemetry topology. otlp preserves historical push-only delivery;
+  # prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces;
+  # dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus.
+  delivery: # @schema additionalProperties:false
+    # -- Delivery mode: otlp \| prometheus \| dual.
+    mode: otlp
 
   enrichment: # @schema additionalProperties:false
     # -- Staleness alarm threshold for the device-enrichment cache (drives the
@@ -1675,16 +1688,16 @@ config: # @schema additionalProperties:false
     # rather than sharing free_text_details. Turning it off KEEPS the bounded
     # tailscale.k8s.command_class classification that the exec metrics are built on.
     command_text: true
-  # Prometheus pull endpoint: serves GET /metrics on a dedicated listener, running an
-  # additional metric.Reader alongside OTLP push so both export paths are active at once.
-  # Off by default. Bind to a loopback/tailnet address or set prometheus.auth.token for
+  # Prometheus pull endpoint: serves GET /metrics on a dedicated listener. prometheus.enabled
+  # remains a backwards-compatible dual-delivery opt-in; delivery.mode also enables the pull path.
+  # Bind to a loopback/tailnet address or set prometheus.auth.token for
   # defense-in-depth — the endpoint exposes every series (incl. device/flow identifiers).
   # Token: set via TS2OTEL_PROMETHEUS__AUTH__TOKEN (secret above).
   prometheus: # @schema additionalProperties:false
-    # -- Enable the Prometheus pull endpoint (GET /metrics) on its own dedicated listener.
+    # -- Backwards-compatible pull opt-in alongside OTLP. delivery.mode=prometheus or dual also enables it.
     enabled: false
-    # -- Address the Prometheus endpoint binds. Keep distinct from admin.listen.
-    listen: ":2112"
+    # -- Address the Prometheus endpoint binds. Default loopback only. Keep distinct from admin.listen.
+    listen: "127.0.0.1:2112"
     auth: # @schema additionalProperties:false
       # -- Gate /metrics behind this token (HTTP Basic password or "Authorization: Bearer <token>").
       # Empty on a network-reachable bind is REFUSED with 403 unless allow_unauthenticated is set.

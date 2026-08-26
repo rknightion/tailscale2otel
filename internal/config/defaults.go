@@ -115,6 +115,7 @@ func Default() *Config {
 			// Matches the built-in stdout cadence; stated for the same reason.
 			Stdout: OTLPStdoutConfig{MetricInterval: dur(5 * time.Second)},
 		},
+		Delivery: DeliveryConfig{Mode: "otlp"},
 		Enrichment: EnrichmentConfig{
 			CacheTTL: dur(5 * time.Minute),
 			ReverseDNS: ReverseDNSConfig{
@@ -390,7 +391,7 @@ func Default() *Config {
 		},
 		Prometheus: PrometheusConfig{
 			Enabled:             false,
-			Listen:              ":2112",
+			Listen:              "127.0.0.1:2112",
 			MaxRequestsInFlight: 4,
 			Timeout:             dur(8 * time.Second),
 			CoalesceGather:      true,

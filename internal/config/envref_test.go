@@ -18,6 +18,7 @@ func TestEnvVarName(t *testing.T) {
 		"tailscale.tailnet":                   "TS2OTEL_TAILSCALE__TAILNET",
 		"tailscale.auth.oauth.client_id":      "TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID",
 		"collectors.flowlogs.interval":        "TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL",
+		"delivery.mode":                       "TS2OTEL_DELIVERY__MODE",
 		"cardinality.flow.metrics_mode":       "TS2OTEL_CARDINALITY__FLOW__METRICS_MODE",
 		"self_observability.instance_id":      "TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID",
 		"collectors.node_metrics.drop_labels": "TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS",

@@ -288,6 +288,7 @@ var ruleApplications = []string{
 	"collectors.node_metrics.discovery.instance_source",
 	"collectors.node_metrics.discovery.port",
 	"collectors.node_metrics.discovery.scheme",
+	"delivery.mode",
 	"flows.capacity_profile",
 	"ingress_wal.corruption",
 	"log_format",

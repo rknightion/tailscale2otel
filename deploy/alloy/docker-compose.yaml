@@ -74,7 +74,7 @@ services:
       # because the grafana/alloy image ships NO HTTP client -- there is no
       # wget, no curl, no busybox and no python3 in it, so the obvious
       # `wget --spider` healthcheck fails with "executable file not found"
-      # rather than reporting on Alloy. Verified against v1.18.0.
+      # rather than reporting on Alloy. Verified against v1.19.1.
       test:
         - CMD
         - /usr/bin/bash

@@ -35,7 +35,7 @@ and there is no reason to put anything in between.
 ## Design choices specific to this exporter
 
 **One process for the tailnet, not one per node.** A single static Go binary reads the
-Tailscale API and derives 293 metrics and 17 log-event types across sixteen collectors. The
+Tailscale API and derives 293 metrics and 17 log-event types across 16 collectors. The
 collectors run on independent schedules and are isolated, so a failing source cannot stall the
 others — which matters because the API surfaces here are not equally reliable or equally
 rate-limited.
@@ -70,6 +70,9 @@ stops a metrics catalog drifting into fiction, which is the usual fate of one.
 
 **OTLP and Prometheus at the same time.** Native OTLP metrics and logs, a Prometheus
 `/metrics` endpoint, or both simultaneously — no collector in front to translate.
+Choose the first delivery path in [Getting Started](getting-started.md#choose-a-destination): OTLP
+push for an OTLP backend, Prometheus pull for a scraper, and stdout to inspect collection locally.
+Do not send both OTLP and a scrape of the same metrics to one backend.
 
 **Headscale works.** A supported subset runs against a self-hosted control plane: devices, users,
 keys, ACL, and node metrics. Tailscale-only collectors stay disabled because Headscale does not
@@ -84,7 +87,7 @@ directly. Adding an exporter in the middle buys you nothing for that requirement
 want it centrally alongside the tailnet-wide signals, this exporter's scraper will forward it
 unchanged.
 
-**Your tailnet is small and the console is enough.** Fifteen collectors, four ingestion paths
+**Your tailnet is small and the console is enough.** 16 collectors, four ingestion paths
 and a cardinality budget exist for fleets with expiry cliffs, ACL churn and a metrics bill.
 Below that, the console is not a compromise.
 
@@ -98,3 +101,4 @@ Below that, the console is not a compromise.
 - [Architecture](architecture.md) — how the collectors and emitters fit together
 - [Streaming & Webhooks](streaming-webhooks.md) — the ingestion-path matrix
 - [Security](security.md) — OAuth scope and what the exporter can reach
+- [Getting Started](getting-started.md) — destination choice and canonical launch commands

@@ -82,6 +82,10 @@ services:
       TS2OTEL_TAILSCALE__AUTH__APIKEY: ${TS2OTEL_TAILSCALE__AUTH__APIKEY:-}
       TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ${TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID:-}
       TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN: ${TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN:-}
+      # Used by deploy/docker-compose.prometheus.yaml. The empty defaults keep
+      # non-Prometheus routes on the config file's safe loopback posture.
+      TS2OTEL_PROMETHEUS__LISTEN: ${TS2OTEL_PROMETHEUS__LISTEN:-}
+      TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED: ${TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED:-false}
       # Optional receiver WAL. The existing named state volume below holds both
       # checkpoints and WAL data; keep enabled=false for stateless receiver ACKs.
       TS2OTEL_INGRESS_WAL__ENABLED: ${TS2OTEL_INGRESS_WAL__ENABLED:-false}
@@ -135,7 +139,9 @@ services:
     # ports:
     #   - "8088:8088"
     #   - "8089:8089"
-    #   - "2112:2112"   # Prometheus pull endpoint (set prometheus.enabled=true)
+    # Prometheus publishing lives in docker-compose.prometheus.yaml. Container
+    # loopback cannot receive a published host port, so that override is paired
+    # with TS2OTEL_PROMETHEUS__LISTEN=:2112 and an explicit auth posture.
 
 # Existing named volume for checkpoints plus an enabled receiver WAL. Created
 # once by Docker and inherits the /var/lib/tailscale2otel directory ownership

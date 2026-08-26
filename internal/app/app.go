@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/grafana/pyroscope-go"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/annotations"
@@ -112,7 +113,8 @@ type App struct {
 	webhookDedup  *dedup.Set            // shared cross-source set (webhook<->audit); nil unless enabled
 	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
 	adminSrv      *http.Server
-	metricsSrv    *http.Server // prometheus pull endpoint; nil unless prometheus.enabled
+	metricsSrv    *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
+	promGatherer  prometheus.Gatherer // process-wide gatherer behind metricsSrv; nil when pull is unavailable
 	// Cert reloaders for the two listeners above, nil unless that listener
 	// serves TLS. Held here rather than in a package-level registry keyed by
 	// server pointer: a global would never drop an entry, and the lifetime of
@@ -177,7 +179,7 @@ func withComponent(l *slog.Logger, component string) *slog.Logger {
 
 // Option customizes New's construction beyond what cfg drives. The zero value
 // (no options) is New's historical behavior exactly; today the only option is
-// WithTelemetryOverride, used solely by -preflight (see
+// WithTelemetryOverride, used solely by bounded CLI checks (see
 // internal/app/preflight.go, issue #311) to keep its normal-mode callers
 // (runServer, and every existing caller of New before this option existed)
 // completely unaffected.
@@ -189,11 +191,10 @@ type newSettings struct {
 
 // WithTelemetryOverride rewrites the telemetry.Options New() would otherwise
 // build from cfg via telemetryOptions, immediately before constructing the
-// ProviderSet. -preflight (without -preflight-export) uses this to force
-// Protocol="stdout" with a discarding StdoutWriter, so New()'s normal wiring
-// never dials the operator's configured OTLP backend — there is no
-// config-level way to express "build the exporters but discard their output",
-// since Options.StdoutWriter has no cfg field of its own.
+// ProviderSet. -preflight (without -preflight-export) and -prometheus-check use
+// it to install explicitly disabled per-signal exporters plus a discarded
+// stdout fallback. Disabling each signal is required because a configured
+// per-signal protocol and endpoint override the common protocol.
 func WithTelemetryOverride(f func(telemetry.Options) telemetry.Options) Option {
 	return func(s *newSettings) { s.telemetryOverride = f }
 }
@@ -443,8 +444,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if cfg.Admin.Enabled {
 		a.adminSrv = a.buildAdminServer()
 	}
-	if cfg.Prometheus.Enabled {
+	if cfg.PrometheusPullEnabled() {
 		if g := ps.PromGatherer(); g != nil {
+			a.promGatherer = g
 			a.metricsSrv = a.buildMetricsServer(g)
 		}
 	}

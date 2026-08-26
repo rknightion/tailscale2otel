@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
@@ -21,6 +22,21 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
+
+func TestRunPrometheusOnceReturnsProcessGathererWithoutStartingAListener(t *testing.T) {
+	gatherer := prometheus.NewRegistry()
+	a := &App{promGatherer: gatherer}
+	results, got := a.RunPrometheusOnce(context.Background())
+	if len(results) != 0 {
+		t.Errorf("RunPrometheusOnce results = %v, want no results from an App with no runtimes", results)
+	}
+	if got != gatherer {
+		t.Errorf("RunPrometheusOnce gatherer = %T %p, want process gatherer %T %p", got, got, gatherer, gatherer)
+	}
+	if a.metricsSrv != nil {
+		t.Error("RunPrometheusOnce started a listener")
+	}
+}
 
 // preflightTestConfig returns a config that would, unmodified, start every
 // listener/durable side effect -preflight/-once must never trigger: admin,
@@ -138,7 +154,7 @@ func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
 // testable unit check behind PrepareConfig itself, independent of app.New:
 // every field it is documented to force off actually changes, and the input
 // cfg is never mutated (PrepareConfig must return a COPY).
-func TestPrepareConfig_ForcesListenersCheckpointAndProfilingOff(t *testing.T) {
+func TestPrepareConfig_ForcesListenersCheckpointAndExternalWritersOff(t *testing.T) {
 	cfg := config.Default()
 	cfg.Admin.Enabled = true
 	cfg.Prometheus.Enabled = true
@@ -148,6 +164,8 @@ func TestPrepareConfig_ForcesListenersCheckpointAndProfilingOff(t *testing.T) {
 	cfg.Checkpoint.Store = "file"
 	cfg.Checkpoint.FilePath = "/tmp/should-not-matter.json"
 	cfg.Profiling.Pyroscope.Enabled = true
+	cfg.GrafanaAnnotations.URL = "http://127.0.0.1:1"
+	cfg.GrafanaAnnotations.Token = "must-not-be-used"
 
 	out := PrepareConfig(cfg, true)
 
@@ -168,10 +186,16 @@ func TestPrepareConfig_ForcesListenersCheckpointAndProfilingOff(t *testing.T) {
 	if out.Profiling.Pyroscope.Enabled {
 		t.Error("Profiling.Pyroscope.Enabled = true, want false")
 	}
+	if out.GrafanaAnnotations.Enabled() {
+		t.Error("GrafanaAnnotations remains enabled, want preflight to suppress its startup POST")
+	}
 
 	// The input cfg must be untouched: PrepareConfig returns a copy.
 	if !cfg.Admin.Enabled || !cfg.Prometheus.Enabled || !cfg.Streaming.Enabled || !cfg.Webhook.Enabled || !cfg.IngressWAL.Enabled {
 		t.Fatal("PrepareConfig mutated the caller's cfg in place")
+	}
+	if !cfg.GrafanaAnnotations.Enabled() {
+		t.Fatal("PrepareConfig mutated the caller's GrafanaAnnotations in place")
 	}
 	if cfg.Checkpoint.Store != "file" {
 		t.Fatalf("PrepareConfig mutated the caller's Checkpoint.Store to %q", cfg.Checkpoint.Store)

@@ -7,26 +7,34 @@ tags:
 
 # Alerts
 
-tailscale2otel ships ready-to-use alert and recording rules in
-[`deploy/alerts/grafana-managed/`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts/grafana-managed)
-as **`rules.alerting.grafana.app` manifests** — one JSON file per rule, plus a folder manifest.
-Push the whole directory with [`gcx`](https://github.com/grafana/gcx):
+Start with [Alert Profiles](alert-profiles.md). The committed Grafana-managed
+set is the **recommended** profile: a high-signal default that leaves
+environment-specific rules paused. `baseline` is the smaller first-on-call set;
+`strict` enables nearly everything and needs a deliberate local render.
+
+An **alert rule** evaluates a condition and opens an incident when it stays true
+for its configured window. A **recording rule** continuously writes a derived
+time series for dashboards or other alerts; it does not notify anyone by itself.
+In the Grafana-managed format, **paused** means the rule is kept as configured
+but is not evaluated. A **profile** is the named choice of which Grafana rules
+start enabled; it does not alter their expressions or notification labels.
+
+Choose the delivery artifact that matches the rule engine:
+
+- [`deploy/alerts/grafana-managed/`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts/grafana-managed)
+  is the recommended Grafana-managed set. It spans Prometheus and Loki and
+  preserves each rule's `noDataState`, `execErrState`, and `paused` state.
+- [`deploy/alerts/prometheus/tailscale2otel.rules.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/prometheus/tailscale2otel.rules.yaml)
+  is the supported committed artifact for Prometheus, Mimir, and Cortex rulers.
+  It contains the Prometheus-backed alert and recording rules with normalized
+  metric names and `runbook_url` annotations. Prometheus cannot represent
+  Grafana's per-rule pause state and cannot run the omitted Loki rules.
+
+Push the Grafana-managed directory with [`gcx`](https://github.com/grafana/gcx):
 
 ```bash
 gcx resources push -p deploy/alerts/grafana-managed
 ```
-
-Grafana evaluates these itself, so one ruleset can span Prometheus and Loki and each rule carries
-its own `noDataState` / `execErrState` / `paused`.
-
-!!! note "One delivery model, on purpose"
-    Earlier versions also shipped a hand-maintained Prometheus-ruler file
-    (`tailscale2otel.rules.yaml`) and a Grafana *file-provisioning* document
-    (`tailscale2otel.grafana-rules.yaml`, `apiVersion: 1`). Both are gone. File provisioning is
-    not what `gcx resources push` consumes, and a second ruler-compatible copy of the same
-    catalogue drifted more than it helped. If you run a Mimir/Cortex/Prometheus ruler and want
-    datasource-managed rules, render them from the generator yourself — see
-    [the test-only Prometheus rendering](#executing-the-rules-locally) — and own the result.
 
 ## Generated, not hand-written
 
@@ -39,8 +47,9 @@ python3 deploy/alerts/gen/build_rules.py --out deploy/alerts/grafana-managed
 ```
 
 Every `*.json` in the output directory is deleted before writing, so a renamed or removed rule
-cannot linger as a stale file that keeps getting pushed. Output is sorted-key JSON with a trailing
-newline — two runs are byte-identical, which is what makes the CI drift gate meaningful.
+cannot linger as a stale file that keeps getting pushed. The Prometheus-compatible file is generated
+alongside it with `scripts/regen-generated.sh promrules`. Both outputs are deterministic and checked
+for drift in CI.
 
 Every rule follows the canonical Grafana 3-node pipeline (A query → B reduce → C threshold),
 expressed as the `spec.expressions` map keyed by refId with `C` marked `"source": true`. Datasource
@@ -110,7 +119,7 @@ Rules are organised into five families:
     [Runbooks — who watches the watcher](runbooks.md) for the three operator-owned answers.
 
 !!! tip "Every alert links to a runbook and a panel"
-    All 97 alert rules carry a `runbook_url` pointing at a section of
+    All 100 alert rules carry a `runbook_url` pointing at a section of
     [Runbooks](runbooks.md), and 92 of them carry the paired `__dashboardUid__`/`__panelId__`
     annotations naming a canonical panel. Panel ids are resolved **by title** against the generated
     dashboard at build time, and generation hard-fails on a title that matches zero or more than one
@@ -144,10 +153,10 @@ manifests parse and that the kind is served, nothing more. The spec check is
 
 ## Metric naming in rule expressions
 
-All expressions query the **normalized Prometheus names** produced by Grafana Cloud's OTLP
-pipeline, not the raw OTEL names. The same rules apply as in the dashboards: dots become
-underscores, counters gain `_total`, and a gauge with unit `"1"` becomes `*_ratio`. See
-[Metrics](metrics.md) for the full translation table.
+All expressions query the **normalized Prometheus names** produced by the OTLP-to-Prometheus
+translation, not raw OTEL names. Dots become underscores, monotonic counters gain `_total`, units
+gain their suffixes (`s` → `_seconds`, `By` → `_bytes`, `d` → `_days`), and a gauge with unit `"1"`
+becomes `*_ratio`. See [Metrics](metrics.md) for the full translation table.
 
 !!! note "Non-Grafana backends"
     If you send metrics to a non-Grafana OTEL backend with different normalization rules, you will
@@ -158,22 +167,24 @@ underscores, counters gain `_total`, and a gauge with unit `"1"` becomes `*_rati
 Every rule sets a `severity` label (`critical` / `warning` / `info`), plus `service` and `domain`.
 Wire those into your Grafana notification policy to fan alerts to the right contact points.
 
-## Executing the rules locally
+## Prometheus-compatible deployment and local execution
 
-`promtool test rules` is the only thing that **runs** a rule rather than reading it, and it
-understands no format but Prometheus's. The generator can therefore re-render the same catalogue as
-a throwaway Prometheus rule file:
+Load the committed Prometheus-compatible file into your Prometheus, Mimir, or Cortex ruler using
+that ruler's normal rule-file configuration. It is generated from the same catalogue as the
+Grafana-managed set, includes recording rules and `runbook_url` annotations, and deliberately
+omits Loki-backed rules. Because Prometheus has no per-rule `paused` field, every included rule
+evaluates once loaded.
+
+`promtool test rules` is the only local check that **runs** rules rather than only parsing them:
 
 ```bash
-python3 deploy/alerts/gen/build_rules.py --prom-out deploy/alerts/.generated-prom-rules.yaml
-promtool check rules deploy/alerts/.generated-prom-rules.yaml
+scripts/regen-generated.sh promrules
+promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```
 
-**That file is a test fixture, not a deliverable** — it is gitignored, never committed and never
-shipped. It omits the Loki-backed rules (promtool cannot parse LogQL) and renders
-`coverage_critical`'s "absence is the alert" semantics as an explicit `or absent(...)` arm, which
-Grafana expresses as `noDataState: Alerting`.
+The committed file renders `coverage_critical`'s "absence is the alert" semantics as an explicit
+`or absent(...)` arm, which Grafana expresses as `noDataState: Alerting`.
 
 The offline contract tests cover the rest:
 

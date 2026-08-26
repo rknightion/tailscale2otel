@@ -31,7 +31,7 @@ namespace.
    ```
 
 2. Open **TCP port 5252** to your monitoring host with a tailnet ACL **grant** (see
-   [Access control](#access-control-the-only-auth-you-need)).
+   [Access control](#access-control)).
 
 3. Point the scraper at `http://<node-tailscale-ip>:5252/metrics` in
    [`collectors.node_metrics`](#wiring-up-the-scraper). Native endpoints are **plain HTTP with no
@@ -58,7 +58,7 @@ Once enabled, the same `/metrics` payload is reachable two ways:
 | **Over the tailnet** | `http://<node-tailscale-ip>:5252/metrics` | any tailnet peer **allowed by ACL** to reach TCP `5252` |
 
 Both are **plain HTTP**. There is **no bearer token and no TLS** on the native endpoint — see
-[Access control](#access-control-the-only-auth-you-need) for how reachability is actually gated.
+[Access control](#access-control) for how reachability is actually gated.
 
 For the scraper you want the **tailnet** form (`:5252`), because `tailscale2otel` runs on a
 different host from the nodes it scrapes. The quad-100 local form is handy for a quick
@@ -129,7 +129,7 @@ normalization still applies on ingest — see the [reference](./metrics.md#node-
 
 ---
 
-## Access control — the only auth you need
+## Access control — the only auth you need {#access-control}
 
 The native client-metrics endpoint has **no application-layer auth**. Access is gated entirely at
 the **tailnet layer**: a peer can only reach `:5252` on a node if your tailnet policy **grants** it.
@@ -184,6 +184,90 @@ collectors:
 
 Native `tailscaled` endpoints are **plain HTTP** — leave all the auth/TLS fields unset and the
 scrape is a plain `GET` with no added headers.
+
+### Dynamic discovery first run {#dynamic-discovery-first-run}
+
+For a fleet that changes over time, the scraper can discover targets from the Tailscale devices
+API instead of requiring one static entry per node. Static targets remain supported; discovery is
+an additional path and can be used with them or on its own. This is a complete discovery-only
+configuration (the explicit empty list makes it clear that no static endpoint is required):
+
+```yaml
+collectors:
+  node_metrics:
+    enabled: true
+    targets: []                 # discovery-only; omitting this has the same empty default
+    discovery:
+      enabled: true
+```
+
+`collectors.node_metrics.enabled` is the master switch and `discovery.enabled` turns on the
+device-inventory refresh. The discovery block's defaults are deliberately conservative:
+
+| Setting | Default | What it does |
+|---|---:|---|
+| `online_only` | `true` | Keeps only devices currently connected to the control plane. |
+| `exclude_external` | `true` | Skips shared/external devices. |
+| `include_tags` | `[]` | An empty list matches every device; otherwise a device needs **any** listed tag. |
+| `exclude_tags` | `[]` | A device with **any** excluded tag is skipped; exclusions win over `include_tags`. |
+| `address_order` | `ipv4` | Prefers a Tailscale IPv4 address and falls back to IPv6. Set `ipv6` to reverse that preference. |
+| `scheme` | `http` | Builds plain-HTTP client-metrics URLs by default. |
+| `port` | `5252` | Uses the Tailscale client-metrics listener. |
+| `path` | `/metrics` | Uses the documented client-metrics path. |
+| `max_targets` | `1000` | Caps the number of discovered devices admitted on each refresh; static targets are not counted against this cap. |
+| `instance_source` | `name` | Uses the MagicDNS short name for the `tailscale.node` identity label. `address` uses the host:port, while `hostname` uses the OS hostname with the node address appended for stable uniqueness. |
+
+Discovery selects only usable Tailscale addresses (IPv4 in `100.64.0.0/10` or IPv6 in
+`fd7a:115c:a1e0::/48`); a device with no such address is skipped. Discovered targets also carry
+`host.name`/`host.id` and `tailscale.tags` by default, which makes them joinable with device
+metrics. Set `include_tags: ["tag:server"]` to limit discovery to tagged nodes, for example.
+
+Before the first refresh and scrape, make sure both sides are ready:
+
+1. On every candidate node, run `tailscale set --webclient` on Tailscale **v1.78.0 or newer**.
+   The scraper then requests `http://<node-tailscale-ip>:5252/metrics`, the client-metrics
+   endpoint described above.
+2. Grant the exporter host/peer access to **TCP port 5252** on those nodes in the tailnet ACL.
+   The endpoint has no bearer-token or TLS authentication; the ACL grant is its access boundary.
+   See [Access control](#access-control) for the grant shape.
+3. Give the exporter’s Tailscale API credential `devices:core:read` for the devices inventory used
+   by discovery (`GET /devices`). Use the broader read-only `all:read` only when the same credential
+   also serves other enabled collectors that require additional API surfaces. Discovery does not
+   evaluate ACLs or pre-probe reachability: an API-visible but blocked node becomes a target and
+   reports `tailscale.node.up=0` when its scrape fails.
+
+The first collection tick performs a discovery refresh immediately; later refreshes use
+`discovery.interval` (default `5m`), independently of the scrape `interval`. The active set is
+the union of static and discovered targets. Static entries are kept first, and a discovered URL
+that is already present in `targets` is dropped, so the static target's labels, credentials, and
+TLS settings win and the endpoint is not scraped twice. If a refresh fails, the previous active
+set is retained and discovery retries on the next collection tick. With the discovery-only YAML
+above, `tailscale2otel.nodemetrics.discovery.targets` is therefore the number of discovered
+targets after a successful refresh.
+
+After the first successful refresh and scrape, use this Grafana Explore query to require a
+successful discovery, a non-empty discovered target set, target health, and at least one forwarded
+raw `tailscaled_*` series per discovered node:
+
+```promql
+(
+  (tailscale_node_up_ratio == 1)
+  and on (tailscale_tailnet, tailscale_node)
+  (count by (tailscale_tailnet, tailscale_node) ({__name__=~"tailscaled_.+"}) > 0)
+)
+* scalar(min(tailscale2otel_nodemetrics_discovery_success_ratio))
+* scalar(sum(tailscale2otel_nodemetrics_discovery_targets))
+> 0
+```
+
+Each returned `tailscale_node` is an active target that answered and forwarded at least one raw
+family; when static targets are also configured, the result can include them. The `min(...)` term
+requires the last discovery refresh to have succeeded for every tailnet in a multi-tailnet
+deployment, while the `sum(...)` term separately proves a non-zero discovered target set; both are
+reduced to one scalar before filtering the per-node results. If a node
+exposes only cumulative counters, run the query after the second scrape: the first counter
+observation establishes its delta baseline, while gauges and `tailscale.node.up` are available on
+the first scrape.
 
 ### What the scraper emits
 
