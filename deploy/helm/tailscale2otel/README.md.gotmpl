@@ -37,16 +37,19 @@ while it is credential-free, and into a Secret as soon as it is not (see below).
 The supported path is to leave the credential fields empty and inject them as
 `TS2OTEL_*` environment variables from the Secret.
 
-Helm deep-merges maps, so single-key overrides work without restating the rest:
+Create the credential Secret before installing the chart. This keeps credential values out of the
+Helm release, shell history, and process list:
 
 ```sh
+kubectl create secret generic ts2otel-creds --from-env-file=creds.env
+
 helm install t deploy/helm/tailscale2otel \
-  --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=..." \
-  --set "secret.TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=..." \
-  --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID=..." \
-  --set "secret.TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=..." \
-  --set config.log_level=debug
+  --set-string existingSecret=ts2otel-creds \
+  --set-string config.log_level=debug
 ```
+
+Helm deep-merges maps, so non-secret single-key overrides work without restating the rest. Never put
+a credential in an inline `--set secret.<KEY>` value.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
@@ -146,7 +149,7 @@ cover environment variables. Two supported rollout paths:
 # Manual: change rolloutTrigger to anything new. It is an opaque operator-chosen
 # token surfaced as a pod annotation, so the pod template changes and the Deployment
 # does a Recreate rollout. Never put a secret value (or a digest of one) here.
-kubectl create secret generic ts2otel-creds --from-literal=... --dry-run=client -o yaml | kubectl apply -f -
+kubectl create secret generic ts2otel-creds --from-env-file=creds.env --dry-run=client -o yaml | kubectl apply -f -
 helm upgrade t deploy/helm/tailscale2otel --reuse-values --set rolloutTrigger="$(date +%s)"
 ```
 

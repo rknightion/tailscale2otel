@@ -1,8 +1,9 @@
 # tailscale2otel configuration.
 #
 # Configuration is layered: built-in defaults < this file < environment variables.
-# EVERY field can be set (or overridden) by an environment variable named with the
-# TS2OTEL_ prefix and "__" between nesting levels, e.g.
+# Scalar fields and simple lists can be set (or overridden) by an environment variable named with
+# the TS2OTEL_ prefix and "__" between nesting levels. Maps and lists of structured entries stay in
+# YAML. For example:
 #
 #   tailscale.auth.oauth.client_secret  ->  TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET
 #   otlp.endpoint                       ->  TS2OTEL_OTLP__ENDPOINT
@@ -18,8 +19,8 @@
 #
 # The line below points editors at the generated JSON Schema (config.schema.json)
 # for completion and shape checking. It validates NAMES, TYPES and closed value
-# sets only — cross-field rules are enforced at runtime, so `tailscale2otel
-# -validate` is still the authoritative pre-flight check.
+# sets only. `tailscale2otel -validate` checks the full static configuration, while
+# `tailscale2otel -preflight` also authenticates, builds each runtime, and runs one collector cycle.
 # yaml-language-server: $schema=https://raw.githubusercontent.com/rknightion/tailscale2otel/main/config.schema.json
 
 log_level: info                       # exporter's own log verbosity: debug | info | warn | error
@@ -114,7 +115,8 @@ tailnets: []
 #     auth:
 #       method: oauth
 #       oauth:
-#         client_id: ""               # secret via env or a mounted secrets file
+#         client_id: "client-id"      # identifier, not a secret; list entries are file-only
+#         client_secret_file: /run/secrets/acme-oauth-secret
 #         scopes: [all:read]          # least-privilege; unset requests every scope the client holds
 #     objectstore:
 #       flow:
@@ -165,7 +167,7 @@ otlp:
   max_request_size: 0                 # bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a 413. Use metric_export_batch_size to actually stay under an ingest limit
   grpc_reconnection_period: 0s        # force a fresh gRPC connection attempt after this long; gRPC only, 0 = the gRPC client default
   retry:                              # exporter retry policy; leave the whole block untouched to keep the exporter's own default
-    enabled: true                     # an explicit false genuinely disables retry (distinct from omitting this block)
+    enabled: true                     # set false to disable retry
     initial_interval: 5s              # first backoff delay
     max_interval: 30s                 # backoff ceiling
     max_elapsed_time: 1m              # give up after this long

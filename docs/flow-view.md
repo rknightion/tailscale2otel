@@ -142,7 +142,7 @@ never allowed to slow OTLP export. Drops surface in the admin API the same way t
 truncation does.
 
 **PII / data at rest — read this before pointing `directory` at anything.** The in-memory ring dies with
-the process; nothing is written anywhere, and Section [Privacy](#privacy) above is what governs it.
+the process; nothing is written anywhere, and [Privacy](#privacy) below is what governs it.
 The disk store is a different exposure: flow rows carry user identities (source/destination emails,
 tags), and once written they persist across restarts and land in whatever backs up that volume. The
 configured `pii_filter` policy is applied to a row **before** it is written — the same redaction the
@@ -216,23 +216,27 @@ exceptions:
 - With no token, both are served only on a **loopback** `admin.listen`. On any other bind they are
   refused with HTTP 403 — the same fail-closed behaviour as the status page.
 
-This matters more here than elsewhere: the page shows device names, addresses, and the user each
-device belongs to, unfiltered — see [Privacy](#privacy).
+This matters more here than elsewhere: the in-memory view shows device names, addresses, and the
+user each device belongs to, unfiltered. The persistent store applies `pii_filter` before writing a
+row — see [Privacy](#privacy).
 
 ## Privacy
 
-**`/flows` shows what the flow record carried, in full.
-[`pii_filter`](configuration.md#pii_filter-pii-identifier-redaction) does not apply to it.**
+**The in-memory `/flows` view shows what the flow record carried in full.
+[`pii_filter`](configuration.md#pii_filter-pii-identifier-redaction) applies to persistent rows
+before they are written.**
 
 That filter governs the telemetry this process **exports** — what reaches your OTLP backend, and
-whoever can read it. The flow store is a different thing: in memory, never written anywhere, never
-sent anywhere, and readable only through the admin-authenticated surface above. Narrowing what you
-send onward is not a request to be blinded to your own tailnet, so `emails: false` still leaves the
-users breakdown populated here, and `hostnames: false` still leaves the topology graph drawn.
+whoever can read it. The in-memory flow store is different: it is never written or sent anywhere and
+is readable only through the admin-authenticated surface above. Narrowing what you send onward is
+not a request to be blinded to your own tailnet, so `emails: false` still leaves the in-memory users
+breakdown populated and `hostnames: false` still leaves the topology graph drawn. When
+`flows.store.directory` is set, the view reads from disk and the stored row contains only the fields
+that passed `pii_filter` at ingestion time.
 
 The consequence to be aware of: **the admin token is what protects this data**, on its own. Anyone
-you hand it to can see every device name, address and user the control plane reported, whatever your
-`pii_filter` says. If that is wider than you want, the answer is the token, not the filter.
+you hand it to can see every device name, address and user held by the active store. For the in-memory
+store that is whatever the control plane reported; for the persistent store it is the filtered row.
 
 > **This changed.** The view previously applied `pii_filter`, so an operator who had switched a
 > category off for their backend found it missing here too. See the changelog entry for the release

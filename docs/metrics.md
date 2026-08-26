@@ -799,8 +799,9 @@ fleet without needing resource-attribute joins.
 
 ## Cross-source de-duplication (a failsafe — pick one method)
 
-**Choose ONE ingestion method per log type.** For flow and audit logs, run *either* the poller
-(`source: poll`) *or* the HEC stream receiver (`source: stream`) — not both. Running both
+**Choose ONE ingestion source per log type.** For flow and audit logs, use the poller
+(`source: poll`), the HEC stream receiver (`source: stream`), or object-store ingestion
+(`source: objectstore`). Running more than one
 (`source: both`, or `streaming.enabled` while a collector still polls) means the same data can
 arrive twice; the exporter logs a **WARN at startup** when it detects this.
 

@@ -13,7 +13,8 @@ and logs over OTLP, a Prometheus `/metrics` endpoint, or both simultaneously.
 
 It is built for people who already run Grafana Cloud, Alloy, or any OTEL collector and want their
 tailnet to show up there alongside everything else, rather than living in a separate admin console.
-[Headscale](https://headscale.net/) users get the same treatment against a self-hosted control plane.
+[Headscale](https://headscale.net/) users get a supported subset against a self-hosted control plane:
+devices, users, keys, ACL, and node metrics.
 
 The source, releases and issue tracker live on
 **[GitHub](https://github.com/rknightion/tailscale2otel)**.
@@ -24,7 +25,7 @@ Needs a Tailscale OAuth client, and a Grafana Cloud stack if you want the data t
 land somewhere:
 
 ```sh
-docker run --rm \
+docker run --rm --stop-timeout 45 \
   -e TS2OTEL_TAILSCALE__TAILNET=example.com \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -33,9 +34,9 @@ docker run --rm \
   ghcr.io/rknightion/tailscale2otel:latest
 ```
 
-No config file needed — every setting has a `TS2OTEL_*` environment variable. To
-try it with no backend at all, set `TS2OTEL_OTLP__PROTOCOL=stdout` and it prints
-to the console.
+No config file is needed for the common settings: scalar fields and simple lists have `TS2OTEL_*`
+environment variables. Maps and structured lists stay in YAML. To try it with no backend at all,
+set `TS2OTEL_OTLP__PROTOCOL=stdout` and it prints to the console.
 
 ## Start here
 
@@ -47,14 +48,14 @@ to the console.
   prebuilt binary for Linux, macOS and Windows.
 - **[Configuration](configuration.md)** — every key, its default, and the `TS2OTEL_*`
   environment variable that overrides it.
-- **[Metrics catalog](metrics.md)** — all 186 metrics and 13 log-event types,
+- **[Metrics catalog](metrics.md)** — all 293 metrics and 17 log-event types,
   with their OTLP→Prometheus names.
 
 </div>
 
 ## What it collects
 
-Fifteen collectors run on independent schedules, each isolated so one failing source cannot stall
+Sixteen collectors run on independent schedules, each isolated so one failing source cannot stall
 the others:
 
 | Area | What you get |
@@ -68,16 +69,18 @@ the others:
 
 ## How the data gets in
 
-Three ingestion paths feed the same processing pipeline, so the output is identical regardless of
-which you choose:
+Flow and audit logs can enter through three sources that feed the same processors:
 
 1. **Polling** the Tailscale API on a schedule — the default, and the only option that needs no
    inbound network exposure.
 2. **Log streaming** — Tailscale pushes flow and audit logs to a built-in Splunk-HEC-compatible
    receiver. Lower latency, but requires an endpoint Tailscale can reach.
-3. **Webhooks** — real-time, HMAC-verified tailnet events.
+3. **Object storage** — tailscale2otel reads the exports Tailscale writes to an S3-compatible
+   bucket. This is the durable batch path and supports backfill.
 
-Pick exactly one path per log type; details and the trade-offs are in
+Pick exactly one source per log type. **Webhooks are a separate fourth path for real-time,
+HMAC-verified tailnet events**, not an alternative source for flow or audit logs. Details and the
+trade-offs are in
 [streaming & webhooks](streaming-webhooks.md).
 
 ## Where it sends data
@@ -100,6 +103,8 @@ Ready-made [dashboards](dashboards.md) and [alert rules](alerts.md) ship with th
 | [Security](security.md) | Data handling, PII redaction, receiver authentication |
 | [Upgrading](upgrading.md) | Version-to-version migration notes |
 | [Troubleshooting](troubleshooting.md) | Common failure modes and how to diagnose them |
+| [Runbooks](runbooks.md) | Alert investigation and remediation |
+| [Kubernetes audit](kubernetes-audit.md) | Optional tsrecorder audit ingestion and signals |
 
 ## Project
 

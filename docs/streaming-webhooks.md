@@ -12,6 +12,11 @@ an object store. Two optional receivers cover the Tailscale push mechanisms: a
 **Splunk-HEC-compatible stream receiver** for network flow and configuration audit logs, and an
 **HMAC-verified webhook receiver** for real-time Tailscale events. Both are off by default.
 
+The default is API polling. Choose streaming when low latency matters and Tailscale can reach your
+receiver, object storage when you need a durable batch source or backfill, and webhooks for tailnet
+events rather than flow or audit delivery. The matrix below carries the exact compatibility and
+durability rules.
+
 ## Ingestion paths: the compatibility matrix
 
 This table is the authoritative answer to "which paths can carry which signal, and what does each one
@@ -20,7 +25,7 @@ guarantee". Everything else on this page elaborates one of its rows.
 | Path | `flowlogs` | `auditlogs` | Tailscale events | Delivery | Durability boundary | Max backfill |
 |---|:---:|:---:|:---:|---|---|---|
 | `poll` (default) | ✓ | ✓ | — | at-least-once | checkpointed high-water mark; `replay_overlap` deliberately revisits completed time | `initial_lookback`, bounded by the API's own retention |
-| `stream` (Splunk-HEC receiver) | ✓ | ✓ | — | at-least-once, **at Tailscale's discretion** | none by default; opt-in bounded ingress WAL (`streaming.wal`) makes local acceptance durable | none — push only, no history |
+| `stream` (Splunk-HEC receiver) | ✓ | ✓ | — | at-least-once, **at Tailscale's discretion** | none by default; opt-in bounded ingress WAL (`ingress_wal`) makes local acceptance durable | none — push only, no history |
 | `objectstore` | ✓ | ✓ | — | at-least-once | durable cursor, per-prefix scan positions, seen set and failed-object gaps, all in one checkpoint transaction | **14 day partitions** (`layout: partitioned`) or unbounded (`layout: flat`) — see below |
 | `webhook` receiver | — | — | ✓ | at-least-once, HMAC-verified | none by default; same opt-in WAL | none |
 | `both` | ✓ | ✓ | — | **double-counts** | as `poll` | as `poll` |

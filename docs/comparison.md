@@ -35,7 +35,7 @@ and there is no reason to put anything in between.
 ## Design choices specific to this exporter
 
 **One process for the tailnet, not one per node.** A single static Go binary reads the
-Tailscale API and derives 186 metrics and 13 log-event types across fifteen collectors. The
+Tailscale API and derives 293 metrics and 17 log-event types across sixteen collectors. The
 collectors run on independent schedules and are isolated, so a failing source cannot stall the
 others — which matters because the API surfaces here are not equally reliable or equally
 rate-limited.
@@ -71,7 +71,9 @@ stops a metrics catalog drifting into fiction, which is the usual fate of one.
 **OTLP and Prometheus at the same time.** Native OTLP metrics and logs, a Prometheus
 `/metrics` endpoint, or both simultaneously — no collector in front to translate.
 
-**Headscale works.** The same collectors run against a self-hosted control plane.
+**Headscale works.** A supported subset runs against a self-hosted control plane: devices, users,
+keys, ACL, and node metrics. Tailscale-only collectors stay disabled because Headscale does not
+expose equivalent data.
 
 ## When to pick something else
 
@@ -91,7 +93,7 @@ Below that, the console is not a compromise.
 
 ## See also
 
-- [Metrics & Logs Reference](metrics.md) — all 186 metrics and 13 log-event types
+- [Metrics & Logs Reference](metrics.md) — all 293 metrics and 17 log-event types
 - [Signal Coverage](signal-coverage.md) — what each signal is *for*
 - [Architecture](architecture.md) — how the collectors and emitters fit together
 - [Streaming & Webhooks](streaming-webhooks.md) — the ingestion-path matrix

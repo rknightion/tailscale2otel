@@ -34,7 +34,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     exporter starts from built-in defaults plus those overrides — nothing to mount:
 
     ```sh
-    docker run --rm \
+    docker run --rm --stop-timeout 45 \
       -e TS2OTEL_TAILSCALE__TAILNET=example.com \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -48,7 +48,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     If you prefer YAML for the non-secret fields, mount it and pass `-config`:
 
     ```sh
-    docker run --rm \
+    docker run --rm --stop-timeout 45 \
       -v "$PWD/config.yaml:/etc/tailscale2otel/config.yaml:ro" \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
       -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
@@ -132,7 +132,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     in the image to run it. `docker run` equivalent:
 
     ```sh
-    docker run --rm \
+    docker run --rm --stop-timeout 45 \
       --health-cmd "/usr/local/bin/tailscale2otel -healthcheck" \
       --health-interval 30s --health-timeout 10s \
       --health-start-period 30s --health-retries 3 \
@@ -156,8 +156,8 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     ### Running from a config file
 
-    The compose file needs no config file — every setting has a `TS2OTEL_*`
-    variable. To drive it from YAML instead, add the override file as a second
+    The compose file needs no config file for scalar fields and simple lists, which have
+    `TS2OTEL_*` variables. To use maps, structured lists, or YAML instead, add the override file as a second
     `-f`:
 
     ```sh

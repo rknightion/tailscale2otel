@@ -138,9 +138,9 @@ environments.
 
 ## Receiver authentication footguns
 
-The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs.
-Authentication is enabled by a configured secret; an empty credential is accepted only on
-loopback (these behaviours are also noted in
+The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs, and the optional
+Prometheus listener serves `GET /metrics`. Authentication is enabled by a configured secret; an
+empty credential is accepted only on loopback (these behaviours are also noted in
 [`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml)):
 
 - Leaving `webhook.secret` empty skips HMAC verification only on a loopback
@@ -152,6 +152,9 @@ loopback (these behaviours are also noted in
   costs you ingestion, not silent acceptance of forged records.
 - Leaving `admin.auth.token` empty likewise **refuses** the status page and its JSON APIs with
   HTTP 403 on any non-loopback `admin.listen` (`/healthz` and `/readyz` stay open).
+- Leaving `prometheus.auth.token` empty likewise serves `/metrics` only on a loopback bind. On a
+  network-reachable bind it returns HTTP 403 unless
+  `prometheus.auth.allow_unauthenticated: true` explicitly acknowledges the exposure.
 - Every admin response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, applied at the mux so a route added
   later cannot be served bare. The CSP is `default-src 'none'` with **no origin permitted in any

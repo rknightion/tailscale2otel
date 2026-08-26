@@ -2326,7 +2326,7 @@
           "properties": {
             "enabled": {
               "default": true,
-              "description": "an explicit false genuinely disables retry (distinct from omitting this block)",
+              "description": "set false to disable retry",
               "type": [
                 "boolean",
                 "null"

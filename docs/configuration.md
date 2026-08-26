@@ -32,7 +32,8 @@ Configuration is loaded in three layers, lowest precedence first:
 
 ## Environment-variable convention
 
-Every config field is settable via an environment variable:
+Scalar fields and simple lists are settable via environment variables. Maps and lists of structured
+entries remain file-only:
 
 - **Prefix:** `TS2OTEL_`
 - **Nesting delimiter:** `__` (double underscore) between levels
@@ -58,7 +59,7 @@ Every config field is settable via an environment variable:
 | `prometheus.auth.token` | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` |
 | `self_observability.instance_id` | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` |
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
-| `profiling.pyroscope.basic_auth_password_file` | `""` | Read `profiling.pyroscope.basic_auth_password` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `profiling.pyroscope.basic_auth_password_file` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD_FILE` |
 
 ### Scalar lists
 
@@ -77,6 +78,7 @@ TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf,ip
 These fields cannot be set via flat env vars because they are maps or lists of structs:
 
 - `otlp.headers` — use the YAML file (or use `otlp.grafana_cloud` for Grafana Cloud).
+- `tailnets` — each entry is a struct; multi-tailnet mode requires a YAML file.
 - `collectors.node_metrics.targets` — each target is a struct; static targets require a YAML file.
 - `profiling.pyroscope.tags` — a string→string map; set via YAML.
 
@@ -167,6 +169,9 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 - [`version_checks` — outbound "is a newer release available?" checks](#version_checks-outbound-is-a-newer-release-available-checks)
 - [`tracing` — OTEL traces pillar](#tracing-otel-traces-pillar)
 - [`resource` — OTEL Resource enrichment](#resource-otel-resource-enrichment)
+- [`flows` — built-in flow view](#flows-built-in-flow-view)
+- [`events` — built-in event explorer](#events-built-in-auditwebhook-event-explorer)
+- [`grafana_annotations` — Grafana annotations](#grafana_annotations-publish-tailnet-events-as-grafana-annotations)
 
 ---
 
@@ -342,7 +347,7 @@ single-tailnet `tailscale:` block above is used instead.
 |-----|---------|-------------|
 | `tailnets` | `[]` | List of tailnet entries to fan out over. A non-empty list enables multi-tailnet mode. **File-only** — like `collectors.node_metrics.targets`, a list of structs cannot be set via flat `TS2OTEL_*` env vars; use a YAML config file. |
 | `tailnets[].name` | — (required) | The tailnet's name (e.g. `acme.example.com`). Required, and must be unique within the list — a missing or duplicate name is rejected at startup. |
-| `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey` plus the matching `oauth`/`apikey` sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
+| `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey\|workload_identity` plus the matching sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
 | `tailnets[].http` | — | Same shape as [`tailscale.http`](#tailscalehttp). Unlike `auth`, this **is** backfilled field-by-field from the top-level `tailscale.http` block (itself defaulted), which is why `tailscale.http` doubles as the fleet-wide default for the whole list (see the note above). An entry that sets its own `http.*` field overrides the fleet default for that field only. |
 | `tailnets[].objectstore.flow` | — | This tailnet's own flow-log export bucket. Same fields as [`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source). Optional in general, **required on every entry** when `collectors.flowlogs.source: objectstore` — see the note below. |
 | `tailnets[].objectstore.audit` | — | This tailnet's own **configuration**-log export bucket. Same fields again, and a destination of its own — never inherited from `objectstore.flow`. Optional in general, **required on every entry** when `collectors.auditlogs.source: objectstore`. |
@@ -484,12 +489,11 @@ Transport security for `grpc`/`http`.
 
 ### `otlp.retry`
 
-The exporter's own retry policy. Leave the whole block untouched to keep the exporter's built-in
-default (retry on).
+The exporter's own retry policy. Retry is enabled by default.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `otlp.retry.enabled` | unset (inherits) | An explicit `false` genuinely disables retry — distinct from omitting this whole block, which leaves the exporter's own default (retry on). |
+| `otlp.retry.enabled` | `true` | Set `false` to disable retry. |
 | `otlp.retry.initial_interval` | `5s` | First backoff delay. |
 | `otlp.retry.max_interval` | `30s` | Backoff ceiling. |
 | `otlp.retry.max_elapsed_time` | `1m` | Give up after this long. |
@@ -1531,7 +1535,7 @@ Tailscale IPs, for example.
 
 ## `admin` — admin HTTP server (probes + status page)
 
-Always-off-by-default HTTP server exposing liveness/readiness probes plus an optional status page.
+Enabled-by-default HTTP server exposing liveness/readiness probes plus a status page.
 The status page surfaces operational metadata (collector health, cardinality, discovered nodes,
 **redacted** config) but never secret values. Bind it to a tailnet/loopback address, not the public
 internet.
@@ -1560,9 +1564,8 @@ internet.
 > A tailnet address counts as reachable, not loopback: every peer on the tailnet can connect to it.
 >
 > `/healthz` and `/readyz` are registered outside the auth wrapper and stay open on every bind, so
-> container and Kubernetes probes are unaffected. Defaults are unchanged (`admin.listen: ":9091"`) —
-> an existing deployment still starts; only the data-bearing endpoints go dark until you set a token
-> or move to loopback.
+> container and Kubernetes probes are unaffected. The default is the loopback-only
+> `admin.listen: "127.0.0.1:9091"`; widening it requires a token for data-bearing endpoints.
 
 > **`/api/config.json` reports the COMPLETE effective configuration.** Alongside the existing named
 > fields it carries a `full` map: every effective key, dotted-path keyed (the `TS2OTEL_*` naming with

@@ -21,32 +21,32 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 
 | | |
 |---|---|
-| **255** metrics + **15** log-event types | across **16** collectors |
+| **293** metrics + **17** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
 | **123** shipped rules | **100** alert + **23** recording, Grafana-managed |
-| **1** Grafana dashboard | flagship, 10 tabs, v2 dynamic (Grafana 13+) |
+| **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
 ## Why this exists
 
-Tailscale — the WireGuard-based mesh VPN — exposes a genuinely rich observability surface: network
+Tailscale — the WireGuard-based mesh VPN — exposes a broad observability surface: network
 flow logs, configuration audit logs, a detailed device inventory, users, keys, DNS, ACL policy,
 device posture. But it has **no Prometheus endpoint of its own**, and it streams logs only to
 SIEM/storage sinks like Splunk or S3.
 The existing Tailscale exporters cover a slice of the device API and stop there.
 
-`tailscale2otel` covers the whole surface and models it properly:
-[semantic-convention](https://opentelemetry.io/docs/specs/semconv/)-compliant OTEL telemetry, with
-cardinality control that makes flow logs survivable on a metrics backend.
+`tailscale2otel` turns those sources into
+[semantic-convention](https://opentelemetry.io/docs/specs/semconv/)-compliant OTEL telemetry. Its
+cardinality controls keep flow-log metrics within a fixed series budget.
 
-### Things nothing else does
+### What it adds
 
 - **Network flow logs as *both* metrics and logs.** Low-cardinality aggregate counters
   (`tailscale.network.io` / `.packets` / `.flows`) for dashboards and alerting, **plus** full-fidelity
   per-connection records as OTEL logs for drill-down — with a top-N rollup (busiest 500 pairs, rest
   folded to `__other__`), opt-in port dimensions, and IANA service-name attribution so
-  `dst.port: 443` becomes `https`. This is the feature that usually makes flow logs unaffordable, and
-  it is the reason this project exists.
+  `dst.port: 443` becomes `https`. Without the rollup, each endpoint pair becomes another metric
+  series and the cost grows with the traffic graph.
 - **Configuration audit logs → structured OTEL logs + a curated, security-categorized change
   counter**, so you can alert on high-value tailnet changes without ingesting the whole stream.
 - **Central `tailscaled` node-metrics polling.** Scrapes each node's native client-metrics endpoint
@@ -54,7 +54,7 @@ cardinality control that makes flow logs survivable on a metrics backend.
   discovery from the devices API** (tag include/exclude, online-only, address family). Emits both the
   raw `tailscaled_*` series and 8 curated `tailscale.node.*` metrics with folded low-cardinality
   attributes.
-- **Full API-surface coverage** — not just devices. Users, auth keys / OAuth clients / API tokens
+- **Beyond the device API.** Users, auth keys / OAuth clients / API tokens
   (with expiry), tailnet settings, DNS, ACL policy (scored for structural risk: wildcards,
   unrestricted rules, auto-approvers, SSH wildcards), device posture / MDM integrations, Tailscale
   Services, webhook endpoints, contacts, log-stream delivery health, and OAuth apps.
@@ -79,7 +79,7 @@ cardinality control that makes flow logs survivable on a metrics backend.
 ### Docker
 
 ```sh
-docker run --rm \
+docker run --rm --stop-timeout 45 \
   -e TS2OTEL_TAILSCALE__TAILNET=example.com \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -88,8 +88,9 @@ docker run --rm \
   ghcr.io/rknightion/tailscale2otel:latest
 ```
 
-No config file needed — every setting has a `TS2OTEL_*` environment variable. Mount a YAML file and
-pass `-config /etc/tailscale2otel/config.yaml` if you prefer.
+No config file is needed for the common settings: scalar fields and simple lists have `TS2OTEL_*`
+environment variables. Mount a YAML file and pass `-config /etc/tailscale2otel/config.yaml` for maps
+or structured lists.
 
 ### Kubernetes (Helm)
 
@@ -158,6 +159,7 @@ Set `TS2OTEL_OTLP__PROTOCOL=stdout` to print metrics and logs to the console.
 | `devices` | 60s | online/last-seen/key-expiry/update gauges, NAT & connectivity quality, per-DERP latency, subnet routes, tailnet lock, fleet hygiene roll-ups. **Feeds the enrichment cache** |
 | `flowlogs` | 60s | aggregated traffic counters + per-connection flow logs |
 | `auditlogs` | 60s | audit-event logs + a categorized change counter |
+| `k8s_audit` | 60s | **(opt-in)** tsrecorder Kubernetes API requests and terminal sessions from object storage |
 | `users` | 300s | user/role/status counts, per-user device & connection gauges, outstanding invites |
 | `keys` | 300s | expiry gauges and counts across auth keys, OAuth clients and API tokens |
 | `oauth_apps` | 300s | OAuth-application inventory (alpha API; idles silently where unavailable) |
@@ -228,15 +230,16 @@ receiver auth, object-gap handling, and `auto_configure` are in
   and **Exporter health** (is the exporter healthy — collection, ingestion, delivery, runtime, cost),
   cross-linked to each other, with dynamic rendering so a section only appears when its data is
   present. **Grafana 13+ is a hard requirement** — 12.4 accepts the file with a `200` and renders
-  nothing, and 11.5 rejects it with the misleading `Dashboard title cannot be empty`. Push them with
-  `gcx resources push -f`. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
+  nothing, and 11.5 rejects it with the misleading `Dashboard title cannot be empty`. This
+  repository publishes them through GitSync; other deployments can import or provision the two JSON
+  resources. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
 - **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **100 alert
   rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
   `runbook_url`, and 77 of 78 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and
   [Runbooks](https://m7kni.io/tailscale2otel/runbooks/).
-- **Admin status page** — on by default at `:9091`. Liveness/readiness probes at `/healthz` and
+- **Admin status page** — on by default at `127.0.0.1:9091`. Liveness/readiness probes at `/healthz` and
   `/readyz` (never auth-gated), a live status page at `/`, and the same snapshot at
   `/api/status.json`: per-collector health, **active-series cardinality** with per-label breakdown,
   the full metrics/log catalog, discovered node targets, and a **redacted** config summary. Entirely
@@ -248,7 +251,8 @@ receiver auth, object-gap handling, and `auto_configure` are in
 ## Configuration
 
 Layered, lowest precedence first: **built-in defaults** → **optional YAML file** → **environment
-variables**. Every field is settable as `TS2OTEL_` + the dotted key path with `__` between levels:
+variables**. Scalar and simple-list fields are settable as `TS2OTEL_` + the dotted key path with
+`__` between levels; maps and lists of structured entries stay in YAML:
 
 | Config key | Environment variable |
 |---|---|
@@ -274,12 +278,13 @@ secret has a `*_file` variant for Docker/Kubernetes secrets.
 | [Getting started](https://m7kni.io/tailscale2otel/getting-started/) | Zero to first metrics in Grafana Cloud |
 | [Installation](https://m7kni.io/tailscale2otel/installation/) | Docker, Helm, compose, binaries |
 | [Configuration](https://m7kni.io/tailscale2otel/configuration/) | Every key, default and gotcha |
-| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 186 metrics and 13 log events |
+| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 293 metrics and 17 log events |
 | [Node metrics](https://m7kni.io/tailscale2otel/node-metrics/) | Central `tailscaled` scraping |
 | [Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/) | HEC receiver and webhooks |
 | [Architecture](https://m7kni.io/tailscale2otel/architecture/) | How it fits together |
 | [Security](https://m7kni.io/tailscale2otel/security/) | Data handling, PII, receiver auth |
 | [Troubleshooting](https://m7kni.io/tailscale2otel/troubleshooting/) | When it doesn't work |
+| [Runbooks](https://m7kni.io/tailscale2otel/runbooks/) | Alert investigation and remediation |
 
 ## Development
 

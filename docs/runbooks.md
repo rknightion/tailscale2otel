@@ -225,7 +225,9 @@ means datapoints are being dropped, and nothing else in the pack will tell you.
 **First step.** **Export failures/s by type** and **Export latency p50/p95/p99 by signal** on the
 **Delivery** tab of `tailscale2otel-health`. Break down by signal — metrics and logs use different endpoints, and one
 failing alone points at a per-signal endpoint path or a per-signal quota. Remember the exporter
-appends `/v1/metrics` and `/v1/logs` itself: a bare gateway URL in `otlp.endpoint` 404s silently.
+appends `/v1/metrics` and `/v1/logs` itself, so configure `otlp.endpoint` with the gateway's base
+OTLP URL. A persistent endpoint or authentication error is recorded in delivery health and
+`tailscale2otel_export_failures_total`.
 
 **Resolved when.** The failure rate is zero and p99 is back under the threshold for a full evaluation
 window. `export-latency-high` is `core` — if the histogram disappears entirely, that is a `NoData`
@@ -1105,4 +1107,3 @@ file (harmless if it resolves on the next attempt), a cert and key that are not 
 (the issuer wrote one of the two), and a permissions change on rotation. The listener keeps serving
 the old certificate throughout, so treat this as "fix before the current cert expires", not as an
 active outage.
-

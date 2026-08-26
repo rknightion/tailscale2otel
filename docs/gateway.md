@@ -107,7 +107,7 @@ sidecar:
 
 ```yaml
 TS2OTEL_OTLP__PROTOCOL: grpc
-TS2OTEL_OTLP__ENDPOINT: http://alloy:4317
+TS2OTEL_OTLP__ENDPOINT: alloy:4317
 TS2OTEL_OTLP__TLS__INSECURE: "true"
 ```
 
@@ -152,7 +152,7 @@ Assuming Alloy is running as Service `alloy` in namespace `monitoring` with the 
 config:
   otlp:
     protocol: grpc
-    endpoint: http://alloy.monitoring.svc.cluster.local:4317
+    endpoint: alloy.monitoring.svc.cluster.local:4317
     tls:
       # Plaintext, in-cluster only. Safe here because gateway mode puts NO
       # credential on this hop - the backend token lives in Alloy. Use a real

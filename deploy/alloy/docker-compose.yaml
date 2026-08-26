@@ -124,7 +124,7 @@ services:
       # gRPC to the sidecar. `alloy` is the Compose service name; 4317 is the
       # otelcol.receiver.otlp grpc endpoint in config.alloy.
       TS2OTEL_OTLP__PROTOCOL: grpc
-      TS2OTEL_OTLP__ENDPOINT: http://alloy:4317
+      TS2OTEL_OTLP__ENDPOINT: alloy:4317
       # Plaintext to the gateway. This is safe ONLY because the hop is a private
       # Compose network -- and it is safe here specifically because there is no
       # credential on this hop to expose: the backend token lives in the alloy

@@ -139,14 +139,16 @@ Each collector runs in its own goroutine with a small randomised start-up stagge
 by default) so no two collectors hit the API at the same instant. A panic or transient error in one
 tick is recovered and logged; it never stops the scheduler or any other collector.
 
-## Poll vs. stream — pick one per log type
+## Log sources — pick one per log type
 
-For flow logs and audit logs there are two ingestion paths:
+For flow logs and audit logs there are three ingestion sources:
 
 - **Poll** (`source: poll`): the window collector periodically calls the Tailscale Logs API and
   processes the batch.
 - **Stream** (`source: stream`): tailscale2otel runs a built-in Splunk-HEC-compatible receiver;
   Tailscale pushes records to it in near-real time.
+- **Object store** (`source: objectstore`): tailscale2otel reads the exports Tailscale writes to an
+  S3-compatible bucket, with checkpointed batch ingestion and backfill.
 
 **You must choose exactly one path per log type.** Running both double-counts records. A best-effort
 bounded FIFO de-duplicate set (`internal/dedup`) can suppress exact duplicates across paths, but it
@@ -154,8 +156,9 @@ is a failsafe, not a substitute for correct configuration. The app logs a WARNIN
 paths are active for the same log type. See [Streaming & Webhooks](streaming-webhooks.md) for
 receiver setup.
 
-Crucially, both paths feed the _same_ `flowlog.Processor` / `audit.Processor`, so the emitted
-signals are identical regardless of which path delivers the record.
+All three sources feed the _same_ `flowlog.Processor` / `audit.Processor`, so the emitted signals
+are identical regardless of which source delivers the record. Webhooks are a separate event feed;
+they are not a flow/audit source choice.
 
 ## Device enrichment
 
@@ -251,7 +254,7 @@ When `tracing.enabled` is set, a `TracerProvider` is also built in `app.New` and
 Tailscale API client, and receivers emit spans (one root span per scrape cycle, child spans per API
 request, one span per receiver request) over the same `otlp.*` endpoint.
 
-In addition, an admin HTTP server (on by default, `:9091`) serves:
+In addition, an admin HTTP server (on by default, `127.0.0.1:9091`) serves:
 
 - `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.
@@ -317,8 +320,9 @@ A second, independent HTTP listener — off by default, `prometheus.enabled` (de
 format, for scrapers that can't consume OTLP push. It is separate from the admin server so pull
 scraping works even with the status page/pprof disabled, and it gathers from every provider in the
 `telemetry.ProviderSet` (process + each tailnet) merged into one `prometheus.Gatherers`. Optionally
-gated by `prometheus.auth.token` (same Basic/Bearer constant-time check as the admin token); empty
-token leaves it open.
+gated by `prometheus.auth.token` (same Basic/Bearer constant-time check as the admin token). With no
+token, a loopback bind is open; a network-reachable bind returns HTTP 403 unless
+`prometheus.auth.allow_unauthenticated: true` explicitly acknowledges the exposure.
 
 ## Key package boundaries
 

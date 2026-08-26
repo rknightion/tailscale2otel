@@ -120,9 +120,9 @@ normalization still applies on ingest — see the [reference](./metrics.md#node-
 > `direct_ipv4`, `direct_ipv6`, `derp`, `peer_relay_ipv4`, and `peer_relay_ipv6`. Series count
 > therefore scales as **nodes × `path` × metric**. Scraping a large fleet multiplies quickly:
 > budget for it, and prefer scraping a representative subset (e.g. relays and exit nodes) over
-> every node if you only need fleet-level throughput. This is the same per-`path` fan-out called
-> out for flow-volume handling — see the flow-volume note (todos §11.3 / S4-7) when sizing DPM and
-> ingest cost.
+> every node if you only need fleet-level throughput. Use the cardinality controls in
+> [Configuration](configuration.md) and monitor the scraper and active-series signals in the
+> [metrics catalog](metrics.md) when sizing DPM and ingest cost.
 
 > **Version note.** Nodes older than **v1.78.0** do not serve `:5252/metrics`. The scraper marks
 > such a target as down (`tailscale.node.up` → `0`) rather than emitting node series for it.

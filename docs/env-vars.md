@@ -5,9 +5,9 @@ description: Every TS2OTEL_* environment variable, its default, and what it cont
 
 # Environment-variable reference
 
-Every configuration field is settable from an environment variable, so a container
-deployment needs no mounted config file at all (and the env layer overrides any
-file that *is* present — keep secrets here, never in YAML). See
+Scalar fields and simple lists are settable from environment variables, so common container
+deployments need no mounted config file. Maps and lists of structured entries remain file-only. The
+env layer overrides any file that *is* present, so secrets can stay outside YAML. See
 [`configuration.md`](configuration.md) for the layering model and the prose
 reference, and [`../config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) for the same
 fields as a commented file.
@@ -78,7 +78,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TIMEOUT` | `0s` | per-request export timeout; 0 defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_TIMEOUT, then the exporter's 10s. TS2OTEL_OTLP__TIMEOUT |
 | `TS2OTEL_OTLP__MAX_REQUEST_SIZE` | `0` | bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a 413. Use metric_export_batch_size to actually stay under an ingest limit |
 | `TS2OTEL_OTLP__GRPC_RECONNECTION_PERIOD` | `0s` | force a fresh gRPC connection attempt after this long; gRPC only, 0 = the gRPC client default |
-| `TS2OTEL_OTLP__RETRY__ENABLED` | `true` | an explicit false genuinely disables retry (distinct from omitting this block) |
+| `TS2OTEL_OTLP__RETRY__ENABLED` | `true` | set false to disable retry |
 | `TS2OTEL_OTLP__RETRY__INITIAL_INTERVAL` | `5s` | first backoff delay |
 | `TS2OTEL_OTLP__RETRY__MAX_INTERVAL` | `30s` | backoff ceiling |
 | `TS2OTEL_OTLP__RETRY__MAX_ELAPSED_TIME` | `1m` | give up after this long |

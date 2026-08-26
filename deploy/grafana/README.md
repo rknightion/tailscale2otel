@@ -1,139 +1,58 @@
-# tailscale2otel — Grafana Dashboards
+# tailscale2otel Grafana dashboards
 
-Grafana dashboards for the telemetry emitted by `tailscale2otel`.
+This directory contains the two generated Grafana 13+ dashboards shipped with tailscale2otel:
 
-## Flagship: `tailscale2otel.json` (Grafana 13+)
+| Dashboard | UID | File | Use it for |
+| --- | --- | --- | --- |
+| Tailscale2OTel — Tailnet | `tailscale2otel-tailnet` | `tailscale2otel-tailnet.json` | Devices, network, security, and policy |
+| Tailscale2OTel — Exporter health | `tailscale2otel-health` | `tailscale2otel-health.json` | Collection, ingestion, delivery, runtime, and cost |
 
-`tailscale2otel.json` is the **comprehensive, single-dashboard** view of the entire
-project. It uses the **Grafana dashboard schema v2** (`dashboard.grafana.app/v2`,
-Grafana 13+) with **tabs** and **dynamic (conditional) rendering**, so a section
-only appears when its data is actually present in the target stack.
+The dashboards use Grafana's v2 schema (`dashboard.grafana.app/v2`) with tabs, nested navigation,
+and conditional rendering. Grafana 13 or later is required. Grafana 12.4 accepts these resources but
+renders them blank; Grafana 11.5 rejects them with the misleading error `Dashboard title cannot be
+empty`.
 
-It is **generated** from `gen/build.py` (dashboards-as-code) — edit the generator,
-not the JSON. Only the Python standard library is required.
-
-### Tabs
-
-| Tab | Covers |
-| --- | --- |
-| **Overview** | At-a-glance tailnet + exporter health: device counts, key expiry, ACL age, flow-logging state, scrape/export errors, active-series (cardinality), throughput, audit/flow activity, and a features/settings matrix. |
-| **Fleet & Devices** | Inventory (online/offline/updates/users, OS breakdown), trends, device health tables (updates, key expiry, last-seen), DERP latency, subnet routes¹, device posture¹. |
-| **Network & Flows** | Flow summary and bounded reporter-trust/field-completeness diagnostics, then **ROLLUP** (bounded top-N) and **RAW** (full-cardinality) throughput/talkers sections — each shown only when that flow-metric mode is present — plus unique-peer/port counts and the `__other__` rollup share. |
-| **Events & Logs** | Audit/webhook event rates, bounded audit-schema drift, stream-ingestion health¹, receiver health (in-flight/latency/rejected)¹, ingestion volume and accepted-data freshness¹, dedup effectiveness, a Loki log explorer (switchable by `event_name` + free-text filter), and dedicated flow- and posture-log streams. |
-| **Security & Audit** | ACL-hygiene risk (wildcard/unrestricted/auto-approver/SSH/posture-gated), config-change & device-churn rates, device-share invites, MDM posture attributes¹, posture-integration sync/match¹, key & access expiry, tailnet-lock¹, and audit metric-vs-log correlation. PII-gated actor/host rows hide on explicit redaction. |
-| **Policy & Config** | ACL (last-changed/size/rules + inventory), DNS (MagicDNS/nameservers/search/zones + resolvers¹/override), settings & features, users (by role/status/type + per-user¹), API keys (type/auth-kind/scopes¹/preauthorized + expiry), VIP services¹, and external-tailnets/webhook settings. |
-| **Node Metrics**¹ | Per-node scraper health and the forwarded `tailscaled_*` series (in/out bytes & packets, dropped packets, routes, health messages, DERP region, peer-relay endpoints). |
-| **Exporter Diagnostics** | Liveness/build, config health & process CPU/uptime, per-collector scrape duration/success/errors/staleness, API & export latency (p50/p95/p99) with exemplars, rDNS cache¹, PII-filter status¹, cardinality & dedup, enrichment cache, the Go runtime (heap/GC/goroutines), and **traces** (scrape→API waterfall, TraceQL-metrics API/cadence/stream batch)¹. |
-| **Cardinality & Cost** | Per-metric series vs cap, overflow table, series-by-group cost driver, per-metric headroom, flow-cardinality drivers, dedup sets, and an ingest-vs-export DPM/LPM cost view. |
-| **Tailnets**¹ | MSP scorecard (one row per tailnet: online devices, scrape staleness, API errors) — appears only on multi-tailnet deployments. |
-
-¹ Conditionally rendered — appears only when that feature's data is present.
-
-### How dynamic rendering works
-
-Hidden presence variables (`has_*`) run `label_values(<metric>, __name__)` and
-resolve to the metric name when ≥1 series exists, else empty. Rows/tabs carry a
-v2 `ConditionalRendering` rule (`ConditionalRenderingVariable`, `matches .+`) on
-that variable, so they show only when the data exists. This is evaluated both
-live **and** by the image renderer (unlike `ConditionalRenderingData`, which the
-static renderer does not evaluate).
-
-Slowly-scraped config gauges (ACL/DNS/settings/keys/users) are read through
-`last_over_time(<metric>[<window>])` so panels show the latest known value even
-when the most recent sample is older than Prometheus' 5-minute staleness window.
-
-### Regenerate & deploy
+Both dashboards are generated from `gen/build.py` and `gen/dashboards.py`. Edit the generator, not
+the JSON. Regenerate both committed resources from this directory with:
 
 ```sh
-# regenerate the portable, folder-agnostic artifact (committed here)
-python3 gen/build.py --out tailscale2otel.json
-
-# push to a Grafana stack with gcx (optionally pin a folder UID)
-gcx dashboards create -f tailscale2otel.json                 # first time
-gcx dashboards update tailscale2otel -f tailscale2otel.json  # subsequent
-
-# render a snapshot for visual review (Grafana image renderer)
-gcx dashboards snapshot tailscale2otel --since 6h --width 1920 --theme dark
-
-# focused, full-page preview of a single tab (the image renderer only captures
-# the first tab of a tabbed dashboard, and struggles to capture many dense
-# panels at once — render one tab at a time for review):
-python3 gen/build.py --tab "Network & Flows" --uid t2 --out /tmp/t.json
-gcx dashboards create -f /tmp/t.json && gcx dashboards snapshot t2-prev-network-flows --since 6h
+python3 gen/build.py --out-dir .
 ```
 
-> Snapshot note: static PNG rendering of dense, variable-heavy tabs (Fleet,
-> Policy, Node Metrics) can show "No data" on lower panels because the renderer
-> screenshots before all queries resolve. This is a renderer limitation, not a
-> dashboard defect — the panels populate normally in the live UI. Render a single
-> tab (`--tab`) for clean previews.
+For a focused preview of one dashboard or tab:
 
-## Removed: the four legacy standalone dashboards
-
-`tailscale-fleet.json`, `tailscale-network.json`, `tailscale-audit-events.json` and
-`tailscale-exporter-health.json` are **gone**. They were classic schema
-(`schemaVersion: 39`), hand-maintained, duplicated flagship content, and were excluded
-from `scripts/regen-generated.sh` and the `dashboards-drift` gate — so nothing regenerated
-them, nothing tested them, and nothing noticed when they drifted.
-
-This project targets **Grafana 13+ and the v2 dashboard schema only**. The dynamic layout
-the flagship relies on — nested tabs and `conditionalRendering` — has no classic-schema
-equivalent, so a v1 copy would render every feature-gated area permanently empty rather
-than hiding it. Shipping one would have been worse than shipping nothing.
-
-Replacement tabs on the flagship (`tailscale2otel`): fleet → **Fleet & Devices**, network →
-**Network & Flows**, audit events → **Events & Logs** and **Security & Audit**, exporter
-health → **Exporter Diagnostics** and **Cardinality & Cost**.
-
-## Importing (gcx / UI / provisioning)
-
-`tailscale2otel.json` is a **v2 resource** (`apiVersion: dashboard.grafana.app/v2`) and needs
-**Grafana 13+**. Both older-version failures are misleading: 12.4 returns `200` and renders a
-blank dashboard, 11.5 rejects it with `Dashboard title cannot be empty`. The classic
-`POST /api/dashboards/db` endpoint takes a v1 body and does **not** accept this file.
-
-```bash
-gcx resources push -f tailscale2otel.json
+```sh
+python3 gen/build.py --dashboard tailnet --tab "Network & Flows" --out /tmp/tailnet-network.json
 ```
 
-UI: **Dashboards → New → Import → Upload JSON file**, then map the datasources.
+## Publishing and importing
 
-For file-based provisioning, drop the JSON into a path referenced by a
-`dashboards` provider. Logs are matched on `service_name="tailscale2otel"`, and
-the OTEL event type is the `event_name` label.
+This repository publishes dashboard changes through `.github/workflows/grafana-sync.yml` into the
+Grafana GitSync source. Do not push repository-owned dashboards directly with `gcx`; an API push is
+an out-of-band edit that leaves the repository and Grafana disagreeing.
 
-## Datasource variables (portability)
+For your own Grafana 13+ deployment, import both resources with one of these supported paths:
 
-Panels reference datasources by template variable, not a pinned UID:
+```sh
+gcx resources push -f tailscale2otel-tailnet.json
+gcx resources push -f tailscale2otel-health.json
+```
 
-- `${DS_PROM}` / `ds_prometheus` — a `prometheus` datasource (Grafana Cloud default UID `grafanacloud-prom`).
-- `${DS_LOKI}` / `ds_loki` — a `loki` datasource (Grafana Cloud default UID `grafanacloud-logs`).
+You can also use **Dashboards → New → Import → Upload JSON file** in Grafana, or place both JSON
+files in a file-provisioned dashboard directory. The classic `POST /api/dashboards/db` endpoint
+accepts v1 dashboard bodies and does not apply to these resources.
 
-## OTLP → Prometheus naming (important)
+## Datasources and query names
 
-Metric names are normalized by Grafana Cloud's OTLP → Prometheus pipeline, so the
-**queries use the normalized names**, not the raw OTEL names:
+Panels resolve their datasources through variables rather than pinned UIDs:
 
-- Dots become underscores in both metric names **and** attribute (label) keys.
-- Monotonic counters get a `_total` suffix.
-- Units are appended: `By` → `_bytes`, `s` → `_seconds`, `d` → `_days`.
-- A gauge with unit `"1"` gets a `_ratio` suffix.
+- `${DS_PROM}` / `ds_prometheus` selects a Prometheus datasource.
+- `${DS_LOKI}` / `ds_loki` selects a Loki datasource.
 
-**Known quirk:** because unit `"1"` always yields `_ratio`, plain *counts*
-declared with unit `"1"` also end up named `*_ratio` even though they are raw
-counts, not fractions — e.g. `tailscale_devices_count_ratio`,
-`tailscale_users_count_ratio`, `tailscale2otel_enrich_cache_size_ratio`, and the
-boolean 0/1 gauges `tailscale_device_online_ratio`, `tailscale2otel_up_ratio`.
-`tailscale2otel_build_info_ratio` is always `1` (metadata in labels).
+Grafana Cloud normalizes OTLP metric names before they reach PromQL. Dashboard queries therefore use
+normalized names: dots become underscores, counters gain `_total`, supported units add a suffix,
+and unit-`1` gauges gain `_ratio`. See the
+[metrics reference](../../docs/metrics.md) for the full mapping.
 
-`*_seconds` expiry/last-seen gauges hold **absolute epoch timestamps**; panels
-convert them at query level, e.g. `tailscale_device_key_expiry_seconds - time()`
-(seconds until expiry) or `time() - tailscale_device_last_seen_seconds` (age).
-
-## Notes & caveats
-
-- Route, posture, node-metrics, stream and webhook sections are **gated** behind
-  the matching exporter options; on the flagship dashboard they are hidden when
-  absent, and on the legacy dashboards their panels are simply empty.
-- Flow metrics can be emitted as bounded **rollup**, **raw**, or **both** — the
-  flagship Network tab shows whichever is present.
+The operator-facing dashboard guide, including every tab and the legacy-dashboard migration map, is
+in [docs/dashboards.md](../../docs/dashboards.md).

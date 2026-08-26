@@ -1,13 +1,13 @@
 ---
 title: Signal Coverage
-description: Which emitted metrics and log events are charted, alerted on, recorded, or deliberately query-only
+description: Which emitted metrics and log events are charted, alerted on, recorded, or used by dashboard variables
 ---
 
 # Signal coverage
 
 Every metric and log event tailscale2otel emits is accounted for here. The table
-says what each signal is *for* — whether the shipped dashboard charts it, an alert
-rule watches it, a recording rule folds it, or it is deliberately query-only.
+says what each signal is *for* — whether a shipped dashboard charts it or uses it for a
+variable, an alert rule watches it, or a recording rule folds it.
 
 This page is **generated from
 [`internal/catalog/signal_dispositions.json`](https://github.com/rknightion/tailscale2otel/blob/main/internal/catalog/signal_dispositions.json)**,

@@ -1,5 +1,5 @@
 title: tailscale2otel Documentation
-description: Polls the Tailscale API and exports OpenTelemetry-native metrics + logs over OTLP, optimized for Grafana Cloud
+description: Polls Tailscale and exports OpenTelemetry metrics and logs over OTLP, plus Prometheus pull metrics
 tags:
   - tailscale
   - opentelemetry

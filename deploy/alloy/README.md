@@ -105,7 +105,7 @@ observed numbers are quoted from that run.
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml up -d
-docker compose -f deploy/alloy/docker-compose.yaml logs alloy | grep -i error   # expect nothing
+docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml logs alloy | grep -i error   # expect nothing
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:12345/-/ready         # expect 200
 ```
 
@@ -133,7 +133,7 @@ cat > /tmp/m.json <<'JSON'
 "scopeMetrics":[{"metrics":[{"name":"smoke.gauge","gauge":{"dataPoints":[{"asDouble":1,
 "timeUnixNano":"1770000000000000000"}]}}]}]}]}
 JSON
-docker compose -f deploy/alloy/docker-compose.yaml exec -T alloy true   # gateway is up
+docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml exec -T alloy true   # gateway is up
 curl -s -X POST http://127.0.0.1:4318/v1/metrics \
   -H 'Content-Type: application/json' --data-binary @/tmp/m.json
 ```
@@ -150,7 +150,7 @@ Observed: `1` for `data_type="metrics"` — a queued batch, not a dropped one.
 Confirm it is on disk too:
 
 ```sh
-docker compose -f deploy/alloy/docker-compose.yaml exec alloy \
+docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml exec alloy \
   ls -l /var/lib/alloy/data/otlp-queue/
 ```
 
@@ -161,7 +161,7 @@ Observed three files, one per signal:
 actually tests persistence rather than just buffering:
 
 ```sh
-docker compose -f deploy/alloy/docker-compose.yaml restart alloy
+docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml restart alloy
 sleep 12
 curl -s http://127.0.0.1:12345/metrics | grep '^otelcol_exporter_queue_size'
 ```
@@ -239,7 +239,7 @@ docker run --rm -v "$PWD/deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro" \
 
 # The one that actually matters: does it build and become ready?
 docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml up -d alloy
-docker compose -f deploy/alloy/docker-compose.yaml logs alloy | grep -i error
+docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml logs alloy | grep -i error
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:12345/-/ready
 ```
 

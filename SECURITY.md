@@ -96,11 +96,11 @@ enabled by a configured secret; an empty credential is accepted only on a loopba
   network-reachable bind: the HEC receiver answers every request with HTTP 403 and logs an
   ERROR at startup. It stays open only on a loopback `streaming.listen`. This fails closed,
   so a missing token costs you ingestion, not silent acceptance of forged records.
-- Leaving `prometheus.auth.token` empty **serves `/metrics` unauthenticated** — every
-  series, including device hostnames, flow identifiers, and the tailnet name, to anyone
-  who can reach the port (`prometheus.listen`, default `:2112`). A startup warning fires
-  for this only when the listener is also bound to a wildcard address; an unauthenticated
-  loopback or tailnet-bound endpoint is silent.
+- Leaving `prometheus.auth.token` empty serves `/metrics` unauthenticated only on a loopback bind.
+  A network-reachable bind returns HTTP 403 unless
+  `prometheus.auth.allow_unauthenticated: true` explicitly acknowledges that every series,
+  including device hostnames, flow identifiers, and the tailnet name, will be exposed to anyone
+  who can reach the port. A configured token is always enforced.
 
 Always set these when exposing a receiver, especially on a wildcard/all-interfaces
 bind or without TLS. Tailscale requires HTTPS for public streaming sinks and webhook

@@ -96,7 +96,7 @@ format telemetry by printing to stdout instead:
 
 ```sh
 docker build -f deploy/Dockerfile -t tailscale2otel .
-docker run --rm \
+docker run --rm --stop-timeout 45 \
   -e TS2OTEL_TAILSCALE__TAILNET=example.com \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -116,7 +116,7 @@ The `grafana_cloud` convenience block builds the `Authorization: Basic` header f
 instance ID and token:
 
 ```sh
-docker run --rm \
+docker run --rm --stop-timeout 45 \
   -e TS2OTEL_TAILSCALE__TAILNET=example.com \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
   -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -140,7 +140,7 @@ override the endpoint:
 
     ```sh
     -e TS2OTEL_OTLP__PROTOCOL=grpc \
-    -e TS2OTEL_OTLP__ENDPOINT=http://alloy:4317 \
+    -e TS2OTEL_OTLP__ENDPOINT=alloy:4317 \
     -e TS2OTEL_OTLP__TLS__INSECURE=true
     ```
 
@@ -197,13 +197,13 @@ as `Authorization: Bearer <token>`.
 
 ## What's collected by default
 
-All collectors are enabled out of the box except `node_metrics` (which requires explicit target
-configuration). The polling cadences are:
+The standard API collectors are enabled out of the box. `node_metrics` needs targets or discovery,
+and `k8s_audit` needs a tsrecorder export, so both are off by default. The polling cadences are:
 
 | Collector | Default interval |
 |---|---|
 | `devices`, `flowlogs`, `auditlogs`, `node_metrics` | 60 s |
-| `users`, `keys` | 300 s |
+| `users`, `keys`, `oauth_apps` | 300 s |
 | `settings`, `acl`, `dns`, `contacts`, `webhooks`, `posture_integrations`, `log_stream`, `services` | 600 s |
 
 Flow and audit logs default to `source: poll` — the exporter pulls them from the Tailscale API.

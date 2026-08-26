@@ -80,9 +80,10 @@ auto-refreshed, and tied to no user account. See [Getting Started](getting-start
 ### How often does it poll, and does that risk hitting Tailscale's API limits?
 
 Cadences are tiered by how fast the data changes: `devices`, `flowlogs`, `auditlogs`, and
-`node_metrics` poll every 60s by default; `users`/`keys` every 300s; and slow-moving collectors
+`node_metrics` poll every 60s by default, as does opt-in `k8s_audit`; `users`, `keys`, and
+`oauth_apps` run every 300s; and slow-moving collectors
 (`settings`, `acl`, `dns`, `contacts`, `webhooks`, `posture_integrations`, `log_stream`, `services`)
-every 600s. Each of the (up to) fifteen collectors runs in its own goroutine with a small randomised
+every 600s. Each of the sixteen collectors runs in its own goroutine with a small randomised
 start-up stagger so they don't all hit the API in the same instant, and the API client has built-in
 retry and rate-limit handling. See [Getting Started](getting-started.md) and
 [Architecture](architecture.md).
