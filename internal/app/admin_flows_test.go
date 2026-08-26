@@ -292,7 +292,7 @@ func TestFlowStore_NotBuiltWithoutTheAdminPage(t *testing.T) {
 func TestNewFlowStoreWiresConfiguredFutureSkew(t *testing.T) {
 	cfg := config.Default()
 	cfg.Flows.MaxFutureSkew = config.Duration(time.Minute)
-	store := newFlowStore(cfg, "test.example.com", slog.New(slog.DiscardHandler))
+	store, _ := newFlowStore(cfg, "test.example.com", slog.New(slog.DiscardHandler))
 	if store == nil {
 		t.Fatal("newFlowStore returned nil")
 	}

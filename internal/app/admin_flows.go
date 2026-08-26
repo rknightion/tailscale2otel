@@ -107,9 +107,9 @@ func decodeFlowsCursor(s string) uint64 {
 // pipeline down because an auxiliary view's directory is unwritable would be a
 // worse outcome than serving telemetry without the view, so this logs at ERROR
 // and continues.
-func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) flowstore.Store {
+func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) (flowstore.Store, error) {
 	if !cfg.Flows.Enabled || !cfg.Admin.Enabled || !cfg.Admin.LandingPage {
-		return nil
+		return nil, nil
 	}
 
 	if dir := cfg.Flows.Store.Directory; dir != "" {
@@ -130,18 +130,21 @@ func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) flows
 			Redact: flowRedactor(piiCategories(cfg.PIIFilter)),
 		})
 		if err != nil {
+			// Returned as well as logged: the log line scrolls away and the
+			// status page would otherwise be indistinguishable from one where
+			// flows were never switched on (see FlowStoreInfo.Failures).
 			logger.Error("flow view disabled: persistent flow store failed to open",
 				"error", err, "path", dir, "tailnet", tailnet)
-			return nil
+			return nil, err
 		}
-		return store
+		return store, nil
 	}
 
 	return flowstore.NewMemory(
 		int(cfg.Flows.Retention.D()/flowstore.Resolution),
 		flowstore.WithMaxFutureSkew(cfg.Flows.MaxFutureSkew.D()),
 		flowstore.WithCapacityProfile(cfg.Flows.CapacityProfile),
-	)
+	), nil
 }
 
 // flowRetention is how far back a runtime's store can actually answer, and is
@@ -209,7 +212,7 @@ func (a *App) flowRuntime(name string) *tailnetRuntime {
 // operator is actually asking about. Covered spans the earliest and latest
 // minute held anywhere, which is the honest answer to "how far back can I look".
 func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
-	info := statusdata.FlowStoreInfo{Enabled: a.flowsEnabled()}
+	info := statusdata.FlowStoreInfo{Enabled: a.flowsEnabled(), Failures: a.flowStoreFailures()}
 	if !info.Enabled {
 		return info
 	}
@@ -511,4 +514,34 @@ func clampInt(s string, def, minN, maxN int) int {
 		n = def
 	}
 	return min(max(n, minN), maxN)
+}
+
+// flowStoreFailures reports every tailnet whose configured persistent store did
+// not open, in runtime order.
+func (a *App) flowStoreFailures() []statusdata.FlowStoreFailure {
+	var out []statusdata.FlowStoreFailure
+	for _, rt := range a.runtimes {
+		if rt.flowStoreErr == nil {
+			continue
+		}
+		out = append(out, statusdata.FlowStoreFailure{Tailnet: rt.name, Error: rt.flowStoreErr.Error()})
+	}
+	return out
+}
+
+// flowStoreHealthReasons turns those failures into status-page health reasons.
+//
+// Like sustained export failure, this explains a degraded verdict but does NOT
+// gate readiness: OTLP export is unaffected by the admin flow view being off,
+// and taking every pod out of rotation over it would turn a partial fault into
+// an outage. See componentFailureReasons for the state that DOES gate /readyz.
+func flowStoreHealthReasons(info statusdata.FlowStoreInfo) []string {
+	if len(info.Failures) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(info.Failures))
+	for _, f := range info.Failures {
+		out = append(out, fmt.Sprintf("flow store %q: configured but not open, so flow history is unavailable: %s", f.Tailnet, f.Error))
+	}
+	return out
 }

@@ -65,6 +65,10 @@ type tailnetRuntime struct {
 	// interface and would turn "view disabled" into a nil-dereference at the
 	// first request.
 	flowStore flowstore.Store
+	// flowStoreErr is why flowStore is nil despite the config asking for one.
+	// Held per runtime so the status surface can name the tailnet and the
+	// cause; a nil store with a nil error just means flows were not requested.
+	flowStoreErr error
 	// policy holds this tailnet's compiled ACL, fed by the acl and users
 	// collectors and read by the flow processor. Nil when the flow view is off:
 	// its only consumer is the reconciliation the view renders.
@@ -162,7 +166,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	}
 	// The store is fed from the processor, so both ingestion paths (poll and the
 	// stream receiver, which share this processor) populate the flow view.
-	if rt.flowStore = newFlowStore(cfg, rt.name, d.logger); rt.flowStore != nil {
+	if rt.flowStore, rt.flowStoreErr = newFlowStore(cfg, rt.name, d.logger); rt.flowStore != nil {
 		fopts.Store = rt.flowStore
 		// No PII filtering on the way in: pii_filter governs the telemetry this
 		// process exports, and the store is local, in-memory and readable only

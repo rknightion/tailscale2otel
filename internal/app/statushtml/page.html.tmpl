@@ -503,6 +503,20 @@
     {{end}}
 
     <div class="sub-h">Flow view store</div>
+    {{if .Flows.Failures}}
+    <div class="card warn2" id="flowFailures" style="margin-bottom:12px">
+      <div class="k">Flow view disabled</div>
+      <div class="sub">A persistent flow store is configured but did not open, so flow history is unavailable. This is not the same as switching the flow view off.</div>
+      <table style="margin-top:8px">
+        <thead><tr><th>Tailnet</th><th>Why</th></tr></thead>
+        <tbody id="flowFailuresBody">
+          {{range .Flows.Failures}}
+          <tr><td class="mono"><code>{{.Tailnet}}</code></td><td>{{.Error}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
     {{if .Flows.Enabled}}
     <div class="cards">
       {{if .Flows.Backend.Persistent}}
@@ -1062,6 +1076,27 @@ function rebuildAdvisories(rows){
   });
 }
 
+// The flow-failure block only exists in the DOM when the first render had
+// failures, so this can only refresh or empty it, not create it. A store that
+// starts failing after page load is picked up on the next full load — the
+// failure is a startup-time condition, so there is nothing to create mid-poll.
+function rebuildFlowFailures(rows){
+  var box=document.getElementById('flowFailures'); if(!box) return;
+  var tb=document.getElementById('flowFailuresBody'); if(!tb) return;
+  if(!rows || !rows.length){ box.style.display='none'; return; }
+  box.style.display='';
+  tb.textContent='';
+  rows.forEach(function(f){
+    var tr=el('tr');
+    var t=el('td',{'class':'mono'});
+    t.appendChild(el('code',null,f.tailnet||''));
+    tr.appendChild(t);
+    // textContent, never innerHTML: the error quotes a filesystem path.
+    tr.appendChild(el('td', null, f.error||''));
+    tb.appendChild(tr);
+  });
+}
+
 function rebuildDelivery(rows){
   var tb=document.getElementById('deliveryBody'); if(!tb) return;
   tb.textContent='';
@@ -1466,6 +1501,7 @@ function applyStatus(d){
   rebuildComponents(d.components);
   rebuildDelivery(d.delivery);
   rebuildAdvisories(d.advisories);
+  rebuildFlowFailures(d.flows && d.flows.failures);
   updateSparks(d);
   redrawCharts();
 }

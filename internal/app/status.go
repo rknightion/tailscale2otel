@@ -172,7 +172,7 @@ func (a *App) buildStatus() statusdata.Status {
 	// rotation — that turns one vendor's bad afternoon into a cascading
 	// outage — but it is very much a reason for the page to stop saying
 	// healthy. Same deliberate asymmetry as a degraded collector.
-	healthFailures := slices.Concat(failures, deliveryHealthReasons(s.Delivery))
+	healthFailures := slices.Concat(failures, deliveryHealthReasons(s.Delivery), flowStoreHealthReasons(s.Flows))
 	s.Health, s.HealthReasons = deriveHealth(s.Collectors, healthFailures)
 	return s
 }

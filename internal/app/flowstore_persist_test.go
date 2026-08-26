@@ -30,7 +30,7 @@ func TestNewFlowStoreDefaultsToMemory(t *testing.T) {
 	cfg.Admin.Enabled = true
 	cfg.Admin.LandingPage = true
 
-	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	store, _ := newFlowStore(cfg, "acme.example.com", discardLogger())
 	if store == nil {
 		t.Fatal("newFlowStore returned nil with the view enabled")
 	}
@@ -43,7 +43,7 @@ func TestNewFlowStoreDefaultsToMemory(t *testing.T) {
 
 func TestNewFlowStoreBuildsPersistentBackend(t *testing.T) {
 	dir := t.TempDir()
-	store := newFlowStore(persistCfg(t, dir), "acme.example.com", discardLogger())
+	store, _ := newFlowStore(persistCfg(t, dir), "acme.example.com", discardLogger())
 	if store == nil {
 		t.Fatal("newFlowStore returned nil with flows.store.directory set")
 	}
@@ -69,8 +69,8 @@ func TestNewFlowStorePerTailnetFiles(t *testing.T) {
 	dir := t.TempDir()
 	cfg := persistCfg(t, dir)
 
-	a := newFlowStore(cfg, "acme.example.com", discardLogger())
-	b := newFlowStore(cfg, "beta.example.com", discardLogger())
+	a, _ := newFlowStore(cfg, "acme.example.com", discardLogger())
+	b, _ := newFlowStore(cfg, "beta.example.com", discardLogger())
 	if a == nil || b == nil {
 		t.Fatal("newFlowStore returned nil")
 	}
@@ -92,7 +92,10 @@ func TestNewFlowStoreOpenFailureDisablesViewNotFallsBackToMemory(t *testing.T) {
 		t.Fatalf("seed blocking file: %v", err)
 	}
 
-	store := newFlowStore(persistCfg(t, filepath.Join(blocked, "sub")), "acme.example.com", discardLogger())
+	store, err := newFlowStore(persistCfg(t, filepath.Join(blocked, "sub")), "acme.example.com", discardLogger())
+	if err == nil {
+		t.Fatal("newFlowStore error = nil, want the open failure so the status page can report it")
+	}
 	if store != nil {
 		t.Fatalf("newFlowStore returned %T, want nil so the view 404s", store)
 	}
@@ -144,7 +147,7 @@ func TestExportProvenanceNamesBackend(t *testing.T) {
 		t.Fatalf("memory provenance = %q/%q, want %q with a note", src, note, exportSource)
 	}
 
-	disk := newFlowStore(persistCfg(t, t.TempDir()), "acme.example.com", discardLogger())
+	disk, _ := newFlowStore(persistCfg(t, t.TempDir()), "acme.example.com", discardLogger())
 	if disk == nil {
 		t.Fatal("persistent store was not built")
 	}
@@ -165,7 +168,7 @@ func TestPersistentLimitsReportExportCap(t *testing.T) {
 	cfg := persistCfg(t, t.TempDir())
 	cfg.Flows.Store.MaxExportRows = 1234
 
-	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	store, _ := newFlowStore(cfg, "acme.example.com", discardLogger())
 	if store == nil {
 		t.Fatal("persistent store was not built")
 	}
@@ -214,7 +217,7 @@ func TestFlowRetentionFollowsActiveBackend(t *testing.T) {
 // "0 B estimated" reads as broken rather than as not-applicable.
 func TestFlowStoreInfoReportsPersistentBackend(t *testing.T) {
 	cfg := persistCfg(t, t.TempDir())
-	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	store, _ := newFlowStore(cfg, "acme.example.com", discardLogger())
 	if store == nil {
 		t.Fatal("persistent store was not built")
 	}
@@ -248,7 +251,7 @@ func TestFlowStoreInfoReportsMemoryBackend(t *testing.T) {
 	cfg.Admin.Enabled = true
 	cfg.Admin.LandingPage = true
 
-	store := newFlowStore(cfg, "acme.example.com", discardLogger())
+	store, _ := newFlowStore(cfg, "acme.example.com", discardLogger())
 	if store == nil {
 		t.Fatal("memory store was not built")
 	}

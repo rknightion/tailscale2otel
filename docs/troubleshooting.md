@@ -180,6 +180,35 @@ many devices are currently in the cache; `tailscale2otel.enrich.cache_age` (→
 
 ---
 
+## `/flows` 404s after upgrading to 4.0.0
+
+**Symptom:** the flow view was working, and after the upgrade `/flows` returns 404. The status page
+shows a "Flow view disabled" block, overall health reads `degraded`, and the log carries one line:
+
+```text
+flow view disabled: persistent flow store failed to open ... cannot prove its tailnet identity
+```
+
+**Cause:** databases written before 4.0.0 are named `flows-<tailnet>.db` and carry no tailnet
+identity row. The rows hold user and device identities, and that filename is influenceable and
+cannot prove which tailnet they came from, so the service will not adopt one silently. Nothing has
+been deleted — the file is untouched.
+
+**Fix:** stop the service and tell the binary which tailnet the database belongs to. Verify that is
+right before running it; naming the tailnet is the ownership assertion the filename cannot make.
+
+```sh
+tailscale2otel -config config.yaml -adopt-flow-db your-tailnet.example
+```
+
+It stamps the identity row, moves the file to the digest-qualified name, and reports how many rows
+came across. Run it once per tailnet. It is safe to re-run and safe to interrupt. If you would rather
+start clean, move the old file out of `flows.store.directory` instead.
+
+See [Adopting a database written before 4.0.0](flow-view.md#adopting-a-database-written-before-400).
+
+---
+
 ## Cardinality overflow — series silently dropped
 
 **Cause.** Every metric instrument is bounded by `cardinality.metric_limit` (default `10000`).

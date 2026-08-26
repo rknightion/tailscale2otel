@@ -730,6 +730,20 @@
         "estimated_bytes": {
           "type": "integer"
         },
+        "failures": {
+          "items": {
+            "properties": {
+              "error": {
+                "type": "string"
+              },
+              "tailnet": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "type": "array"
+        },
         "max_recent": {
           "type": "integer"
         },

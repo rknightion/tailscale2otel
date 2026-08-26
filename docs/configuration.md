@@ -740,6 +740,14 @@ own, whether by mounting it or by letting the downloader fetch it with your cred
 > field (`"unset"` / `"value"` / `"file"`), where `"value"` cannot tell a YAML-set secret from an
 > env-set one apart. There is no flag anywhere in this command that disables redaction.
 
+> **`-adopt-flow-db <tailnet>` claims a pre-4.0.0 flow database and exits.** Databases written
+> before 4.0.0 are named `flows-<tailnet>.db` and carry no tailnet identity row, so the service
+> refuses to adopt one on its own — the filename is influenceable and cannot prove which tailnet the
+> rows belong to. Naming the tailnet on the command line is that assertion. The command stamps the
+> identity, moves the file to the digest-qualified name, reports the row count and exits; it is safe
+> to re-run and safe to interrupt. Run it once per tailnet with the service stopped. See
+> [Adopting a database written before 4.0.0](flow-view.md#adopting-a-database-written-before-400).
+
 > **Upgrade note — resolved names are now served past their TTL by default.** Previously a positive
 > entry became a miss the instant `cache_ttl` elapsed, so `tailscale.src.node` / `tailscale.dst.node`
 > fell back to `external` for the whole time the background refresh took, and flapped
@@ -1604,7 +1612,7 @@ Notes:
 ### `flows.store` — opt-in persistent backend
 
 Off by default (empty `directory`). Setting `flows.store.directory` to a directory stores one row per
-connection in a per-tailnet SQLite database (`flows-<tailnet>.db` inside that directory) **instead
+connection in a per-tailnet SQLite database (`flows-<tailnet>-<digest>.db` inside that directory) **instead
 of** the bounded in-memory ring, so `/flows` can answer over the configured retention (default 30
 days) rather than `flows.retention`'s capped 24h, and survives a restart. The two are alternatives,
 not tiers: a store is one or the other, and with a directory set every query is served from disk. Engine is `modernc.org/sqlite`, pure Go / cgo-free, so it doesn't
@@ -1615,7 +1623,7 @@ before enabling this in a deployment with a shared backup destination.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `flows.store.directory` | `""` | Directory for this tailnet's `flows-<tailnet>.db`. Empty (default) disables persistence entirely — the in-memory ring keeps working unchanged. Must be writable; a relative path resolves against the config file's own directory, like `ingress_wal.directory`. If it cannot be opened the flow view is switched **off** (and `/flows` 404s) rather than silently falling back to memory, since an operator who asked for history must not be shown a view that looks like it. The process keeps exporting OTLP regardless — an auxiliary view's disk problem does not stop telemetry. |
+| `flows.store.directory` | `""` | Directory for this tailnet's `flows-<tailnet>-<digest>.db`. Empty (default) disables persistence entirely — the in-memory ring keeps working unchanged. Must be writable; a relative path resolves against the config file's own directory, like `ingress_wal.directory`. If it cannot be opened the flow view is switched **off** (and `/flows` 404s) rather than silently falling back to memory, since an operator who asked for history must not be shown a view that looks like it. The process keeps exporting OTLP regardless — an auxiliary view's disk problem does not stop telemetry. A database written before 4.0.0 carries the older `flows-<tailnet>.db` name and no identity row, and is never adopted automatically; see [Adopting a database written before 4.0.0](flow-view.md#adopting-a-database-written-before-400). |
 | `flows.store.retention` | `720h` (30d), bounds `1h`–`8760h` (365d) | How far back the on-disk store keeps rows before the retention sweep deletes them. **Separate from and unrelated to `flows.retention`** above, which still sizes the in-memory ring and stays capped at 24h — this bound has no such cap. |
 | `flows.store.max_rows` | `5000000`, bounds `10000`–`1000000000` | Hard cap on retained rows, enforced independently of `retention` so a traffic flood can't fill the disk before the next sweep runs. |
 | `flows.store.max_export_rows` | `50000`, bounds `100`–`1000000` | Bound on how many rows one CSV/JSON export (`/api/flows/export.*`) may read in a single request, so an export can't try to materialise the whole retained window at once. |

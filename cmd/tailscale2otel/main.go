@@ -25,15 +25,17 @@ func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-// run parses flags and dispatches to one of seven modes: -version (print and
+// run parses flags and dispatches to one of eight modes: -version (print and
 // exit), -healthcheck (probe the local admin readiness endpoint and exit),
 // -validate (load+validate the config and exit without starting the server),
 // -print-effective-config (render the redacted effective config, optionally
 // with per-key provenance, and exit; see effectiveconfig.go), -preflight
 // (build the tailnet runtimes and run one collection cycle of every enabled
 // collector, side-effect-free by default; see preflight.go), -once (the same
-// single cycle, but with the real export/checkpoint behavior), or the normal
-// server run. -preflight and -once are mutually exclusive. Splitting it out
+// single cycle, but with the real export/checkpoint behavior),
+// -adopt-flow-db (claim one tailnet's pre-hardening flow database and exit;
+// see adoptflowdb.go), or the normal server run. -preflight and -once are
+// mutually exclusive. Splitting it out
 // of main lets the flag modes be exercised by tests without touching
 // os.Args or process exit.
 func run(args []string, stdout, stderr io.Writer) int {
@@ -53,6 +55,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	printEffectiveConfig := fs.Bool("print-effective-config", false, "load the config, render every effective key through the same redaction rules the admin status page uses, print it, and exit; never exposes secret values (#309)")
 	effectiveConfigFormat := fs.String("print-effective-config-format", "json", "output format for -print-effective-config: \"json\" or \"yaml\"")
 	effectiveConfigProvenance := fs.Bool("print-effective-config-provenance", false, "with -print-effective-config, also report which layer (default, file, or env) produced each key's effective value — never a secret's content (#309)")
+	adoptFlowDB := fs.String("adopt-flow-db", "", "claim the named tailnet's pre-hardening flow database (flows-<slug>.db), stamp its tailnet identity, move it to the name the store reads, and exit; naming the tailnet is the ownership assertion the legacy filename cannot make")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -74,6 +77,18 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runPrintEffectiveConfig(*configPath, *effectiveConfigFormat, *effectiveConfigProvenance, stdout, stderr)
 	}
 
+	// Presence, not emptiness. `-adopt-flow-db=` with no value must be an error,
+	// not a silent fall-through to the normal server run: an operator who meant
+	// to adopt a database and fumbled the argument would otherwise get a
+	// started exporter and no adoption, with nothing saying so.
+	if flagWasSet(fs, "adopt-flow-db") {
+		if *adoptFlowDB == "" {
+			fmt.Fprintln(stderr, "-adopt-flow-db needs the tailnet that owns the database")
+			return 2
+		}
+		return runAdoptFlowDB(*configPath, *adoptFlowDB, stdout, stderr)
+	}
+
 	if *preflight && *once {
 		fmt.Fprintln(stderr, "-preflight and -once are mutually exclusive")
 		return 2
@@ -83,6 +98,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return runServer(*configPath, stderr)
+}
+
+// flagWasSet reports whether name was given on the command line at all, which
+// is the only way to tell an omitted string flag from one explicitly set to
+// the empty string.
+func flagWasSet(fs *flag.FlagSet, name string) bool {
+	found := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
 }
 
 // runValidate loads the config at path via the same internal/config.Load path

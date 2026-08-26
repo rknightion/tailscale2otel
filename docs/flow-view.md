@@ -107,9 +107,17 @@ including the most recent minute is answered from disk, and `flows.retention` no
 `/flows` can see. It still bounds the ring the process would build if you unset the path, and the
 window clamp follows whichever store is active, so a 30-day disk retention really is queryable.
 
-**One file per tailnet:** `flows-<tailnet>.db` inside the configured directory. A device name is only
-unique within its own tailnet, so multi-tailnet mode gets one database per tailnet automatically —
-nothing to configure per entry.
+**One file per tailnet:** `flows-<tailnet>-<digest>.db` inside the configured directory, where
+`<digest>` is the first 16 bytes of the SHA-256 of the tailnet name. A device name is only unique
+within its own tailnet, so multi-tailnet mode gets one database per tailnet automatically — nothing
+to configure per entry.
+
+The digest is not decoration. The rows carry user and device identities, and a name-only filename is
+influenceable by whoever controls the tailnet name, so the file alone cannot prove which tailnet its
+rows belong to. Each database also carries its tailnet in a `metadata` row and is refused at startup
+if that does not match the configured tailnet. See
+[Adopting a database written before 4.0.0](#adopting-a-database-written-before-400) if you are
+upgrading.
 
 **What changes versus the in-memory ring:**
 
@@ -167,6 +175,32 @@ snapshot of the directory is fine; SQLite in WAL mode is safe to copy while the 
 via your storage layer's own consistent-snapshot mechanism while running). A lost or corrupted file
 loses history — nothing else. `/flows` on the in-memory path continues to work either way; loss here
 is not an outage.
+
+### Adopting a database written before 4.0.0
+
+Releases before 4.0.0 named the file `flows-<tailnet>.db`, with no digest and no identity row. That
+name cannot prove ownership, so the service does **not** adopt one automatically — it logs the
+refusal, leaves the file untouched, and starts with the flow view off. The status page says so
+explicitly rather than looking like the flow view was never switched on, and overall health reads
+`degraded` while it lasts.
+
+To keep the history, tell the binary which tailnet the database belongs to:
+
+```sh
+tailscale2otel -config config.yaml -adopt-flow-db your-tailnet.example
+```
+
+Naming the tailnet is the point: it is the ownership assertion the filename cannot make, so verify it
+is right before running this. The command stamps the identity row, moves the file to the digest name,
+reports how many rows came across, and exits. It changes nothing else, is safe to re-run, and is safe
+to interrupt — the identity is written before the move, so a re-run finishes the job. Run it once per
+tailnet, with the service stopped.
+
+It refuses, without touching anything, if the database already names a different tailnet, or if both
+the legacy and digest-named files exist — decide which one you want and move the other aside first.
+
+If you would rather not keep the history, move the old file out of the directory and start clean; the
+service creates a fresh database on the next start.
 
 **Binary footprint.** The engine is `modernc.org/sqlite`, a pure-Go, cgo-free implementation — chosen
 specifically because the release matrix builds `CGO_ENABLED=0` and ships a distroless image. Adds

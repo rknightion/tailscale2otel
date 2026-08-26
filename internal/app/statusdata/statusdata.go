@@ -357,6 +357,12 @@ type GeoIPInfo struct {
 	GeoDims bool `json:"geo_dims"`
 }
 
+// FlowStoreFailure is one tailnet's persistent flow store failing to open.
+type FlowStoreFailure struct {
+	Tailnet string `json:"tailnet"`
+	Error   string `json:"error"`
+}
+
 // FlowStoreInfo is the built-in flow view's store, combined across every
 // observed tailnet (each keeps its own, but an operator cares about one number
 // for the process). It exists on the status page so the memory the view costs,
@@ -364,6 +370,12 @@ type GeoIPInfo struct {
 // rather than only on /flows, which an operator with a problem may not open.
 type FlowStoreInfo struct {
 	Enabled bool `json:"enabled"`
+	// Failures is every tailnet whose configured persistent store did not
+	// open. It is populated even when Enabled is false, because that is
+	// exactly the case it exists for: without it, "you asked for flow history
+	// and are not getting it" renders identically to "you did not ask for
+	// flow history".
+	Failures []FlowStoreFailure `json:"failures,omitempty"`
 	// Buckets currently held, of Capacity one-minute slots per tailnet.
 	Buckets  int `json:"buckets"`
 	Capacity int `json:"capacity"`

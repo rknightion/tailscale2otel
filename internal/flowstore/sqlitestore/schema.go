@@ -273,8 +273,10 @@ func prepareDBPath(dir, tailnet string) (string, bool, error) {
 	}
 	if legacyExists {
 		return "", false, fmt.Errorf(
-			"sqlitestore: legacy database %s cannot prove its tailnet identity; refusing automatic migration for configured tailnet %q; archive it or explicitly migrate it after independently verifying ownership",
-			legacy, tailnet)
+			"sqlitestore: legacy database %s cannot prove its tailnet identity, so it is not adopted automatically for configured tailnet %q; "+
+				"if this database is that tailnet's, keep its history by running `tailscale2otel %s` (here: `-adopt-flow-db %s`), which stamps the identity and moves the file; "+
+				"otherwise move it aside",
+			legacy, tailnet, adoptCommand, tailnet)
 	}
 	return path, newExists, nil
 }
