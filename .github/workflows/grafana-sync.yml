@@ -81,7 +81,7 @@ jobs:
       #
       # #526 split the single `tailscale2otel-overview` artifact into this pair.
       # Retiring the old live dashboard therefore means DELETING
-      # networking/tailscale2otel-overview.json from the GitSync repo — a `gcx
+      # grafana/networking/tailscale2otel-overview.json from the GitSync repo — a `gcx
       # dashboards delete` alone is undone by the next sync, which would simply
       # re-create it from the file still sitting there.
       # Publishes the CURRENT SET and removes any tailscale2otel-*.json that is no
@@ -93,10 +93,11 @@ jobs:
       - name: copy the generated dashboards into place
         run: |
           set -euo pipefail
+          test -d gitsync/grafana/networking
           for src in deploy/grafana/tailscale2otel-*.json; do
-            cp "$src" "gitsync/networking/$(basename "$src")"
+            cp "$src" "gitsync/grafana/networking/$(basename "$src")"
           done
-          for existing in gitsync/networking/tailscale2otel-*.json; do
+          for existing in gitsync/grafana/networking/tailscale2otel-*.json; do
             if [ ! -f "deploy/grafana/$(basename "$existing")" ]; then
               echo "retiring $(basename "$existing") — no longer generated"
               rm -f "$existing"
