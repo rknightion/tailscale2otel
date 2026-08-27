@@ -1,11 +1,13 @@
 package release_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,22 +66,22 @@ func TestNormalize(t *testing.T) {
 
 func TestParseGitHubLatest(t *testing.T) {
 	body := []byte(`{"tag_name":"v0.2.0","name":"v0.2.0","draft":false,"prerelease":false}`)
-	got, err := release.ParseGitHubLatest(body)
+	got, err := release.ParseGitHubLatest(bytes.NewReader(body))
 	if err != nil || got != "v0.2.0" {
 		t.Fatalf("ParseGitHubLatest = %q,%v want v0.2.0,nil", got, err)
 	}
-	if _, err := release.ParseGitHubLatest([]byte(`{"tag_name":""}`)); err == nil {
+	if _, err := release.ParseGitHubLatest(strings.NewReader(`{"tag_name":""}`)); err == nil {
 		t.Error("ParseGitHubLatest empty tag: want error")
 	}
 }
 
 func TestParseTailscalePkgs(t *testing.T) {
 	body := []byte(`{"Version":"1.98.4","TarballsVersion":"1.98.4","MacZipsVersion":"1.98.5"}`)
-	got, err := release.ParseTailscalePkgs(body)
+	got, err := release.ParseTailscalePkgs(bytes.NewReader(body))
 	if err != nil || got != "1.98.4" {
 		t.Fatalf("ParseTailscalePkgs = %q,%v want 1.98.4,nil", got, err)
 	}
-	if _, err := release.ParseTailscalePkgs([]byte(`{}`)); err == nil {
+	if _, err := release.ParseTailscalePkgs(strings.NewReader(`{}`)); err == nil {
 		t.Error("ParseTailscalePkgs empty Version: want error")
 	}
 }
@@ -237,5 +239,142 @@ func TestFetcherSnapshot_FailOpenKeepsGoodDataButRecordsError(t *testing.T) {
 	}
 	if snap.ErrClass != "http_error" {
 		t.Fatalf("ErrClass after failing refresh = %q, want %q", snap.ErrClass, "http_error")
+	}
+}
+
+// bigGitHubRelease renders a GitHub /releases/latest response whose body field
+// is large enough to push the whole payload past any fixed read cap. The real
+// v4.0.0 response is 74 KiB because release-please puts the entire changelog in
+// "body"; tag_name still arrives in the first few hundred bytes.
+func bigGitHubRelease(tag string, bodyBytes int) string {
+	return `{"url":"https://api.github.com/repos/o/r/releases/1","tag_name":"` + tag +
+		`","name":"` + tag + `","draft":false,"prerelease":false,"body":"` +
+		strings.Repeat("changelog line. ", bodyBytes/16) + `"}`
+}
+
+// countingReader records how far a parser actually read.
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
+}
+
+func TestParseGitHubLatestOversizedBody(t *testing.T) {
+	body := bigGitHubRelease("v4.0.0", 6<<20)
+	if len(body) <= 4<<20 {
+		t.Fatalf("fixture is %d bytes: must exceed the 4 MiB read ceiling, so this pins that a body "+
+			"larger than the retained limit still resolves — not merely one larger than the old 64 KiB cap", len(body))
+	}
+	cr := &countingReader{r: strings.NewReader(body)}
+	got, err := release.ParseGitHubLatest(cr)
+	if err != nil || got != "v4.0.0" {
+		t.Fatalf("ParseGitHubLatest(oversized) = %q,%v want v4.0.0,nil", got, err)
+	}
+	// The point of the fix: tag_name arrives early, so the parser must stop
+	// there rather than consuming the changelog behind it. Whole-document
+	// unmarshalling read all %d of these bytes and was at the mercy of the cap.
+	if cr.n >= len(body)/2 {
+		t.Errorf("parser read %d of %d bytes: it should stop at tag_name, not consume the body", cr.n, len(body))
+	}
+	t.Logf("read %d of %d bytes to resolve tag_name", cr.n, len(body))
+}
+
+func TestParseTailscalePkgsOversizedBody(t *testing.T) {
+	body := `{"Version":"1.98.4","Notes":"` + strings.Repeat("x", 6<<20) + `"}`
+	got, err := release.ParseTailscalePkgs(strings.NewReader(body))
+	if err != nil || got != "1.98.4" {
+		t.Fatalf("ParseTailscalePkgs(oversized) = %q,%v want 1.98.4,nil", got, err)
+	}
+}
+
+// A body that never carries the key, and runs past the hard ceiling, must be
+// distinguishable from a malformed one: the operator needs to know the endpoint
+// answered with something too big rather than something broken.
+func TestFetcherTruncatedBodyIsItsOwnErrorClass(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"Padding":"`)
+		for range 600 {
+			_, _ = io.WriteString(w, strings.Repeat("x", 1<<16))
+		}
+		_, _ = io.WriteString(w, `","Version":"1.98.4"}`)
+	}))
+	defer srv.Close()
+
+	f := newTestFetcher(t, srv.URL)
+	f.Refresh(t.Context())
+	snap := f.Snapshot()
+	if snap.ErrClass != "truncated" {
+		t.Fatalf("ErrClass = %q want truncated", snap.ErrClass)
+	}
+	if _, ok := f.Latest(); ok {
+		t.Error("Latest: want no cached version after a truncated fetch")
+	}
+}
+
+func TestFetcherMalformedBodyIsParseError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"Version":`)
+	}))
+	defer srv.Close()
+
+	f := newTestFetcher(t, srv.URL)
+	f.Refresh(t.Context())
+	if got := f.Snapshot().ErrClass; got != "parse_error" {
+		t.Fatalf("ErrClass = %q want parse_error", got)
+	}
+}
+
+// The regression at the level it actually bit: a whole fetch against a
+// GitHub-shaped response bigger than the old 64 KiB read cap. Before the
+// streaming parser this came back parse_error and no version, permanently.
+func TestFetcherResolvesOversizedGitHubRelease(t *testing.T) {
+	body := bigGitHubRelease("v4.0.0", 6<<20)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+
+	f := release.NewFetcher("self", srv.URL, "ua/1",
+		release.ParseGitHubLatest, &http.Client{}, time.Hour, slog.New(slog.DiscardHandler))
+	f.Refresh(t.Context())
+
+	snap := f.Snapshot()
+	if snap.ErrClass != "" {
+		t.Fatalf("ErrClass = %q want no error (body was %d bytes)", snap.ErrClass, len(body))
+	}
+	got, ok := f.Latest()
+	if !ok || got != "v4.0.0" {
+		t.Fatalf("Latest = %q,%v want v4.0.0,true", got, ok)
+	}
+}
+
+// A key nested inside another object must not be mistaken for the top-level
+// one. A GitHub release embeds an "author" object and an "assets" array, each
+// with its own fields, so the scan has to consume unwanted values whole rather
+// than matching any occurrence of the name.
+func TestParseGitHubLatestIgnoresNestedKeys(t *testing.T) {
+	body := `{"author":{"login":"o","tag_name":"WRONG"},` +
+		`"assets":[{"tag_name":"ALSO-WRONG"}],` +
+		`"reactions":{"nested":{"tag_name":"DEEPER-WRONG"}},` +
+		`"tag_name":"v4.0.0"}`
+	got, err := release.ParseGitHubLatest(strings.NewReader(body))
+	if err != nil || got != "v4.0.0" {
+		t.Fatalf("ParseGitHubLatest = %q,%v want v4.0.0,nil", got, err)
+	}
+}
+
+func TestParseGitHubLatestMissingKey(t *testing.T) {
+	if _, err := release.ParseGitHubLatest(strings.NewReader(`{"name":"v4.0.0"}`)); err == nil {
+		t.Error("want an error when tag_name is absent")
+	}
+	if _, err := release.ParseGitHubLatest(strings.NewReader(`["v4.0.0"]`)); err == nil {
+		t.Error("want an error when the response is not a JSON object")
 	}
 }

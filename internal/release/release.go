@@ -88,34 +88,78 @@ const (
 )
 
 // Parser extracts a version string from a response body.
-type Parser func(body []byte) (string, error)
+//
+// It takes a reader, not a []byte, so a parser can stop reading as soon as it
+// has what it needs. Both parsers below want one short top-level string out of
+// a response whose bulk is release prose: GitHub's /releases/latest carries the
+// entire generated changelog in "body", which put the real v4.0.0 response at
+// 74 KiB. Buffering the whole thing first made the read cap decide whether the
+// check worked at all, and it silently stopped working the moment a release's
+// notes grew past it.
+type Parser func(r io.Reader) (string, error)
 
-// ParseGitHubLatest pulls tag_name from a GitHub /releases/latest response.
-func ParseGitHubLatest(body []byte) (string, error) {
-	var r struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.Unmarshal(body, &r); err != nil {
+// scanTopLevelString returns the string value of key at the TOP level of a JSON
+// object, reading only as far as it must.
+//
+// json.Decoder.Token() walks the document as a token stream, so this reads the
+// top-level object one key at a time and returns the moment the wanted key's
+// value is decoded — typically a few hundred bytes in, whatever the total size.
+//
+// The loop only ever sees top-level keys: an unwanted value is consumed whole by
+// a single Decode, which leaves the decoder on the next key whether that value
+// was a scalar, an object or an array. That is what keeps a nested key from
+// matching — a GitHub release embeds an "author" object, and its assets and
+// reactions carry their own fields.
+func scanTopLevelString(r io.Reader, key, what string) (string, error) {
+	dec := json.NewDecoder(r)
+
+	tok, err := dec.Token()
+	if err != nil {
 		return "", err
 	}
-	if r.TagName == "" {
-		return "", errors.New("github release: empty tag_name")
+	if d, ok := tok.(json.Delim); !ok || d != '{' {
+		return "", fmt.Errorf("%s: response is not a JSON object", what)
 	}
-	return r.TagName, nil
+
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return "", err
+		}
+		name, ok := tok.(string)
+		if !ok {
+			return "", fmt.Errorf("%s: expected an object key, got %v", what, tok)
+		}
+		if name != key {
+			// Decoding into any discards the value without keeping it, and
+			// leaves the decoder positioned at the next key whether the value
+			// was a scalar, an object or an array.
+			var skip any
+			if err := dec.Decode(&skip); err != nil {
+				return "", err
+			}
+			continue
+		}
+		var v string
+		if err := dec.Decode(&v); err != nil {
+			return "", err
+		}
+		if v == "" {
+			return "", fmt.Errorf("%s: empty %s", what, key)
+		}
+		return v, nil
+	}
+	return "", fmt.Errorf("%s: no %s in response", what, key)
+}
+
+// ParseGitHubLatest pulls tag_name from a GitHub /releases/latest response.
+func ParseGitHubLatest(r io.Reader) (string, error) {
+	return scanTopLevelString(r, "tag_name", "github release")
 }
 
 // ParseTailscalePkgs pulls Version from pkgs.tailscale.com/stable/?mode=json.
-func ParseTailscalePkgs(body []byte) (string, error) {
-	var r struct {
-		Version string `json:"Version"`
-	}
-	if err := json.Unmarshal(body, &r); err != nil {
-		return "", err
-	}
-	if r.Version == "" {
-		return "", errors.New("tailscale pkgs: empty Version")
-	}
-	return r.Version, nil
+func ParseTailscalePkgs(r io.Reader) (string, error) {
+	return scanTopLevelString(r, "Version", "tailscale pkgs")
 }
 
 // Fetcher periodically fetches a "latest version" from a remote endpoint and
@@ -176,8 +220,8 @@ type Snapshot struct {
 	// zero if Refresh has never run.
 	CheckedAt time.Time
 	// ErrClass classifies the most recent failed attempt: "network",
-	// "http_error", "parse_error", or "" if the last attempt succeeded (or none
-	// has run yet). Deliberately a class, not the raw error text — see the
+	// "http_error", "parse_error", "truncated", or "" if the last attempt
+	// succeeded (or none has run yet). Deliberately a class, not the raw error text — see the
 	// delivery-signal precedent in internal/app/status.go for why raw error
 	// text does not belong on an operator-facing surface.
 	ErrClass string
@@ -221,9 +265,10 @@ func (f *Fetcher) Latest() (string, bool) {
 // Errors fetch() wraps its failures in, purely so Refresh can classify them
 // without string-matching. Never returned to a caller directly.
 var (
-	errNetwork = errors.New("network")
-	errHTTP    = errors.New("http_error")
-	errParse   = errors.New("parse_error")
+	errNetwork   = errors.New("network")
+	errHTTP      = errors.New("http_error")
+	errParse     = errors.New("parse_error")
+	errTruncated = errors.New("truncated")
 )
 
 // classify maps a fetch() error to its Snapshot.ErrClass string.
@@ -233,6 +278,8 @@ func classify(err error) string {
 		return "network"
 	case errors.Is(err, errHTTP):
 		return "http_error"
+	case errors.Is(err, errTruncated):
+		return "truncated"
 	case errors.Is(err, errParse):
 		return "parse_error"
 	default:
@@ -314,15 +361,54 @@ func (f *Fetcher) doFetch(ctx context.Context) (v string, status int, err error)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", status, fmt.Errorf("%w: %s: status %d", errHTTP, f.url, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
-	if err != nil {
-		return "", status, fmt.Errorf("%w: %w", errNetwork, err)
-	}
-	v, err = f.parse(body)
-	if err != nil {
+	// The parser streams and stops at the field it wants, so this ceiling is a
+	// pure backstop against an unbounded or hostile body — not the thing that
+	// decides whether a real response parses. It used to be 64 KiB, which the
+	// v4.0.0 GitHub release (74 KiB, changelog and all) silently ran past: the
+	// read stopped mid-string and every check failed as parse_error from then
+	// on, permanently, for every user.
+	lr := &limitedReader{r: resp.Body, remaining: maxResponseBytes}
+	v, err = f.parse(lr)
+	switch {
+	case err != nil && lr.exhausted:
+		// Distinguishable on purpose: an operator seeing this needs to know the
+		// endpoint answered with something too big to scan, not something
+		// malformed. The two call for opposite responses.
+		return "", status, fmt.Errorf("%w: %s: no version within the first %d bytes: %w",
+			errTruncated, f.url, maxResponseBytes, err)
+	case err != nil:
 		return "", status, fmt.Errorf("%w: %w", errParse, err)
 	}
 	return v, status, nil
+}
+
+// maxResponseBytes bounds how much of a response the parser may scan. Generous
+// on purpose: a streaming parser reaches its field in the first few hundred
+// bytes, so this only ever fires on a body that is pathological rather than
+// merely large.
+const maxResponseBytes = 4 << 20
+
+// limitedReader is io.LimitReader plus a record of whether the limit was
+// actually reached. io.LimitReader alone reports a truncated stream as a plain
+// EOF, which is indistinguishable from a body that simply ended — and those two
+// need different error classes.
+type limitedReader struct {
+	r         io.Reader
+	remaining int64
+	exhausted bool
+}
+
+func (l *limitedReader) Read(p []byte) (int, error) {
+	if l.remaining <= 0 {
+		l.exhausted = true
+		return 0, io.EOF
+	}
+	if int64(len(p)) > l.remaining {
+		p = p[:l.remaining]
+	}
+	n, err := l.r.Read(p)
+	l.remaining -= int64(n)
+	return n, err
 }
 
 // Run refreshes immediately, then every ttl until ctx is canceled. Intended to
