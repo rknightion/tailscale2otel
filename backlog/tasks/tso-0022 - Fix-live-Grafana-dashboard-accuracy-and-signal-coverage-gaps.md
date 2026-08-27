@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-08-27 17:26'
-updated_date: '2026-08-27 18:10'
+updated_date: '2026-08-27 18:28'
 labels:
   - needs-triage
 dependencies: []
@@ -26,7 +26,7 @@ Keep this one task as the collated repair unit requested by the operator. Do not
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ACL revision age is either persisted across exporter restarts with explicitly approximate first-observed semantics, or every metric description, panel title/description, runbook, and alert reference is relabelled so it cannot be read as the true policy modification time; tests cover first observation, stable ETag, changed ETag, and restart behavior.
+- [x] #1 ACL revision age is either persisted across exporter restarts with explicitly approximate first-observed semantics, or every metric description, panel title/description, runbook, and alert reference is relabelled so it cannot be read as the true policy modification time; tests cover first observation, stable ETag, changed ETag, and restart behavior.
 - [ ] #2 Tailnet and provider dashboard variables are applied consistently to Policy and Config metric and Loki queries, including ACL, DNS, identity inventory, integrations, and mixed device/node panels; a generated-dashboard test prevents unscoped regressions.
 - [ ] #3 Zero-safe panels distinguish a present metric with no matching rows from an absent prerequisite. This covers unauthorized/internal devices, external/shared-in devices, UDP-blocked devices, healthy failure counters, auto-approvers, and profile-upload failures without turning genuinely unavailable telemetry into zero.
 - [ ] #4 Cardinality panels derive cap percentages, limits, thresholds, and wording from tailscale2otel_series_limit rather than a hard-coded 10K; the headroom table either computes remaining headroom or is renamed to utilization; descriptive totals use neutral colors.
@@ -83,4 +83,6 @@ ACL correctness implementation completed locally:
 - Added an absolute-timestamp provenance contract covering source, persisted observation, and process-local timestamps.
 - Generated dashboards, rules, metrics docs, signal coverage/dispositions, and capability counts regenerated.
 - Evidence: 191 dashboard generator tests passed; 651 PromQL expressions parsed with zero failures; root build/vet/race/lint passed; every module passed build/vet/race/tidy/lint and the pinned Go 1.27-compiled govulncheck found no vulnerabilities. The installed govulncheck binary itself is stale (built with Go 1.26), so its verifier leg failed before scanning and was superseded by the successful pinned go-run invocation. CodeRabbit organisation-plan review completed with zero findings.
+
+Live ACL proof completed after deployment. The exact implementation revision was pulled and the service became healthy. The generated dashboard was published through its GitSync source and both the Overview summary and Security & Policy > Policy & Config > Access & ACL panel rendered the revision-first-observed fallback with no visible query error. The first restart exposed that the deployment had intentionally selected an in-memory checkpoint store because flow and audit ingestion are streamed; this reset the ACL epoch and reproduced the uptime-like defect. Switching the already-mounted state path to the file store created a checkpoint, and a second controlled restart proved persistence: a post-restart sample retained the pre-restart first-observed epoch. The authoritative audit-change metric remained absent, so no audit timestamp was fabricated. TSO-0023 tracks separating durable semantic evidence from optional poll cursors so streamed deployments cannot repeat this configuration trap.
 <!-- SECTION:NOTES:END -->
