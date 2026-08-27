@@ -1,11 +1,11 @@
 ---
 id: TSO-0018
 title: Decide the supported alerting path for Prometheus-only deployments
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -49,10 +49,14 @@ Promote the Prometheus rule rendering to the frozen committed artifact, preserve
 
 <!-- SECTION:NOTES:BEGIN -->
 Supported Prometheus rules, drift generation, normalized names, recording rules, runbooks, and semantic fixtures are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Promtool execution passed with the pinned Prometheus container. Resume with exact-head CI and live rule deployment verification.
+
+Final evidence: pinned Prometheus v3.7.3 executed all five rule fixtures successfully; promqlcheck passed; exact-head CI run 33047209645 succeeded. All 124 Grafana-managed resources pushed successfully; scoped post-push verification reported 123 shipped and deployed rules with zero missing, orphaned, or drifted.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Supported Prometheus alert rules are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending CI and live deployment proof.
+
+Completion: verified by executable fixtures, exact-head CI, and live alert deployment.
 <!-- SECTION:FINAL_SUMMARY:END -->

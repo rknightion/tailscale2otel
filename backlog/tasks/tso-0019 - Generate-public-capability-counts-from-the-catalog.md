@@ -1,11 +1,11 @@
 ---
 id: TSO-0019
 title: Generate public capability counts from the catalog
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -50,10 +50,14 @@ Derive six public capability counts from catalog and shipped artifacts, add the 
 
 <!-- SECTION:NOTES:BEGIN -->
 Generated capability counts and public-summary drift checks are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Current derived values are 293 metrics, 17 log events, 16 collectors, 2 dashboards, 100 alert rules, and 23 recording rules. Resume with exact-head CI.
+
+Final evidence: capability-count checker passed in the integrated GATE; exact-head CI run 33047209645 succeeded. Derived totals remain 293 metrics, 17 log events, 16 collectors, 2 dashboards, 100 alert rules, and 23 recording rules.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Generated capability counts are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+
+Completion: verified by negative tests, full gate, and exact-head CI.
 <!-- SECTION:FINAL_SUMMARY:END -->

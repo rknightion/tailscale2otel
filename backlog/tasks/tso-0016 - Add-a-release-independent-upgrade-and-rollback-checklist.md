@@ -1,11 +1,11 @@
 ---
 id: TSO-0016
 title: Add a release-independent upgrade and rollback checklist
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -49,10 +49,14 @@ Add one reusable upgrade-and-rollback checklist, link version-specific entries t
 
 <!-- SECTION:NOTES:BEGIN -->
 The reusable upgrade and rollback checklist is committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522 and the docs checker passed. Resume with exact-head CI and an operational exercise when desired.
+
+Final evidence: documentation checker, integrated GATE, and exact-head CI run 33047209645 passed. The live campaign exercised controlled restart, readiness, Prometheus verification, and an Alloy restart with persistent recovery.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Upgrade and rollback guidance is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI and operational proof.
+
+Completion: verified by documentation checks, exact-head CI, and live restart/readiness exercises.
 <!-- SECTION:FINAL_SUMMARY:END -->

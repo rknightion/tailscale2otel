@@ -1,11 +1,11 @@
 ---
 id: TSO-0015
 title: Add an operator-first alert profile chooser
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -49,10 +49,14 @@ Add the operator-first alert profile chooser and definitions while preserving th
 
 <!-- SECTION:NOTES:BEGIN -->
 The operator-first chooser and definitions are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; generated alert-profile checks passed. Resume with exact-head CI.
+
+Final evidence: generated alert-profile checks passed; integrated GATE passed; exact-head CI run 33047209645 succeeded. All 124 Grafana-managed resources pushed successfully and post-push verification found no rule drift.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The alert-profile chooser is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+
+Completion: verified by generated checks, exact-head CI, and live rule deployment.
 <!-- SECTION:FINAL_SUMMARY:END -->

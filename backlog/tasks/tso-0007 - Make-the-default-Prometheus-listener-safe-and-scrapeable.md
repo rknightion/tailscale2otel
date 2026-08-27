@@ -1,11 +1,11 @@
 ---
 id: TSO-0007
 title: Make the default Prometheus listener safe and scrapeable
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -51,10 +51,14 @@ Implement the frozen loopback listener default and auth matrix test-first; regen
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented and locally validated in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Emergency stop occurred before the final clean SECURITY verdict, exact-head CI, and live scrape proof. Resume by rerunning the read-only security review on this exact tree, then exact-head CI and live verification.
+
+Final evidence: SECURITY CLEAN on the accumulated source diff; integrated GATE passed at 538761804dba35e1f513cfc9848668b594aaa131; exact-head CI run 33047209645 succeeded. The exact image ran on the live deployment host with a loopback-only listener, authenticated GET /metrics returned 200, and the sentinel was present.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Safe loopback defaults, fail-closed remote exposure, effective-token Helm validation, and auth tests are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending final security, CI, and live proof.
+
+Completion: verified by clean security review, full gate, exact-head CI, and live authenticated scrape.
 <!-- SECTION:FINAL_SUMMARY:END -->

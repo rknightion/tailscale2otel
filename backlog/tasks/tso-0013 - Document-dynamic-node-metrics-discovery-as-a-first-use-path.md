@@ -1,11 +1,11 @@
 ---
 id: TSO-0013
 title: Document dynamic node-metrics discovery as a first-use path
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -50,10 +50,14 @@ Add a discovery-first node-metrics path from live config defaults, preserving st
 
 <!-- SECTION:NOTES:BEGIN -->
 Discovery-first configuration, defaults, prerequisites, and first-success query are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Resume with exact-head CI and live documentation verification.
+
+Final evidence: documentation checker, integrated GATE, and exact-head CI run 33047209645 passed. The deployed exporter continued emitting node and device telemetry while the new discovery-first guide remained consistent with source defaults.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Dynamic node-metrics discovery guidance is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending CI and live verification.
+
+Completion: verified by documentation checks, full gate, and exact-head CI.
 <!-- SECTION:FINAL_SUMMARY:END -->

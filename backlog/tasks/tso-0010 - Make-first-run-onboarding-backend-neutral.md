@@ -1,11 +1,11 @@
 ---
 id: TSO-0010
 title: Make first-run onboarding backend-neutral
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -55,10 +55,14 @@ Rebuild the first-ten-minutes route around the frozen destination chooser and st
 
 <!-- SECTION:NOTES:BEGIN -->
 Backend-neutral onboarding and canonical deployment snippets are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; the documentation command checker passed. Resume with exact-head CI and live first-signal verification for each destination.
+
+Final evidence: documentation checker passed in the integrated GATE; exact-head CI run 33047209645 succeeded. The Prometheus path reached a first signal end to end through the live listener, Fleet scrape, and backend query; the gateway path delivered an injected OTLP metric during the Alloy drill.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Backend-neutral first-run documentation is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked at the live and exact-head verification boundary.
+
+Completion: verified by documentation checks, exact-head CI, and live Prometheus and OTLP gateway signals.
 <!-- SECTION:FINAL_SUMMARY:END -->

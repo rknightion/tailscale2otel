@@ -1,11 +1,11 @@
 ---
 id: TSO-0009
 title: Add a bounded Prometheus first-scrape check
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -50,10 +50,14 @@ Add -prometheus-check on the frozen RunPrometheusOnce seam; classify configurati
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented and locally validated in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522, including zero-annotation and zero-OTLP side-effect tests. Resume with final security review, exact-head CI, and a live bounded check.
+
+Final evidence: SECURITY CLEAN; integrated GATE passed; exact-head CI run 33047209645 succeeded. The deployed registry exposed the documented build-info sentinel as valid Prometheus exposition, and the Fleet scrape produced an up series in the backend.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The bounded classified Prometheus first-scrape check is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending final security, CI, and live proof.
+
+Completion: verified by side-effect tests, security review, exact-head CI, and live sentinel exposition.
 <!-- SECTION:FINAL_SUMMARY:END -->

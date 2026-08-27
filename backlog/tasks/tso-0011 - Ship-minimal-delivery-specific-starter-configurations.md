@@ -1,11 +1,11 @@
 ---
 id: TSO-0011
 title: Ship minimal delivery-specific starter configurations
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -51,10 +51,14 @@ Add the three frozen examples/config starters and a real config.Load validation 
 
 <!-- SECTION:NOTES:BEGIN -->
 All three starters load and validate through config.Load and are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Resume with exact-head CI and live first-signal proof.
+
+Final evidence: all starter configs loaded through config.Load in tests; integrated GATE passed; exact-head CI run 33047209645 succeeded. The live Prometheus-only configuration produced a scrapeable sentinel without inherited OTLP export.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Grafana OTLP, Prometheus-only, and stdout starters are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending CI and live proof.
+
+Completion: verified by real config loading, full gate, exact-head CI, and live Prometheus use.
 <!-- SECTION:FINAL_SUMMARY:END -->

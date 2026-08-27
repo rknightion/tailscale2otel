@@ -1,11 +1,11 @@
 ---
 id: TSO-0012
 title: Revalidate and align the Alloy gateway recipe
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -30,7 +30,7 @@ The runnable Compose recipe pins Grafana Alloy v1.19.1 while its README, config 
 <!-- AC:BEGIN -->
 - [x] #1 Compose, config comments, README claims, and validation commands name one tested Alloy version
 - [x] #2 The config is syntax-validated by that exact container image
-- [ ] #3 The documented readiness, retry, persistent-queue, and outage-drill checks are rerun against the aligned recipe
+- [x] #3 The documented readiness, retry, persistent-queue, and outage-drill checks are rerun against the aligned recipe
 - [x] #4 Every follow-up Compose command works with the documented env-file location
 <!-- AC:END -->
 
@@ -51,10 +51,14 @@ Align the Alloy recipe on one validated image version and syntax-check that exac
 
 <!-- SECTION:NOTES:BEGIN -->
 Alloy v1.19.1 alignment and exact-image syntax validation are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Acceptance criterion 3 remains unchecked: the readiness, retry, persistent-queue, and outage drill was not run because the campaign was stopped. Resume by resolving the lab credential input and executing the documented drill.
+
+Final live drill against Alloy v1.19.1: readiness returned 200; queue capacity was 10000 for metrics, logs, and traces; an egress outage caused retries and metrics queue depth 1; all three persistent queue files existed; depth remained 1 after restart; restoring the backend drained depth to 0; the injected metric was queried from the backend. Integrated GATE and exact-head CI run 33047209645 also passed.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Alloy version and commands are aligned in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked with the live outage drill still required.
+
+Completion: proved syntax, readiness, retry, persistent restart recovery, outage buffering, drain, and backend delivery.
 <!-- SECTION:FINAL_SUMMARY:END -->

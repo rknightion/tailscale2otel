@@ -1,11 +1,11 @@
 ---
 id: TSO-0008
 title: Add an explicit Prometheus-only delivery mode
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -51,10 +51,14 @@ Implement the frozen delivery.mode contract across config, telemetry, schema and
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented and locally validated in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522. Emergency stop occurred before final security, exact-head CI, and live Prometheus-only proof. Resume from that commit without redesigning the frozen delivery.mode seam.
+
+Final evidence: integrated GATE and exact-head CI run 33047209645 succeeded. The live deployment used delivery.mode=prometheus; post-restart logs showed no OTLP export attempts, while the loopback Prometheus sentinel was scraped through Fleet and queried from the metrics backend.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Prometheus-only and dual delivery dispositions are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending final security, CI, and live proof.
+
+Completion: verified by tests, exact-head CI, and live Prometheus-only delivery.
 <!-- SECTION:FINAL_SUMMARY:END -->

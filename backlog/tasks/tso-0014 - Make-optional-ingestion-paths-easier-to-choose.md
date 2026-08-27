@@ -1,11 +1,11 @@
 ---
 id: TSO-0014
 title: Make optional ingestion paths easier to choose
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -50,10 +50,14 @@ Add the ingestion-path chooser and cross-links while preserving the compatibilit
 
 <!-- SECTION:NOTES:BEGIN -->
 The ingestion chooser and cross-links are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; the compatibility matrix and no-double-counting warning were preserved. Resume with exact-head CI.
+
+Final evidence: documentation checker and exact-head CI run 33047209645 passed; the compatibility matrix and no-double-counting warning remained present in the integrated tree.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Optional ingestion-path guidance is committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+
+Completion: verified by documentation checks, full gate, and exact-head CI.
 <!-- SECTION:FINAL_SUMMARY:END -->

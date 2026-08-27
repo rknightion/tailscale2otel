@@ -1,11 +1,11 @@
 ---
 id: TSO-0017
 title: Fix documentation social metadata ownership and asset checks
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-27 06:48'
+updated_date: '2026-08-27 07:01'
 labels:
   - needs-triage
   - user-friendliness
@@ -49,10 +49,14 @@ Resolve docs metadata ownership and add deterministic missing-asset validation i
 
 <!-- SECTION:NOTES:BEGIN -->
 Documentation metadata ownership and deterministic asset validation are committed in bundled pause snapshot 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; checker tests include missing, ignored, and commented declarations. Resume with exact-head CI.
+
+Final evidence: documentation asset checker and its negative cases passed; integrated GATE and exact-head CI run 33047209645 succeeded.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Metadata ownership and social-asset validation are committed in 2cf46446d5c6a7a30ea6f7d0c54d61ec9889d522; parked pending exact-head CI.
+
+Completion: verified by negative tests, full gate, and exact-head CI.
 <!-- SECTION:FINAL_SUMMARY:END -->
