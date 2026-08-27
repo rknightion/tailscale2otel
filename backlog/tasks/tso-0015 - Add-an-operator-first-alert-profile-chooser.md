@@ -1,11 +1,11 @@
 ---
 id: TSO-0015
 title: Add an operator-first alert profile chooser
-status: Parked
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-26 16:58'
+updated_date: '2026-08-27 06:48'
 labels:
   - needs-triage
   - user-friendliness

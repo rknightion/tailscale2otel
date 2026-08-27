@@ -1,11 +1,11 @@
 ---
 id: TSO-0014
 title: Make optional ingestion paths easier to choose
-status: Parked
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:02'
-updated_date: '2026-08-26 16:58'
+updated_date: '2026-08-27 06:48'
 labels:
   - needs-triage
   - user-friendliness

@@ -1,11 +1,11 @@
 ---
 id: TSO-0011
 title: Ship minimal delivery-specific starter configurations
-status: Parked
+status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-08-26 11:01'
-updated_date: '2026-08-26 16:58'
+updated_date: '2026-08-27 06:48'
 labels:
   - needs-triage
   - user-friendliness
