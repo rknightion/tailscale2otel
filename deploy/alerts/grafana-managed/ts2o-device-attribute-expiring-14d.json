@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "189",
+      "__panelId__": "190",
       "description": "One or more device posture attributes (set with an expiry, e.g. a custom: namespace attribute) expire within 14 days (and are not already expired) \u2014 an expired attribute silently breaks posture-based ACLs. Matches the tailscale.device.attribute.expiring WARN log lead. Computed from the per-device-attribute expiry gauge (expiry - now within (0, 14d]), so it clears once the attribute is refreshed. Gated by collect_posture and attribute_namespaces; absent when no attribute carries an expiry.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry",
       "summary": "Device posture attributes are expiring within 14 days"

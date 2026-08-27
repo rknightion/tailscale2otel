@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "127",
+      "__panelId__": "128",
       "description": "tailscale2otel_nodemetrics_discovery_success_ratio < 1 \u2014 the last dynamic target-discovery refresh failed, so the node-metrics target list is stale. (Absent when discovery is disabled => this never fires.)",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery",
       "summary": "Node-metrics dynamic discovery is failing"

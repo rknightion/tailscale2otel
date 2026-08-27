@@ -172,6 +172,13 @@ NEW_ROWS = [
     "Audit pipeline latency",      # #393
 ]
 
+POLICY_ROWS = [
+    "Access control (ACL)", "ACL policy validation", "DNS", "Settings & features",
+    "Users", "Per-user detail", "API keys & credential scopes", "Key expiry detail",
+    "OAuth applications", "Services / VIP", "VIP service detail",
+    "Webhook endpoint inventory", "Device-posture integrations",
+]
+
 # The four states #393 requires an operator to be able to tell apart. Each
 # string must appear in the "Audit pipeline state" row's rendered text.
 FOUR_STATES = [
@@ -224,6 +231,23 @@ class AssignedSignalCoverageTest(unittest.TestCase):
             with self.subTest(row=title):
                 self.assertTrue(row_panels(self.doc, title),
                                 "row %r lays out no panels" % title)
+
+    def test_policy_queries_honor_tailnet_and_provider_selectors(self):
+        offenders = []
+        for row_title in POLICY_ROWS:
+            for p in row_panels(self.doc, row_title):
+                title = p["spec"]["title"]
+                for datasource, query in panel_queries(p):
+                    if "prometheus" in datasource and "tailscale_" in query:
+                        if ('tailscale_tailnet=~"$tailnet"' not in query or
+                                'tailscale2otel_provider=~"$provider"' not in query):
+                            offenders.append((row_title, title, datasource, query))
+                    if "loki" in datasource and 'service_name="tailscale2otel"' in query:
+                        if ('tailscale_tailnet=~"$tailnet"' not in query or
+                                'tailscale2otel_provider=~"$provider"' not in query):
+                            offenders.append((row_title, title, datasource, query))
+        self.assertEqual(offenders, [],
+                         "Policy & Config queries bypass dashboard selectors: %s" % offenders)
 
 
 # ---------------------------------------------------------------------------

@@ -214,6 +214,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # gained panels, and 454 once #527 exposed a 16th. Fewer panels covering more
         # signals is the whole point; a rise here without a coverage reason is the
         # thing to be suspicious of.
+        # TSO-0022 adds one bounded all-span-class Tempo panel and four Pyroscope
+        # activity/flamegraph panels, taking the family from 454 to 459.
         # Regrouping tabs must not add or drop a panel beyond a deliberate content
         # change; this number moves only with one.
         #
@@ -223,7 +225,7 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 454)
+        self.assertEqual(total, 459)
         self.assertEqual(len(self.elements), 299, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):

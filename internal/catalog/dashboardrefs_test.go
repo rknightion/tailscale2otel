@@ -137,6 +137,12 @@ var matcherValue = regexp.MustCompile(`(?:=~|!~|!=|=)\s*\\?"[^"\\]*\\?"`)
 var jsonMatcherValue = regexp.MustCompile(
 	`"operator"\s*:\s*"[^"]*"\s*,\s*"value"\s*:\s*"[^"]*"`)
 
+// Pyroscope queries live beside PromQL targets in the generated dashboard, but
+// profileTypeId is an opaque profile schema identifier, not an expression. Its
+// leading `process_cpu` happens to match metricRef's catalog-owned process_ prefix.
+var jsonProfileTypeValue = regexp.MustCompile(
+	`"profileTypeId"\s*:\s*"[^"]*"`)
+
 // stripMatcherValues blanks every label-matcher value, in both forms, before metric
 // extraction.
 //
@@ -147,8 +153,21 @@ var jsonMatcherValue = regexp.MustCompile(
 // and exposed to extraction. The structured form is stripped first so its whole
 // key/value pair is gone before the looser pattern ever sees it.
 func stripMatcherValues(body string) string {
+	body = jsonProfileTypeValue.ReplaceAllString(body, `"profileTypeId":"<profile-type>"`)
 	body = jsonMatcherValue.ReplaceAllString(body, `"operator":"=","value":"<value>"`)
 	return matcherValue.ReplaceAllString(body, "=<value>")
+}
+
+func TestProfileTypeIDsAreNotPrometheusMetricReferences(t *testing.T) {
+	body := `{"profileTypeId":"process_cpu:cpu:nanoseconds:cpu:nanoseconds",` +
+		`"expr":"max(process_uptime_seconds)"}`
+	refs := metricRef.FindAllString(stripMatcherValues(body), -1)
+	if strings.Contains(strings.Join(refs, ","), "process_cpu") {
+		t.Fatalf("profile type was extracted as a Prometheus metric: %v", refs)
+	}
+	if !strings.Contains(strings.Join(refs, ","), "process_uptime_seconds") {
+		t.Fatalf("real Prometheus metric was stripped with the profile type: %v", refs)
+	}
 }
 
 // readArtifact returns an artifact's bytes. When path is a DIRECTORY it returns

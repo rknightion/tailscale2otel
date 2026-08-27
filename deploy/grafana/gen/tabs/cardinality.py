@@ -18,6 +18,8 @@ duplicates of panels already on this tab, so nothing was added:
 from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row, sentinel,
                      stat_opts, thr, ts_custom, ts_opts, WIN_FAST)
 
+_NO_CAP = "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+
 
 def tab_cardinality(scope):
     # Declared HERE, at this tab's own scope. It gates the "Ingest vs export cost" row
@@ -38,15 +40,17 @@ def tab_cardinality(scope):
                [prom_t("count(count by (__name__) (%s)) or vector(0)" % OVF, instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
-               desc="Metric families that exceeded the per-metric series cap (cardinality.metric_limit, "
-                    "default 10000) and are now collapsing excess series into one otel_metric_overflow "
+               desc="Metric families that exceeded the configured per-metric series cap and are "
+                    "now collapsing excess series into one otel_metric_overflow "
                     "series — SILENT per-series detail loss. >0 means raise metric_limit or lower flow "
                     "cardinality (ephemeral source_port is the biggest driver)."), 6, 5),
         (panel("Busiest metric — % of cap", "stat",
-               [prom_t("max(tailscale2otel_series_active) / 10000", instant=True)],
+               [prom_t("max(tailscale2otel_series_active) / on() group_left() "
+                       "(max(tailscale2otel_series_limit) > 0)", instant=True)],
                unit="percentunit", min_=0, max_=1, thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
-               options=stat_opts(color="background"),
-               desc="Highest per-metric active-series count as a fraction of the 10k cap."), 6, 5),
+               options=stat_opts(color="background"), novalue=_NO_CAP,
+               desc="Highest per-metric active-series count as a fraction of the configured "
+                    "tailscale2otel_series_limit."), 6, 5),
         (panel("Total active series", "stat",
                [prom_t("sum(tailscale2otel_series_active)", instant=True)],
                unit="short", options=stat_opts(graph="area", color="value"),
@@ -65,15 +69,19 @@ def tab_cardinality(scope):
                desc="Metric families currently over the per-metric cap (otel_metric_overflow=true)."), 24, 6),
     ]
     budget = [
-        (panel("Active series vs 10k cap (top $topn)", "bargauge",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
-               unit="short", max_=10000, thresholds=thr([(None, "green"), (8000, "yellow"), (10000, "red")]),
-               options=bargauge_opts(),
-               desc="Per-metric active series against the cap. Watch the flow families."), 12, 8),
+        (panel("Active series vs cap (top $topn)", "bargauge",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
+                       "/ on() group_left() (max(tailscale2otel_series_limit) > 0))", legend="{{metric_name}}")],
+               unit="percentunit", max_=1,
+               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               options=bargauge_opts(), novalue=_NO_CAP,
+               desc="Per-metric utilization of the configured series cap. Watch the flow families."), 12, 8),
         (panel("Active series over time (top $topn)", "timeseries",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))", legend="{{metric_name}}")],
-               unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
-               desc="Per-metric active series (cap 10k) over time, top-N by current value. "
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
+                       "/ on() group_left() (max(tailscale2otel_series_limit) > 0))", legend="{{metric_name}}")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(),
+               options=ts_opts(placement="right"), novalue=_NO_CAP,
+               desc="Per-metric utilization of the configured series cap over time, top-N. "
                     "Watch the flow families."), 12, 8),
     ]
     flow = [
@@ -123,13 +131,14 @@ def tab_cardinality(scope):
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
                desc="Number of metric families currently overflowing their series cap. >0 means detail loss."), 6, 5),
-        (panel("Per-metric headroom (top-N)", "table",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit))",
+        (panel("Per-metric utilization (top-N)", "table",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],
-                   rename={"metric_name": "Metric", "Value": "Headroom (frac)"})],
-               desc="Per-metric active-series count divided by the series limit — headroom as a fraction. "
+                   rename={"metric_name": "Metric", "Value": "Utilization"})],
+               novalue=_NO_CAP,
+               desc="Per-metric active-series count divided by the series limit — utilization as a fraction. "
                     "1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series."), 12, 5),
     ]
 

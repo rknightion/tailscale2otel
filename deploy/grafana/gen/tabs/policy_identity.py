@@ -37,18 +37,20 @@ DOCS = "https://m7kni.io/tailscale2otel"
 CFG_DOC = DOCS + "/configuration/"
 
 TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
-LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
+LOKI_TN = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
+           '| tailscale2otel_provider=~"$provider"')
 
 _INFRA_TBL = ["Time", "__name__", "job", "instance",
-              "service_instance_id", "service_name", "service_namespace"]
-
-_USERS_AGG = ("max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)"
-              % lot("tailscale_users_count_ratio", WIN_SLOW))
-
+              "service_instance_id", "service_name", "service_namespace",
+              "deployment_environment_name", "otel_scope_name", "otel_scope_version"]
 
 def sel(metric, extra=""):
     """`<metric>{<tailnet/provider filter>[, <extra>]}` — the filtered selector."""
     return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
+
+_USERS_AGG = ("max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)"
+              % lot(sel("tailscale_users_count_ratio"), WIN_SLOW))
 
 
 def q_hist(quantile, metric):
@@ -67,7 +69,7 @@ def tab_policy_identity(scope):
         # panel used to render a reassuring 0 with the gate closed (#385).
         (panel("Stale users (>30d)", "stat",
                [prom_t("count((time() - %s) > 30*86400)"
-                       % lot("tailscale_user_last_seen_seconds", WIN_SLOW))],
+                       % lot(sel("tailscale_user_last_seen_seconds"), WIN_SLOW))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="background"),
                novalue="No per-user data — needs the users collector and "
@@ -83,7 +85,7 @@ def tab_policy_identity(scope):
                # grouping label, so the panel rendered with a blank "accepted="
                # legend and no error. Caught by
                # TestFlagshipDashboardQueriesOnlyCatalogMetrics (#438).
-               [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_delivery) (%s)" % lot("tailscale_user_invites_count_ratio", WIN_SLOW),
+               [prom_t("max by (tailscale_user_invite_role, tailscale_user_invite_delivery) (%s)" % lot(sel("tailscale_user_invites_count_ratio"), WIN_SLOW),
                        legend="{{tailscale_user_invite_role}} via {{tailscale_user_invite_delivery}}")],
                unit="short", options=bargauge_opts(),
                novalue="No user-invite series. Prerequisites: collectors.users.enabled and a "
@@ -115,9 +117,9 @@ def tab_policy_identity(scope):
 
     users_pe = [
         (panel("Per-user detail", "table",
-               [prom_t(lot("tailscale_user_connected_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_user_devices_ratio", WIN_SLOW), instant=True, fmt="table", refid="B"),
-                prom_t("time() - %s" % lot("tailscale_user_last_seen_seconds", WIN_SLOW), instant=True, fmt="table", refid="C")],
+               [prom_t(lot(sel("tailscale_user_connected_ratio"), WIN_SLOW), instant=True, fmt="table", refid="A"),
+                prom_t(lot(sel("tailscale_user_devices_ratio"), WIN_SLOW), instant=True, fmt="table", refid="B"),
+                prom_t("time() - %s" % lot(sel("tailscale_user_last_seen_seconds"), WIN_SLOW), instant=True, fmt="table", refid="C")],
                transformations=[merge(),
                                 organize(exclude=_INFRA_TBL + ["user_id"],
                                          rename={"user_name": "User", "Value #A": "Connected",
@@ -132,7 +134,7 @@ def tab_policy_identity(scope):
     keys = [
         # Task 1.6 Step 2 — Keys by type (aggregate to type+auth_kind)
         (panel("Keys by type", "bargauge",
-               [prom_t("sum by (tailscale_key_type, tailscale_key_auth_kind) (%s)" % lot("tailscale_keys_count_ratio", WIN_SLOW),
+               [prom_t("sum by (tailscale_key_type, tailscale_key_auth_kind) (%s)" % lot(sel("tailscale_keys_count_ratio"), WIN_SLOW),
                        legend="{{tailscale_key_type}} / {{tailscale_key_auth_kind}}")],
                unit="short", options=bargauge_opts(),
                desc="API and auth keys the tailnet holds, split by key type and by auth kind "
@@ -140,7 +142,7 @@ def tab_policy_identity(scope):
                     "cardinality.per_entity.key being switched off."), 24, 7),
         # Task 1.6 Step 2 — Credential scopes top-N (previously its own has_key_scopes row)
         (panel("Credential scopes (top-N)", "table",
-               [prom_t("topk($topn, %s)" % lot("tailscale_key_scopes_ratio", WIN_SLOW), instant=True, fmt="table")],
+               [prom_t("topk($topn, %s)" % lot(sel("tailscale_key_scopes_ratio"), WIN_SLOW), instant=True, fmt="table")],
                transformations=[organize(
                    exclude=_INFRA_TBL + ["tailscale_key_id"],
                    rename={"tailscale_key_description": "Description",
@@ -172,14 +174,14 @@ def tab_policy_identity(scope):
     # when per-key series are off, which is the state the toggle is FOR.
     keys_detail = [
         (panel("Key expiry (time until)", "table",
-               [prom_t("%s - time()" % lot("tailscale_key_expiry_seconds", WIN_SLOW), instant=True, fmt="table")],
+               [prom_t("%s - time()" % lot(sel("tailscale_key_expiry_seconds"), WIN_SLOW), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=_INFRA_TBL,
                                                    rename={"tailscale_key_id": "Key ID", "tailscale_key_type": "Type",
                                                            "tailscale_key_description": "Description", "Value": "Expires in"})],
                desc="Time until each API/auth key expires."), 14, 7),
         # Task 1.6 Step 2 — Preauthorized auth keys
         (panel("Preauthorized auth keys", "stat",
-               [prom_t("sum(%s == 1)" % lot("tailscale_key_preauthorized_ratio", WIN_SLOW))],
+               [prom_t("sum(%s == 1)" % lot(sel("tailscale_key_preauthorized_ratio"), WIN_SLOW))],
                unit="short", options=stat_opts(),
                novalue="No per-key data — needs the keys collector and "
                        "cardinality.per_entity.key.",

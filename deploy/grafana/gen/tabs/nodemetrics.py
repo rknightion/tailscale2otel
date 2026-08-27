@@ -21,6 +21,10 @@ NODE_RELAY_ENDPOINTS = "tailscale_node_peer_relay_endpoints_ratio"
 DROP_POLICY = 'tailscale_drop_reason="acl"'
 DROP_NOT_POLICY = 'tailscale_drop_reason!="acl"'
 
+_TABLE_NOISE = ["Time", "__name__", "job", "instance", "service_instance_id",
+                "service_name", "service_namespace", "deployment_environment_name",
+                "otel_scope_name", "otel_scope_version"]
+
 
 def tab_nodemetrics(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
@@ -48,9 +52,16 @@ def tab_nodemetrics(scope):
     # "this tailnet has no node data" apart from "the scraper is broken" WITHOUT
     # leaving the tab; the cross-link in the controls menu is how they get the rest.
     health = [
-        (panel("Targets up", "stat", [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_node_up_ratio", "15m"))],
-               unit="short", thresholds=thr([(None, "red"), (1, "green")]), options=stat_opts(color="background"),
-               desc="Node-metrics scrape targets currently reachable. Zero here with a healthy "
+        (panel("Targets up / total", "stat",
+               [prom_t("count(%s == 1) / count(%s)"
+                       % (lot("tailscale_node_up_ratio", "15m"),
+                          lot("tailscale_node_up_ratio", "15m")))],
+               unit="percentunit", min_=0, max_=1,
+               thresholds=thr([(None, "red"), (0.8, "yellow"), (1, "green")]),
+               options=stat_opts(color="background"),
+               novalue="No node-metrics target series. Enable node_metrics and discover at least one target.",
+               desc="Fraction of node-metrics scrape targets currently reachable. An explicit "
+                    "ratio makes partial failure immediately visible. Zero here with a healthy "
                     "Discovery OK means targets were found and none answered — the panels below "
                     "are empty because of the targets, not because of the tailnet. Per-target "
                     "detail is on the Exporter health dashboard's Collection tab."), 12, 5),
@@ -95,28 +106,23 @@ def tab_nodemetrics(scope):
     ]
     routing = [
         (panel("Advertised routes", "table", [prom_t(lot("tailscaled_advertised_routes", "15m"), instant=True, fmt="table")],
-               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                                "service_instance_id", "service_name", "service_namespace"],
+               unit="short", transformations=[organize(exclude=_TABLE_NOISE,
                                                        rename={"tailscale_node": "Node", "Value": "Advertised"})],
                desc="Per-node count of subnet routes advertised, from raw tailscaled state."), 8, 7),
         (panel("Approved routes", "table", [prom_t(lot("tailscaled_approved_routes", "15m"), instant=True, fmt="table")],
-               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                                "service_instance_id", "service_name", "service_namespace"],
+               unit="short", transformations=[organize(exclude=_TABLE_NOISE,
                                                        rename={"tailscale_node": "Node", "Value": "Approved"})],
                desc="Per-node count of subnet routes approved, from raw tailscaled state."), 8, 7),
         (panel("Health messages", "table", [prom_t(lot("tailscaled_health_messages", "15m"), instant=True, fmt="table")],
-               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                                "service_instance_id", "service_name", "service_namespace"],
+               unit="short", transformations=[organize(exclude=_TABLE_NOISE,
                                                        rename={"tailscale_node": "Node", "Value": "Messages"})],
                desc="tailscaled self-reported health warnings."), 8, 7),
         (panel("Home DERP region", "table", [prom_t(lot("tailscaled_home_derp_region_id", "15m"), instant=True, fmt="table")],
-               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                                "service_instance_id", "service_name", "service_namespace"],
+               unit="short", transformations=[organize(exclude=_TABLE_NOISE,
                                                        rename={"tailscale_node": "Node", "Value": "Region ID"})],
                desc="Each node's current home DERP region ID, from raw tailscaled state."), 12, 6),
         (panel("Peer relay endpoints", "table", [prom_t(lot("tailscaled_peer_relay_endpoints", "15m"), instant=True, fmt="table")],
-               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
-                                                                "service_instance_id", "service_name", "service_namespace"],
+               unit="short", transformations=[organize(exclude=_TABLE_NOISE,
                                                        rename={"tailscale_node": "Node", "Value": "Endpoints"})],
                desc="Per-node count of peer-relay endpoints, from raw tailscaled state."), 12, 6),
     ]

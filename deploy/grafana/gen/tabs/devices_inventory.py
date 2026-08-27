@@ -99,6 +99,12 @@ def _pop(which, win=WIN_SLOW):
     return lot("tailscale_devices_count_ratio{%s, %s}" % (_POPULATIONS[which], TP), win)
 
 
+def _pop_count(which, win=WIN_SLOW):
+    """Population count, zero only while the unfiltered inventory family is present."""
+    return "sum(%s) or (0 * sum(%s))" % (
+        _pop(which, win), lot("tailscale_devices_count_ratio{%s}" % TP, win))
+
+
 def tab_devices_inventory(scope):
     # The one sentinel this sub-tab's rows reference, declared at THIS tab's scope.
     pii_sentinel("pii_perdevice",
@@ -178,24 +184,24 @@ def tab_devices_inventory(scope):
     # devices collector unconditionally, exactly like the Inventory row above.
     authsplit = [
         (panel("Authorized (internal)", "stat",
-               [prom_t("sum(%s)" % _pop("authorized"))],
+               [prom_t(_pop_count("authorized"))],
                unit="short", options=stat_opts(color="value"), novalue=_NO_INVENTORY,
                desc="Devices belonging to this tailnet that an admin has authorized."), 4, 5),
         (panel("Unauthorized (internal)", "stat",
-               [prom_t("sum(%s)" % _pop("unauthorized"))],
+               [prom_t(_pop_count("unauthorized"))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
                options=stat_opts(color="background"), novalue=_NO_INVENTORY,
                desc="Devices registered to this tailnet and waiting on an admin authorization "
                     "decision. They hold a node key but carry no ACL grants until authorized."), 4, 5),
         (panel("External (shared-in)", "stat",
-               [prom_t("sum(%s)" % _pop("external"))],
+               [prom_t(_pop_count("external"))],
                unit="short", options=stat_opts(color="value"), novalue=_NO_INVENTORY,
                desc="Devices shared in from another tailnet. This tailnet cannot tag them, "
                     "authorize them or read their version, so fleet-hygiene numbers exclude them."), 4, 5),
         (panel("Population split over time", "timeseries",
-               [prom_t("sum(%s)" % _pop("authorized", WIN_FAST), legend="authorized (internal)"),
-                prom_t("sum(%s)" % _pop("unauthorized", WIN_FAST), legend="unauthorized (internal)"),
-                prom_t("sum(%s)" % _pop("external", WIN_FAST), legend="external (shared-in)")],
+               [prom_t(_pop_count("authorized", WIN_FAST), legend="authorized (internal)"),
+                prom_t(_pop_count("unauthorized", WIN_FAST), legend="unauthorized (internal)"),
+                prom_t(_pop_count("external", WIN_FAST), legend="external (shared-in)")],
                unit="short", custom=ts_custom(stack="normal", fill=25), options=ts_opts(),
                desc="The three populations over time. They partition the fleet, so the stack total "
                     "is the device count and no device is counted in two bands."), 12, 5),

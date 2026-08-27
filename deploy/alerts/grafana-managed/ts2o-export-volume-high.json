@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "153",
+      "__panelId__": "158",
       "description": "Exported datapoints/s exceed the configured budget (default 5000/s here) \u2014 an ingest-cost signal. Tune this threshold to your Grafana Cloud plan; lower flow cardinality if needed.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#cardinality-and-series-budget",
       "summary": "Exported datapoint rate is high"

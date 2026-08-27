@@ -31,6 +31,7 @@ PROM_DS_VALUE = "grafanacloud-prom"
 LOKI_DS_TEXT = "grafanacloud-logs"
 LOKI_DS_VALUE = "grafanacloud-logs"
 TEMPO_DS_TEXT = TEMPO_DS_VALUE = "grafanacloud-traces"
+PYROSCOPE_DS_TEXT = PYROSCOPE_DS_VALUE = "grafanacloud-profiles"
 
 RI = "$__rate_interval"
 WIN_FAST = "10m"   # last_over_time window for frequently-scraped series (devices, nodes, scrape, runtime)
@@ -38,7 +39,8 @@ WIN_SLOW = "2h"    # last_over_time window for slowly-scraped config series (acl
 
 # Resource/infra labels that clutter every instant-vector table; hidden by default.
 TBL_NOISE = ["Time", "__name__", "job", "instance", "service_instance_id",
-             "service_name", "service_namespace", "Value"]
+             "service_name", "service_namespace", "deployment_environment_name",
+             "otel_scope_name", "otel_scope_version", "Value"]
 
 ELEMENTS = {}
 _id = 0
@@ -99,6 +101,19 @@ def tempo_t(query, refid="A", query_type="traceql", table_type="traces"):
             "query": {"kind": "DataQuery", "version": "v0", "group": "",
                       "datasource": {"name": "${ds_tempo}"},
                       "spec": {"query": query, "queryType": query_type, "tableType": table_type}}}}
+
+
+def pyroscope_t(profile_type, refid="A", query_type="metrics", max_nodes=None):
+    """Pyroscope query for a time series (`metrics`) or bounded flame graph (`profile`)."""
+    spec = {"profileTypeId": profile_type,
+            "labelSelector": '{service_name="tailscale2otel"}',
+            "groupBy": [], "queryType": query_type}
+    if max_nodes is not None:
+        spec["maxNodes"] = max_nodes
+    return {"kind": "PanelQuery", "spec": {"refId": refid, "hidden": False,
+            "query": {"kind": "DataQuery", "version": "v0",
+                      "group": "grafana-pyroscope-datasource",
+                      "datasource": {"name": "${ds_pyroscope}"}, "spec": spec}}}
 
 
 def thr(steps, mode="absolute"):

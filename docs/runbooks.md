@@ -147,7 +147,7 @@ stops being distinguishable. `export-volume-high` is the cost-side companion.
 **Not legitimate.** A newly-added label with unbounded values. If overflow appeared right after an
 upgrade or a config change, suspect that first.
 
-**First step.** **Metrics overflowing now** and **Per-metric headroom (top-N)** on the **Cost &
+**First step.** **Metrics overflowing now** and **Per-metric utilization (top-N)** on the **Cost &
 Cardinality** tab of `tailscale2otel-health` name the offending metric family. Decide between raising `cardinality.metric_limit` (costs ingest)
 and lowering the source cardinality (flow rollups, dropping `source_port`, narrowing collectors).
 
@@ -490,7 +490,7 @@ cannot tell the two clients apart, which undermines per-device posture and audit
 both.
 
 **First step.** On `tailscale2otel-tailnet`'s **Security & Policy > Security & Audit > Posture &
-Compliance** tab: **Auto-update coverage**, **State-encryption coverage** and **Posture match rate**,
+Compliance** tab: **Client posture population** and **Posture match rate**,
 plus **Device posture snapshot**, which lists which devices are missing the property. Note the whole
 family is gated on `collect_posture`; with posture collection off the series are absent and nothing
 fires. For the shared-key case, **Multiple simultaneous connections** on the **Fleet & Network >

@@ -9,7 +9,8 @@ whatever sentinels got registered, via builder.registered_sentinels().
 """
 
 from builder import (DASHBOARD, PROM_DS_TEXT, PROM_DS_VALUE, LOKI_DS_TEXT, LOKI_DS_VALUE,
-                     TEMPO_DS_TEXT, TEMPO_DS_VALUE, registered_sentinels)
+                     TEMPO_DS_TEXT, TEMPO_DS_VALUE, PYROSCOPE_DS_TEXT,
+                     PYROSCOPE_DS_VALUE, registered_sentinels)
 
 
 def ds_var(name, label, plugin, text, value):
@@ -91,6 +92,11 @@ def _ds_loki():
 
 def _ds_tempo():
     return ds_var("ds_tempo", "Tempo", "tempo", TEMPO_DS_TEXT, TEMPO_DS_VALUE)
+
+
+def _ds_pyroscope():
+    return ds_var("ds_pyroscope", "Pyroscope", "grafana-pyroscope-datasource",
+                  PYROSCOPE_DS_TEXT, PYROSCOPE_DS_VALUE)
 
 
 def _topn():
@@ -177,7 +183,8 @@ DASHBOARD_CONTROLS = {
     # they split by. ds_tempo and collector left the product dashboard entirely
     # — they were only ever read by the old Exporter Diagnostics tab, which is
     # what this dashboard replaced.
-    "tailscale2otel-health": (_ds_prometheus, _ds_loki, _ds_tempo, _collector, _tailnet),
+    "tailscale2otel-health": (_ds_prometheus, _ds_loki, _ds_tempo, _ds_pyroscope,
+                               _collector, _tailnet),
 }
 
 # Leaf tab title -> the controls scoped to it. A title appearing here must be a

@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "140",
+      "__panelId__": "141",
       "description": "Over 50% of fleet bytes are relayed via DERP rather than sent peer-to-peer for 30m \u2014 a NAT-traversal/connectivity problem adding latency. Requires the node-metrics scraper (absent => not firing).",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#derp-and-connectivity",
       "summary": "Most tailnet traffic is relayed via DERP, not direct"

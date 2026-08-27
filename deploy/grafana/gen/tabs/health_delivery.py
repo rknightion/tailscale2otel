@@ -187,6 +187,16 @@ def tab_health_delivery(scope):
                desc=_TRACE_DESC), 24, 9),
     ]
     traces2 = [
+        (panel("Span class activity", "timeseries",
+               [tempo_t('{resource.service.name = "tailscale2otel" && '
+                        'name =~ "scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|'
+                        'stream.receive|webhook.receive|release.check .+"} | rate() by (name)')],
+               custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Bounded discovery rate for every span class emitted by the exporter: "
+                    "scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP "
+                    "scrapes, stream and webhook receivers, and release checks. An absent class "
+                    "means that path was idle, disabled, unsupported, or unsampled; it is not "
+                    "fabricated as zero."), 24, 7),
         (panel("API p95 by endpoint (traces)", "timeseries",
                [tempo_t('{span.tailscale.endpoint != "" && resource.service.name = "tailscale2otel"} '
                    '| quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)')],

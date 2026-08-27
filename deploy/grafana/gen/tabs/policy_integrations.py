@@ -40,10 +40,12 @@ DOCS = "https://m7kni.io/tailscale2otel"
 CFG_DOC = DOCS + "/configuration/"
 
 TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
-LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
+LOKI_TN = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
+           '| tailscale2otel_provider=~"$provider"')
 
 _INFRA_TBL = ["Time", "__name__", "job", "instance",
-              "service_instance_id", "service_name", "service_namespace"]
+              "service_instance_id", "service_name", "service_namespace",
+              "deployment_environment_name", "otel_scope_name", "otel_scope_version"]
 
 # Shared empty state for the GeoIP family. Every series here additionally rides
 # self_observability.enabled — the updater is only handed an Emitter then.
@@ -71,11 +73,11 @@ def tab_policy_integrations(scope):
 
     services_vip = [
         (panel("Services (VIP)", "stat",
-               [prom_t("max(%s) or vector(0)" % lot("tailscale_services_count_ratio", WIN_SLOW), instant=True)],
+               [prom_t("max(%s) or vector(0)" % lot(sel("tailscale_services_count_ratio"), WIN_SLOW), instant=True)],
                unit="short", options=stat_opts(color="value"),
                desc="Tailscale Services (VIP services) advertised in the tailnet."), 6, 6),
         (panel("Backing hosts by service", "table",
-               [prom_t(lot("tailscale_service_hosts_ratio", WIN_SLOW), instant=True, fmt="table")],
+               [prom_t(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=_INFRA_TBL,
                                                        rename={"tailscale_service_name": "Service",
                                                                "tailscale_service_approval": "Approval",
@@ -91,14 +93,14 @@ def tab_policy_integrations(scope):
     # hide working panels.
     services_detail = [
         (panel("Port rules per service", "bargauge",
-               [prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW),
+               [prom_t("max by (tailscale_service_name) (%s)" % lot(sel("tailscale_service_ports"), WIN_SLOW),
                        legend="{{tailscale_service_name}}")],
                unit="short", options=bargauge_opts(),
                desc="Port rules exposed by each Service. Gated by cardinality.per_entity.service."), 24, 6),
         # Task 1H.8 — VIP service health (merged hosts + port-rules)
         (panel("VIP service health", "table",
-               [prom_t(lot("tailscale_service_hosts_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t("max by (tailscale_service_name) (%s)" % lot("tailscale_service_ports", WIN_SLOW),
+               [prom_t(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), instant=True, fmt="table", refid="A"),
+                prom_t("max by (tailscale_service_name) (%s)" % lot(sel("tailscale_service_ports"), WIN_SLOW),
                        instant=True, fmt="table", refid="B")],
                transformations=[merge(),
                                 organize(

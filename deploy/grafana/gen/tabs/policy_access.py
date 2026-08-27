@@ -29,7 +29,8 @@ TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
 
 # The same filter for Loki: the tailnet/provider const attrs ride every log record as
 # structured metadata.
-LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
+LOKI_TN = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
+           '| tailscale2otel_provider=~"$provider"')
 
 
 def sel(metric, extra=""):
@@ -50,25 +51,27 @@ def tab_policy_access(scope):
                     "that approximation survives restart only with a durable checkpoint store. "
                     "This dates evidence for an investigation, not policy health."), 6, 5),
         (panel("ACL size", "stat",
-               [prom_t("max(%s)" % lot("tailscale_acl_size_bytes", WIN_SLOW))],
+               [prom_t("max(%s)" % lot(sel("tailscale_acl_size_bytes"), WIN_SLOW))],
                unit="bytes", options=stat_opts(),
                desc="Serialized size of the active policy file. Useful as a change detector "
                     "alongside ACL change evidence age — a large jump is a rewrite, not an edit."), 6, 5),
         (panel("ACL rules by section", "bargauge",
-               [prom_t("max by (tailscale_acl_section) (%s)" % lot("tailscale_acl_rules_ratio", WIN_SLOW),
+               [prom_t("max by (tailscale_acl_section) (%s)" % lot(sel("tailscale_acl_rules_ratio"), WIN_SLOW),
                        legend="{{tailscale_acl_section}}")],
                unit="short", options=bargauge_opts(),
                desc="Rule count per top-level policy section (acls, grants, ssh, nodeAttrs, "
                     "tagOwners, ...). Structure of the policy, not a verdict on it."), 12, 5),
         # Task 1H.9 — ACL inventory counts (risk stats live on Security & Audit)
         (panel("Auto-approvers (inventory)", "bargauge",
-               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)" % lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW),
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s) or (0 * count(%s))"
+                       % (lot(sel("tailscale_acl_autoapprovers_ratio"), WIN_SLOW),
+                          lot(sel("tailscale_acl_size_bytes"), WIN_SLOW)),
                        legend="{{tailscale_acl_autoapprover_kind}}")],
                unit="short", options=bargauge_opts(),
                desc="Auto-approver entries by kind (routes / exit node). Inventory only — "
                     "whether an auto-approver is too permissive is a Security & Audit question."), 12, 5),
         (panel("Posture-gated rules (inventory)", "bargauge",
-               [prom_t("sum by (tailscale_acl_section) (%s)" % lot("tailscale_acl_posture_gated_rules_ratio", WIN_SLOW),
+               [prom_t("sum by (tailscale_acl_section) (%s)" % lot(sel("tailscale_acl_posture_gated_rules_ratio"), WIN_SLOW),
                        legend="{{tailscale_acl_section}}")],
                unit="short", options=bargauge_opts(),
                desc="Rules carrying a device-posture condition, by section. Counts how much of "

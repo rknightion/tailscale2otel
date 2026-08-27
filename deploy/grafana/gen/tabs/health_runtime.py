@@ -14,7 +14,8 @@ empty state, the same pattern tabs/diagnostics.py already uses for the object-st
 subrequest families (#399/#386).
 """
 
-from builder import hq, panel, prom_t, RI, row, stat_opts, ts_custom, ts_opts, WIN_FAST
+from builder import (hq, panel, prom_t, pyroscope_t, RI, row, stat_opts, ts_custom,
+                     ts_opts, WIN_FAST)
 
 _PROFILING_EMPTY = ("No profile-upload series. Requires profiling.pyroscope.server_address "
                     "to be set (the opt-in Pyroscope push agent).")
@@ -106,7 +107,9 @@ def tab_health_runtime(scope):
                     "agent enabled means it is not uploading at all — a different fault from "
                     "uploads being rejected."), 8, 6),
         (panel("Profile upload failures/s by type", "timeseries",
-               [prom_t("sum by (error_type) (rate(tailscale2otel_profiling_upload_failures_total[%s]))" % RI, legend="{{error_type}}")],
+               [prom_t("sum by (error_type) (rate(tailscale2otel_profiling_upload_failures_total[%s])) "
+                       "or (0 * sum(rate(tailscale2otel_profiling_upload_attempts_total[%s])))"
+                       % (RI, RI), legend="{{error_type}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"), novalue=_PROFILING_EMPTY,
                desc="Profile upload attempts that failed, by bounded error type (timeout, "
                     "canceled, unauthenticated, rate_limited, unavailable, tls, invalid, "
@@ -125,6 +128,31 @@ def tab_health_runtime(scope):
                     "first success (last_success is 0 until then, filtered out rather than "
                     "charted as a huge age). The attempts counter keeps climbing during an "
                     "outage, so this is what actually catches profiles silently stopping."), 6, 6),
+    ]
+    profiles = [
+        (panel("CPU profile activity", "timeseries",
+               [pyroscope_t("process_cpu:cpu:nanoseconds:cpu:nanoseconds")],
+               unit="ns", custom=ts_custom(fill=20), options=ts_opts(),
+               novalue="No CPU profiles in this range. The profiler may be disabled, idle, or "
+                       "pointing at another Profiles backend; use the upload-health row above "
+                       "to distinguish those states.",
+               desc="CPU nanoseconds attributed per step by the continuous Pyroscope profile."), 12, 7),
+        (panel("In-use heap profile activity", "timeseries",
+               [pyroscope_t("memory:inuse_space:bytes:space:bytes")],
+               unit="bytes", custom=ts_custom(fill=20), options=ts_opts(),
+               novalue="No in-use heap profiles in this range. Check upload health above.",
+               desc="Live heap represented by the in-use-space profile."), 12, 7),
+        (panel("CPU flame graph", "flamegraph",
+               [pyroscope_t("process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+                            query_type="profile", max_nodes=8192)],
+               novalue="No CPU profile samples in this range.",
+               desc="Bounded merged CPU flame graph for tailscale2otel over the selected range. "
+                    "Widen the range when the process is idle."), 12, 9),
+        (panel("In-use heap flame graph", "flamegraph",
+               [pyroscope_t("memory:inuse_space:bytes:space:bytes",
+                            query_type="profile", max_nodes=8192)],
+               novalue="No in-use heap profile samples in this range.",
+               desc="Bounded flame graph of call stacks retaining live heap."), 12, 9),
     ]
     # --- TLS certificate reload (admin/metrics/stream listeners, opt-in). No presence
     # sentinel exists for this feature either. tailscale2otel.tls.cert.not_after and
@@ -159,4 +187,5 @@ def tab_health_runtime(scope):
                     "picked up on the next handshake at least this recently."), 8, 6),
     ]
     return [row("Go runtime", goruntime), row("GC & memory", gcmem),
-            row("Profiling upload", profiling), row("TLS certificate", tls)]
+            row("Profiling upload", profiling), row("Profiles", profiles),
+            row("TLS certificate", tls)]

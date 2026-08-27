@@ -211,6 +211,26 @@
         }
       },
       {
+        "kind": "DatasourceVariable",
+        "spec": {
+          "name": "ds_pyroscope",
+          "label": "Pyroscope",
+          "pluginId": "grafana-pyroscope-datasource",
+          "current": {
+            "text": "grafanacloud-profiles",
+            "value": "grafanacloud-profiles"
+          },
+          "options": [],
+          "multi": false,
+          "includeAll": false,
+          "allowCustomValue": true,
+          "hide": "dontHide",
+          "refresh": "onDashboardLoad",
+          "regex": "",
+          "skipUrlSync": false
+        }
+      },
+      {
         "kind": "QueryVariable",
         "spec": {
           "name": "collector",
@@ -629,6 +649,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -781,6 +804,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -3700,6 +3726,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -3778,6 +3807,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -3873,6 +3905,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -9355,6 +9390,9 @@
                         "service_instance_id": true,
                         "service_name": true,
                         "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
                         "Value": true
                       },
                       "renameByName": {
@@ -10219,6 +10257,77 @@
         "kind": "Panel",
         "spec": {
           "id": 112,
+          "title": "Span class activity",
+          "description": "Bounded discovery rate for every span class emitted by the exporter: scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP scrapes, stream and webhook receivers, and release checks. An absent class means that path was idle, disabled, unsupported, or unsampled; it is not fabricated as zero.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_tempo}"
+                      },
+                      "spec": {
+                        "query": "{resource.service.name = \"tailscale2otel\" && name =~ \"scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|stream.receive|webhook.receive|release.check .+\"} | rate() by (name)",
+                        "queryType": "traceql",
+                        "tableType": "traces"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "right",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-113": {
+        "kind": "Panel",
+        "spec": {
+          "id": 113,
           "title": "API p95 by endpoint (traces)",
           "description": "Trace panels are empty if tracing.enabled=false.",
           "links": [],
@@ -10287,10 +10396,10 @@
           }
         }
       },
-      "panel-113": {
+      "panel-114": {
         "kind": "Panel",
         "spec": {
-          "id": 113,
+          "id": 114,
           "title": "Scrape cadence by collector (traces)",
           "description": "Trace panels are empty if tracing.enabled=false.",
           "links": [],
@@ -10358,10 +10467,10 @@
           }
         }
       },
-      "panel-114": {
+      "panel-115": {
         "kind": "Panel",
         "spec": {
-          "id": 114,
+          "id": 115,
           "title": "stream.receive batch size (traces)",
           "description": "Trace panels are empty if tracing.enabled=false.",
           "links": [],
@@ -10449,10 +10558,10 @@
           }
         }
       },
-      "panel-115": {
+      "panel-116": {
         "kind": "Panel",
         "spec": {
-          "id": 115,
+          "id": 116,
           "title": "Goroutines",
           "description": "Number of live goroutines (a count, despite the _ratio suffix).",
           "links": [],
@@ -10515,10 +10624,10 @@
           }
         }
       },
-      "panel-116": {
+      "panel-117": {
         "kind": "Panel",
         "spec": {
-          "id": 116,
+          "id": 117,
           "title": "GOMAXPROCS",
           "description": "Current GOMAXPROCS, the max OS threads executing Go code (a count, despite the _ratio suffix).",
           "links": [],
@@ -10581,10 +10690,10 @@
           }
         }
       },
-      "panel-117": {
+      "panel-118": {
         "kind": "Panel",
         "spec": {
-          "id": 117,
+          "id": 118,
           "title": "Process uptime",
           "description": "Seconds since the process started (wall-clock uptime).",
           "links": [],
@@ -10647,10 +10756,10 @@
           }
         }
       },
-      "panel-118": {
+      "panel-119": {
         "kind": "Panel",
         "spec": {
-          "id": 118,
+          "id": 119,
           "title": "Process CPU (user/system)",
           "description": "Cumulative process CPU time (getrusage RUSAGE_SELF), by mode, as a rate (~cores). Emitted on unix platforms only.",
           "links": [],
@@ -10721,10 +10830,10 @@
           }
         }
       },
-      "panel-119": {
+      "panel-120": {
         "kind": "Panel",
         "spec": {
-          "id": 119,
+          "id": 120,
           "title": "Memory breakdown",
           "description": "Go memory obtained from the OS (runtime.memory.sys), stacked into in-use heap, idle/reserved heap, stacks, and other non-heap runtime (GC, mspan/mcache). Total height = total sys.",
           "links": [],
@@ -10865,10 +10974,10 @@
           }
         }
       },
-      "panel-120": {
+      "panel-121": {
         "kind": "Panel",
         "spec": {
-          "id": 120,
+          "id": 121,
           "title": "Goroutines & stack",
           "description": "Goroutine count alongside stack memory, over time (the stat panel above shows only the current value).",
           "links": [],
@@ -10978,10 +11087,10 @@
           }
         }
       },
-      "panel-121": {
+      "panel-122": {
         "kind": "Panel",
         "spec": {
-          "id": 121,
+          "id": 122,
           "title": "GC cycles/s",
           "description": "Completed garbage-collection cycles per second.",
           "links": [],
@@ -11052,10 +11161,10 @@
           }
         }
       },
-      "panel-122": {
+      "panel-123": {
         "kind": "Panel",
         "spec": {
-          "id": 122,
+          "id": 123,
           "title": "GC pause/s",
           "description": "Cumulative stop-the-world GC pause time, as seconds of pause per second of wall clock.",
           "links": [],
@@ -11126,10 +11235,10 @@
           }
         }
       },
-      "panel-123": {
+      "panel-124": {
         "kind": "Panel",
         "spec": {
-          "id": 123,
+          "id": 124,
           "title": "GC CPU fraction",
           "description": "Fraction of total CPU time used by the garbage collector since process start (0..1).",
           "links": [],
@@ -11200,10 +11309,10 @@
           }
         }
       },
-      "panel-124": {
+      "panel-125": {
         "kind": "Panel",
         "spec": {
-          "id": 124,
+          "id": 125,
           "title": "GC next-target vs live heap",
           "description": "Live heap vs the heap size that triggers the next GC; the gap is GC headroom.",
           "links": [],
@@ -11296,10 +11405,10 @@
           }
         }
       },
-      "panel-125": {
+      "panel-126": {
         "kind": "Panel",
         "spec": {
-          "id": 125,
+          "id": 126,
           "title": "Heap alloc churn",
           "description": "Cumulative heap-allocation rate (includes freed); allocation churn / GC pressure.",
           "links": [],
@@ -11370,10 +11479,10 @@
           }
         }
       },
-      "panel-126": {
+      "panel-127": {
         "kind": "Panel",
         "spec": {
-          "id": 126,
+          "id": 127,
           "title": "Live heap objects",
           "description": "Number of live heap objects (a count, despite the _ratio suffix).",
           "links": [],
@@ -11444,10 +11553,10 @@
           }
         }
       },
-      "panel-127": {
+      "panel-128": {
         "kind": "Panel",
         "spec": {
-          "id": 127,
+          "id": 128,
           "title": "Profile upload duration p50/p95/p99",
           "description": "Wall-clock seconds per profile upload attempt, including failed ones. Rising latency here is the early warning for the upload timeout that follows.",
           "links": [],
@@ -11563,10 +11672,10 @@
           }
         }
       },
-      "panel-128": {
+      "panel-129": {
         "kind": "Panel",
         "spec": {
-          "id": 128,
+          "id": 129,
           "title": "Profile upload attempts/s",
           "description": "Profile upload attempts to Pyroscope, successful or not (one per profile type per profiling.pyroscope.upload_rate period). A flat line with the agent enabled means it is not uploading at all \u2014 a different fault from uploads being rejected.",
           "links": [],
@@ -11638,10 +11747,10 @@
           }
         }
       },
-      "panel-129": {
+      "panel-130": {
         "kind": "Panel",
         "spec": {
-          "id": 129,
+          "id": 130,
           "title": "Profile upload failures/s by type",
           "description": "Profile upload attempts that failed, by bounded error type (timeout, canceled, unauthenticated, rate_limited, unavailable, tls, invalid, other) \u2014 never the server's response body.",
           "links": [],
@@ -11662,7 +11771,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (error_type) (rate(tailscale2otel_profiling_upload_failures_total[$__rate_interval]))",
+                        "expr": "sum by (error_type) (rate(tailscale2otel_profiling_upload_failures_total[$__rate_interval])) or (0 * sum(rate(tailscale2otel_profiling_upload_attempts_total[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{error_type}}",
@@ -11713,10 +11822,10 @@
           }
         }
       },
-      "panel-130": {
+      "panel-131": {
         "kind": "Panel",
         "spec": {
-          "id": 130,
+          "id": 131,
           "title": "Profile upload consecutive failures",
           "description": "Current unbroken profile-upload failure streak, reset to 0 by any success (a count, despite the _ratio suffix). Distinguishes a blip from a sustained outage without needing a rate window.",
           "links": [],
@@ -11780,10 +11889,10 @@
           }
         }
       },
-      "panel-131": {
+      "panel-132": {
         "kind": "Panel",
         "spec": {
-          "id": 131,
+          "id": 132,
           "title": "Profile upload last-success age",
           "description": "Seconds since the most recent SUCCESSFUL profile upload; absent until the first success (last_success is 0 until then, filtered out rather than charted as a huge age). The attempts counter keeps climbing during an outage, so this is what actually catches profiles silently stopping.",
           "links": [],
@@ -11847,10 +11956,266 @@
           }
         }
       },
-      "panel-132": {
+      "panel-133": {
         "kind": "Panel",
         "spec": {
-          "id": 132,
+          "id": 133,
+          "title": "CPU profile activity",
+          "description": "CPU nanoseconds attributed per step by the continuous Pyroscope profile.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "grafana-pyroscope-datasource",
+                      "datasource": {
+                        "name": "${ds_pyroscope}"
+                      },
+                      "spec": {
+                        "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+                        "labelSelector": "{service_name=\"tailscale2otel\"}",
+                        "groupBy": [],
+                        "queryType": "metrics"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "ns",
+                  "noValue": "No CPU profiles in this range. The profiler may be disabled, idle, or pointing at another Profiles backend; use the upload-health row above to distinguish those states.",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 20,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-134": {
+        "kind": "Panel",
+        "spec": {
+          "id": 134,
+          "title": "In-use heap profile activity",
+          "description": "Live heap represented by the in-use-space profile.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "grafana-pyroscope-datasource",
+                      "datasource": {
+                        "name": "${ds_pyroscope}"
+                      },
+                      "spec": {
+                        "profileTypeId": "memory:inuse_space:bytes:space:bytes",
+                        "labelSelector": "{service_name=\"tailscale2otel\"}",
+                        "groupBy": [],
+                        "queryType": "metrics"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "bytes",
+                  "noValue": "No in-use heap profiles in this range. Check upload health above.",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 20,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-135": {
+        "kind": "Panel",
+        "spec": {
+          "id": 135,
+          "title": "CPU flame graph",
+          "description": "Bounded merged CPU flame graph for tailscale2otel over the selected range. Widen the range when the process is idle.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "grafana-pyroscope-datasource",
+                      "datasource": {
+                        "name": "${ds_pyroscope}"
+                      },
+                      "spec": {
+                        "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+                        "labelSelector": "{service_name=\"tailscale2otel\"}",
+                        "groupBy": [],
+                        "queryType": "profile",
+                        "maxNodes": 8192
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "flamegraph",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "No CPU profile samples in this range."
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-136": {
+        "kind": "Panel",
+        "spec": {
+          "id": 136,
+          "title": "In-use heap flame graph",
+          "description": "Bounded flame graph of call stacks retaining live heap.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "grafana-pyroscope-datasource",
+                      "datasource": {
+                        "name": "${ds_pyroscope}"
+                      },
+                      "spec": {
+                        "profileTypeId": "memory:inuse_space:bytes:space:bytes",
+                        "labelSelector": "{service_name=\"tailscale2otel\"}",
+                        "groupBy": [],
+                        "queryType": "profile",
+                        "maxNodes": 8192
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "flamegraph",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "No in-use heap profile samples in this range."
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-137": {
+        "kind": "Panel",
+        "spec": {
+          "id": 137,
           "title": "TLS certificate expiry countdown",
           "description": "Seconds until the active certificate's notAfter (expiry), by listener component (admin|metrics|stream). Falling toward zero is what 'TLS certificate expiring' pages on.",
           "links": [],
@@ -11922,10 +12287,10 @@
           }
         }
       },
-      "panel-133": {
+      "panel-138": {
         "kind": "Panel",
         "spec": {
-          "id": 133,
+          "id": 138,
           "title": "TLS certificate reload failures",
           "description": "Certificate reload attempts that failed to produce a valid keypair, by listener component. The listener keeps serving the last known-good certificate; a non-zero rate is a rotation going wrong, and is what 'TLS certificate reload failing' pages on.",
           "links": [],
@@ -11997,10 +12362,10 @@
           }
         }
       },
-      "panel-134": {
+      "panel-139": {
         "kind": "Panel",
         "spec": {
-          "id": 134,
+          "id": 139,
           "title": "TLS certificate age since issuance",
           "description": "Seconds since the active certificate's notBefore, by listener component. Updates on every successful reload, so a value that stops growing at a reload boundary and then jumps means a rotation landed.",
           "links": [],
@@ -12072,10 +12437,10 @@
           }
         }
       },
-      "panel-135": {
+      "panel-140": {
         "kind": "Panel",
         "spec": {
-          "id": 135,
+          "id": 140,
           "title": "TLS certificate reload freshness",
           "description": "Seconds since the most recent successful certificate reload, by listener component; absent until the first success. A rotated file on disk is picked up on the next handshake at least this recently.",
           "links": [],
@@ -12147,12 +12512,12 @@
           }
         }
       },
-      "panel-136": {
+      "panel-141": {
         "kind": "Panel",
         "spec": {
-          "id": 136,
+          "id": 141,
           "title": "Metrics over cardinality cap",
-          "description": "Metric families that exceeded the per-metric series cap (cardinality.metric_limit, default 10000) and are now collapsing excess series into one otel_metric_overflow series \u2014 SILENT per-series detail loss. >0 means raise metric_limit or lower flow cardinality (ephemeral source_port is the biggest driver).",
+          "description": "Metric families that exceeded the configured per-metric series cap and are now collapsing excess series into one otel_metric_overflow series \u2014 SILENT per-series detail loss. >0 means raise metric_limit or lower flow cardinality (ephemeral source_port is the biggest driver).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -12226,12 +12591,12 @@
           }
         }
       },
-      "panel-137": {
+      "panel-142": {
         "kind": "Panel",
         "spec": {
-          "id": 137,
+          "id": 142,
           "title": "Busiest metric \u2014 % of cap",
-          "description": "Highest per-metric active-series count as a fraction of the 10k cap.",
+          "description": "Highest per-metric active-series count as a fraction of the configured tailscale2otel_series_limit.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -12250,7 +12615,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_active) / 10000",
+                        "expr": "max(tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -12303,7 +12668,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
                 },
                 "overrides": []
               }
@@ -12311,10 +12677,10 @@
           }
         }
       },
-      "panel-138": {
+      "panel-143": {
         "kind": "Panel",
         "spec": {
-          "id": 138,
+          "id": 143,
           "title": "Total active series",
           "description": "Sum of active series across all tailscale2otel metrics (a proxy for ingest cost).",
           "links": [],
@@ -12377,10 +12743,10 @@
           }
         }
       },
-      "panel-139": {
+      "panel-144": {
         "kind": "Panel",
         "spec": {
-          "id": 139,
+          "id": 144,
           "title": "Metric families tracked",
           "description": "Distinct tailscale2otel metric families currently reporting an active-series count.",
           "links": [],
@@ -12443,10 +12809,10 @@
           }
         }
       },
-      "panel-140": {
+      "panel-145": {
         "kind": "Panel",
         "spec": {
-          "id": 140,
+          "id": 145,
           "title": "Overflowing families",
           "description": "Metric families currently over the per-metric cap (otel_metric_overflow=true).",
           "links": [],
@@ -12519,12 +12885,12 @@
           }
         }
       },
-      "panel-141": {
+      "panel-146": {
         "kind": "Panel",
         "spec": {
-          "id": 141,
-          "title": "Active series vs 10k cap (top $topn)",
-          "description": "Per-metric active series against the cap. Watch the flow families.",
+          "id": 146,
+          "title": "Active series vs cap (top $topn)",
+          "description": "Per-metric utilization of the configured series cap. Watch the flow families.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -12543,7 +12909,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active))",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -12576,8 +12942,8 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short",
-                  "max": 10000,
+                  "unit": "percentunit",
+                  "max": 1,
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -12586,15 +12952,16 @@
                         "color": "green"
                       },
                       {
-                        "value": 8000,
+                        "value": 0.8,
                         "color": "yellow"
                       },
                       {
-                        "value": 10000,
+                        "value": 1,
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
                 },
                 "overrides": []
               }
@@ -12602,12 +12969,12 @@
           }
         }
       },
-      "panel-142": {
+      "panel-147": {
         "kind": "Panel",
         "spec": {
-          "id": 142,
+          "id": 147,
           "title": "Active series over time (top $topn)",
-          "description": "Per-metric active series (cap 10k) over time, top-N by current value. Watch the flow families.",
+          "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -12626,7 +12993,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active))",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -12659,7 +13026,10 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short",
+                  "unit": "percentunit",
+                  "min": 0,
+                  "max": 1,
+                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited).",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -12676,10 +13046,10 @@
           }
         }
       },
-      "panel-143": {
+      "panel-148": {
         "kind": "Panel",
         "spec": {
-          "id": 143,
+          "id": 148,
           "title": "Flow series: raw vs bounded rollup",
           "description": "Raw flow families saturate the 10k cap; the bounded rollup stays small. When raw is at cap, trust the ROLLUP talker panels on the Network tab.",
           "links": [],
@@ -12816,10 +13186,10 @@
           }
         }
       },
-      "panel-144": {
+      "panel-149": {
         "kind": "Panel",
         "spec": {
-          "id": 144,
+          "id": 149,
           "title": "__other__ rollup share",
           "description": "Fraction of rollup bytes folded into the bounded __other__ bucket. High = many small talkers.",
           "links": [],
@@ -12899,10 +13269,10 @@
           }
         }
       },
-      "panel-145": {
+      "panel-150": {
         "kind": "Panel",
         "spec": {
-          "id": 145,
+          "id": 150,
           "title": "Flow log records dropped/s",
           "description": "Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window). Metrics are never dropped, only logs.",
           "links": [],
@@ -12973,10 +13343,10 @@
           }
         }
       },
-      "panel-146": {
+      "panel-151": {
         "kind": "Panel",
         "spec": {
-          "id": 146,
+          "id": 151,
           "title": "Dedup set size",
           "description": "Keys held in each cross-source de-duplication set (a count).",
           "links": [],
@@ -13047,10 +13417,10 @@
           }
         }
       },
-      "panel-147": {
+      "panel-152": {
         "kind": "Panel",
         "spec": {
-          "id": 147,
+          "id": 152,
           "title": "Dedup evictions/s",
           "description": "Steady-state evictions are normal: dedup keys are effectively unique, so a full set evicts one key per insert forever even when healthy. Only evictions approaching a set's capacity within one poll interval indicate real overlap loss (boundary double-counting).",
           "links": [],
@@ -13121,10 +13491,10 @@
           }
         }
       },
-      "panel-148": {
+      "panel-153": {
         "kind": "Panel",
         "spec": {
-          "id": 148,
+          "id": 153,
           "title": "Series limit",
           "description": "Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited.",
           "links": [],
@@ -13188,10 +13558,10 @@
           }
         }
       },
-      "panel-149": {
+      "panel-154": {
         "kind": "Panel",
         "spec": {
-          "id": 149,
+          "id": 154,
           "title": "Overflowing now",
           "description": "Number of metric families currently overflowing their series cap. >0 means detail loss.",
           "links": [],
@@ -13267,12 +13637,12 @@
           }
         }
       },
-      "panel-150": {
+      "panel-155": {
         "kind": "Panel",
         "spec": {
-          "id": 150,
-          "title": "Per-metric headroom (top-N)",
-          "description": "Per-metric active-series count divided by the series limit \u2014 headroom as a fraction. 1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series.",
+          "id": 155,
+          "title": "Per-metric utilization (top-N)",
+          "description": "Per-metric active-series count divided by the series limit \u2014 utilization as a fraction. 1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13291,7 +13661,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() max(tailscale2otel_series_limit))",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -13318,7 +13688,7 @@
                       },
                       "renameByName": {
                         "metric_name": "Metric",
-                        "Value": "Headroom (frac)"
+                        "Value": "Utilization"
                       },
                       "indexByName": {}
                     }
@@ -13334,17 +13704,19 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {},
+                "defaults": {
+                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+                },
                 "overrides": []
               }
             }
           }
         }
       },
-      "panel-151": {
+      "panel-156": {
         "kind": "Panel",
         "spec": {
-          "id": 151,
+          "id": 156,
           "title": "Active series by group",
           "description": "Active series aggregated by metric_group \u2014 the primary cost-driver view. 18 groups live; each group maps to a logical collector domain.",
           "links": [],
@@ -13422,10 +13794,10 @@
           }
         }
       },
-      "panel-152": {
+      "panel-157": {
         "kind": "Panel",
         "spec": {
-          "id": 152,
+          "id": 157,
           "title": "Metrics overflowing now",
           "description": "Metric families where overflowing_ratio == 1 (capped). 147+ series tracked; 0 overflowing is the normal live state \u2014 that is correct.",
           "links": [],
@@ -13498,10 +13870,10 @@
           }
         }
       },
-      "panel-153": {
+      "panel-158": {
         "kind": "Panel",
         "spec": {
-          "id": 153,
+          "id": 158,
           "title": "Ingest vs export cost (per minute)",
           "description": "Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
           "links": [],
@@ -13616,10 +13988,10 @@
           }
         }
       },
-      "panel-154": {
+      "panel-159": {
         "kind": "Panel",
         "spec": {
-          "id": 154,
+          "id": 159,
           "title": "Forwarded metric-name drops/s by reason",
           "description": "Samples dropped because their metric NAME had not been seen before and the distinct-name budget (node_metrics.max_distinct_metrics, default 2000) was already exhausted. Targets choose their own names and each new one creates a permanent instrument, so the budget is a hard bound on a node-controlled input. Read the drop rate against the active uncataloged series count on the right axis: that is the population the budget governs. Sustained drops mean raising max_distinct_metrics or tightening metric_allow/metric_deny.",
           "links": [],
@@ -13713,10 +14085,10 @@
           }
         }
       },
-      "panel-155": {
+      "panel-160": {
         "kind": "Panel",
         "spec": {
-          "id": 155,
+          "id": 160,
           "title": "Metric names dropped over the window",
           "description": "Total forwarded samples lost to the distinct-name budget over the dashboard's time range. Any non-zero value means a scrape target is presenting more distinct metric names than the budget allows.",
           "links": [],
@@ -16729,7 +17101,7 @@
                                 "spec": {
                                   "x": 0,
                                   "y": 0,
-                                  "width": 12,
+                                  "width": 24,
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
@@ -16740,8 +17112,8 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 12,
-                                  "y": 0,
+                                  "x": 0,
+                                  "y": 7,
                                   "width": 12,
                                   "height": 7,
                                   "element": {
@@ -16753,13 +17125,26 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 0,
+                                  "x": 12,
                                   "y": 7,
-                                  "width": 24,
+                                  "width": 12,
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-114"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 14,
+                                  "width": 24,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-115"
                                   }
                                 }
                               }
@@ -16911,7 +17296,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-115"
+                                    "name": "panel-116"
                                   }
                                 }
                               },
@@ -16924,7 +17309,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-116"
+                                    "name": "panel-117"
                                   }
                                 }
                               },
@@ -16937,7 +17322,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-117"
+                                    "name": "panel-118"
                                   }
                                 }
                               },
@@ -16950,7 +17335,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-118"
+                                    "name": "panel-119"
                                   }
                                 }
                               }
@@ -16977,7 +17362,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-119"
+                                    "name": "panel-120"
                                   }
                                 }
                               },
@@ -16990,19 +17375,6 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-120"
-                                  }
-                                }
-                              },
-                              {
-                                "kind": "GridLayoutItem",
-                                "spec": {
-                                  "x": 0,
-                                  "y": 7,
-                                  "width": 8,
-                                  "height": 6,
-                                  "element": {
-                                    "kind": "ElementReference",
                                     "name": "panel-121"
                                   }
                                 }
@@ -17010,7 +17382,7 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 8,
+                                  "x": 0,
                                   "y": 7,
                                   "width": 8,
                                   "height": 6,
@@ -17023,7 +17395,7 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 16,
+                                  "x": 8,
                                   "y": 7,
                                   "width": 8,
                                   "height": 6,
@@ -17036,8 +17408,8 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 0,
-                                  "y": 13,
+                                  "x": 16,
+                                  "y": 7,
                                   "width": 8,
                                   "height": 6,
                                   "element": {
@@ -17049,7 +17421,7 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 8,
+                                  "x": 0,
                                   "y": 13,
                                   "width": 8,
                                   "height": 6,
@@ -17062,13 +17434,26 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 16,
+                                  "x": 8,
                                   "y": 13,
                                   "width": 8,
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
                                     "name": "panel-126"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 16,
+                                  "y": 13,
+                                  "width": 8,
+                                  "height": 6,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-127"
                                   }
                                 }
                               }
@@ -17095,7 +17480,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-128"
+                                    "name": "panel-129"
                                   }
                                 }
                               },
@@ -17108,7 +17493,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-129"
+                                    "name": "panel-130"
                                   }
                                 }
                               },
@@ -17121,7 +17506,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-127"
+                                    "name": "panel-128"
                                   }
                                 }
                               },
@@ -17134,7 +17519,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-130"
+                                    "name": "panel-131"
                                   }
                                 }
                               },
@@ -17147,7 +17532,73 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-131"
+                                    "name": "panel-132"
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "kind": "RowsLayoutRow",
+                      "spec": {
+                        "title": "Profiles",
+                        "collapse": false,
+                        "layout": {
+                          "kind": "GridLayout",
+                          "spec": {
+                            "items": [
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 0,
+                                  "width": 12,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-133"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 12,
+                                  "y": 0,
+                                  "width": 12,
+                                  "height": 7,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-134"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 0,
+                                  "y": 7,
+                                  "width": 12,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-135"
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "GridLayoutItem",
+                                "spec": {
+                                  "x": 12,
+                                  "y": 7,
+                                  "width": 12,
+                                  "height": 9,
+                                  "element": {
+                                    "kind": "ElementReference",
+                                    "name": "panel-136"
                                   }
                                 }
                               }
@@ -17174,7 +17625,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-132"
+                                    "name": "panel-137"
                                   }
                                 }
                               },
@@ -17187,7 +17638,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-133"
+                                    "name": "panel-138"
                                   }
                                 }
                               },
@@ -17200,7 +17651,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-134"
+                                    "name": "panel-139"
                                   }
                                 }
                               },
@@ -17213,7 +17664,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-135"
+                                    "name": "panel-140"
                                   }
                                 }
                               }
@@ -17253,7 +17704,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-136"
+                                    "name": "panel-141"
                                   }
                                 }
                               },
@@ -17266,7 +17717,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-137"
+                                    "name": "panel-142"
                                   }
                                 }
                               },
@@ -17279,7 +17730,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-138"
+                                    "name": "panel-143"
                                   }
                                 }
                               },
@@ -17292,7 +17743,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-139"
+                                    "name": "panel-144"
                                   }
                                 }
                               },
@@ -17305,7 +17756,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-140"
+                                    "name": "panel-145"
                                   }
                                 }
                               },
@@ -17318,7 +17769,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-148"
+                                    "name": "panel-153"
                                   }
                                 }
                               },
@@ -17331,7 +17782,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-149"
+                                    "name": "panel-154"
                                   }
                                 }
                               },
@@ -17344,7 +17795,7 @@
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-150"
+                                    "name": "panel-155"
                                   }
                                 }
                               }
@@ -17371,7 +17822,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-151"
+                                    "name": "panel-156"
                                   }
                                 }
                               },
@@ -17384,7 +17835,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-152"
+                                    "name": "panel-157"
                                   }
                                 }
                               }
@@ -17411,7 +17862,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-141"
+                                    "name": "panel-146"
                                   }
                                 }
                               },
@@ -17424,7 +17875,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-142"
+                                    "name": "panel-147"
                                   }
                                 }
                               }
@@ -17451,7 +17902,7 @@
                                   "height": 8,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-153"
+                                    "name": "panel-158"
                                   }
                                 }
                               }
@@ -17495,7 +17946,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-154"
+                                    "name": "panel-159"
                                   }
                                 }
                               },
@@ -17508,7 +17959,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-155"
+                                    "name": "panel-160"
                                   }
                                 }
                               }
@@ -17535,7 +17986,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-143"
+                                    "name": "panel-148"
                                   }
                                 }
                               },
@@ -17548,7 +17999,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-144"
+                                    "name": "panel-149"
                                   }
                                 }
                               },
@@ -17561,7 +18012,7 @@
                                   "height": 7,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-145"
+                                    "name": "panel-150"
                                   }
                                 }
                               }
@@ -17588,7 +18039,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-146"
+                                    "name": "panel-151"
                                   }
                                 }
                               },
@@ -17601,7 +18052,7 @@
                                   "height": 6,
                                   "element": {
                                     "kind": "ElementReference",
-                                    "name": "panel-147"
+                                    "name": "panel-152"
                                   }
                                 }
                               }

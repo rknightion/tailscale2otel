@@ -5,7 +5,7 @@
 network dashboard" is delivered here, on the flagship's Network & Flows tab.
 """
 
-from builder import (BAR_NOISE, category_bar_opts, barchart_opts, logs_opts, loki_t, lot, organize,
+from builder import (BAR_NOISE, bargauge_opts, category_bar_opts, barchart_opts, logs_opts, loki_t, lot, organize,
                      panel, PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
                      ts_opts)
 
@@ -103,6 +103,9 @@ def tab_network(scope):
     # carrying no such label at all — so a single-tailnet deployment is unaffected.
     scope_sel = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
     sf = "{%s}" % scope_sel
+    loki_flow = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
+                 '| tailscale2otel_provider=~"$provider" '
+                 '| event_name=`tailscale.network.flow`')
     tf = ('{%s, network_transport=~"$net_transport", tailscale_traffic_type=~"$traffic_type"}'
           % scope_sel)
     # tf, but also exclude unclassified (empty-label) services so the top-services
@@ -161,8 +164,9 @@ def tab_network(scope):
     # diagnostics because a non-zero rate changes how the throughput panels read.
     hygiene = [
         (panel("Rejected flow records/s", "timeseries",
-               [prom_t("sum by (source, reason) (rate(tailscale_network_data_quality_total%s[%s]))"
-                       % (sf, RI), legend="{{source}} / {{reason}}")],
+               [prom_t("sum by (source, reason) (rate(tailscale_network_data_quality_total%s[%s])) "
+                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       % (sf, RI, sf, RI), legend="{{source}} / {{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                thresholds=thr([(None, "green"), (0.01, "yellow")]),
                desc="Semantically invalid flow records rejected before any processor side "
@@ -171,7 +175,9 @@ def tab_network(scope):
                     "throughput and talker numbers are reading a subset of the feed."), 8, 7),
         (panel("Dedup counter conflicts/s", "timeseries",
                [prom_t("sum by (scope, tailscale_traffic_type) "
-                       "(rate(tailscale_network_dedup_conflicts_total%s[%s]))" % (sf, RI),
+                       "(rate(tailscale_network_dedup_conflicts_total%s[%s])) "
+                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       % (sf, RI, sf, RI),
                        legend="{{scope}} / {{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
                desc="Duplicate flow connections whose byte/packet counters disagree with the "
@@ -181,8 +187,9 @@ def tab_network(scope):
                     "type (`collectors.flowlogs.source`); otherwise it is upstream "
                     "re-delivery."), 8, 7),
         (panel("Flow-view store drops/s", "timeseries",
-               [prom_t("sum by (reason) (rate(tailscale_network_store_dropped_total%s[%s]))"
-                       % (sf, RI), legend="{{reason}}")],
+               [prom_t("sum by (reason) (rate(tailscale_network_store_dropped_total%s[%s])) "
+                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       % (sf, RI, sf, RI), legend="{{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                desc="Flow observations rejected from the local in-memory flow view because "
                     "their timestamps fall outside its retention or future-skew bounds "
@@ -207,31 +214,38 @@ def tab_network(scope):
                desc="Packets relayed through each exit node, same attribution and gating as "
                     "Exit-node throughput."), 12, 8),
     ]
-    # Flow-log cross-signal bandwidth (Loki metric queries) — aggregate, gate pii_topology for safety.
-    # No $tailnet/$provider matcher here: on the log side those are record attributes, and a
-    # label filter would drop every line that carries none rather than matching all of them.
+    # Flow-log cross-signal byte totals (Loki metric queries) — aggregate, gate
+    # pii_topology for safety. Use the selected range rather than $__rate_interval:
+    # flow records arrive in batches wider than a graph step, so a short moving rate can
+    # be empty while the raw stream underneath is visibly populated.
     fl_bw = [
-        (panel("Observed tailnet bandwidth (flow logs)", "timeseries",
-               [loki_t("sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [%s]))" % RI,
-                        refid="A", legend="tx"),
-                loki_t("sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_rx_bytes [%s]))" % RI,
-                        refid="B", legend="rx")],
-               unit="Bps", novalue="0", options=ts_opts(),
-               desc="Bandwidth derived directly from raw flow-log records (Loki), independent of "
-                    "the Prometheus rollup/raw metric mode — a cross-check for the metrics-side "
-                    "throughput panels."), 24, 8),
+        (panel("Observed bytes (flow logs)", "bargauge",
+               [loki_t("sum(sum_over_time(%s | unwrap tailscale_tx_bytes [$__range]))"
+                       % loki_flow, refid="A", legend="tx", instant=True),
+                loki_t("sum(sum_over_time(%s | unwrap tailscale_rx_bytes [$__range]))"
+                       % loki_flow, refid="B", legend="rx", instant=True)],
+               unit="bytes", options=bargauge_opts(),
+               novalue="No matching flow-log records in the selected range.",
+               desc="Bytes summed directly from raw flow-log records over the selected range, "
+                    "independent of the Prometheus rollup/raw metric mode. Empty means no "
+                    "matching log records; a populated zero is shown only when records carry "
+                    "zero bytes."), 24, 8),
     ]
     # Top node-pair talkers from flow logs — node identity; gate pii_node.
     fl_pairs = [
         (panel("Top node-pair talkers (flow logs)", "table",
-               [loki_t("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [%s])))" % RI,
+               [loki_t("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) "
+                       "(sum_over_time(%s | unwrap tailscale_tx_bytes [$__range])))" % loki_flow,
                         refid="A", instant=True)],
-               unit="Bps",
+               unit="bytes",
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_src_node": "Source",
                                                  "tailscale_dst_node": "Destination",
-                                                 "Value": "tx bytes/s"})],
-               desc="Top-N src/dst node pairs by outbound bytes/s, from raw flow-log records."), 24, 8),
+                                                 "Value": "TX bytes"})],
+               novalue="No flow-log records with both source and destination node identity in "
+                       "the selected range.",
+               desc="Top-N source/destination node pairs by total outbound bytes in the selected "
+                    "range, from raw flow-log records."), 24, 8),
     ]
     # Rollup aggregate panels — no identity labels; no PII gate.
     rollup_agg = [
@@ -361,7 +375,7 @@ def tab_network(scope):
         row("Flow integrity", integrity, present="has_flows"),
         row("Flow ingestion hygiene", hygiene, present="has_flows"),
         row("Exit-node I/O", exitio, present="has_exit_io", hide_when=["pii_node"]),
-        row("Observed tailnet bandwidth (flow logs)", fl_bw, present="has_flows", hide_when=["pii_topology"]),
+        row("Observed bytes (flow logs)", fl_bw, present="has_flows", hide_when=["pii_topology"]),
         row("Throughput & talkers — ROLLUP (bounded top-N)", rollup_agg, present="has_rollup_flow"),
         row("Path & DERP context — ROLLUP", rollup_path, present="has_rollup_flow"),
         row("Top talkers — ROLLUP", rollup_talkers, present="has_rollup_flow", hide_when=["pii_node"]),

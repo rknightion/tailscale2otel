@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "145",
+      "__panelId__": "146",
       "description": "tailscale_node_health_messages_ratio > 0 \u2014 the tailscaled client on {{ $labels.tailscale_node }} is self-reporting one or more active health warnings of type {{ $labels.tailscale_health_type }} (e.g. no-DERP-connection, key-expiry, network-down). Curated from the node-metrics scraper (absent => not firing). See the Client health row on the Node Metrics tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#node-client-health",
       "summary": "Node {{ $labels.tailscale_node }} reporting health warnings ({{ $labels.tailscale_health_type }})"

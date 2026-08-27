@@ -41,8 +41,8 @@ UP = {"0": ("DOWN", "red"), "1": ("UP", "green")}
 BOOL_PANELS = {
     # --- 1 is healthy -------------------------------------------------------
     ("Flow logging", "stat"): HEALTHY_ON,
-    ("MagicDNS", "stat"): HEALTHY_ON,
-    ("Override local DNS", "stat"): HEALTHY_ON,
+    ("MagicDNS", "stat"): NEUTRAL,
+    ("Override local DNS", "stat"): NEUTRAL,
     ("Config valid", "stat"): HEALTHY_ON,
     # #393/#403 — audit-pipeline and inventory flags. All three are "1 is the
     # state you want": the poll scrape succeeded, the policy validated, the

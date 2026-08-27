@@ -44,6 +44,12 @@ from tabs._devices_common import flag_map, host_drilldown
 _NO_CONNECTIVITY = ("No per-device connectivity series — needs collect_connectivity "
                     "and cardinality.per_entity.device.")
 
+TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+
+
+def sel(metric, extra=""):
+    return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
 
 def tab_devices_connectivity(scope):
     # Every sentinel this sub-tab's rows reference, declared at THIS tab's scope.
@@ -107,7 +113,9 @@ def tab_devices_connectivity(scope):
                desc="Share of reporting devices whose OS supports IPv6. Says nothing about whether "
                     "IPv6 connectivity is actually available on their network."), 6, 5),
         (panel("UDP blocked (DERP-forced)", "stat",
-               [prom_t("count(%s == 0)" % lot("tailscale_device_connectivity_udp_ratio"))],
+               [prom_t("count(%s == 0) or (0 * count(%s))"
+                       % (lot("tailscale_device_connectivity_udp_ratio"),
+                          lot("tailscale_device_connectivity_udp_ratio")))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (5, "red")]),
                options=stat_opts(color="background"), novalue=_NO_CONNECTIVITY,
                desc="Devices whose current network blocks UDP. Every one of their peer connections "
@@ -120,14 +128,21 @@ def tab_devices_connectivity(scope):
                unit="short", custom=ts_custom(fill=10), options=ts_opts(), novalue=_NO_CONNECTIVITY,
                desc="Magicsock UDP endpoint candidates advertised per device. Few candidates means "
                     "fewer chances of a direct path; the addresses themselves are never emitted."), 6, 5),
-        (panel("NAT → relay pressure", "timeseries",
+        (panel("Hard-NAT fraction", "timeseries",
                [prom_t("sum(%(lot_hnat)s) / on() group_left() sum(%(lot_cnt)s)"
-                       % {"lot_hnat": lot("tailscale_devices_hard_nat_ratio", WIN_FAST),
-                          "lot_cnt": lot("tailscale_devices_count_ratio", WIN_FAST)},
-                       legend="hard-NAT %"),
-                prom_t("sum(tailscaled_peer_relay_endpoints)", legend="relay endpoints")],
+                       % {"lot_hnat": lot(sel("tailscale_devices_hard_nat_ratio"), WIN_FAST),
+                          "lot_cnt": lot(sel("tailscale_devices_count_ratio"), WIN_FAST)},
+                       legend="hard-NAT fraction")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(fill=10),
+               options=ts_opts(),
+               desc="Fraction of devices behind hard NAT. This is a connectivity property, not "
+                    "a measurement of DERP load."), 12, 7),
+        (panel("Configured peer-relay endpoints", "timeseries",
+               [prom_t("sum(%s)" % sel("tailscaled_peer_relay_endpoints"),
+                       legend="configured endpoints")],
                unit="short", custom=ts_custom(fill=10), options=ts_opts(),
-               desc="Correlation between hard-NAT fraction and relay endpoint count over time."), 24, 7),
+               desc="Configured peer-relay endpoint count reported by node metrics. This is "
+                    "inventory, not measured relay traffic or DERP load."), 12, 7),
     ]
 
     # D (per-device part), #401 + #526 decision 7. fleet.py's "Connectivity detail (per

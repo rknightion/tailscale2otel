@@ -40,7 +40,8 @@ from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge
 
 # Scrape-transport columns, excluded from every operator-facing table (#392).
 _INFRA = ["Time", "__name__", "job", "instance",
-          "service_instance_id", "service_name", "service_namespace"]
+          "service_instance_id", "service_name", "service_namespace",
+          "deployment_environment_name", "otel_scope_name", "otel_scope_version"]
 
 
 def tab_security_compliance(scope):
@@ -108,18 +109,29 @@ def tab_security_compliance(scope):
     # MDM device posture (aggregate, no per-device identity) — unchanged.
     # -----------------------------------------------------------------------
     mdmposture = [
-        (panel("Encryption coverage", "stat",
-               [prom_t("avg(%s)"
+        (panel("Encryption posture population", "table",
+               [prom_t("count(%s == 1) or (0 * count(%s))"
+                       % (lot('tailscale_device_attribute_ratio{attribute="intune:isEncrypted"}', WIN_FAST),
+                          lot('tailscale_device_attribute_ratio{attribute="intune:isEncrypted"}', WIN_FAST)),
+                       instant=True, fmt="table", refid="A"),
+                prom_t("count(%s)"
                        % lot('tailscale_device_attribute_ratio{attribute="intune:isEncrypted"}', WIN_FAST),
-                       instant=True)],
-               unit="percentunit", min_=0, max_=1,
-               thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
-               options=stat_opts(color="background"),
-               desc="Average encryption coverage across devices (Intune isEncrypted attribute)."), 6, 6),
+                       instant=True, fmt="table", refid="B"),
+                prom_t("clamp_min(sum(%s) - count(%s), 0)"
+                       % (lot("tailscale_devices_count_ratio", WIN_FAST),
+                          lot('tailscale_device_attribute_ratio{attribute="intune:isEncrypted"}', WIN_FAST)),
+                       instant=True, fmt="table", refid="C")],
+               transformations=[merge(), organize(exclude=_INFRA,
+                                                   rename={"Value #A": "Passing",
+                                                           "Value #B": "Reporting",
+                                                           "Value #C": "Unknown / unsupported"})],
+               desc="Population accounting for the explicit Boolean intune:isEncrypted "
+                    "attribute: passing devices, reporting denominator, and devices absent from "
+                    "that denominator. Unknown/unsupported is not classified as noncompliant."), 6, 6),
         (panel("Compliance distribution", "barchart",
-               [prom_t("count by (value) (%s)"
+               [prom_t("count by (attribute, value) (%s)"
                        % lot('tailscale_device_attribute_info_ratio', WIN_FAST),
-                       legend="{{value}}", instant=True, fmt="table")],
+                       legend="{{attribute}} = {{value}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
                desc="Distribution of attribute values for the selected posture attribute."), 18, 6),
@@ -136,13 +148,14 @@ def tab_security_compliance(scope):
                    "panel is the normal reading, not a fault. Needs the devices collector with "
                    "collect_posture, and the attribute inside the attribute_namespaces allow-list.")
     attrisk = [
-        (panel("Devices failing posture attr", "table",
-               [prom_t("%s == 0"
-                       % lot('tailscale_device_attribute_ratio', WIN_FAST),
+        (panel("Posture attribute values by device", "table",
+               [prom_t(lot('tailscale_device_attribute_ratio', WIN_FAST),
                        instant=True, fmt="table")],
-               transformations=[organize(exclude=_INFRA + ["Value"],
-                                         rename={"host_name": "Host", "attribute": "Attribute"})],
-               desc="Devices with a failing (0) posture attribute. Hidden when host-name redaction is active."), 24, 8),
+               transformations=[organize(exclude=_INFRA,
+                                         rename={"host_name": "Host", "attribute": "Attribute",
+                                                 "Value": "Value"})],
+               desc="Per-device numeric posture attribute values without assuming that zero is "
+                    "a universal failure. Interpret each value according to its named attribute."), 24, 8),
         # #526: tailscale_device_attribute_expiry_seconds — ALERTABLE-ONLY before this
         # panel existed, i.e. an operator could be paged by it and find nothing on any
         # dashboard. Charted as time-until-expiry (`... - time()`), the same idiom the
@@ -180,22 +193,25 @@ def tab_security_compliance(scope):
     posture = [
         # The {label=...} selector MUST be INSIDE last_over_time(...) — appending a
         # matcher to a function result (lot(x){...}) is a PromQL parse error.
-        (panel("Auto-update coverage", "stat",
-               [prom_t("count(%s) / clamp_min(count(%s), 1)"
-                       % (lot("tailscale_device_posture_ratio{auto_update=\"true\"}", WIN_FAST),
-                          lot("tailscale_device_posture_ratio", WIN_FAST)), instant=True)],
-               unit="percentunit", min_=0, max_=1,
-               thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
-               options=stat_opts(color="background"),
-               desc="Fraction of devices with Tailscale client auto-update enabled."), 6, 6),
-        (panel("State-encryption coverage", "stat",
-               [prom_t("count(%s) / clamp_min(count(%s), 1)"
-                       % (lot("tailscale_device_posture_ratio{encrypted=\"true\"}", WIN_FAST),
-                          lot("tailscale_device_posture_ratio", WIN_FAST)), instant=True)],
-               unit="percentunit", min_=0, max_=1,
-               thresholds=thr([(None, "red"), (0.8, "yellow"), (0.95, "green")]),
-               options=stat_opts(color="background"),
-               desc="Fraction of devices reporting an encrypted local state store."), 6, 6),
+        (panel("Client posture population", "table",
+               [prom_t("count(%s) or (0 * count(%s))"
+                       % (lot('tailscale_device_posture_ratio{auto_update="true"}', WIN_FAST), POS),
+                       instant=True, fmt="table", refid="A"),
+                prom_t("count(%s) or (0 * count(%s))"
+                       % (lot('tailscale_device_posture_ratio{encrypted="true"}', WIN_FAST), POS),
+                       instant=True, fmt="table", refid="B"),
+                prom_t("count(%s)" % POS, instant=True, fmt="table", refid="C"),
+                prom_t("clamp_min(sum(%s) - count(%s), 0)"
+                       % (lot("tailscale_devices_count_ratio", WIN_FAST), POS),
+                       instant=True, fmt="table", refid="D")],
+               transformations=[merge(), organize(exclude=_INFRA,
+                                                   rename={"Value #A": "Auto-update passing",
+                                                           "Value #B": "State-encryption passing",
+                                                           "Value #C": "Reporting",
+                                                           "Value #D": "Unknown / unsupported"})],
+               desc="Explicit numerators for auto-update and state encryption, their shared "
+                    "posture-reporting denominator, and the device population absent from it. "
+                    "Unknown/unsupported devices are not counted as failures."), 12, 6),
         (panel("Devices needing update", "stat",
                [prom_t("count(%s == 1)" % lot("tailscale_device_update_available_ratio"), instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]), options=stat_opts(color="background"),

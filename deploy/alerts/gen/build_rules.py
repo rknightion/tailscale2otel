@@ -641,7 +641,7 @@ def groups():
               "A metric family is using >80% of its per-metric series budget "
               "(series_active / series_limit > 0.8); MetricCardinalityCapped fires once it overflows.",
               domain="observability", paused=False,
-              policy="optional", runbook="cardinality-and-series-budget", panel="Per-metric headroom (top-N)"),
+              policy="optional", runbook="cardinality-and-series-budget", panel="Per-metric utilization (top-N)"),
         # Keyed off the classified availability state, not the raw status code
         # (#420). The old rule fired critical on ANY 401 or 403 and declared "all
         # polling fails" — but a legitimate 403 is how upstream reports an optional
@@ -1001,7 +1001,7 @@ def groups():
               "Fewer than 80% of devices report Tailscale client auto-update enabled. Gated by "
               "collect_posture; absent => not firing.",
               domain="security", hygiene=True, paused=False,
-              policy="optional", runbook="device-posture-coverage", panel="Auto-update coverage"),
+              policy="optional", runbook="device-posture-coverage", panel="Client posture population"),
         alert("ts2o-posture-encryption-low", "Posture: state-encryption coverage low",
               "count(max by (host_id) (tailscale_device_posture_ratio{encrypted=\"true\"})) / "
               "clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)",
@@ -1009,7 +1009,7 @@ def groups():
               "Fleet state-encryption coverage below 80%",
               "Fewer than 80% of devices report an encrypted local state store. Gated by collect_posture.",
               domain="security", hygiene=True, paused=True,
-              policy="optional", runbook="device-posture-coverage", panel="State-encryption coverage"),
+              policy="optional", runbook="device-posture-coverage", panel="Client posture population"),
         alert("ts2o-devices-needing-update", "Many devices need updates",
               "count(max by (host_id) (tailscale_device_update_available_ratio) == 1)",
               "gt", 5, "30m", "info",

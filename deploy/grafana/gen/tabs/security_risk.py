@@ -69,8 +69,9 @@ def tab_security_risk(scope):
                options=stat_opts(color="background"),
                desc="Whether any SSH rule uses a wildcard source or destination."), 4, 6),
         (panel("Auto-approvers by kind", "barchart",
-               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s)"
-                       % lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW),
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s) or (0 * count(%s))"
+                       % (lot("tailscale_acl_autoapprovers_ratio", WIN_SLOW),
+                          lot("tailscale_acl_size_bytes", WIN_SLOW)),
                        legend="{{tailscale_acl_autoapprover_kind}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
