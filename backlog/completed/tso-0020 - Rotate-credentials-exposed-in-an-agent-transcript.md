@@ -1,9 +1,10 @@
 ---
 id: TSO-0020
 title: Rotate credentials exposed in an agent transcript
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-27 07:08'
+updated_date: '2026-08-27 07:47'
 labels:
   - needs-triage
   - security
@@ -21,15 +22,15 @@ Live control-plane and observability credential values were exposed in an agent 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The human identifies and rotates every credential value exposed in the transcript
-- [ ] #2 The replaced credential values are independently confirmed unable to authenticate
-- [ ] #3 All authorized live consumers are updated to use replacement credentials without committing secret material
-- [ ] #4 The rotation and verification outcome is recorded here without real identifiers or credential values
+- [x] #1 The human identifies and rotates every credential value exposed in the transcript
+- [x] #2 The replaced credential values are independently confirmed unable to authenticate
+- [x] #3 All authorized live consumers are updated to use replacement credentials without committing secret material
+- [x] #4 The rotation and verification outcome is recorded here without real identifiers or credential values
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
