@@ -230,8 +230,9 @@ extraVolumeMounts:
 | config.cardinality.per_entity.webhook | bool | `true` | Emit the per-endpoint webhook subscriptions gauge; false emits only tailscale.webhook_endpoints.count. |
 | config.cardinality.subnet_route_rollup | bool | `true` | Emit the per-CIDR tailscale.subnet_routes.routers redundancy gauge (one series per subnet CIDR); the fleet exit/subnet count aggregates emit regardless. |
 | config.cardinality.warning_threshold | int | `2000` | Status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables). |
-| config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Checkpoint file path when store: file (mount a writable volume here). |
-| config.checkpoint.store | string | `"file"` | Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
+| config.checkpoint.evidence_store | string | `"file"` | Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to preserve ACL revision/audit provenance across restarts even in streamed deployments. |
+| config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Shared state path when either store is file (mount a writable persistent volume here). |
+| config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
 | config.collectors.acl.validate | bool | `true` | Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only. |

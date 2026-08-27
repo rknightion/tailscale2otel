@@ -875,6 +875,9 @@ type ConfigSummary struct {
 	// so an operator can see where state went without reading startup logs.
 	CheckpointPath    string   `json:"checkpoint_path,omitempty"`
 	CheckpointReason  string   `json:"checkpoint_reason,omitempty"`
+	EvidenceStore     string   `json:"evidence_store"`
+	EvidencePath      string   `json:"evidence_path,omitempty"`
+	EvidenceReason    string   `json:"evidence_reason,omitempty"`
 	EnabledCollectors []string `json:"enabled_collectors"`
 	APIKeySet         bool     `json:"api_key_set"`
 	OAuthSecretSet    bool     `json:"oauth_secret_set"`

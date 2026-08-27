@@ -414,6 +414,33 @@ func TestValidateRejectsBadCheckpointStore(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsBadEvidenceStore(t *testing.T) {
+	err := loadErr(t, "checkpoint:\n  evidence_store: redis\n")
+	if err == nil {
+		t.Fatalf("expected error for bad checkpoint.evidence_store, got nil")
+	}
+	if !strings.Contains(err.Error(), "evidence_store") {
+		t.Errorf("error %q should mention evidence_store", err.Error())
+	}
+}
+
+func TestWarnings_MemoryEvidenceStoreExplainsRestartRisk(t *testing.T) {
+	c := config.Default()
+	c.Checkpoint.Store = "memory"
+	c.Checkpoint.EvidenceStore = "memory"
+	warnings := strings.Join(c.Warnings(), "\n")
+	for _, want := range []string{"checkpoint.evidence_store=memory", "ACL", "restart", "file"} {
+		if !strings.Contains(warnings, want) {
+			t.Errorf("memory evidence warning %q does not mention %q", warnings, want)
+		}
+	}
+
+	c.Checkpoint.EvidenceStore = "file"
+	if warnings := strings.Join(c.Warnings(), "\n"); strings.Contains(warnings, "checkpoint.evidence_store=memory") {
+		t.Errorf("file-backed evidence must not carry the memory warning: %q", warnings)
+	}
+}
+
 func TestValidateRejectsBadLogMode(t *testing.T) {
 	err := loadErr(t, "collectors:\n  flowlogs:\n    log_mode: per_galaxy\n")
 	if err == nil {

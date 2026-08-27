@@ -292,8 +292,9 @@ func Default() *Config {
 			},
 		},
 		Checkpoint: CheckpointConfig{
-			Store:    "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
-			FilePath: LegacyCheckpointPath,
+			Store:         "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
+			EvidenceStore: "file", // semantic evidence must survive restarts even when poll cursors are intentionally in memory
+			FilePath:      LegacyCheckpointPath,
 		},
 		IngressWAL: IngressWALConfig{
 			Enabled:    false,

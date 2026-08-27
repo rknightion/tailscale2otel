@@ -144,7 +144,7 @@ services:
 volumes:
   # Alloy's persistent sending queue (and its other component state).
   alloy-data: {}
-  # tailscale2otel collector checkpoint cursors. Separate from the queue on
+  # tailscale2otel poll cursors and semantic evidence. Separate from the queue on
   # purpose: they are different durability domains with different owners, and
   # clearing one to recover from corruption must not take the other with it.
   checkpoints: {}

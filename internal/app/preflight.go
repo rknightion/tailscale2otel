@@ -62,6 +62,7 @@ func PrepareConfig(cfg *config.Config, preflight bool) *config.Config {
 	out.IngressWAL.Enabled = false
 	if preflight {
 		out.Checkpoint.Store = "memory"
+		out.Checkpoint.EvidenceStore = "memory"
 		out.Profiling.Pyroscope.Enabled = false
 		out.GrafanaAnnotations = config.GrafanaAnnotationsConfig{}
 		out.Collectors.Acl.Validate = false

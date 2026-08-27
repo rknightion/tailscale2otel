@@ -158,7 +158,7 @@ suggests it. Keys under a genuinely dynamic map (`otlp.headers.*`, a node-metric
 - [`enrichment` — device-name cache](#enrichment-device-name-cache)
 - [`cardinality` — metric/label cardinality controls](#cardinality-metriclabel-cardinality-controls)
 - [`collectors` — per-source polling](#collectors-per-source-polling)
-- [`checkpoint` — poll high-water marks](#checkpoint-poll-high-water-marks)
+- [`checkpoint` — poll cursors and semantic evidence](#checkpoint-poll-high-water-marks)
 - [`ingress_wal` — durable local receiver acceptance](#ingress_wal-durable-local-receiver-acceptance)
 - [`streaming` — Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
 - [`webhook` — event webhook receiver](#webhook-event-webhook-receiver)
@@ -1265,16 +1265,19 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 
 ---
 
-## `checkpoint` — poll high-water marks
+## `checkpoint` — poll cursors and semantic evidence {#checkpoint-poll-high-water-marks}
 
 Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs` with
 `source: poll` or `both`) has read, so a restart resumes without gaps or large overlaps. The store is
-**unused** if you stream both log types or disable them.
+unused if you stream both log types or disable them. The same atomic file also carries
+**semantic evidence** that must survive independently of polling: the first observation of the
+current ACL revision and the newest authoritative ACL-change audit timestamp.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `checkpoint.store` | `file` | `file` \| `memory`. See below. |
-| `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where the file store persists. Used only when `store: file`. The parent directory is created automatically; if it cannot be made writable the exporter logs a WARN and falls back to `memory`. |
+| `checkpoint.evidence_store` | `file` | `file` \| `memory`, independently of poll cursors. `memory` resets ACL revision provenance on restart and emits an actionable warning. |
+| `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where either file-backed class persists. Both classes share one atomic JSON file, so existing ACL evidence keys remain readable. The parent directory is created automatically; if it cannot be made writable the affected class logs a WARN and falls back to `memory`. |
 
 - **`file`** (default) — the high-water mark is persisted to `file_path` with an atomic write on each
   tick and reloaded at startup, so polling **resumes from the exact high-water mark** across restarts
@@ -1285,7 +1288,14 @@ Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs`
 - **`memory`** — the high-water mark lives in RAM only and is lost on restart. After a restart the
   poller cold-starts from `initial_lookback`, so any **downtime longer than `initial_lookback` leaves
   a gap**. Needs no volume; fine for streamed or stateless deployments where the checkpoint is unused
-  or disposable.
+  or disposable. This setting controls poll cursors only.
+
+`checkpoint.evidence_store` is deliberately separate. A streamed deployment with no poll cursors
+can set `checkpoint.store: memory` while leaving `checkpoint.evidence_store: file`; the existing
+`checkpoint.file_path` then opens only for semantic evidence. If both selectors are `file`, the
+process uses one shared store instance rather than two snapshots of the same file. If evidence
+degrades to memory because the path is unavailable, the admin status page and `/api/status.json`
+report the effective evidence store/path/reason separately from the poll-cursor outcome.
 
 > **Startup sweep of orphaned staging files.** Each save is staged through a uniquely named temporary
 > file in the checkpoint directory and then renamed into place, so a crash can never leave a partially

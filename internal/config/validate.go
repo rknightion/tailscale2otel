@@ -251,6 +251,9 @@ func (c *Config) validateReceiverRoutes() error {
 // steer operators toward the safer choice without removing flexibility.
 func (c *Config) Warnings() []string {
 	var w []string
+	if c.Checkpoint.EvidenceStore == "memory" {
+		w = append(w, "checkpoint.evidence_store=memory: restart-stable ACL revision evidence will be lost on restart, so the approximate revision age can reset to process lifetime. Set checkpoint.evidence_store=file and keep checkpoint.file_path on a persistent writable volume; checkpoint.store may remain memory when poll cursors are unused.")
+	}
 	if c.Tailscale.Auth.Method == "apikey" {
 		w = append(w, "tailscale.auth.method=apikey: a personal API key expires in <=90 days "+
 			"and is tied to the user that created it (it stops working when that user is "+
@@ -1560,6 +1563,12 @@ func (c *Config) validationChecks() []configCheck {
 	add("checkpoint.store", oneOfRemediation("checkpoint.store", "memory", "file"), func() error {
 		if !oneOf(c.Checkpoint.Store, "memory", "file") {
 			return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
+		}
+		return nil
+	})
+	add("checkpoint.evidence_store", oneOfRemediation("checkpoint.evidence_store", "memory", "file"), func() error {
+		if !oneOf(c.Checkpoint.EvidenceStore, "memory", "file") {
+			return fmt.Errorf("checkpoint.evidence_store %q invalid: must be one of memory, file", c.Checkpoint.EvidenceStore)
 		}
 		return nil
 	})

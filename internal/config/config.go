@@ -1408,10 +1408,14 @@ type NodeMetricsTargetTLS struct {
 	ServerName         string `yaml:"server_name"`
 }
 
-// CheckpointConfig configures high-water-mark persistence.
+// CheckpointConfig configures poll-cursor and semantic-evidence persistence.
 type CheckpointConfig struct {
-	Store    string `yaml:"store"`
-	FilePath string `yaml:"file_path"`
+	// Store selects persistence for disposable poll high-water marks.
+	Store string `yaml:"store"`
+	// EvidenceStore independently selects persistence for restart-stable facts
+	// such as ACL revision provenance. Both file-backed classes share FilePath.
+	EvidenceStore string `yaml:"evidence_store"`
+	FilePath      string `yaml:"file_path"`
 }
 
 // IngressWALConfig configures the process-global write-ahead log for accepted

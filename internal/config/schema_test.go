@@ -276,6 +276,7 @@ var ruleApplications = []string{
 	"cardinality.flow.rollup_top_n",
 	"cardinality.label_value_sample_cap",
 	"cardinality.warning_threshold",
+	"checkpoint.evidence_store",
 	"checkpoint.store",
 	"collectors.auditlogs.objectstore.layout",
 	"collectors.auditlogs.source",

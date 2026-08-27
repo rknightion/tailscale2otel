@@ -110,18 +110,19 @@ func (a *App) runtimeConfiguredName(rt *tailnetRuntime) string {
 // runtimeDeps carries the process-level dependencies a runtime needs at build
 // time but does not own.
 type runtimeDeps struct {
-	cfg          *config.Config
-	logger       *slog.Logger
-	tracer       trace.Tracer
-	store        collector.CheckpointStore
-	procEmitter  telemetry.Emitter  // for shared-infra self-obs (rdns)
-	rdnsCache    *rdns.Cache        // shared external-address resolver; nil when disabled
-	geoDB        *geoip.DB          // shared local GeoIP/ASN databases; nil when disabled
-	eventStore   *eventstore.Memory // shared bounded audit/webhook event store (#300); nil when disabled
-	webhookDedup *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
-	tsRelease    *release.Fetcher   // shared upstream-version fetcher; nil when disabled
-	multi        bool               // true when >1 tailnet (enables checkpoint namespacing)
-	primary      bool               // true for the first runtime; owns process-global static node_metrics targets (#59)
+	cfg           *config.Config
+	logger        *slog.Logger
+	tracer        trace.Tracer
+	store         collector.CheckpointStore
+	evidenceStore collector.CheckpointStore
+	procEmitter   telemetry.Emitter  // for shared-infra self-obs (rdns)
+	rdnsCache     *rdns.Cache        // shared external-address resolver; nil when disabled
+	geoDB         *geoip.DB          // shared local GeoIP/ASN databases; nil when disabled
+	eventStore    *eventstore.Memory // shared bounded audit/webhook event store (#300); nil when disabled
+	webhookDedup  *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
+	tsRelease     *release.Fetcher   // shared upstream-version fetcher; nil when disabled
+	multi         bool               // true when >1 tailnet (enables checkpoint namespacing)
+	primary       bool               // true for the first runtime; owns process-global static node_metrics targets (#59)
 }
 
 // newRuntime assembles a per-tailnet runtime: emitter/provider/client are already
@@ -193,9 +194,9 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		audit.WithDedup(rt.auditDedup),
 		audit.WithLogger(withComponent(d.logger, compCollector)),
 	}
-	changeStore := d.store
+	changeStore := d.evidenceStore
 	if d.multi {
-		changeStore = collector.Namespaced(d.store, rt.name)
+		changeStore = collector.Namespaced(d.evidenceStore, rt.name)
 	}
 	auditOpts = append(auditOpts, audit.WithChangeCheckpointStore(changeStore))
 	if d.webhookDedup != nil {

@@ -117,13 +117,15 @@ services:
       # halves that frequency. GOMEMLIMIT is a soft backstop ~10% below mem_limit.
       GOGC: ${GOGC:-200}
       GOMEMLIMIT: ${GOMEMLIMIT:-230MiB}
-    # Process state: checkpoint cursors and an enabled receiver WAL survive
+    # Process state: poll cursors, ACL semantic evidence, and an enabled receiver WAL survive
     # container recreation via the existing named volume. Docker copies the image
     # directory (owned by uid 65532) on first creation, so the nonroot user can
     # write without extra chmod.
     # Alternative: bind-mount a host directory pre-chowned to uid 65532, e.g.:
     #   - ./checkpoints:/var/lib/tailscale2otel
-    # If it is not writable, checkpoints WARN and fall back to memory; an enabled
+    # A mounted config may independently choose memory poll cursors and file-backed
+    # evidence; do not force those keys here because environment values override YAML.
+    # If it is not writable, each configured file store WARNS and falls back to memory; an enabled
     # ingress WAL fails closed instead of accepting data without durability.
     volumes:
       - checkpoints:/var/lib/tailscale2otel

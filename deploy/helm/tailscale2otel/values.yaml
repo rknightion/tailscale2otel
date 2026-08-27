@@ -1541,10 +1541,13 @@ config: # @schema additionalProperties:false
         include_tags_label: true
 
   checkpoint: # @schema additionalProperties:false
-    # -- Checkpoint store: memory | file. "memory" loses window cursors on restart (re-does
+    # -- Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does
     # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
     store: file
-    # -- Checkpoint file path when store: file (mount a writable volume here).
+    # -- Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to
+    # preserve ACL revision/audit provenance across restarts even in streamed deployments.
+    evidence_store: file
+    # -- Shared state path when either store is file (mount a writable persistent volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
 
   # Process-global write-ahead log for accepted streaming/webhook request bodies.

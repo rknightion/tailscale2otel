@@ -478,6 +478,15 @@
           },
           "type": "array"
         },
+        "evidence_path": {
+          "type": "string"
+        },
+        "evidence_reason": {
+          "type": "string"
+        },
+        "evidence_store": {
+          "type": "string"
+        },
         "full": {
           "additionalProperties": {
             "properties": {

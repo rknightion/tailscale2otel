@@ -90,19 +90,20 @@ func f64(v float64) *float64 { return &v }
 // disclaimer — encoding it as a plain minimum would reject a value that is
 // perfectly valid whenever that gating field is false/unset.
 var rulesBySuffix = map[string]schemaRule{
-	"provider":         {enum: []string{"tailscale", "headscale"}},
-	"log_format":       {enum: []string{"text", "json"}},
-	"log_level":        {enum: []string{"debug", "info", "warn", "error"}},
-	"delivery.mode":    {enum: []string{"otlp", "prometheus", "dual"}},
-	"otlp.protocol":    {enum: []string{"grpc", "http", "stdout"}},
-	"checkpoint.store": {enum: []string{"memory", "file"}},
-	"source":           {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
-	"log_mode":         {enum: []string{"per_connection", "per_record", "off"}},
-	"metrics_mode":     {enum: []string{"all", "rollup", "both"}},
-	"posture_log_mode": {enum: []string{"changes", "always", "off"}},
-	"decompress":       {enum: []string{"auto", "gzip", "zstd", "none"}},
-	"auth.method":      {enum: []string{"oauth", "apikey", "workload_identity"}},
-	"sampler":          {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	"provider":                  {enum: []string{"tailscale", "headscale"}},
+	"log_format":                {enum: []string{"text", "json"}},
+	"log_level":                 {enum: []string{"debug", "info", "warn", "error"}},
+	"delivery.mode":             {enum: []string{"otlp", "prometheus", "dual"}},
+	"otlp.protocol":             {enum: []string{"grpc", "http", "stdout"}},
+	"checkpoint.store":          {enum: []string{"memory", "file"}},
+	"checkpoint.evidence_store": {enum: []string{"memory", "file"}},
+	"source":                    {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
+	"log_mode":                  {enum: []string{"per_connection", "per_record", "off"}},
+	"metrics_mode":              {enum: []string{"all", "rollup", "both"}},
+	"posture_log_mode":          {enum: []string{"changes", "always", "off"}},
+	"decompress":                {enum: []string{"auto", "gzip", "zstd", "none"}},
+	"auth.method":               {enum: []string{"oauth", "apikey", "workload_identity"}},
+	"sampler":                   {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
 	// The per-class overrides (#372) accept the same five strategies PLUS the
 	// empty string, which is the documented way to inherit tracing.sampler. The
 	// generic "sampler" suffix above would otherwise match them and reject the

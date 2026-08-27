@@ -100,8 +100,10 @@ parked (#486) — do not add a SIGHUP handler or a reload route to make a config
 convention (e.g. `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`). This is a BREAKING rename from the
 old `TS_*`/`GC_*`/`ADMIN_TOKEN`/`PYROSCOPE_*` keys.
 
-**Checkpoint persistence (chart 0.5.1+):** `config.checkpoint.store` defaults to `file`; the
-checkpoint directory `/var/lib/tailscale2otel` is pre-seeded in the image (owned by uid 65532) and
+**Checkpoint persistence (chart 0.5.1+):** `config.checkpoint.store` controls poll cursors and
+`config.checkpoint.evidence_store` independently controls ACL provenance; both default to `file` and
+share `config.checkpoint.file_path`. The checkpoint directory `/var/lib/tailscale2otel` is pre-seeded
+in the image (owned by uid 65532) and
 mounted via an `emptyDir` by default. Set `persistence.enabled=true` to create a PVC for durable
 storage across pod rescheduling. The app gracefully falls back to in-memory if the path is not
 writable (a WARN is logged), so no crash occurs on misconfiguration.

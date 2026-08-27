@@ -131,6 +131,9 @@
                 "checkpoint": {
                     "type": "object",
                     "properties": {
+                        "evidence_store": {
+                            "type": "string"
+                        },
                         "file_path": {
                             "type": "string"
                         },

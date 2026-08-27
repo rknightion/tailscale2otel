@@ -261,6 +261,9 @@ See [Configuration](configuration.md) for the full list of options once you are 
     !!! tip "Checkpoint persistence"
         For polled log collectors (`flowlogs`, `auditlogs`), checkpoints record
         the high-water mark so restarts resume without re-fetching old records.
+        ACL revision and audit provenance use the same file but have an independent
+        `checkpoint.evidence_store` selector, so streamed deployments can keep
+        unused poll cursors in memory without resetting revision age on restart.
         The named volume in the compose file handles this automatically. When
         running `docker run` directly, add `-v ts2otel-checkpoints:/var/lib/tailscale2otel`
         to persist checkpoints across restarts. If the path is not writable the
@@ -423,9 +426,10 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ```
 
     !!! note "Checkpoint persistence"
-        The chart defaults to `config.checkpoint.store: file` with an `emptyDir`
-        at `/var/lib/tailscale2otel`. Set `persistence.enabled=true` to create a
-        PVC for durable storage across pod rescheduling.
+        The chart defaults both `config.checkpoint.store` (poll cursors) and
+        `config.checkpoint.evidence_store` (ACL provenance) to `file`, sharing an
+        `emptyDir` at `/var/lib/tailscale2otel`. Set `persistence.enabled=true`
+        to create a PVC for durability across pod rescheduling.
 
     For the full values table — every knob, type, default, and description — see the
     [chart README on GitHub](https://github.com/rknightion/tailscale2otel/blob/main/deploy/helm/tailscale2otel/README.md).
@@ -490,11 +494,12 @@ See [Configuration](configuration.md) for the full list of options once you are 
           per-user path, copy `checkpoints.json` there yourself. Doing nothing is
           safe: the old path keeps working while it is writable.
 
-        The effective store, the effective path, and the reason for any
-        divergence are all shown on the admin status page and in
+        The effective poll-cursor and semantic-evidence stores, paths, and reasons
+        for any divergence are all shown on the admin status page and in
         `/api/status.json` (`checkpoint_store`, `checkpoint_path`,
-        `checkpoint_reason`), so you never have to read startup logs to find out
-        where state went.
+        `checkpoint_reason`, `evidence_store`, `evidence_path`,
+        `evidence_reason`), so you never have to read startup logs to find out
+        where either durability class went.
 
     Release binaries (pre-built, multi-arch) are attached to each
     [GitHub Release](https://github.com/rknightion/tailscale2otel/releases) and

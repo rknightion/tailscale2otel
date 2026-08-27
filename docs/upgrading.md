@@ -35,7 +35,7 @@ below describe only behaviour changes and link back here for the operational seq
 
   | State | When to back it up | Consideration |
   | --- | --- | --- |
-  | `checkpoint.file_path` | `checkpoint.store: file` | Preserves polled log high-water marks. Copy the containing persistent volume or directory while the service is stopped. |
+  | `checkpoint.file_path` | `checkpoint.store: file` or `checkpoint.evidence_store: file` | Preserves polled log high-water marks and ACL semantic evidence. Existing combined files remain readable; copy the containing persistent volume or directory while the service is stopped. |
   | `ingress_wal.directory` | `ingress_wal.enabled: true` | Contains accepted receiver bodies waiting for replay. Preserve it if those bodies must survive the change; do not edit or discard entries by hand. |
   | `flows.store.directory` | The path is non-empty | Contains SQLite flow history, including the `-wal`/`-shm` sidecars when present. Stop the service before copying the directory. The rows can contain user identities, so protect this backup like the live data. |
   | In-memory stores | No persistent path is configured | There is no file to back up; that history is lost on restart. |

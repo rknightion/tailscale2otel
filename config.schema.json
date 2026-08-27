@@ -194,9 +194,18 @@
     "checkpoint": {
       "additionalProperties": false,
       "properties": {
+        "evidence_store": {
+          "default": "file",
+          "description": "file (default; preserves ACL revision/audit provenance across restarts) | memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file.",
+          "enum": [
+            "memory",
+            "file"
+          ],
+          "type": "string"
+        },
         "file_path": {
           "default": "/var/lib/tailscale2otel/checkpoints.json",
-          "description": "used when store: file — mount a writable, persistent path here (the dir is auto-created). This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.",
+          "description": "used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.",
           "type": "string"
         },
         "store": {

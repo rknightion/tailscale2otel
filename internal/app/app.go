@@ -86,10 +86,11 @@ type App struct {
 	delivery     func() []telemetry.DeliveryState
 	metricGroups map[string]string // metric source-name -> catalog group, for series.by_group rollup
 
-	shutdown    func(context.Context) error // flushes telemetry on stop
-	restore     func()                      // restores the prior otel error handler
-	runtimeHist *runtimeHistory             // short-term runtime/cardinality trends, for the status page
-	store       collector.CheckpointStore   // checkpoint store; read for window-collector state on the status page
+	shutdown      func(context.Context) error // flushes telemetry on stop
+	restore       func()                      // restores the prior otel error handler
+	runtimeHist   *runtimeHistory             // short-term runtime/cardinality trends, for the status page
+	store         collector.CheckpointStore   // poll-cursor store; read for window-collector state on the status page
+	evidenceStore collector.CheckpointStore   // restart-stable semantic evidence (ACL revision/audit provenance)
 	// checkpointEffective is the store kind actually in use ("file"|"memory"),
 	// which can differ from cfg.Checkpoint.Store after a fallback (unwritable path
 	// or a corrupt file). The status page and the checkpoint reporter use this, not
@@ -101,9 +102,12 @@ type App struct {
 	// file renamed aside. Both are surfaced on the status page and in
 	// /api/status.json so an operator can see WHERE state went and WHY without
 	// reading startup logs.
-	checkpointPath   string
-	checkpointReason string
-	logger           *slog.Logger
+	checkpointPath    string
+	checkpointReason  string
+	evidenceEffective string
+	evidencePath      string
+	evidenceReason    string
+	logger            *slog.Logger
 
 	flowDedup     *dedup.Set // runtimes[0] flow set, retained for the dedup self-obs reporter
 	auditDedup    *dedup.Set // runtimes[0] audit set, retained for the dedup self-obs reporter
@@ -265,17 +269,21 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if err != nil {
 		return nil, err
 	}
-	store, checkpointOut, err := checkpointStore(cfg, withComponent(logger, compCheckpoint))
+	stores, err := stateStores(cfg, withComponent(logger, compCheckpoint))
 	if err != nil {
 		_ = ps.Shutdown(ctx)
 		return nil, err
 	}
 
-	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, store)
+	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, stores.Cursors.Store)
+	a.evidenceStore = stores.Evidence.Store
 	a.credReload = reloaders
-	a.checkpointEffective = checkpointOut.Kind
-	a.checkpointPath = checkpointOut.Path
-	a.checkpointReason = checkpointOut.Reason
+	a.checkpointEffective = stores.Cursors.Outcome.Kind
+	a.checkpointPath = stores.Cursors.Outcome.Path
+	a.checkpointReason = stores.Cursors.Outcome.Reason
+	a.evidenceEffective = stores.Evidence.Outcome.Kind
+	a.evidencePath = stores.Evidence.Outcome.Path
+	a.evidenceReason = stores.Evidence.Outcome.Reason
 	a.procCard = ps.Process().Cardinality()
 	if q := ps.Process().BatchQueues(); q != nil {
 		a.batchQueues = append(a.batchQueues, batchQueueReport{emitter: a.procEmitter, tracker: q})
@@ -540,16 +548,17 @@ func newAppShell(
 		logger = slog.Default()
 	}
 	return &App{
-		cfg:         cfg,
-		version:     version,
-		startTime:   time.Now(),
-		tracer:      tracer,
-		procEmitter: procEmitter,
-		shutdown:    shutdown,
-		runtimeHist: newRuntimeHistory(runtimeHistoryLen),
-		store:       store,
-		logger:      logger,
-		readyState:  newComponentHealth(),
+		cfg:           cfg,
+		version:       version,
+		startTime:     time.Now(),
+		tracer:        tracer,
+		procEmitter:   procEmitter,
+		shutdown:      shutdown,
+		runtimeHist:   newRuntimeHistory(runtimeHistoryLen),
+		store:         store,
+		evidenceStore: store,
+		logger:        logger,
+		readyState:    newComponentHealth(),
 	}
 }
 
@@ -654,18 +663,19 @@ func (a *App) addRuntimeConfigured(
 		a.webhookDedups[configuredName] = webhookDedup
 	}
 	newRuntime(rt, runtimeDeps{
-		cfg:          a.cfg,
-		logger:       a.logger,
-		tracer:       a.tracer,
-		store:        a.store,
-		procEmitter:  a.procEmitter,
-		rdnsCache:    a.rdnsCache,
-		geoDB:        a.geoDB,
-		eventStore:   a.eventStore,
-		webhookDedup: webhookDedup,
-		tsRelease:    a.tsRelease,
-		multi:        multi,
-		primary:      len(a.runtimes) == 0, // the first runtime owns process-global static targets
+		cfg:           a.cfg,
+		logger:        a.logger,
+		tracer:        a.tracer,
+		store:         a.store,
+		evidenceStore: a.evidenceStore,
+		procEmitter:   a.procEmitter,
+		rdnsCache:     a.rdnsCache,
+		geoDB:         a.geoDB,
+		eventStore:    a.eventStore,
+		webhookDedup:  webhookDedup,
+		tsRelease:     a.tsRelease,
+		multi:         multi,
+		primary:       len(a.runtimes) == 0, // the first runtime owns process-global static targets
 	})
 	a.runtimes = append(a.runtimes, rt)
 	return rt
@@ -1105,6 +1115,80 @@ type checkpointOutcome struct {
 	Kind   string // "file" | "memory"
 	Path   string // empty for the memory store
 	Reason string // why the effective values differ from the config; empty when they do not
+}
+
+type resolvedStateStore struct {
+	Store   collector.CheckpointStore
+	Outcome checkpointOutcome
+}
+
+type resolvedStateStores struct {
+	Cursors  resolvedStateStore
+	Evidence resolvedStateStore
+}
+
+// stateStores resolves the two durability classes without creating two
+// independent fileStore snapshots over one path. When both classes are file
+// backed they share the same store, preserving existing mixed checkpoint files
+// and ensuring a write from one class cannot clobber keys written by the other.
+func stateStores(cfg *config.Config, logger *slog.Logger) (resolvedStateStores, error) {
+	cursorStore, cursorOutcome, err := checkpointStore(cfg, logger)
+	if err != nil {
+		return resolvedStateStores{}, err
+	}
+	cursors := resolvedStateStore{Store: cursorStore, Outcome: cursorOutcome}
+
+	evidenceKind := cfg.Checkpoint.EvidenceStore
+	if evidenceKind == "" {
+		evidenceKind = "file"
+	}
+	if evidenceKind == cfg.Checkpoint.Store || (cfg.Checkpoint.Store == "" && evidenceKind == "memory") {
+		evidence := cursors
+		evidence.Outcome = semanticEvidenceOutcome(evidence.Outcome, evidenceKind, cfg.Checkpoint.FilePath, logger)
+		return resolvedStateStores{Cursors: cursors, Evidence: evidence}, nil
+	}
+	if evidenceKind == "memory" {
+		return resolvedStateStores{
+			Cursors: cursors,
+			Evidence: resolvedStateStore{
+				Store:   collector.NewMemoryStore(),
+				Outcome: checkpointOutcome{Kind: "memory"},
+			},
+		}, nil
+	}
+
+	evidenceCfg := *cfg
+	evidenceCfg.Checkpoint = cfg.Checkpoint
+	evidenceCfg.Checkpoint.Store = "file"
+	evidenceStore, evidenceOutcome, err := checkpointStore(&evidenceCfg, logger)
+	if err != nil {
+		return resolvedStateStores{}, err
+	}
+	return resolvedStateStores{
+		Cursors: cursors,
+		Evidence: resolvedStateStore{
+			Store:   evidenceStore,
+			Outcome: semanticEvidenceOutcome(evidenceOutcome, evidenceKind, cfg.Checkpoint.FilePath, logger),
+		},
+	}, nil
+}
+
+func semanticEvidenceOutcome(
+	out checkpointOutcome, configuredKind, configuredPath string, logger *slog.Logger,
+) checkpointOutcome {
+	if configuredKind != "file" || out.Kind != "memory" {
+		return out
+	}
+	reason := out.Reason
+	if reason == "" {
+		reason = "the configured evidence file store was unavailable"
+	}
+	out.Reason = "semantic evidence is not durable: " + reason
+	if logger != nil {
+		logger.Warn("checkpoint.evidence_store=file could not become durable; ACL revision provenance will reset on restart. Mount checkpoint.file_path on a persistent writable volume or fix its permissions.",
+			"file_path", configuredPath, "reason", reason)
+	}
+	return out
 }
 
 // checkpointStoreWithDefault is checkpointStore with the "what counts as the

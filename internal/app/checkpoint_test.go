@@ -70,6 +70,118 @@ func TestCheckpointStore_UnwritableReportsMemory(t *testing.T) {
 	}
 }
 
+func TestStateStores_MemoryCursorsFileEvidenceReopensExistingACLKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoints.json")
+	legacy, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore legacy: %v", err)
+	}
+	firstObserved := time.Unix(1000, 0).UTC()
+	auditChanged := time.Unix(2000, 0).UTC()
+	if err := legacy.Set("acl/revision/existing", firstObserved); err != nil {
+		t.Fatalf("seed revision evidence: %v", err)
+	}
+	if err := legacy.Set("flowlogs", time.Unix(3000, 0).UTC()); err != nil {
+		t.Fatalf("seed cursor: %v", err)
+	}
+
+	cfg := config.Default()
+	cfg.Checkpoint.Store = "memory"
+	cfg.Checkpoint.EvidenceStore = "file"
+	cfg.Checkpoint.FilePath = path
+	cfg.Collectors.Flowlogs.Source = "stream"
+	cfg.Collectors.Auditlogs.Source = "stream"
+	cfg.Streaming.Enabled = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("streamed deployment config must validate: %v", err)
+	}
+
+	stores, err := stateStores(cfg, discardLogger())
+	if err != nil {
+		t.Fatalf("stateStores: %v", err)
+	}
+	if stores.Cursors.Outcome.Kind != "memory" || stores.Evidence.Outcome.Kind != "file" {
+		t.Fatalf("effective stores = cursors %q / evidence %q, want memory/file",
+			stores.Cursors.Outcome.Kind, stores.Evidence.Outcome.Kind)
+	}
+	if _, ok := stores.Cursors.Store.Get("flowlogs"); ok {
+		t.Fatal("memory cursor store unexpectedly loaded the old file cursor")
+	}
+	if got, ok := stores.Evidence.Store.Get("acl/revision/existing"); !ok || !got.Equal(firstObserved) {
+		t.Fatalf("revision evidence = %v, %v; want %v, true", got, ok, firstObserved)
+	}
+	if got, ok := stores.Evidence.Store.Get(collector.ACLAuditChangeCheckpointKey); ok {
+		t.Fatalf("absent authoritative audit history was fabricated as %v", got)
+	}
+
+	newRevision := time.Unix(4000, 0).UTC()
+	if err := stores.Evidence.Store.Set("acl/revision/changed", newRevision); err != nil {
+		t.Fatalf("persist changed revision: %v", err)
+	}
+	if err := stores.Evidence.Store.Set(collector.ACLAuditChangeCheckpointKey, auditChanged); err != nil {
+		t.Fatalf("persist authoritative audit evidence: %v", err)
+	}
+	restarted, err := stateStores(cfg, discardLogger())
+	if err != nil {
+		t.Fatalf("stateStores restart: %v", err)
+	}
+	if got, ok := restarted.Evidence.Store.Get("acl/revision/changed"); !ok || !got.Equal(newRevision) {
+		t.Fatalf("restarted revision evidence = %v, %v; want %v, true", got, ok, newRevision)
+	}
+	if got, ok := restarted.Evidence.Store.Get(collector.ACLAuditChangeCheckpointKey); !ok || !got.Equal(auditChanged) {
+		t.Fatalf("restarted audit evidence = %v, %v; want %v, true", got, ok, auditChanged)
+	}
+}
+
+func TestStateStores_FileBackedClassesShareOneStore(t *testing.T) {
+	cfg := config.Default()
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.EvidenceStore = "file"
+	cfg.Checkpoint.FilePath = filepath.Join(t.TempDir(), "checkpoints.json")
+
+	stores, err := stateStores(cfg, discardLogger())
+	if err != nil {
+		t.Fatalf("stateStores: %v", err)
+	}
+	if stores.Cursors.Store != stores.Evidence.Store {
+		t.Fatal("file-backed cursor and evidence classes must share one store for one path")
+	}
+	if err := stores.Cursors.Store.Set("flowlogs", time.Unix(1, 0)); err != nil {
+		t.Fatalf("set cursor: %v", err)
+	}
+	if err := stores.Evidence.Store.Set(collector.ACLAuditChangeCheckpointKey, time.Unix(2, 0)); err != nil {
+		t.Fatalf("set evidence: %v", err)
+	}
+	reopened, err := collector.NewFileStore(cfg.Checkpoint.FilePath)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	for _, key := range []string{"flowlogs", collector.ACLAuditChangeCheckpointKey} {
+		if _, ok := reopened.Get(key); !ok {
+			t.Errorf("shared file lost %q", key)
+		}
+	}
+}
+
+func TestRedactedConfigSummaryDistinguishesCursorAndEvidenceDurability(t *testing.T) {
+	cfg := config.Default()
+	a := &App{
+		cfg:                 cfg,
+		checkpointEffective: "memory",
+		checkpointReason:    "poll cursors intentionally volatile",
+		evidenceEffective:   "file",
+		evidencePath:        "/state/checkpoints.json",
+	}
+
+	got := a.redactedConfigSummary()
+	if got.CheckpointStore != "memory" || got.CheckpointReason == "" {
+		t.Fatalf("cursor status = store %q reason %q, want memory with reason", got.CheckpointStore, got.CheckpointReason)
+	}
+	if got.EvidenceStore != "file" || got.EvidencePath != "/state/checkpoints.json" {
+		t.Fatalf("evidence status = store %q path %q, want file at shared path", got.EvidenceStore, got.EvidencePath)
+	}
+}
+
 // fakeWindow is a minimal WindowCollector for the migration tests.
 type fakeWindow struct{ name string }
 

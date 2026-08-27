@@ -94,6 +94,7 @@ collectors:
     expiry_warn: 72h
 checkpoint:
   store: file
+  evidence_store: memory
   file_path: "/tmp/cp.json"
 streaming:
   enabled: true
@@ -204,6 +205,9 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 	if cfg.Checkpoint.Store != "file" {
 		t.Errorf("Checkpoint.Store = %q, want file", cfg.Checkpoint.Store)
+	}
+	if cfg.Checkpoint.EvidenceStore != "memory" {
+		t.Errorf("Checkpoint.EvidenceStore = %q, want memory", cfg.Checkpoint.EvidenceStore)
 	}
 	if cfg.Checkpoint.FilePath != "/tmp/cp.json" {
 		t.Errorf("Checkpoint.FilePath = %q, want /tmp/cp.json", cfg.Checkpoint.FilePath)

@@ -199,8 +199,11 @@ default this is a file, written atomically on each successful tick to `checkpoin
 [configuration.md](configuration.md#checkpoint-poll-high-water-marks) for the authoritative value).
 On a clean restart the collector resumes from the last saved mark rather than re-fetching the full
 history; on cold start (no checkpoint) it applies the configured `initial_lookback` window.
-In-memory checkpointing is also available (useful for ephemeral containers where durability is
-handled externally).
+In-memory cursor checkpointing is also available (useful for streamed deployments where poll
+cursors are unused). ACL revision and audit provenance use the independent
+`checkpoint.evidence_store` selector and share the same atomic file when durable, so choosing
+memory cursors does not reset semantic evidence on restart. Memory cursor state remains disposable
+and may cold-start after a restart.
 
 If a window collection fails the high-water mark is **not** advanced, so the same window is
 retried on the next tick.

@@ -283,16 +283,23 @@ func TestCheckpointStore_MemoryNeverTouchesDisk(t *testing.T) {
 	if prepped.Checkpoint.Store != "memory" {
 		t.Fatalf("Checkpoint.Store = %q, want memory", prepped.Checkpoint.Store)
 	}
+	if prepped.Checkpoint.EvidenceStore != "memory" {
+		t.Fatalf("Checkpoint.EvidenceStore = %q, want memory", prepped.Checkpoint.EvidenceStore)
+	}
 
-	store, outcome, err := checkpointStore(prepped, nil)
+	stores, err := stateStores(prepped, nil)
 	if err != nil {
-		t.Fatalf("checkpointStore: %v", err)
+		t.Fatalf("stateStores: %v", err)
 	}
-	if outcome.Kind != "memory" {
-		t.Fatalf("outcome.Kind = %q, want memory", outcome.Kind)
+	if stores.Cursors.Outcome.Kind != "memory" || stores.Evidence.Outcome.Kind != "memory" {
+		t.Fatalf("outcomes = cursor %q / evidence %q, want memory/memory",
+			stores.Cursors.Outcome.Kind, stores.Evidence.Outcome.Kind)
 	}
-	if err := store.Set("devices", time.Now()); err != nil {
-		t.Fatalf("Set: %v", err)
+	if err := stores.Cursors.Store.Set("devices", time.Now()); err != nil {
+		t.Fatalf("Set cursor: %v", err)
+	}
+	if err := stores.Evidence.Store.Set(collector.ACLAuditChangeCheckpointKey, time.Now()); err != nil {
+		t.Fatalf("Set evidence: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("checkpoint file was created at %s (or Stat errored unexpectedly: %v); the memory store must never touch disk", path, err)
@@ -300,14 +307,18 @@ func TestCheckpointStore_MemoryNeverTouchesDisk(t *testing.T) {
 
 	// Negative check: without forceMemoryCheckpoint, the SAME cfg resolves to
 	// a real file store — proving the assertion above is not vacuous.
-	rawStore, rawOutcome, err := checkpointStore(cfg, nil)
+	rawStores, err := stateStores(cfg, nil)
 	if err != nil {
-		t.Fatalf("checkpointStore (unprepared): %v", err)
+		t.Fatalf("stateStores (unprepared): %v", err)
 	}
-	if rawOutcome.Kind != "file" {
-		t.Fatalf("unprepared outcome.Kind = %q, want file", rawOutcome.Kind)
+	if rawStores.Cursors.Outcome.Kind != "file" || rawStores.Evidence.Outcome.Kind != "file" {
+		t.Fatalf("unprepared outcomes = cursor %q / evidence %q, want file/file",
+			rawStores.Cursors.Outcome.Kind, rawStores.Evidence.Outcome.Kind)
 	}
-	if err := rawStore.Set("devices", time.Now()); err != nil {
+	if rawStores.Cursors.Store != rawStores.Evidence.Store {
+		t.Fatal("unprepared file-backed classes must share one store")
+	}
+	if err := rawStores.Cursors.Store.Set("devices", time.Now()); err != nil {
 		t.Fatalf("Set (unprepared): %v", err)
 	}
 	if _, err := os.Stat(path); err != nil {

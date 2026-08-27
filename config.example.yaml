@@ -496,10 +496,11 @@ collectors:
       include_host_labels: true       # attach host.name/host.id for joins with tailscale.device.*
       include_tags_label: true        # attach tailscale.tags to each target's series
 
-# ── Checkpointing (resume polled log collectors after a restart) ────────────────
+# ── Durable state (poll cursors and semantic evidence) ─────────────────────────
 checkpoint:
   store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
-  file_path: /var/lib/tailscale2otel/checkpoints.json   # used when store: file — mount a writable, persistent path here (the dir is auto-created). This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.
+  evidence_store: file                # file (default; preserves ACL revision/audit provenance across restarts) | memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file.
+  file_path: /var/lib/tailscale2otel/checkpoints.json   # used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.
 
 # ── Receiver write-ahead log (OPTIONAL: durable local acceptance) ───────────────
 # Disabled is fully stateless. When enabled, a successful receiver ACK means the

@@ -111,6 +111,14 @@ assert_config_mount "B"
 [[ "$(svc '.volumes | length')" == "2" ]] \
   && ok "B: exactly 2 mounts (base checkpoint + override config)" \
   || bad "B: expected 2 mounts, got $(svc '.volumes | length')"
+# Checkpoint selectors belong to the mounted YAML in this mode. Defining even
+# a default-valued environment entry here would override that file and silently
+# prevent a streamed deployment from selecting memory cursors + file evidence.
+for key in TS2OTEL_CHECKPOINT__STORE TS2OTEL_CHECKPOINT__EVIDENCE_STORE TS2OTEL_CHECKPOINT__FILE_PATH; do
+  [[ "$(svc ".environment | has(\"$key\")")" == "false" ]] \
+    && ok "B: $key left to mounted config" \
+    || bad "B: $key in environment overrides the mounted config"
+done
 
 # --------------------------------------------------------------------------
 case_ "C. the removed instruction stays removed"
