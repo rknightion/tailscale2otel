@@ -3,6 +3,7 @@ package acl_test
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -102,6 +103,130 @@ func TestLastChangedTracksETag(t *testing.T) {
 	}
 	if got := lastChanged(t, rec3); got != float64(clock.Unix()) {
 		t.Fatalf("changed etag last_changed = %v, want %v", got, clock.Unix())
+	}
+}
+
+func TestLastChangedSurvivesRestartAndMovesOnChangedETag(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoints.json")
+	store, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: `{"acls":[]}`, ETag: "etag-1"}}
+	clock := time.Unix(1_000_000, 0).UTC()
+	now := func() time.Time { return clock }
+
+	firstProcess := acl.New(api, 0, now, acl.WithCheckpointStore(store))
+	rec1 := telemetrytest.New()
+	if err := firstProcess.Collect(context.Background(), rec1.Emitter()); err != nil {
+		t.Fatalf("first process Collect: %v", err)
+	}
+	first := lastChanged(t, rec1)
+
+	clock = clock.Add(time.Hour)
+	reopened, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen checkpoint store: %v", err)
+	}
+	restarted := acl.New(api, 0, now, acl.WithCheckpointStore(reopened))
+	rec2 := telemetrytest.New()
+	if err := restarted.Collect(context.Background(), rec2.Emitter()); err != nil {
+		t.Fatalf("restarted Collect: %v", err)
+	}
+	if got := lastChanged(t, rec2); got != first {
+		t.Fatalf("restart reset first-observed timestamp: got %v, want %v", got, first)
+	}
+
+	clock = clock.Add(time.Hour)
+	api.acl = &tsclient.RawACL{HuJSON: `{"acls":[{"action":"accept"}]}`, ETag: "etag-2"}
+	rec3 := telemetrytest.New()
+	if err := restarted.Collect(context.Background(), rec3.Emitter()); err != nil {
+		t.Fatalf("changed ETag Collect: %v", err)
+	}
+	changed := lastChanged(t, rec3)
+	if changed != float64(clock.Unix()) {
+		t.Fatalf("changed ETag timestamp = %v, want %v", changed, clock.Unix())
+	}
+
+	clock = clock.Add(time.Hour)
+	reopenedAgain, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen checkpoint store again: %v", err)
+	}
+	restartedAgain := acl.New(api, 0, now, acl.WithCheckpointStore(reopenedAgain))
+	rec4 := telemetrytest.New()
+	if err := restartedAgain.Collect(context.Background(), rec4.Emitter()); err != nil {
+		t.Fatalf("second restart Collect: %v", err)
+	}
+	if got := lastChanged(t, rec4); got != changed {
+		t.Fatalf("second restart reset changed revision timestamp: got %v, want %v", got, changed)
+	}
+}
+
+func TestCollectEmitsPersistedAuthoritativeACLChangeWhenAvailable(t *testing.T) {
+	store := collector.NewMemoryStore()
+	auditChange := time.Unix(900_000, 0).UTC()
+	if err := store.Set(collector.ACLAuditChangeCheckpointKey, auditChange); err != nil {
+		t.Fatalf("seed audit checkpoint: %v", err)
+	}
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: `{}`, ETag: "etag-1"}}
+	c := acl.New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() },
+		acl.WithCheckpointStore(store))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.acl.last_audit_change")
+	if len(pts) != 1 || pts[0].Value != float64(auditChange.Unix()) {
+		t.Fatalf("last_audit_change = %+v, want one point at %d", pts, auditChange.Unix())
+	}
+}
+
+func TestCollectOmitsAuthoritativeACLChangeWithoutAuditHistory(t *testing.T) {
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: `{}`, ETag: "etag-1"}}
+	c := acl.New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() },
+		acl.WithCheckpointStore(collector.NewMemoryStore()))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.acl.last_audit_change"); len(pts) != 0 {
+		t.Fatalf("last_audit_change = %+v, want absent without audit history", pts)
+	}
+}
+
+func TestCheckpointStateIsIsolatedByTailnetNamespace(t *testing.T) {
+	shared := collector.NewMemoryStore()
+	clockA := time.Unix(1_000_000, 0).UTC()
+	clockB := clockA.Add(time.Hour)
+	apiA := &fakeAPI{acl: &tsclient.RawACL{HuJSON: `{}`, ETag: "etag-a"}}
+	apiB := &fakeAPI{acl: &tsclient.RawACL{HuJSON: `{}`, ETag: "etag-b"}}
+
+	recA := telemetrytest.New()
+	if err := acl.New(apiA, 0, func() time.Time { return clockA },
+		acl.WithCheckpointStore(collector.Namespaced(shared, "tailnet-a"))).
+		Collect(context.Background(), recA.Emitter()); err != nil {
+		t.Fatalf("tailnet A Collect: %v", err)
+	}
+	recB := telemetrytest.New()
+	if err := acl.New(apiB, 0, func() time.Time { return clockB },
+		acl.WithCheckpointStore(collector.Namespaced(shared, "tailnet-b"))).
+		Collect(context.Background(), recB.Emitter()); err != nil {
+		t.Fatalf("tailnet B Collect: %v", err)
+	}
+
+	clockA = clockA.Add(2 * time.Hour)
+	restartedA := telemetrytest.New()
+	if err := acl.New(apiA, 0, func() time.Time { return clockA },
+		acl.WithCheckpointStore(collector.Namespaced(shared, "tailnet-a"))).
+		Collect(context.Background(), restartedA.Emitter()); err != nil {
+		t.Fatalf("restarted tailnet A Collect: %v", err)
+	}
+	if got := lastChanged(t, restartedA); got != 1_000_000 {
+		t.Fatalf("tailnet A observation = %v, want its original timestamp", got)
+	}
+	if got := lastChanged(t, recB); got != float64(clockB.Unix()) {
+		t.Fatalf("tailnet B observation = %v, want %v", got, clockB.Unix())
 	}
 }
 

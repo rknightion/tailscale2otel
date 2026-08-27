@@ -49,6 +49,7 @@ var (
 		Description: "Unix timestamp the last scrape *finished* (success **or** failure); pair with `scrape.success` to detect last-success staleness.",
 		Attributes:  []string{semconv.AttrCollector},
 		Group:       groupSelfObs,
+		TimeSource:  metricdoc.TimestampProcessLocal,
 	}
 	docScrapeStaleness = metricdoc.Metric{
 		Name:        MetricScrapeStaleness,

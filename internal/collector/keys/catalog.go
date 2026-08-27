@@ -23,6 +23,7 @@ var (
 		Description: "Unix timestamp a Tailscale key expires; one series per key.",
 		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrOwner, attrTags},
 		Group:       groupKeys,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docKeysCount = metricdoc.Metric{
 		Name:        MetricKeysCount,

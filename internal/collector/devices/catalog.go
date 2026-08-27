@@ -56,6 +56,7 @@ var (
 		Description: "Unix timestamp the device was last seen.",
 		Attributes:  deviceIdentityAttrs,
 		Group:       groupDevices,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docKeyExpiry = metricdoc.Metric{
 		Name:        metricKeyExpiry,
@@ -64,6 +65,7 @@ var (
 		Description: "Unix timestamp the device node key expires.",
 		Attributes:  deviceIdentityAttrs,
 		Group:       groupDevices,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docUpdateAvailable = metricdoc.Metric{
 		Name:        metricUpdateAvailable,
@@ -321,6 +323,7 @@ var (
 		Description: "Unix epoch seconds of a device posture attribute's expiry; only attributes explicitly set with an expiry (e.g. a `custom:` namespace attribute set via the API with an expiry) appear — most posture attributes never carry one. One series per device per expiring attribute, the namespaced posture key carried as the `attribute` label (same identity as `tailscale.device.attribute{,.info}`). **Gated** by `collect_posture` and the `attribute_namespaces` allow-list.",
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute},
 		Group:       groupDevices,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 )
 

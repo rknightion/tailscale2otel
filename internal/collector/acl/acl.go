@@ -1,6 +1,6 @@
 // Package acl is a snapshot collector for the tailnet ACL policy file. It is
-// stateful: it remembers the last-seen ETag so it can report when the policy
-// last changed (tailscale.acl.last_changed, Unix seconds). It also reports the
+// stateful: it remembers the last-seen ETag so it can report when the current
+// revision was first observed (tailscale.acl.last_changed, Unix seconds). It also reports the
 // raw document size (tailscale.acl.size) and per-section rule counts
 // (tailscale.acl.rules) obtained by standardizing the HuJSON policy and
 // counting each recognized section.
@@ -8,17 +8,23 @@ package acl
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
 const defaultInterval = 600 * time.Second
+
+const revisionCheckpointPrefix = "acl/revision/"
 
 // opGetPolicyFile is the upstream OpenAPI operationId for the primary ACL
 // policy fetch (GET /tailnet/{tailnet}/acl), used as the tailscale.api.operation
@@ -28,9 +34,10 @@ const opGetPolicyFile = "getPolicyFile"
 
 // Metric names emitted by this collector.
 const (
-	metricLastChanged = "tailscale.acl.last_changed"
-	metricSize        = "tailscale.acl.size"
-	metricRules       = "tailscale.acl.rules"
+	metricLastChanged     = "tailscale.acl.last_changed"
+	metricLastAuditChange = "tailscale.acl.last_audit_change"
+	metricSize            = "tailscale.acl.size"
+	metricRules           = "tailscale.acl.rules"
 )
 
 // attrSection is the attribute key carrying the ACL policy section name on the
@@ -71,6 +78,7 @@ type Collector struct {
 	lastETag    string
 	haveETag    bool
 	lastChanged time.Time
+	checkpoints collector.CheckpointStore
 
 	// policy, when set, receives the raw document so the flow view can
 	// reconcile observed traffic against it.
@@ -124,6 +132,12 @@ func WithPolicySink(sink PolicySink) Option {
 	return func(c *Collector) { c.policy = sink }
 }
 
+// WithCheckpointStore retains revision-observation and authoritative audit
+// timestamps across restarts. A nil store preserves in-process-only behavior.
+func WithCheckpointStore(store collector.CheckpointStore) Option {
+	return func(c *Collector) { c.checkpoints = store }
+}
+
 // Name returns the stable collector identifier.
 func (c *Collector) Name() string { return "acl" }
 
@@ -148,11 +162,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if !c.haveETag || raw.ETag != c.lastETag {
 		c.lastETag = raw.ETag
 		c.haveETag = true
-		c.lastChanged = c.now()
+		c.lastChanged = c.observeRevision(e, raw.ETag)
 	}
 
 	e.Gauge(docACLLastChanged.Name, docACLLastChanged.Unit, docACLLastChanged.Description,
 		float64(c.lastChanged.Unix()), nil)
+	if c.checkpoints != nil {
+		if changedAt, ok := c.checkpoints.Get(collector.ACLAuditChangeCheckpointKey); ok && !changedAt.IsZero() {
+			e.Gauge(docACLLastAuditChange.Name, docACLLastAuditChange.Unit, docACLLastAuditChange.Description,
+				float64(changedAt.Unix()), nil)
+		}
+	}
 
 	// Trivial presence/size signal: bytes of the raw HuJSON policy document.
 	e.Gauge(docACLSize.Name, docACLSize.Unit, docACLSize.Description,
@@ -179,6 +199,28 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	c.collectValidation(ctx, e, raw.HuJSON)
 
 	return nil
+}
+
+func (c *Collector) observeRevision(e telemetry.Emitter, etag string) time.Time {
+	now := c.now()
+	if c.checkpoints == nil {
+		return now
+	}
+	digest := sha256.Sum256([]byte(etag))
+	key := fmt.Sprintf("%s%x", revisionCheckpointPrefix, digest)
+	if observedAt, ok := c.checkpoints.Get(key); ok && !observedAt.IsZero() {
+		return observedAt
+	}
+	var stale []string
+	for _, existing := range c.checkpoints.Keys() {
+		if strings.HasPrefix(existing, revisionCheckpointPrefix) && existing != key {
+			stale = append(stale, existing)
+		}
+	}
+	if err := collector.UpdateCheckpointBatch(c.checkpoints, map[string]time.Time{key: now}, stale); err != nil {
+		collector.EmitCheckpointPersistError(e, c.Name())
+	}
+	return now
 }
 
 // standardizeTop standardizes the HuJSON policy and unmarshals its top level

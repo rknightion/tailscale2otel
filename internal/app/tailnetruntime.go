@@ -193,6 +193,11 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		audit.WithDedup(rt.auditDedup),
 		audit.WithLogger(withComponent(d.logger, compCollector)),
 	}
+	changeStore := d.store
+	if d.multi {
+		changeStore = collector.Namespaced(d.store, rt.name)
+	}
+	auditOpts = append(auditOpts, audit.WithChangeCheckpointStore(changeStore))
 	if d.webhookDedup != nil {
 		auditOpts = append(auditOpts, audit.WithCrossDedup(d.webhookDedup))
 	}

@@ -603,6 +603,7 @@ var (
 		Description: "Greatest accepted event timestamp as Unix seconds, by bounded source and signal. Delayed retries and backfills do not move this gauge backwards.",
 		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
 		Group:       GroupSelfObs,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	DocIngestTimestampSkew = metricdoc.Metric{
 		Name:        MetricIngestTimestampSkew,
@@ -631,6 +632,7 @@ var (
 		Description: "Unix seconds of the active TLS certificate's notBefore, by listener component (admin|metrics|stream). Emitted only for a listener with TLS configured; updates on every successful certificate reload.",
 		Attributes:  []string{semconv.AttrComponent},
 		Group:       GroupSelfObs,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	DocTLSCertNotAfter = metricdoc.Metric{
 		Name:        MetricTLSCertNotAfter,
@@ -639,6 +641,7 @@ var (
 		Description: "Unix seconds of the active TLS certificate's notAfter (expiry), by listener component (admin|metrics|stream). Alert on this approaching the current time to catch an expiring certificate before clients start failing handshakes.",
 		Attributes:  []string{semconv.AttrComponent},
 		Group:       GroupSelfObs,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	DocTLSCertReloadedAt = metricdoc.Metric{
 		Name:        MetricTLSCertReloadedAt,
@@ -647,6 +650,7 @@ var (
 		Description: "Unix seconds of the most recent successful TLS certificate reload, by listener component (admin|metrics|stream). A rotated file on disk is picked up on the next handshake at least this recently.",
 		Attributes:  []string{semconv.AttrComponent},
 		Group:       GroupSelfObs,
+		TimeSource:  metricdoc.TimestampProcessLocal,
 	}
 	DocTLSCertReloadFailures = metricdoc.Metric{
 		Name:        MetricTLSCertReloadFailures,

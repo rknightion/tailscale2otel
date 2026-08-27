@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 218 | 217 | 57 | 11 | 44 |
+| operational | 219 | 218 | 57 | 11 | 44 |
 | self_obs | 92 | 92 | 29 | 9 | 10 |
 
 ## Operational signals
@@ -105,6 +105,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.webhook.<type>` | log_event | `event_name="tailscale.webhook.<type>"` | **UNASSIGNED** | The event name is templated per webhook category, so no literal selector can name it. The dashboard's log-event picker does reach it, with the glob tailscale.webhook.*, which a literal-name gate cannot see. |
 | `tailscale.webhook_endpoints.event_mismatch` | log_event | `event_name="tailscale.webhook_endpoints.event_mismatch"` | visualized |  |
 | `tailscale.acl.autoapprovers` | metric | `tailscale_acl_autoapprovers_ratio` | visualized, alertable |  |
+| `tailscale.acl.last_audit_change` | metric | `tailscale_acl_last_audit_change_seconds` | visualized |  |
 | `tailscale.acl.last_changed` | metric | `tailscale_acl_last_changed_seconds` | visualized |  |
 | `tailscale.acl.posture_gated_rules` | metric | `tailscale_acl_posture_gated_rules_ratio` | visualized |  |
 | `tailscale.acl.rules` | metric | `tailscale_acl_rules_ratio` | visualized |  |

@@ -72,6 +72,17 @@ def prom_t(expr, legend="", refid="A", instant=False, fmt="time_series"):
                                "legendFormat": legend, "format": fmt}}}}
 
 
+def acl_change_evidence(authoritative, observed, window=WIN_SLOW):
+    """Age of the newest ACL audit event, with an explicitly labelled fallback."""
+    audit = "max(%s)" % lot(authoritative, window)
+    first = "time() - max(%s)" % lot(observed, window)
+    return (
+        'label_replace(time() - %s, "provenance", "audit event", "", "") or '
+        'label_replace((%s) and on() absent(%s), "provenance", '
+        '"revision first observed", "", "")'
+    ) % (audit, first, audit)
+
+
 def loki_t(expr, refid="A", instant=False, maxlines=200, legend=""):
     return {"kind": "PanelQuery", "spec": {"refId": refid, "hidden": False,
             "query": {"kind": "DataQuery", "version": "v0", "group": "",

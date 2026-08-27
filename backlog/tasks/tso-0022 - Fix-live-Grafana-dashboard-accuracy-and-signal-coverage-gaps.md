@@ -1,10 +1,11 @@
 ---
 id: TSO-0022
 title: Fix live Grafana dashboard accuracy and signal coverage gaps
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-27 17:26'
-updated_date: '2026-08-27 17:27'
+updated_date: '2026-08-27 18:10'
 labels:
   - needs-triage
 dependencies: []
@@ -46,6 +47,19 @@ Keep this one task as the collated repair unit requested by the operator. Do not
 - [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+ACL correctness slice:
+1. Add failing tests for persisted ACL revision observation, authoritative audit-change persistence/non-regression, multi-tailnet checkpoint isolation, and timestamp provenance/dashboard wording.
+2. Persist the current ETag revision first-observed timestamp through the existing checkpoint store without claiming a true modification time.
+3. Persist the source timestamp of classified ACL audit events and have the ACL collector re-emit it after restarts; delayed/backfilled events must not regress it.
+4. Update scoped dashboard panels to prefer audit evidence and visibly identify the approximate revision-observation fallback; regenerate generated artifacts and signal dispositions.
+5. Run targeted, generated-artifact, PromQL, full Go/lint, review, GitSync/deployment, and authenticated live-panel checks.
+
+Plan review: do not fabricate an upstream time, do not collapse missing audit history to zero, namespace state per tailnet, retain approximate wording when file persistence is unavailable, and keep persistence failures observable without suppressing other ACL telemetry.
+<!-- SECTION:PLAN:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -61,4 +75,12 @@ Audit evidence (2026-08-27):
 - Live operational facts to preserve as aggregates only: node-metrics discovery succeeds but 8 of 33 discovered targets are reachable; the Kubernetes-audit source is disabled; device-invite collection is enabled but the six-hour log view is empty.
 - Rule deployment read-back: 123 shipped and 123 deployed, 81 paused on each side, with 0 missing, orphaned, or drifted rules.
 - Validation seen: `go test ./internal/catalog -run TestSignalDispositionsInSync|TestSignalCoverageDocInSync|TestDashboard` passed. `python3 scripts/verify_deployment.py` returned deployed rule parity. Browser proof, source proof, live-host proof, and deployment proof are distinct; none is substituted for another.
+
+ACL correctness implementation completed locally:
+- Persisted current ETag revision first-observed time in the existing tailnet-namespaced checkpoint store; file-backed restart, stable ETag, changed ETag, repeated restart, absent audit history, and namespace isolation are covered.
+- Persisted the newest classified ACL audit event source timestamp without allowing delayed/backfilled events to regress it; the ACL collector re-emits it after restart.
+- Dashboard panels prefer the authoritative audit timestamp and visibly label the approximate first-observed fallback; both selectors now carry tailnet/provider filters. Alert and runbook references follow the renamed canonical panel.
+- Added an absolute-timestamp provenance contract covering source, persisted observation, and process-local timestamps.
+- Generated dashboards, rules, metrics docs, signal coverage/dispositions, and capability counts regenerated.
+- Evidence: 191 dashboard generator tests passed; 651 PromQL expressions parsed with zero failures; root build/vet/race/lint passed; every module passed build/vet/race/tidy/lint and the pinned Go 1.27-compiled govulncheck found no vulnerabilities. The installed govulncheck binary itself is stale (built with Go 1.26), so its verifier leg failed before scanning and was superseded by the successful pinned go-run invocation. CodeRabbit organisation-plan review completed with zero findings.
 <!-- SECTION:NOTES:END -->

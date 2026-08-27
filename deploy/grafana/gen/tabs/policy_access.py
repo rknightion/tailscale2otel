@@ -16,7 +16,7 @@ prerequisites instead (a hidden row is indistinguishable from a correctly-gated 
 one, which is the wrong answer for "why is there no validation result").
 """
 
-from builder import (bargauge_opts, loki_t, lot, organize, panel, prom_t, row,
+from builder import (acl_change_evidence, bargauge_opts, loki_t, lot, organize, panel, prom_t, row,
                      stat_opts, thr, WIN_SLOW)
 from maps import BOOL_HEALTHY_ON
 
@@ -40,17 +40,20 @@ def sel(metric, extra=""):
 def tab_policy_access(scope):
     del scope  # no tab-scoped sentinels on this leaf; see module docstring
     acl = [
-        (panel("ACL last changed", "stat",
-               [prom_t("time() - max(%s)" % lot("tailscale_acl_last_changed_seconds", WIN_SLOW))],
+        (panel("ACL change evidence age", "stat",
+               [prom_t(acl_change_evidence(sel("tailscale_acl_last_audit_change_seconds"),
+                                           sel("tailscale_acl_last_changed_seconds")),
+                       legend="{{provenance}}")],
                unit="s", options=stat_opts(graph="none"),
-               desc="Time since the tailnet policy file was last modified. A policy that has not "
-                    "moved in months is normal; this is here to date a change you are already "
-                    "investigating, not as a health signal."), 6, 5),
+               desc="Prefers the configuration-audit event's source timestamp. Until one has "
+                    "been observed, shows when this exporter first observed the current ETag; "
+                    "that approximation survives restart only with a durable checkpoint store. "
+                    "This dates evidence for an investigation, not policy health."), 6, 5),
         (panel("ACL size", "stat",
                [prom_t("max(%s)" % lot("tailscale_acl_size_bytes", WIN_SLOW))],
                unit="bytes", options=stat_opts(),
                desc="Serialized size of the active policy file. Useful as a change detector "
-                    "alongside ACL last changed — a large jump is a rewrite, not an edit."), 6, 5),
+                    "alongside ACL change evidence age — a large jump is a rewrite, not an edit."), 6, 5),
         (panel("ACL rules by section", "bargauge",
                [prom_t("max by (tailscale_acl_section) (%s)" % lot("tailscale_acl_rules_ratio", WIN_SLOW),
                        legend="{{tailscale_acl_section}}")],

@@ -185,9 +185,14 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			settings.WithAPIState(rt.apiState)), c.Settings.Interval.D())
 	}
 	if c.Acl.Enabled && cp.Supports("acl") {
+		aclStore := d.store
+		if d.multi {
+			aclStore = collector.Namespaced(d.store, rt.name)
+		}
 		aclOpts := []acl.Option{
 			acl.WithValidate(c.Acl.Validate),
 			acl.WithAPIState(rt.apiState),
+			acl.WithCheckpointStore(aclStore),
 		}
 		if rt.policy != nil {
 			aclOpts = append(aclOpts, acl.WithPolicySink(rt.policy))

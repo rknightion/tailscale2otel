@@ -21,6 +21,11 @@ import (
 // the data is disposable window-cursor state, so the cost is a single cold start.
 var ErrCorruptCheckpoint = errors.New("checkpoint file is corrupt or unreadable")
 
+// ACLAuditChangeCheckpointKey stores the newest source timestamp carried by a
+// classified ACL configuration-audit event. The audit processor advances it;
+// the ACL collector re-emits it on every poll so the gauge survives restarts.
+const ACLAuditChangeCheckpointKey = "acl/audit/last_change"
+
 // CheckpointStore persists the high-water mark per window collector so polling
 // resumes without gaps or overlaps across restarts.
 type CheckpointStore interface {

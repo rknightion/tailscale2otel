@@ -1,11 +1,13 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +147,21 @@ func TestMigrateCheckpointKeys_AmbiguousColdStarts(t *testing.T) {
 	// Both stray keys are left in place (logged, not deleted).
 	if _, ok := store.Get("old1/flowlogs"); !ok {
 		t.Errorf("stray key old1 should be left in place")
+	}
+}
+
+func TestMigrateCheckpointKeys_IgnoresACLObservationState(t *testing.T) {
+	store := collector.NewMemoryStore()
+	_ = store.Set(collector.ACLAuditChangeCheckpointKey, time.Unix(1, 0))
+	_ = store.Set("acl/revision/deadbeef", time.Unix(2, 0))
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, nil))
+	a := appWithWindowRuntimes(store, "acme")
+	a.migrateCheckpointKeys(logger)
+
+	if strings.Contains(logs.String(), "stale checkpoint key") {
+		t.Fatalf("ACL observation state was reported as a stale window cursor: %s", logs.String())
 	}
 }
 

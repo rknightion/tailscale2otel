@@ -51,6 +51,7 @@ var (
 		Description: "Unix timestamp of the integration's last synchronization ATTEMPT (not necessarily successful — the API's `lastSync` advances on every attempt, so pair staleness with `tailscale.posture_integration.error` to detect a failing sync). Emitted only once a sync has occurred.",
 		Attributes:  commonAttrs,
 		Group:       groupPosture,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docError = metricdoc.Metric{
 		Name:        metricError,

@@ -47,6 +47,7 @@ var (
 		Description: "Unix timestamp the user was last seen.",
 		Attributes:  []string{attrID, attrLogin},
 		Group:       groupUsers,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docUserInvites = metricdoc.Metric{
 		Name:       MetricUserInvites,

@@ -65,16 +65,32 @@ const (
 	Histogram Instrument = "histogram"
 )
 
+// TimestampProvenance states where an absolute Unix-timestamp gauge gets its
+// clock value. Durations and ages also use seconds but deliberately leave this
+// empty because they do not claim an event happened at a particular instant.
+type TimestampProvenance string
+
+const (
+	// TimestampSource is supplied by the observed source record or artifact.
+	TimestampSource TimestampProvenance = "source"
+	// TimestampPersistedObservation is the local time this exporter first
+	// observed a condition, retained across restarts when checkpoints are durable.
+	TimestampPersistedObservation TimestampProvenance = "persisted_observation"
+	// TimestampProcessLocal records an event in the lifetime of this process.
+	TimestampProcessLocal TimestampProvenance = "process_local"
+)
+
 // Metric declares one emitted metric's documentation metadata. Name/Unit/
 // Description are exactly the values passed to the telemetry.Emitter at the emit
 // site (reference these fields there so there is a single source of truth).
 type Metric struct {
-	Name        string     // dotted OTEL source name, e.g. "tailscale.network.io"
-	Unit        string     // UCUM unit, e.g. "By", "s", "d", "1", "{flow}"
-	Instrument  Instrument // counter | gauge | updowncounter
-	Description string     // human description (also exported as OTLP metric metadata)
-	Attributes  []string   // dotted OTEL attribute keys carried on the metric
-	Group       string     // docs/metrics.md section heading this metric belongs under
+	Name        string              // dotted OTEL source name, e.g. "tailscale.network.io"
+	Unit        string              // UCUM unit, e.g. "By", "s", "d", "1", "{flow}"
+	Instrument  Instrument          // counter | gauge | updowncounter
+	Description string              // human description (also exported as OTLP metric metadata)
+	Attributes  []string            // dotted OTEL attribute keys carried on the metric
+	Group       string              // docs/metrics.md section heading this metric belongs under
+	TimeSource  TimestampProvenance // source | persisted_observation | process_local
 }
 
 // LogEvent declares one emitted log record's documentation metadata.

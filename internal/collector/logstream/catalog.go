@@ -76,6 +76,7 @@ var (
 		Description: "Unix timestamp of the most recent delivery activity (alert on staleness).",
 		Attributes:  typeAttr,
 		Group:       groupLogStreaming,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docError = metricdoc.Metric{
 		Name:        metricError,

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
@@ -102,6 +103,40 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestProcessPersistsLatestACLSourceTimestampWithoutRegressing(t *testing.T) {
+	store := collector.NewMemoryStore()
+	p := audit.NewProcessor(audit.WithChangeCheckpointStore(store))
+	rec := telemetrytest.New()
+
+	latest := evWith("TAILNET", "ACL", "UPDATE", "USER")
+	latest.EventTime = time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	p.Process(latest, rec.Emitter())
+
+	backfill := evWith("TAILNET", "ACL", "UPDATE", "USER")
+	backfill.EventGroupID = "backfill"
+	backfill.EventTime = latest.EventTime.Add(-time.Hour)
+	p.Process(backfill, rec.Emitter())
+
+	got, ok := store.Get(collector.ACLAuditChangeCheckpointKey)
+	if !ok {
+		t.Fatal("ACL audit-change checkpoint missing")
+	}
+	if !got.Equal(latest.EventTime) {
+		t.Fatalf("ACL audit-change checkpoint = %v, want latest source time %v", got, latest.EventTime)
+	}
+}
+
+func TestProcessDoesNotPersistUnclassifiedOrNonACLChangesAsACL(t *testing.T) {
+	store := collector.NewMemoryStore()
+	p := audit.NewProcessor(audit.WithChangeCheckpointStore(store))
+	rec := telemetrytest.New()
+	p.Process(evWith("TAILNET", "DNS_CONFIG", "UPDATE", "USER"), rec.Emitter())
+	p.Process(evWith("NODE", "MACHINE_NAME", "UPDATE", "NODE"), rec.Emitter())
+	if got, ok := store.Get(collector.ACLAuditChangeCheckpointKey); ok {
+		t.Fatalf("ACL checkpoint unexpectedly written at %v", got)
 	}
 }
 

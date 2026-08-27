@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
@@ -94,13 +95,15 @@ const (
 // components so that an event arriving from more than one source is emitted
 // exactly once.
 type Processor struct {
-	dedup      *dedup.Set
-	crossDedup *dedup.Set
-	now        func() time.Time
-	logger     *slog.Logger
-	store      *eventstore.Memory
+	dedup             *dedup.Set
+	crossDedup        *dedup.Set
+	now               func() time.Time
+	logger            *slog.Logger
+	store             *eventstore.Memory
+	changeCheckpoints collector.CheckpointStore
 
 	mu                  sync.Mutex
+	checkpointMu        sync.Mutex
 	unknownSchemaValues map[string]struct{}
 }
 
@@ -152,6 +155,12 @@ func WithLogger(logger *slog.Logger) Option {
 // and a single append, with no I/O and no error to report.
 func WithStore(store *eventstore.Memory) Option {
 	return func(p *Processor) { p.store = store }
+}
+
+// WithChangeCheckpointStore persists authoritative source timestamps for
+// change categories with a dashboard freshness surface. Passing nil is a no-op.
+func WithChangeCheckpointStore(store collector.CheckpointStore) Option {
+	return func(p *Processor) { p.changeCheckpoints = store }
 }
 
 // NewProcessor returns an audit Processor. With no options it behaves exactly
@@ -314,6 +323,9 @@ func (p *Processor) ProcessCtx(ctx context.Context, ev Event, e telemetry.Emitte
 			attrAction:    normalizeAction(ev.Action),
 			attrActorType: normalizeActorType(ev.Actor.Type),
 		})
+		if cat == "acl" {
+			p.persistACLChange(EventTimestamp(ev), e)
+		}
 	}
 
 	emitDelayHistograms(ev, acceptedAt, e)
@@ -323,6 +335,23 @@ func (p *Processor) ProcessCtx(ctx context.Context, ev Event, e telemetry.Emitte
 	// exported (#300). A nil store makes this a no-op.
 	if p.store != nil {
 		p.store.Record(storeEvent(ev, severity))
+	}
+}
+
+func (p *Processor) persistACLChange(at time.Time, e telemetry.Emitter) {
+	if p.changeCheckpoints == nil || at.IsZero() {
+		return
+	}
+	p.checkpointMu.Lock()
+	defer p.checkpointMu.Unlock()
+	if current, ok := p.changeCheckpoints.Get(collector.ACLAuditChangeCheckpointKey); ok && !at.After(current) {
+		return
+	}
+	if err := p.changeCheckpoints.Set(collector.ACLAuditChangeCheckpointKey, at); err != nil {
+		collector.EmitCheckpointPersistError(e, "audit")
+		if p.logger != nil {
+			p.logger.Warn("could not persist ACL audit-change timestamp", "error", err)
+		}
 	}
 }
 

@@ -98,6 +98,7 @@ var (
 			"working. Absent for a database that is not loaded.",
 		Attributes: []string{attrDatabase},
 		Group:      groupGeoIP,
+		TimeSource: metricdoc.TimestampSource,
 	}
 )
 

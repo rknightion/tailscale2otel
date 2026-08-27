@@ -1131,7 +1131,7 @@ def groups():
               "An audit event modified the ACL/policy file — informational change tracking. Pair with the "
               "config-change row to see who/what changed.",
               domain="security", hygiene=True, paused=True,
-              policy="advisory", runbook="acl-policy-hygiene", panel="ACL last changed"),
+              policy="advisory", runbook="acl-policy-hygiene", panel="ACL change evidence age"),
         # Scope COUNT was the wrong signal and inverted the answer (#415): a single
         # `all` scope grants unrestricted read+write over the whole tailnet,
         # including APIs that do not exist yet, and scored 1 — never firing. Eleven

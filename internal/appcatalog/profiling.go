@@ -99,7 +99,8 @@ var (
 		Description: "Unix seconds of the most recent SUCCESSFUL profile upload; `0` until the first one " +
 			"succeeds. Alert on `time() - this` exceeding several upload periods to catch profiles silently " +
 			"stopping — the attempts counter keeps climbing during an outage, so it cannot tell you this.",
-		Group: GroupSelfObs,
+		Group:      GroupSelfObs,
+		TimeSource: metricdoc.TimestampProcessLocal,
 	}
 	// DocProfilingUploadConsecutiveFailures documents the failure-streak gauge.
 	DocProfilingUploadConsecutiveFailures = metricdoc.Metric{

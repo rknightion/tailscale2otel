@@ -203,6 +203,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.acl.last_audit_change",
+      "prom_name": "tailscale_acl_last_audit_change_seconds",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.acl.last_changed",
       "prom_name": "tailscale_acl_last_changed_seconds",
       "surface": "operational",

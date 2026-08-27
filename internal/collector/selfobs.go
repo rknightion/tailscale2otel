@@ -145,10 +145,10 @@ func emitScrapeMetrics(ctx context.Context, e telemetry.Emitter, res scrapeResul
 	}
 }
 
-// emitCheckpointPersistError records one MetricCheckpointPersistErrors increment
+// EmitCheckpointPersistError records one MetricCheckpointPersistErrors increment
 // for a collector whose checkpoint failed to persist, so a silently-failing
 // checkpoint store (which stalls window progress on restart) is alertable.
-func emitCheckpointPersistError(e telemetry.Emitter, collectorName string) {
+func EmitCheckpointPersistError(e telemetry.Emitter, collectorName string) {
 	e.Counter(docCheckpointPersistErrors.Name, docCheckpointPersistErrors.Unit,
 		docCheckpointPersistErrors.Description, 1,
 		telemetry.Attrs{semconv.AttrCollector: collectorName})

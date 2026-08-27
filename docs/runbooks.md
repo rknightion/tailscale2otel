@@ -564,8 +564,10 @@ signal is what tells you when, and the audit trail tells you who.
 
 **First step.** **Unrestricted ACL rules** is on `tailscale2otel-tailnet`'s **Overview** tab;
 **Auto-approvers by kind** is on the **Security & Policy > Security & Audit > Risk & ACL** tab. Then
-**ACL last changed** on the **Security & Policy > Policy & Config > Access & ACL** tab to correlate
-against a change. Pair with
+**ACL change evidence age** on the **Security & Policy > Policy & Config > Access & ACL** tab to
+correlate against a change. It prefers the audit event's source timestamp; when no ACL audit event
+has been observed it visibly falls back to the approximate time this exporter first observed the
+current ETag. Pair with
 [Audit events](#audit-events) to attribute it.
 
 **Resolved when.** The policy is tightened, or the finding is explicitly accepted and the rule paused

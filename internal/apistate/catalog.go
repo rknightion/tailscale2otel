@@ -45,6 +45,7 @@ var (
 		Description: "Unix timestamp the API operation was last probed (dashboards subtract `time()`).",
 		Attributes:  []string{semconv.AttrCollector, semconv.AttrAPIOperation},
 		Group:       GroupAPIState,
+		TimeSource:  metricdoc.TimestampProcessLocal,
 	}
 	docSubrequestAttempts = metricdoc.Metric{
 		Name:        MetricSubrequestAttempts,

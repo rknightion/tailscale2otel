@@ -52,6 +52,9 @@ func (a *App) migrateCheckpointKeys(logger *slog.Logger) {
 
 	stored := map[string]struct{}{}
 	for _, k := range a.store.Keys() {
+		if isAuxiliaryCheckpointKey(k) {
+			continue
+		}
 		stored[k] = struct{}{}
 	}
 
@@ -111,6 +114,16 @@ func (a *App) migrateCheckpointKeys(logger *slog.Logger) {
 			"(a removed collector or a renamed/removed tailnet). Remove it from the checkpoint file to tidy up.",
 			"key", k)
 	}
+}
+
+// isAuxiliaryCheckpointKey separates collector-owned observation state from
+// scheduler-owned window cursors. The cursor migrator must neither adopt nor
+// warn about these keys; their owners resolve them through Namespaced stores.
+func isAuxiliaryCheckpointKey(key string) bool {
+	return strings.HasPrefix(key, "acl/revision/") ||
+		strings.Contains(key, "/acl/revision/") ||
+		key == collector.ACLAuditChangeCheckpointKey ||
+		strings.HasSuffix(key, "/"+collector.ACLAuditChangeCheckpointKey)
 }
 
 // checkpointBasename returns the collector-name portion of a checkpoint key:

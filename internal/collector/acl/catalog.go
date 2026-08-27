@@ -64,8 +64,17 @@ var (
 		Name:        metricLastChanged,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Unix timestamp the ACL policy last changed (detected by ETag). State is in-process only: the Tailscale API exposes no true last-modified field, so the collector tracks the wall-clock time it first observed the current ETag, not a real policy-modification timestamp. On every process restart this resets to the restart time, since the very next Collect() treats the current ETag as newly observed.",
+		Description: "Unix timestamp when this exporter first observed the current ACL policy ETag. This is an approximate revision-observation time, not the policy modification time: the API exposes no last-modified field and polling can observe a revision late. It survives restarts when the checkpoint store is file-backed; an in-memory or failed checkpoint store resets it on restart.",
 		Group:       groupACL,
+		TimeSource:  metricdoc.TimestampPersistedObservation,
+	}
+	docACLLastAuditChange = metricdoc.Metric{
+		Name:        metricLastAuditChange,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix timestamp of the newest classified ACL configuration-audit event, taken from the event's upstream source timestamp and persisted through the checkpoint store. Absent until an ACL audit event has been observed; delayed or backfilled events never move it backwards.",
+		Group:       groupACL,
+		TimeSource:  metricdoc.TimestampSource,
 	}
 	docACLSize = metricdoc.Metric{
 		Name:        metricSize,
@@ -178,7 +187,7 @@ var (
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docACLLastChanged, docACLSize, docACLRules,
+		docACLLastChanged, docACLLastAuditChange, docACLSize, docACLRules,
 		docACLWildcardRules, docACLUnrestricted, docACLAutoApprovers,
 		docACLSSHWildcard, docACLPostureGated,
 		docACLValidationOK, docACLValidationErrors, docACLValidationWarnings, docACLValidationTestFailures,

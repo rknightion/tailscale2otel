@@ -722,8 +722,8 @@
         "kind": "Panel",
         "spec": {
           "id": 5,
-          "title": "ACL changed",
-          "description": "Time since the ACL policy last changed.",
+          "title": "ACL change evidence age (summary)",
+          "description": "Prefers the configuration-audit event's source timestamp. Until one has been observed, shows when this exporter first observed the current ETag; that approximation survives restart only with a durable checkpoint store.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -742,10 +742,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - max(last_over_time(tailscale_acl_last_changed_seconds[2h]))",
+                        "expr": "label_replace(time() - max(last_over_time(tailscale_acl_last_audit_change_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"provenance\", \"audit event\", \"\", \"\") or label_replace((time() - max(last_over_time(tailscale_acl_last_changed_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) and on() absent(max(last_over_time(tailscale_acl_last_audit_change_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))), \"provenance\", \"revision first observed\", \"\", \"\")",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "",
+                        "legendFormat": "{{provenance}}",
                         "format": "time_series"
                       }
                     }
@@ -17869,8 +17869,8 @@
         "kind": "Panel",
         "spec": {
           "id": 216,
-          "title": "ACL last changed",
-          "description": "Time since the tailnet policy file was last modified. A policy that has not moved in months is normal; this is here to date a change you are already investigating, not as a health signal.",
+          "title": "ACL change evidence age",
+          "description": "Prefers the configuration-audit event's source timestamp. Until one has been observed, shows when this exporter first observed the current ETag; that approximation survives restart only with a durable checkpoint store. This dates evidence for an investigation, not policy health.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -17889,10 +17889,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - max(last_over_time(tailscale_acl_last_changed_seconds[2h]))",
+                        "expr": "label_replace(time() - max(last_over_time(tailscale_acl_last_audit_change_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"provenance\", \"audit event\", \"\", \"\") or label_replace((time() - max(last_over_time(tailscale_acl_last_changed_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) and on() absent(max(last_over_time(tailscale_acl_last_audit_change_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))), \"provenance\", \"revision first observed\", \"\", \"\")",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "",
+                        "legendFormat": "{{provenance}}",
                         "format": "time_series"
                       }
                     }
@@ -17936,7 +17936,7 @@
         "spec": {
           "id": 217,
           "title": "ACL size",
-          "description": "Serialized size of the active policy file. Useful as a change detector alongside ACL last changed \u2014 a large jump is a rewrite, not an edit.",
+          "description": "Serialized size of the active policy file. Useful as a change detector alongside ACL change evidence age \u2014 a large jump is a rewrite, not an edit.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

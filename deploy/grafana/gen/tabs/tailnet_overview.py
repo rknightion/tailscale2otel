@@ -51,7 +51,7 @@ simply has no data — which is why `test_sentinel_registry` checks resolution p
 scope rather than merely that the name exists somewhere.
 """
 
-from builder import (autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
+from builder import (acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
                      row, sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
@@ -65,6 +65,11 @@ HEALTH_LINK = ('Follow "Exporter health →" in the controls menu for the full '
 # tailscale_tailnet is a real per-series metric label (roadmap item L) — filter it
 # directly, no target_info join. Excludes "" and the "-" single-tailnet placeholder.
 _TN = 'tailscale_tailnet!="", tailscale_tailnet!="-"'
+TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+
+
+def sel(metric, extra=""):
+    return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
 
 # Resource/infra columns stripped from the per-tailnet tables. Deliberately NOT
 # builder.TBL_NOISE: these tables key on `tailscale_tailnet` / `tailscale2otel_provider`
@@ -165,10 +170,14 @@ def tab_tailnet_overview(scope):
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]),
                options=stat_opts(color="background"),
                desc="Device node keys expiring within 7 days."), 4, 5),
-        (panel("ACL changed", "stat",
-               [prom_t("time() - max(%s)" % lot("tailscale_acl_last_changed_seconds", WIN_SLOW))],
+        (panel("ACL change evidence age (summary)", "stat",
+               [prom_t(acl_change_evidence(sel("tailscale_acl_last_audit_change_seconds"),
+                                           sel("tailscale_acl_last_changed_seconds")),
+                       legend="{{provenance}}")],
                unit="s", options=stat_opts(graph="none"),
-               desc="Time since the ACL policy last changed."), 3, 5),
+               desc="Prefers the configuration-audit event's source timestamp. Until one has "
+                    "been observed, shows when this exporter first observed the current ETag; "
+                    "that approximation survives restart only with a durable checkpoint store."), 3, 5),
         (panel("Flow logging", "stat",
                [prom_t("max(%s)" % lot('tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"}',
                                        WIN_SLOW))],
