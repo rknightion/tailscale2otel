@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.1](https://github.com/rknightion/tailscale2otel/compare/v4.0.0...v4.0.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* **acl:** persist revision provenance ([8b510f6](https://github.com/rknightion/tailscale2otel/commit/8b510f6864fe743e80b2ec50b4a634bff0c39e9b))
+* **ci:** follow GitSync dashboard path ([e0d20a2](https://github.com/rknightion/tailscale2otel/commit/e0d20a2e3ae1f8c65d2af4cc757641abc17b93c3))
+* **dashboards:** repair live signal accuracy ([d00c0ce](https://github.com/rknightion/tailscale2otel/commit/d00c0ced03c5c37bac59fe634d63e4aa8005ec0f))
+* **release:** stream the latest-release response instead of buffering 64 KiB ([59bae17](https://github.com/rknightion/tailscale2otel/commit/59bae17befd156074d0ec0afc928d19bdf579c56))
+* **state:** separate evidence durability from poll cursors ([66fcb05](https://github.com/rknightion/tailscale2otel/commit/66fcb05286092d841b8ffb86fd92594726b80595))
+
 ## [4.0.0](https://github.com/rknightion/tailscale2otel/compare/v3.0.0...v4.0.0) (2026-08-27)
 
 

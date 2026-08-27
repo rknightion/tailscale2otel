@@ -160,7 +160,7 @@ type: application
 # 0.28.0: add config.flows.capacity_profile (#329).
 version: 0.31.0
 # Tracks the tailscale2otel app version this chart defaults to.
-appVersion: "4.0.0" # x-release-please-version
+appVersion: "4.0.1" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/
 icon: https://m7kni.io/tailscale2otel/assets/project-icon-solid.svg
 sources:
