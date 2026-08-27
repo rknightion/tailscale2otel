@@ -1,11 +1,11 @@
 ---
 id: TSO-0022
 title: Fix live Grafana dashboard accuracy and signal coverage gaps
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-27 17:26'
-updated_date: '2026-08-27 18:28'
+updated_date: '2026-08-27 19:58'
 labels:
   - needs-triage
 dependencies: []
@@ -27,24 +27,24 @@ Keep this one task as the collated repair unit requested by the operator. Do not
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 ACL revision age is either persisted across exporter restarts with explicitly approximate first-observed semantics, or every metric description, panel title/description, runbook, and alert reference is relabelled so it cannot be read as the true policy modification time; tests cover first observation, stable ETag, changed ETag, and restart behavior.
-- [ ] #2 Tailnet and provider dashboard variables are applied consistently to Policy and Config metric and Loki queries, including ACL, DNS, identity inventory, integrations, and mixed device/node panels; a generated-dashboard test prevents unscoped regressions.
-- [ ] #3 Zero-safe panels distinguish a present metric with no matching rows from an absent prerequisite. This covers unauthorized/internal devices, external/shared-in devices, UDP-blocked devices, healthy failure counters, auto-approvers, and profile-upload failures without turning genuinely unavailable telemetry into zero.
-- [ ] #4 Cardinality panels derive cap percentages, limits, thresholds, and wording from tailscale2otel_series_limit rather than a hard-coded 10K; the headroom table either computes remaining headroom or is renamed to utilization; descriptive totals use neutral colors.
-- [ ] #5 Raw Node Metrics tables show the intended node and small value/count fields without resource-label clipping, and the live node-target summary exposes an immediately readable up/total ratio or failed-target count.
-- [ ] #6 The NAT and relay panel no longer combines a dimensionless hard-NAT fraction with configured peer-relay endpoints under one unit or implies measured DERP pressure; all remaining queries honor dashboard selectors.
-- [ ] #7 Flow-log aggregate panels distinguish absent results from zero and are reconciled with the populated raw flow-log stream, including observed bandwidth and top node-pair talkers; healthy ingestion-hygiene counters render an explicit zero when their source family is present.
-- [ ] #8 Posture visualizations retain the posture attribute dimension or require an explicit selected attribute, do not treat arbitrary numeric zero as universal failure, and report numerator, denominator, and unknown/unsupported population where a coverage percentage would otherwise imply noncompliance.
-- [ ] #9 Every emitted trace span class is accounted for by a bounded Tempo discovery, table, or metrics panel and a source-to-dashboard coverage gate. At minimum account for scheduler scrape, Tailscale API, Headscale API, node-metrics scrape, stream receiver, webhook receiver, and release-check spans.
-- [ ] #10 The dashboard provides a meaningful route to the emitted Pyroscope profile set, such as bounded profile panels or explicit Profiles/trace-to-profile drilldown, rather than only upload-health metrics; disabled, idle, and healthy-no-failure states remain distinguishable.
-- [ ] #11 Inventory/configuration facts and prerequisite-missing states use neutral presentation, labelled configuration values such as external-tailnets role remain visible, and narrow tables exclude infrastructure columns that hide the operator fields.
-- [ ] #12 Generated artifacts and signal dispositions are regenerated; dashboard/query tests, catalog coverage gates, PromQL checks, and relevant module checks pass; the repaired dashboards are published through GitSync and every affected panel is rechecked in the authenticated live UI.
+- [x] #2 Tailnet and provider dashboard variables are applied consistently to Policy and Config metric and Loki queries, including ACL, DNS, identity inventory, integrations, and mixed device/node panels; a generated-dashboard test prevents unscoped regressions.
+- [x] #3 Zero-safe panels distinguish a present metric with no matching rows from an absent prerequisite. This covers unauthorized/internal devices, external/shared-in devices, UDP-blocked devices, healthy failure counters, auto-approvers, and profile-upload failures without turning genuinely unavailable telemetry into zero.
+- [x] #4 Cardinality panels derive cap percentages, limits, thresholds, and wording from tailscale2otel_series_limit rather than a hard-coded 10K; the headroom table either computes remaining headroom or is renamed to utilization; descriptive totals use neutral colors.
+- [x] #5 Raw Node Metrics tables show the intended node and small value/count fields without resource-label clipping, and the live node-target summary exposes an immediately readable up/total ratio or failed-target count.
+- [x] #6 The NAT and relay panel no longer combines a dimensionless hard-NAT fraction with configured peer-relay endpoints under one unit or implies measured DERP pressure; all remaining queries honor dashboard selectors.
+- [x] #7 Flow-log aggregate panels distinguish absent results from zero and are reconciled with the populated raw flow-log stream, including observed bandwidth and top node-pair talkers; healthy ingestion-hygiene counters render an explicit zero when their source family is present.
+- [x] #8 Posture visualizations retain the posture attribute dimension or require an explicit selected attribute, do not treat arbitrary numeric zero as universal failure, and report numerator, denominator, and unknown/unsupported population where a coverage percentage would otherwise imply noncompliance.
+- [x] #9 Every emitted trace span class is accounted for by a bounded Tempo discovery, table, or metrics panel and a source-to-dashboard coverage gate. At minimum account for scheduler scrape, Tailscale API, Headscale API, node-metrics scrape, stream receiver, webhook receiver, and release-check spans.
+- [x] #10 The dashboard provides a meaningful route to the emitted Pyroscope profile set, such as bounded profile panels or explicit Profiles/trace-to-profile drilldown, rather than only upload-health metrics; disabled, idle, and healthy-no-failure states remain distinguishable.
+- [x] #11 Inventory/configuration facts and prerequisite-missing states use neutral presentation, labelled configuration values such as external-tailnets role remain visible, and narrow tables exclude infrastructure columns that hide the operator fields.
+- [x] #12 Generated artifacts and signal dispositions are regenerated; dashboard/query tests, catalog coverage gates, PromQL checks, and relevant module checks pass; the repaired dashboards are published through GitSync and every affected panel is rechecked in the authenticated live UI.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -58,6 +58,10 @@ ACL correctness slice:
 5. Run targeted, generated-artifact, PromQL, full Go/lint, review, GitSync/deployment, and authenticated live-panel checks.
 
 Plan review: do not fabricate an upstream time, do not collapse missing audit history to zero, namespace state per tailnet, retain approximate wording when file persistence is unavailable, and keep persistence failures observable without suppressing other ACL telemetry.
+
+Remaining campaign: map AC #2-#12 into single-owner dashboard/query/test packets; serialize generator integration; implement with focused red/green checks; regenerate; run integrated gates and CodeRabbit; publish through GitSync and recheck affected authenticated live panels before finalization.
+
+Publication routing: deliver deploy/grafana/**/*.json only through the repository GitSync workflow; publish deploy/alerts/grafana-managed/**/*.json only with gcx resources push, then verify each surface with its own read-back.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -85,4 +89,20 @@ ACL correctness implementation completed locally:
 - Evidence: 191 dashboard generator tests passed; 651 PromQL expressions parsed with zero failures; root build/vet/race/lint passed; every module passed build/vet/race/tidy/lint and the pinned Go 1.27-compiled govulncheck found no vulnerabilities. The installed govulncheck binary itself is stale (built with Go 1.26), so its verifier leg failed before scanning and was superseded by the successful pinned go-run invocation. CodeRabbit organisation-plan review completed with zero findings.
 
 Live ACL proof completed after deployment. The exact implementation revision was pulled and the service became healthy. The generated dashboard was published through its GitSync source and both the Overview summary and Security & Policy > Policy & Config > Access & ACL panel rendered the revision-first-observed fallback with no visible query error. The first restart exposed that the deployment had intentionally selected an in-memory checkpoint store because flow and audit ingestion are streamed; this reset the ACL epoch and reproduced the uptime-like defect. Switching the already-mounted state path to the file store created a checkpoint, and a second controlled restart proved persistence: a post-restart sample retained the pre-restart first-observed epoch. The authoritative audit-change metric remained absent, so no audit timestamp was fabricated. TSO-0023 tracks separating durable semantic evidence from optional poll cursors so streamed deployments cannot repeat this configuration trap.
+
+Fan-out infrastructure note: five correctly routed Codex MAPPING lanes (Luna/medium) all failed before repository access with the same configured Responses-endpoint HTTP 404. No child edits, tracker writes, commits, deployments, or live-system actions occurred. Per the canonical route contract, no substitute route was reported as equivalent; root continued locally.
+
+AC #2-#6 implementation progress: added a built-dashboard selector contract and fixed 38 Policy & Config Prometheus/Loki queries; added prerequisite-aware zero fallbacks for empty device populations, UDP-blocked devices, ACL auto-approvers, and profile-upload failures; replaced hard-coded 10K cardinality assumptions with tailscale2otel_series_limit utilization; exposed a Node Metrics up/total ratio and narrowed raw tables; split the mixed-unit NAT/relay panel into selector-aware hard-NAT fraction and configured peer-relay inventory panels. Focused generator tests pass; integrated generation and repository gates remain pending.
+
+CodeRabbit organisation-plan review completed with seven findings. Fixed the two dashboard correctness findings: zero-valued series limits are filtered before utilization division with an explicit unlimited state, and posture passing numerators preserve zero only while their reporting family is present. Clarified dashboard-versus-rule publication routing in the plan. Four generated alert-link findings were checked against the title resolver and current dashboard family: the cited IDs correctly resolve to their declared unique panel titles, so no generated JSON was edited.
+
+The exact-head GitSync dashboard job failed before publication because the destination repository had migrated from networking/ to grafana/networking/ while this workflow retained the old path. Updated the dashboard copy/prune target and added an explicit destination-directory assertion. actionlint and the internal CI workflow contract test pass. CodeRabbit was skipped for this declarative CI YAML-only repair, per policy.
+
+Final integrated evidence: full regeneration passed; 210 dashboard generator tests and 110 alert generator tests passed; catalog disposition/coverage/dashboard gates passed; promqlcheck parsed 655 PromQL and reported zero failures while explicitly leaving 35 LogQL and 6 TraceQL expressions syntax-unparsed; root build, vet, race tests, and golangci-lint passed; every module passed build/vet/race/tidy/lint and pinned Go 1.27 govulncheck found no vulnerabilities, while the stale installed govulncheck wrapper remained a reported failure. Exact-head CI and grafana-sync both passed on e0d20a2e3ae1f8c65d2af4cc757641abc17b93c3. GitSync destination blob hashes exactly matched both local dashboards, and its commit named the exact source head. Authenticated lazy-initialized UI checks covered every repaired panel family with no visible query error; trace-class activity, CPU and heap profile activity/flamegraphs, cardinality utilization, flow aggregates, node tables/ratio, scoped policy/config panels, zero-safe populations, posture population accounting, and neutral configuration panels all rendered. Alert-rule read-back remained 123 shipped/deployed, 81 paused, zero missing/orphaned/drifted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Repaired the collated Grafana accuracy and coverage defects, added generator/source regression gates, regenerated dashboards and alert links, fixed the migrated GitSync destination path, and published both delivery surfaces. Verified locally, on exact-head CI, against GitSync blob hashes and rule read-back, and through authenticated lazy-initialized live panel checks.
+<!-- SECTION:FINAL_SUMMARY:END -->
