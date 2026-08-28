@@ -1,11 +1,11 @@
 ---
 id: TSO-0024
 title: Support per-tag metrics port overrides in node-metrics discovery
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-28 18:55'
-updated_date: '2026-08-28 20:07'
+updated_date: '2026-08-28 21:05'
 labels:
   - needs-triage
 dependencies: []
@@ -77,10 +77,16 @@ These are operator-side and NOT part of this task's code, but the docs must stat
 
 <!-- SECTION:NOTES:BEGIN -->
 Implemented and pushed feature commit e4c9e46057e8b24b60b901505fb98cbea23b49b9. Local verification passed: go build ./..., go vet ./..., go test -race ./..., golangci-lint run (0 issues), scripts/verify-modules.sh across all five modules plus artifact promqlcheck, scripts/regen-generated.sh, git diff --exit-code, and git diff --check. CodeRabbit used the organization plan and reported one Major documentation omission; the missing ProxyClass.spec.metrics.enable: true prerequisite was confirmed against current Tailscale documentation and corrected. No Info findings were dismissed. Feature-SHA CI run 33205607170 was cancelled before jobs started after it was superseded. Exact-head run 33206114889 at e86aa8fe16ba7709817edc4d9b6404a6bfa1ae20 contains the feature and remains queued, so CI is not proven green. Read-only live evidence is unchanged at 34 targets: 8 up and 26 down. The required live port_overrides YAML edit and process refresh are writes outside this run authority. Resume when that edit/restart is authorized or performed, then read the pull endpoint and prove 34 total, 12 up, 22 down, including the four containerboot proxies up.
+
+Rob authorized the previously parked live configuration change on 2026-08-28. Resuming the narrow deployment-host lane: add the frozen three-tag port_overrides map, refresh only the tailscale2otel service, and verify the authenticated pull-endpoint counts.
+
+Live completion (Rob-authorized, 2026-08-28): atomically added the frozen three-tag port_overrides map to the deployment-host config, validated YAML read-back (3 override keys) and `config OK` with the new binary, then recreated only the tailscale2otel service. The healthy service runs revision 8ff24304b6a42f8967741fb394f30dd5d7b4650d from image sha256:e1f93581dcff4396149011d02df61333eca74fdfda071051daf213d02874ccd5. Pull-endpoint evidence moved from 34 total / 8 up / 26 down before deployment to 34 total / 12 up / 22 down after deployment. Status-to-metrics identity joining found 6 port-9002 targets, all matched: 4 up and 2 down; this proves the four containerboot proxies recovered while the two kube-apiserver proxies remain down by design. Exact-head Release run 33206928924 succeeded. Exact-head CI run 33206928418 at 8ff24304b6a42f8967741fb394f30dd5d7b4650d completed successfully, including ci-success. The temporary rollback config backup was removed after the final stable read-back.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Delivered deterministic per-tag node-metrics port overrides, collision-free multi-target identities, target-based max_targets, validation/schema/Helm support, and operator documentation. Source and local gates are proven; the task is Parked because exact-head CI is still queued and read-only host authority prevents the live config edit/restart needed to prove the 26-to-22 down-target delta.
+
+Completion proof: feature commit e4c9e46057e8b24b60b901505fb98cbea23b49b9 and integration/tracker head 8ff24304b6a42f8967741fb394f30dd5d7b4650d are published. Local gates, exact-head CI 33206928418, exact-head Release 33206928924, compatible image publication, configuration validation, healthy deployment, and live 34/12/22 plus port-9002 6/4/2 evidence are all proven. TSO-0024 is complete.
 <!-- SECTION:FINAL_SUMMARY:END -->
