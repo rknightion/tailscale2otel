@@ -1513,12 +1513,15 @@ config: # @schema additionalProperties:false
         enabled: false
         # -- How often the devices API is polled for targets (independent of the scrape interval).
         interval: 300s
-        # -- Cap on discovered targets per refresh.
+        # -- Cap on emitted discovered targets per refresh (one per selected port, not one per device).
         max_targets: 1000
         # -- Metrics-endpoint scheme applied to each discovered device: http | https.
         scheme: http
         # -- Metrics port on each device (tailscaled's default is 5252).
         port: 5252
+        # -- Map ACL tags to replacement metrics-port lists. A matching tag replaces `port`;
+        # multiple matches use their sorted, deduplicated union. File-only in the standalone config.
+        port_overrides: {}
         # -- Metrics path on each device.
         path: /metrics
         # -- Only devices currently connected to the control plane.

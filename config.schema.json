@@ -1048,7 +1048,7 @@
                 },
                 "max_targets": {
                   "default": 1000,
-                  "description": "cap discovered targets per refresh",
+                  "description": "cap emitted discovered targets per refresh (one target per selected port, not one per device)",
                   "type": "integer"
                 },
                 "online_only": {
@@ -1067,6 +1067,19 @@
                   "maximum": 65535,
                   "minimum": 1,
                   "type": "integer"
+                },
+                "port_overrides": {
+                  "additionalProperties": {
+                    "items": {
+                      "maximum": 65535,
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "description": "FILE-ONLY: map ACL tags to replacement metrics ports, e.g. {\"tag:k8s-operator\": [9002]}; no TS2OTEL_* encoding",
+                  "type": "object"
                 },
                 "scheme": {
                   "default": "http",

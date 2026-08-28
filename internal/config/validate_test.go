@@ -723,6 +723,46 @@ func TestValidateNodeMetricsDiscoveryRejectsBadPort(t *testing.T) {
 	}
 }
 
+func TestValidateNodeMetricsDiscoveryPortOverrides(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{
+			name: "out of range",
+			yaml: "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      port_overrides:\n        \"tag:k8s-operator\": [9002, 0]\n",
+			want: `port_overrides["tag:k8s-operator"]`,
+		},
+		{
+			name: "empty list",
+			yaml: "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      port_overrides:\n        \"tag:k8s-operator\": []\n",
+			want: `port_overrides["tag:k8s-operator"]`,
+		},
+		{
+			name: "malformed tag",
+			yaml: "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      port_overrides:\n        operator: [9002]\n",
+			want: `port_overrides["operator"]`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := loadErr(t, tc.yaml)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want an error naming %s", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateNodeMetricsDiscoveryAcceptsPortOverrides(t *testing.T) {
+	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      port_overrides:\n        \"tag:k8s-operator\": [1, 9002, 65535]\n"
+	if err := loadErr(t, y); err != nil {
+		t.Fatalf("valid port overrides should be accepted: %v", err)
+	}
+}
+
 func TestValidateNodeMetricsDiscoveryRejectsBadAddressOrder(t *testing.T) {
 	const y = "collectors:\n  node_metrics:\n    enabled: true\n    discovery:\n      enabled: true\n      address_order: ipv9\n"
 	err := loadErr(t, y)

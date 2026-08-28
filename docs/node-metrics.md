@@ -213,8 +213,9 @@ device-inventory refresh. The discovery block's defaults are deliberately conser
 | `address_order` | `ipv4` | Prefers a Tailscale IPv4 address and falls back to IPv6. Set `ipv6` to reverse that preference. |
 | `scheme` | `http` | Builds plain-HTTP client-metrics URLs by default. |
 | `port` | `5252` | Uses the Tailscale client-metrics listener. |
+| `port_overrides` | `{}` | Optional YAML map from tag strings to non-empty port lists. Matching tags replace `port`; multiple matching tags produce a deduplicated, sorted union. Devices with no matching tag use `port`. This is file-only. |
 | `path` | `/metrics` | Uses the documented client-metrics path. |
-| `max_targets` | `1000` | Caps the number of discovered devices admitted on each refresh; static targets are not counted against this cap. |
+| `max_targets` | `1000` | Caps the number of discovered targets emitted on each refresh; static targets are not counted against this cap. |
 | `instance_source` | `name` | Uses the MagicDNS short name for the `tailscale.node` identity label. `address` uses the host:port, while `hostname` uses the OS hostname with the node address appended for stable uniqueness. |
 
 Discovery selects only usable Tailscale addresses (IPv4 in `100.64.0.0/10` or IPv6 in
@@ -268,6 +269,58 @@ reduced to one scalar before filtering the per-node results. If a node
 exposes only cumulative counters, run the query after the second scrape: the first counter
 observation establishes its delta baseline, while gauges and `tailscale.node.up` are available on
 the first scrape.
+
+### Tailscale Kubernetes operator
+
+1. **Operator proxy pods are ordinary discovered tailnet devices**, but their metrics listener is
+   on `9002`, not standalone `tailscaled`'s `5252`.
+
+2. Enable metrics with `ProxyClass.spec.metrics.enable`, then set
+   `ProxyClass.spec.statefulSet.pod.tailscaleContainer.env` to bind the metrics listener on the
+   tailnet address:
+
+   ```yaml
+   spec:
+     metrics:
+       enable: true
+     statefulSet:
+       pod:
+         tailscaleContainer:
+           env:
+             TS_LOCAL_ADDR_PORT: "[::]:9002"
+   ```
+
+   The default cluster-IP bind is invisible from the tailnet. Keep `9002` because the operator
+   hardcodes it in the metrics Service.
+
+3. The tailnet ACL must grant the scraping host's tag to the proxy tags on `tcp:9002`.
+
+4. For diagnosis, a missing ACL is a timeout (`curl` exit 28); a missing listener is connection
+   refused (`curl` exit 7). Tailscale silently filters traffic that the ACL does not grant.
+
+5. `kube-apiserver` ProxyGroups cannot be scraped via the tailnet: `cmd/k8s-proxy` ignores
+   `TS_LOCAL_ADDR_PORT` and binds `POD_IP` unconditionally. An in-cluster ServiceMonitor is
+   supported for those pods; their tailnet unreachability is not a defect in this scraper.
+
+6. Use `port_overrides` for the operator ports while leaving devices without a matching override on
+   `discovery.port` (`5252`). For example:
+
+   ```yaml
+   collectors:
+     node_metrics:
+       enabled: true
+       discovery:
+         enabled: true
+         port: 5252
+         port_overrides:
+           "tag:k8s": [9002]
+           "tag:k8s-egress": [9002]
+           "tag:k8s-apiserver": [9002]
+   ```
+
+   A device carrying more than one listed tag gets the sorted, deduplicated union of those port
+   lists. The `tag:k8s-apiserver` targets remain down when reached through the tailnet, as described
+   above.
 
 ### What the scraper emits
 
@@ -335,8 +388,8 @@ one target response (default `4194304`, 4 MiB), and `max_samples` caps the numbe
 accepted from one scrape (default `50000`). A target that exceeds either limit is treated as a failed
 scrape and reports `tailscale.node.up=0` for that collection.
 
-When dynamic discovery is enabled, `discovery.max_targets` caps the number of discovered devices that
-can become scrape targets in one refresh (default `1000`). Use `include_tags`/`exclude_tags` together
+When dynamic discovery is enabled, `discovery.max_targets` caps the number of discovered targets
+emitted in one refresh (default `1000`), not the number of devices. Use `include_tags`/`exclude_tags` together
 with this cap to keep automatic discovery scoped to the nodes you intend to scrape. Both accept
 comma-separated values as env vars:
 

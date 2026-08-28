@@ -1,9 +1,11 @@
 ---
 id: TSO-0024
 title: Support per-tag metrics port overrides in node-metrics discovery
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-28 18:55'
+updated_date: '2026-08-28 19:32'
 labels:
   - needs-triage
 dependencies: []
@@ -60,3 +62,13 @@ These are operator-side and NOT part of this task's code, but the docs must stat
 - [ ] #2 golangci-lint run
 - [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Implement the frozen node_metrics.discovery.port_overrides schema, defaults, validation, example config, and configcheck coverage with test-first validation.
+2. Expand node discovery to deterministic per-device port unions, preserve single-target labels byte-for-byte, disambiguate multi-target labels, and cap emitted targets with test-first coverage.
+3. Document Kubernetes operator port 9002, ProxyClass, ACL diagnostics, kube-apiserver limitation, and the file-only override key.
+4. Integrate the three disjoint lanes, regenerate root-owned artifacts, run CodeRabbit for code changes, and execute the full local and module gates.
+5. Commit and push one feature commit on main, verify exact-SHA CI, deploy only to the authorized host, capture read-only before/after pull-endpoint counts, then finalize the task in one call.
+<!-- SECTION:PLAN:END -->

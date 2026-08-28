@@ -596,6 +596,9 @@
                                         "port": {
                                             "type": "integer"
                                         },
+                                        "port_overrides": {
+                                            "type": "object"
+                                        },
                                         "scheme": {
                                             "type": "string"
                                         }

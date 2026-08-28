@@ -66,7 +66,7 @@ func TestEnvReferenceRowsClassification(t *testing.T) {
 	}
 
 	// Structured values are file-only (no env var).
-	for _, k := range []string{"otlp.headers", "profiling.pyroscope.tags", "collectors.node_metrics.targets"} {
+	for _, k := range []string{"otlp.headers", "profiling.pyroscope.tags", "collectors.node_metrics.targets", "collectors.node_metrics.discovery.port_overrides"} {
 		if r := byKey[k]; !r.FileOnly || r.EnvVar != "" {
 			t.Errorf("%s should be file-only with no env var, got %+v", k, r)
 		}

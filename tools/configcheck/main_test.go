@@ -41,6 +41,25 @@ func TestCheck_AcceptsAValidConfig(t *testing.T) {
 	}
 }
 
+func TestCheck_AcceptsNodeMetricsDiscoveryPortOverrides(t *testing.T) {
+	const y = validConfig + `
+collectors:
+  node_metrics:
+    enabled: true
+    discovery:
+      enabled: true
+      port_overrides:
+        "tag:k8s-operator": [9002]
+`
+	var out, errOut bytes.Buffer
+	if got := check([]string{write(t, "node-metrics.yaml", y)}, &out, &errOut); got != 0 {
+		t.Fatalf("exit = %d, want 0; stdout: %s; stderr: %s", got, out.String(), errOut.String())
+	}
+	if !strings.Contains(out.String(), "OK") {
+		t.Errorf("stdout = %q, want an OK line", out.String())
+	}
+}
+
 // The cross-field rule is the reason this tool exists rather than relying on the
 // schema: poll+stream on one log type double-counts, and no per-field schema can
 // see it. If this stops failing, the chart-rendered config check is worthless.

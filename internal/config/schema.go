@@ -379,11 +379,9 @@ func (b *schemaBuilder) sliceSchema(t reflect.Type, path string) map[string]any 
 	return arr
 }
 
-// mapSchema renders a map[string]string or map[string]Secret field
-// (otlp.headers, profiling.pyroscope.tags, node-metrics target labels/
-// headers). Unlike a config struct these are genuinely open-ended — the keys
-// are header/label/tag NAMES the operator chooses — so additionalProperties
-// carries the value schema rather than false.
+// mapSchema renders the open-ended map shapes used by configuration. Unlike a
+// config struct, these keys are names the operator chooses, so
+// additionalProperties carries the value schema rather than false.
 func (b *schemaBuilder) mapSchema(t reflect.Type, path string) map[string]any {
 	valType := t.Elem()
 	var additional map[string]any
@@ -392,6 +390,16 @@ func (b *schemaBuilder) mapSchema(t reflect.Type, path string) map[string]any {
 		additional = map[string]any{"type": "string"}
 	case valType == secretType:
 		additional = map[string]any{"type": "string"}
+	case valType.Kind() == reflect.Slice && valType.Elem().Kind() == reflect.Int:
+		additional = map[string]any{
+			"type":     "array",
+			"minItems": 1,
+			"items": map[string]any{
+				"type":    "integer",
+				"minimum": float64(1),
+				"maximum": float64(65535),
+			},
+		}
 	default:
 		panic(fmt.Sprintf("config schema: unsupported map value kind %s at %q — teach schema.go about it", valType.Kind(), path))
 	}

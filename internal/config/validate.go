@@ -1941,6 +1941,35 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("collectors.node_metrics.discovery.port_overrides", "Use non-empty port lists and Tailscale ACL tags (tag:<name>) with ports between 1 and 65535.", func() error {
+		nm := c.Collectors.NodeMetrics
+		if !nm.Enabled || !nm.Discovery.Enabled {
+			return nil
+		}
+
+		// Map iteration order is deliberately stabilized so Validate() and
+		// Diagnostics() identify the same offending key every time.
+		keys := make([]string, 0, len(nm.Discovery.PortOverrides))
+		for tag := range nm.Discovery.PortOverrides {
+			keys = append(keys, tag)
+		}
+		sort.Strings(keys)
+		for _, tag := range keys {
+			ports := nm.Discovery.PortOverrides[tag]
+			if !strings.HasPrefix(tag, "tag:") || len(tag) == len("tag:") {
+				return fmt.Errorf("collectors.node_metrics.discovery.port_overrides[%q] invalid tag: must use the Tailscale tag:<name> format", tag)
+			}
+			if len(ports) == 0 {
+				return fmt.Errorf("collectors.node_metrics.discovery.port_overrides[%q] must contain at least one port", tag)
+			}
+			for _, port := range ports {
+				if port < 1 || port > 65535 {
+					return fmt.Errorf("collectors.node_metrics.discovery.port_overrides[%q] port %d invalid: must be 1-65535", tag, port)
+				}
+			}
+		}
+		return nil
+	})
 	add("collectors.node_metrics.discovery.address_order", oneOfRemediation("collectors.node_metrics.discovery.address_order", "ipv4", "ipv6"), func() error {
 		nm := c.Collectors.NodeMetrics
 		if !nm.Enabled || !nm.Discovery.Enabled {

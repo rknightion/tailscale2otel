@@ -1360,6 +1360,13 @@ type NodeMetricsDiscovery struct {
 	Port   int    `yaml:"port"`   // default 5252 (tailscaled client metrics)
 	Path   string `yaml:"path"`   // default "/metrics"
 
+	// PortOverrides maps a Tailscale tag to the metrics ports served by devices
+	// carrying it. A device matching at least one key is scraped on the
+	// deduplicated union of those keys' ports INSTEAD OF Port, one target per
+	// port. A device matching no key uses Port exactly as before. File-only: a
+	// map-valued key cannot be set through the TS2OTEL_* environment convention.
+	PortOverrides map[string][]int `yaml:"port_overrides"`
+
 	// Filters.
 	MaxTargets      int      `yaml:"max_targets"`      // maximum discovered targets per refresh
 	OnlineOnly      bool     `yaml:"online_only"`      // default true: only connectedToControl devices
@@ -1661,6 +1668,10 @@ type SelfObservabilityConfig struct {
 // returned. A non-empty path that cannot be read is an error; absence of a path
 // is not (defaults + environment are sufficient to run).
 func Load(path string) (*Config, error) {
+	if hits := fileOnlyMapSliceEnvVars(); len(hits) > 0 {
+		return nil, fileOnlyMapSliceEnvVarError(hits)
+	}
+
 	// 0. Reject any TS2OTEL_* variable that indexes into a list-of-structs
 	//    config key (e.g. TS2OTEL_TAILNETS__0__NAME or
 	//    TS2OTEL_COLLECTORS__NODE_METRICS__TARGETS__0__URL) upfront, before it

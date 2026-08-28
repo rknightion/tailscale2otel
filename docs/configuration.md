@@ -80,6 +80,7 @@ These fields cannot be set via flat env vars because they are maps or lists of s
 - `otlp.headers` — use the YAML file (or use `otlp.grafana_cloud` for Grafana Cloud).
 - `tailnets` — each entry is a struct; multi-tailnet mode requires a YAML file.
 - `collectors.node_metrics.targets` — each target is a struct; static targets require a YAML file.
+- `collectors.node_metrics.discovery.port_overrides` — a tag→port-list map; set it in the YAML file.
 - `profiling.pyroscope.tags` — a string→string map; set via YAML.
 
 ### Unknown-variable advisory
@@ -1250,9 +1251,10 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 |-----|---------|-------------|
 | `enabled` | `false` | Turn on dynamic discovery. |
 | `interval` | `5m` | How often the devices API is polled for targets (independent of the scrape `interval`). Must be `> 0`. |
-| `max_targets` | `1000` | Cap on discovered targets per refresh. Must be `> 0`. |
+| `max_targets` | `1000` | Cap on emitted discovered targets per refresh, not devices; static targets are not counted. Must be `> 0`. |
 | `scheme` | `http` | `http` \| `https`. The metrics-endpoint scheme applied to each device. |
 | `port` | `5252` | Metrics port (1–65535). |
+| `port_overrides` | `{}` | Optional **file-only** YAML map from a tag string to a non-empty list of ports (the full key is `collectors.node_metrics.discovery.port_overrides`; there is no `TS2OTEL_*` encoding). A matching override tag replaces `discovery.port`; multiple matching tags contribute a deduplicated, sorted union. A device with no matching tag uses `discovery.port`. Ports must be 1–65535, and an empty list is invalid. `max_targets` counts emitted targets. |
 | `path` | `/metrics` | Metrics path. |
 | `online_only` | `true` | Only devices currently connected to the control plane. |
 | `exclude_external` | `true` | Skip shared/external devices. |

@@ -144,8 +144,8 @@ func (d *nodeDiscoverer) collectDevices(ctx context.Context) ([]discoveryDevice,
 }
 
 // Discover lists the tailnet devices and converts the matching ones into scrape
-// targets (one per device, using the configured scheme/port/path). Reachability
-// is NOT pre-checked: a node the scraper cannot reach simply reports
+// targets (one per resolved metrics port, using the configured scheme/port/path).
+// Reachability is NOT pre-checked: a node the scraper cannot reach simply reports
 // tailscale.node.up=0 at scrape time, so no ACL/grant evaluation is needed.
 func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, error) {
 	devs, err := d.collectDevices(ctx)
@@ -166,13 +166,40 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 		if !ok {
 			continue // no usable Tailscale address
 		}
-		out = append(out, d.toTarget(dev, addr))
+		ports := d.portsFor(dev)
+		for _, port := range ports {
+			out = append(out, d.toTarget(dev, addr, port, len(ports) > 1))
+			if d.cfg.MaxTargets > 0 && len(out) >= d.cfg.MaxTargets {
+				break
+			}
+		}
 		if d.cfg.MaxTargets > 0 && len(out) >= d.cfg.MaxTargets {
 			break
 		}
 	}
 	d.disambiguateInstances(out)
 	return out, nil
+}
+
+// portsFor returns the metrics ports to scrape for a device. A matching tag
+// replaces the global port with the sorted, deduplicated union of all matching
+// overrides; devices matching no override retain the legacy global port.
+func (d *nodeDiscoverer) portsFor(dev *discoveryDevice) []int {
+	var ports []int
+	matched := false
+	for _, tag := range dev.tags {
+		override, ok := d.cfg.PortOverrides[tag]
+		if !ok {
+			continue
+		}
+		matched = true
+		ports = append(ports, override...)
+	}
+	if !matched {
+		return []int{d.cfg.Port}
+	}
+	slices.Sort(ports)
+	return slices.Compact(ports)
 }
 
 // disambiguateInstances guarantees every non-empty instance label is unique
@@ -291,11 +318,13 @@ func pickAddress(addrs []string, order string) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-// toTarget builds the scrape Target for one device at the chosen address.
-func (d *nodeDiscoverer) toTarget(dev *discoveryDevice, addr netip.Addr) nodemetrics.Target {
+// toTarget builds the scrape Target for one device at the chosen address and port.
+// multiPort disambiguates name and hostname instances for one device's multiple
+// targets; address instances are already derived from the distinct host:port URLs.
+func (d *nodeDiscoverer) toTarget(dev *discoveryDevice, addr netip.Addr, port int, multiPort bool) nodemetrics.Target {
 	u := url.URL{
 		Scheme: d.cfg.Scheme,
-		Host:   net.JoinHostPort(addr.String(), strconv.Itoa(d.cfg.Port)), // JoinHostPort brackets IPv6
+		Host:   net.JoinHostPort(addr.String(), strconv.Itoa(port)), // JoinHostPort brackets IPv6
 		Path:   d.cfg.Path,
 	}
 	t := nodemetrics.Target{URL: u.String()}
@@ -306,6 +335,9 @@ func (d *nodeDiscoverer) toTarget(dev *discoveryDevice, addr netip.Addr) nodemet
 	case "hostname":
 		t.Instance = dev.hostname
 	default: // "address": leave empty so the collector derives host:port from the URL
+	}
+	if multiPort && t.Instance != "" {
+		t.Instance += ":" + strconv.Itoa(port)
 	}
 
 	wantTags := d.cfg.IncludeTagsLabel && len(dev.tags) > 0

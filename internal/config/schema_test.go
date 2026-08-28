@@ -241,6 +241,21 @@ func TestConfigSchemaFieldShapes(t *testing.T) {
 	if additional["type"] != "string" {
 		t.Errorf("otlp.headers additionalProperties.type = %v, want string", additional["type"])
 	}
+
+	// Map of integer slices: each operator-chosen tag maps to a non-empty
+	// list of valid TCP ports.
+	collectors := props["collectors"].(map[string]any)["properties"].(map[string]any)
+	nodeMetrics := collectors["node_metrics"].(map[string]any)["properties"].(map[string]any)
+	discovery := nodeMetrics["discovery"].(map[string]any)["properties"].(map[string]any)
+	portOverrides := discovery["port_overrides"].(map[string]any)
+	portList, ok := portOverrides["additionalProperties"].(map[string]any)
+	if !ok || portList["type"] != "array" || portList["minItems"] != 1 {
+		t.Fatalf("port_overrides additionalProperties = %#v, want non-empty array schema", portOverrides["additionalProperties"])
+	}
+	portItem, ok := portList["items"].(map[string]any)
+	if !ok || portItem["type"] != "integer" || portItem["minimum"] != float64(1) || portItem["maximum"] != float64(65535) {
+		t.Errorf("port_overrides item schema = %#v, want integer 1..65535", portList["items"])
+	}
 }
 
 func equalAny(a, b []any) bool {
@@ -288,6 +303,7 @@ var ruleApplications = []string{
 	"collectors.node_metrics.discovery.address_order",
 	"collectors.node_metrics.discovery.instance_source",
 	"collectors.node_metrics.discovery.port",
+	"collectors.node_metrics.discovery.port_overrides.*",
 	"collectors.node_metrics.discovery.scheme",
 	"delivery.mode",
 	"flows.capacity_profile",

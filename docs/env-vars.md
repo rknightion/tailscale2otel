@@ -321,7 +321,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DROP_LABELS` | `[]` | label keys stripped from every forwarded series (the tailscale.node identity label is never dropped) _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__ENABLED` | `false` | OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INTERVAL` | `5m` | how often the device inventory is re-scanned for targets |
-| `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__MAX_TARGETS` | `1000` | cap discovered targets per refresh |
+| `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__MAX_TARGETS` | `1000` | cap emitted discovered targets per refresh (one target per selected port, not one per device) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__SCHEME` | `http` | http \| https — metrics endpoint scheme on each device |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__PORT` | `5252` | tailscaled client-metrics port |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__PATH` | `/metrics` | metrics endpoint path |
@@ -467,6 +467,6 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED` | `true` | a node key or auth key entering its expiry warning window — the marker that explains a device count stepping down. Needs collectors.keys / collectors.devices. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED |
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP` | `true` | a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `otlp.metrics.headers`, `otlp.logs.headers`, `otlp.traces.headers`, `collectors.node_metrics.targets`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`, `profiling.pyroscope.headers`, `resource.attributes`.
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets`, `otlp.headers`, `otlp.metrics.headers`, `otlp.logs.headers`, `otlp.traces.headers`, `collectors.node_metrics.targets`, `collectors.node_metrics.discovery.port_overrides`, `streaming.routes`, `webhook.routes`, `profiling.pyroscope.tags`, `profiling.pyroscope.headers`, `resource.attributes`.
 
 <!-- END GENERATED: env-vars -->

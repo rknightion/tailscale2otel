@@ -55,6 +55,14 @@ var structSliceEnvKeys = map[string]bool{
 	"collectors.node_metrics.targets": true,
 }
 
+// fileOnlyMapSliceEnvKeys are map-valued keys whose values are slices. A flat
+// environment variable can address one map key but cannot encode its []int
+// value without inventing an unsupported mini-language, so reject child env
+// variables instead of allowing mapstructure to guess.
+var fileOnlyMapSliceEnvKeys = map[string]bool{
+	"collectors.node_metrics.discovery.port_overrides": true,
+}
+
 // structSliceEnvHit is one TS2OTEL_* environment variable found to index into
 // a structSliceEnvKeys entry, e.g. name="TS2OTEL_TAILNETS__0__NAME" and
 // key="tailnets".
@@ -98,6 +106,33 @@ func structSliceEnvVarError(hits []structSliceEnvHit) error {
 		"environment variables — a flat env var cannot express repeated struct elements and doing so "+
 		"silently drops or corrupts the intended value; remove the variable(s) and set the value in a "+
 		"YAML config file instead", strings.Join(parts, ", "))
+}
+
+func fileOnlyMapSliceEnvVars() []structSliceEnvHit {
+	var hits []structSliceEnvHit
+	for _, kv := range os.Environ() {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok || !strings.HasPrefix(name, EnvPrefix) {
+			continue
+		}
+		key := envKey(name)
+		for configKey := range fileOnlyMapSliceEnvKeys {
+			if key == configKey || strings.HasPrefix(key, configKey+keyDelim) {
+				hits = append(hits, structSliceEnvHit{name: name, key: configKey})
+				break
+			}
+		}
+	}
+	slices.SortFunc(hits, func(a, b structSliceEnvHit) int { return strings.Compare(a.name, b.name) })
+	return hits
+}
+
+func fileOnlyMapSliceEnvVarError(hits []structSliceEnvHit) error {
+	parts := make([]string, len(hits))
+	for i, h := range hits {
+		parts[i] = fmt.Sprintf("%s (targets %q)", h.name, h.key)
+	}
+	return fmt.Errorf("%s: map-of-lists configuration keys are file-only and cannot be set via TS2OTEL_ environment variables; remove the variable(s) and set the value in a YAML config file instead", strings.Join(parts, ", "))
 }
 
 // envKey maps a TS2OTEL_* environment variable name to its dotted config key:

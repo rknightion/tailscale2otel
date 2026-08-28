@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -73,14 +74,18 @@ func TestNodeDiscoverer_TagIncludeExclude(t *testing.T) {
 	cfg := discoveryDefaults()
 	cfg.IncludeTags = []string{"tag:server"}
 	cfg.ExcludeTags = []string{"tag:no"}
+	cfg.PortOverrides = map[string][]int{
+		"tag:server": {9002},
+		"tag:no":     {9003},
+	}
 	devs := []tsapi.RichDevice{
 		{Hostname: "a", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true, Tags: []string{"tag:server"}},
 		{Hostname: "b", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true, Tags: []string{"tag:client"}},
 		{Hostname: "c", Addresses: []string{"100.64.0.3"}, ConnectedToControl: true, Tags: []string{"tag:server", "tag:no"}},
 	}
 	got := mustDiscover(t, devs, cfg)
-	if len(got) != 1 || got[0].URL != "http://100.64.0.1:5252/metrics" {
-		t.Fatalf("targets = %+v, want only a (b lacks include tag; c excluded by tag:no)", got)
+	if len(got) != 1 || got[0].URL != "http://100.64.0.1:9002/metrics" {
+		t.Fatalf("targets = %+v, want only a on its override port (b lacks include tag; c excluded by tag:no)", got)
 	}
 }
 
@@ -182,6 +187,131 @@ func TestNodeDiscoverer_MaxTargetsCapsDiscovery(t *testing.T) {
 	}
 	if got[0].URL != "http://100.64.0.1:5252/metrics" || got[1].URL != "http://100.64.0.2:5252/metrics" {
 		t.Fatalf("targets = %+v, want first two matching devices", got)
+	}
+}
+
+func TestNodeDiscoverer_PortOverridesUnionDeduplicatesAndSorts(t *testing.T) {
+	cfg := discoveryDefaults()
+	cfg.PortOverrides = map[string][]int{
+		"tag:metrics-a": {9002, 8080},
+		"tag:metrics-b": {8080, 9100},
+	}
+	dev := tsapi.RichDevice{
+		Hostname: "proxy", Name: "proxy.tail-scale.ts.net", Addresses: []string{"100.64.0.1"},
+		ConnectedToControl: true, Tags: []string{"tag:metrics-b", "tag:metrics-a"},
+	}
+
+	got := mustDiscover(t, []tsapi.RichDevice{dev}, cfg)
+	wantURLs := []string{
+		"http://100.64.0.1:8080/metrics",
+		"http://100.64.0.1:9002/metrics",
+		"http://100.64.0.1:9100/metrics",
+	}
+	if len(got) != len(wantURLs) {
+		t.Fatalf("targets = %d, want %d; got %+v", len(got), len(wantURLs), got)
+	}
+	for i, want := range wantURLs {
+		if got[i].URL != want {
+			t.Fatalf("target[%d].URL = %q, want %q; all=%+v", i, got[i].URL, want, got)
+		}
+	}
+}
+
+func TestNodeDiscoverer_SingleTargetOverridesPreserveLegacyTargets(t *testing.T) {
+	dev := tsapi.RichDevice{
+		Hostname: "proxy", Name: "proxy.tail-scale.ts.net", Addresses: []string{"100.64.0.1"},
+		ConnectedToControl: true, Tags: []string{"tag:metrics"},
+	}
+	for _, src := range []string{"name", "hostname", "address"} {
+		t.Run(src, func(t *testing.T) {
+			base := discoveryDefaults()
+			base.Port = 9002
+			base.InstanceSource = src
+			override := base
+			override.PortOverrides = map[string][]int{"tag:metrics": {9002}}
+
+			legacy := mustDiscover(t, []tsapi.RichDevice{dev}, base)
+			got := mustDiscover(t, []tsapi.RichDevice{dev}, override)
+			if !reflect.DeepEqual(got, legacy) {
+				t.Fatalf("single override target changed legacy output:\n got: %+v\nwant: %+v", got, legacy)
+			}
+		})
+	}
+}
+
+func TestNodeDiscoverer_NoMatchingPortOverridesPreserveLegacyTargets(t *testing.T) {
+	dev := tsapi.RichDevice{
+		Hostname: "node", Name: "node.tail-scale.ts.net", Addresses: []string{"100.64.0.1"},
+		ConnectedToControl: true, Tags: []string{"tag:ordinary"},
+	}
+	base := discoveryDefaults()
+	withUnmatchedOverride := base
+	withUnmatchedOverride.PortOverrides = map[string][]int{"tag:metrics": {9002}}
+
+	legacy := mustDiscover(t, []tsapi.RichDevice{dev}, base)
+	got := mustDiscover(t, []tsapi.RichDevice{dev}, withUnmatchedOverride)
+	if !reflect.DeepEqual(got, legacy) {
+		t.Fatalf("unmatched override changed legacy output:\n got: %+v\nwant: %+v", got, legacy)
+	}
+}
+
+func TestNodeDiscoverer_MultipleTargetsHaveDistinctIdentities(t *testing.T) {
+	dev := tsapi.RichDevice{
+		Hostname: "proxy", Name: "proxy.tail-scale.ts.net", Addresses: []string{"100.64.0.1"},
+		ConnectedToControl: true, Tags: []string{"tag:metrics"},
+	}
+	for _, tc := range []struct {
+		source        string
+		wantInstances []string
+	}{
+		{source: "name", wantInstances: []string{"proxy:9001", "proxy:9002"}},
+		{source: "hostname", wantInstances: []string{"proxy:9001@100.64.0.1", "proxy:9002@100.64.0.1"}},
+		// Address source intentionally leaves Instance empty: the collector derives
+		// the distinct host:port identity from each target URL.
+		{source: "address", wantInstances: []string{"", ""}},
+	} {
+		t.Run(tc.source, func(t *testing.T) {
+			cfg := discoveryDefaults()
+			cfg.InstanceSource = tc.source
+			cfg.PortOverrides = map[string][]int{"tag:metrics": {9002, 9001}}
+
+			got := mustDiscover(t, []tsapi.RichDevice{dev}, cfg)
+			if len(got) != 2 {
+				t.Fatalf("targets = %d, want 2; got %+v", len(got), got)
+			}
+			for i, want := range tc.wantInstances {
+				if got[i].Instance != want {
+					t.Fatalf("target[%d].Instance = %q, want %q", i, got[i].Instance, want)
+				}
+			}
+			if got[0].URL == got[1].URL {
+				t.Fatalf("target URLs must differ for distinct address identities: %+v", got)
+			}
+		})
+	}
+}
+
+func TestNodeDiscoverer_MaxTargetsCutsMidDevice(t *testing.T) {
+	cfg := discoveryDefaults()
+	cfg.MaxTargets = 2
+	cfg.PortOverrides = map[string][]int{"tag:metrics": {9003, 9001, 9002}}
+	devs := []tsapi.RichDevice{
+		{Hostname: "a", Addresses: []string{"100.64.0.1"}, ConnectedToControl: true, Tags: []string{"tag:metrics"}},
+		{Hostname: "b", Addresses: []string{"100.64.0.2"}, ConnectedToControl: true, Tags: []string{"tag:metrics"}},
+	}
+
+	got := mustDiscover(t, devs, cfg)
+	wantURLs := []string{
+		"http://100.64.0.1:9001/metrics",
+		"http://100.64.0.1:9002/metrics",
+	}
+	if len(got) != len(wantURLs) {
+		t.Fatalf("targets = %d, want %d; got %+v", len(got), len(wantURLs), got)
+	}
+	for i, want := range wantURLs {
+		if got[i].URL != want {
+			t.Fatalf("target[%d].URL = %q, want %q; all=%+v", i, got[i].URL, want, got)
+		}
 	}
 }
 

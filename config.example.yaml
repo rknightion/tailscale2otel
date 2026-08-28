@@ -483,10 +483,11 @@ collectors:
     discovery:                        # OPTIONAL: discover scrape targets from the Tailscale devices API (unioned with static targets)
       enabled: false
       interval: 5m                    # how often the device inventory is re-scanned for targets
-      max_targets: 1000               # cap discovered targets per refresh
+      max_targets: 1000               # cap emitted discovered targets per refresh (one target per selected port, not one per device)
       scheme: http                    # http | https — metrics endpoint scheme on each device
       port: 5252                      # tailscaled client-metrics port
       path: /metrics                  # metrics endpoint path
+      port_overrides: {}              # FILE-ONLY: map ACL tags to replacement metrics ports, e.g. {"tag:k8s-operator": [9002]}; no TS2OTEL_* encoding
       online_only: true               # only devices currently connected to the control plane
       exclude_external: true          # skip shared/external devices
       include_tags: []                # only devices with one of these tags (empty = all), e.g. ["tag:server"]

@@ -352,10 +352,11 @@ extraVolumeMounts:
 | config.collectors.node_metrics.discovery.include_tags_label | bool | `true` | Attach the tailscale.tags label to scraped series. |
 | config.collectors.node_metrics.discovery.instance_source | string | `"name"` | Source of the node-identity label: name (MagicDNS short name — unique per tailnet and human-friendly, the default) | address (Tailscale host:port, always unique) | hostname (OS hostname — NOT unique; collisions are auto-suffixed with the address plus a WARN). |
 | config.collectors.node_metrics.discovery.interval | string | `"300s"` | How often the devices API is polled for targets (independent of the scrape interval). |
-| config.collectors.node_metrics.discovery.max_targets | int | `1000` | Cap on discovered targets per refresh. |
+| config.collectors.node_metrics.discovery.max_targets | int | `1000` | Cap on emitted discovered targets per refresh (one per selected port, not one per device). |
 | config.collectors.node_metrics.discovery.online_only | bool | `true` | Only devices currently connected to the control plane. |
 | config.collectors.node_metrics.discovery.path | string | `"/metrics"` | Metrics path on each device. |
 | config.collectors.node_metrics.discovery.port | int | `5252` | Metrics port on each device (tailscaled's default is 5252). |
+| config.collectors.node_metrics.discovery.port_overrides | object | `{}` | Map ACL tags to replacement metrics-port lists. A matching tag replaces `port`; multiple matches use their sorted, deduplicated union. File-only in the standalone config. |
 | config.collectors.node_metrics.discovery.scheme | string | `"http"` | Metrics-endpoint scheme applied to each discovered device: http | https. |
 | config.collectors.node_metrics.drop_labels | list | `[]` | Label keys stripped from every forwarded series (the instance label is never dropped). |
 | config.collectors.node_metrics.enabled | bool | `false` | Enable the node-metrics scraper. Requires at least one entry in `targets`. |

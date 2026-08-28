@@ -351,6 +351,9 @@ func TestNodeMetricsDiscoveryDefaults(t *testing.T) {
 	if d.Port != 5252 {
 		t.Errorf("Discovery.Port = %d, want 5252", d.Port)
 	}
+	if len(d.PortOverrides) != 0 {
+		t.Errorf("Discovery.PortOverrides = %v, want no overrides by default", d.PortOverrides)
+	}
 	if d.Path != "/metrics" {
 		t.Errorf("Discovery.Path = %q, want /metrics", d.Path)
 	}
@@ -387,6 +390,8 @@ collectors:
       interval: 2m
       max_targets: 12
       port: 9100
+      port_overrides:
+        "tag:k8s-operator": [9002]
       online_only: false
       include_tags: ["tag:server"]
 `
@@ -398,6 +403,9 @@ collectors:
 	d := cfg.Collectors.NodeMetrics.Discovery
 	if !d.Enabled || d.Interval.D() != 2*time.Minute || d.Port != 9100 || d.MaxTargets != 12 {
 		t.Fatalf("discovery enabled/interval/port/max_targets = %v/%v/%d/%d", d.Enabled, d.Interval.D(), d.Port, d.MaxTargets)
+	}
+	if got := d.PortOverrides["tag:k8s-operator"]; len(got) != 1 || got[0] != 9002 {
+		t.Errorf("Discovery.PortOverrides[tag:k8s-operator] = %v, want [9002]", got)
 	}
 	// An explicit false overrides the true default.
 	if d.OnlineOnly {

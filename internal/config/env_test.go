@@ -166,6 +166,21 @@ func TestLoadRejectsEnvVarIndexingIntoNodeMetricsTargets(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsEnvVarIndexingIntoNodeMetricsPortOverrides(t *testing.T) {
+	t.Setenv("TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__PORT_OVERRIDES__TAG_K8S", "9002")
+
+	_, err := config.Load("")
+	if err == nil {
+		t.Fatal("Load: want a file-only port_overrides error, got nil")
+	}
+	if !strings.Contains(err.Error(), "TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__PORT_OVERRIDES__TAG_K8S") {
+		t.Errorf("error = %q, want it to name the offending env var", err)
+	}
+	if !strings.Contains(err.Error(), "collectors.node_metrics.discovery.port_overrides") {
+		t.Errorf("error = %q, want it to name the file-only config key", err)
+	}
+}
+
 // TestLoadRejectsEnvVarIndexingIntoTailnets covers the other list-of-structs
 // config key named in issue #79 (tailnets), confirming the rejection is
 // general rather than hardcoded to node_metrics.targets alone.
