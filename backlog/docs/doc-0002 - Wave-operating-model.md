@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-08-14 14:36'
+updated_date: '2026-08-28 22:24'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself — run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -145,6 +145,19 @@ shields.io badge: label *and* URL) half-updates and still fails the diff.
   latter, so two lanes editing it produce a conflicting regeneration.
 - `internal/catalog/` — descriptors. Note the one-way import rule: `internal/catalog` must not import
   `internal/app`, which is why app-layer descriptors live in the leaf `internal/appcatalog`.
+
+### A new config shape has four seams, and a goal that names one commissions a lane that finds three
+
+A lane told to add a config key touches `internal/config/` and `config.example.yaml`. A lane told to
+add a **map or list** config shape also touches `config.schema.json`, the Helm chart's `values.yaml`
+and `values.schema.json`, and the `TS2OTEL_*` environment loader — which has to *reject* a child-key
+encoding for a shape the env convention cannot express, rather than silently ignoring it. TSO-0024's
+`port_overrides` hit all four; only the first was in its ownership table, so the root inherited the
+rest at wiring.
+
+Assign the schema, Helm and env-loader seams explicitly whenever a lane introduces a structured
+shape, or state that the root owns them. Leaving them unassigned does not protect them — it just
+moves the work to whoever notices, after the lane has reported done.
 
 ### Generated files are never edited, and one of them is never blindly regenerated
 
