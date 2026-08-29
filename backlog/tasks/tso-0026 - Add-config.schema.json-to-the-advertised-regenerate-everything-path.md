@@ -1,9 +1,10 @@
 ---
 id: TSO-0026
 title: Add config.schema.json to the advertised regenerate-everything path
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-28 22:24'
+updated_date: '2026-08-29 11:27'
 labels:
   - needs-triage
 dependencies:
@@ -33,10 +34,10 @@ Sequenced after **TSO-0025**: that task's AC #4 freezes the `just check` leg lis
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 scripts/regen-generated.sh gains a target for config.schema.json that shells out to its -update test, is included in the all target, and is named in the script's header comment alongside the other -update artifacts
-- [ ] #2 The new target does not collide with the existing schema target, which regenerates the Helm values.schema.json; both are reachable by distinct names and the script's usage text distinguishes them
-- [ ] #3 AGENTS.md's generated-artifact table gains a config.schema.json row, and its stated family count matches the number of rows
-- [ ] #4 Running the all-artifacts regeneration on a tree with a deliberately stale config.schema.json makes the file correct, and go test ./internal/config then passes with no further step
+- [x] #1 scripts/regen-generated.sh gains a target for config.schema.json that shells out to its -update test, is included in the all target, and is named in the script's header comment alongside the other -update artifacts
+- [x] #2 The new target does not collide with the existing schema target, which regenerates the Helm values.schema.json; both are reachable by distinct names and the script's usage text distinguishes them
+- [x] #3 AGENTS.md's generated-artifact table gains a config.schema.json row, and its stated family count matches the number of rows
+- [x] #4 Running the all-artifacts regeneration on a tree with a deliberately stale config.schema.json makes the file correct, and go test ./internal/config then passes with no further step
 <!-- AC:END -->
 
 ## Definition of Done
@@ -45,3 +46,19 @@ Sequenced after **TSO-0025**: that task's AC #4 freezes the `just check` leg lis
 - [ ] #2 golangci-lint run
 - [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed in b203e16.
+
+`scripts/regen-generated.sh` gains a `config-schema` target that shells out to `go test ./internal/config -run TestConfigSchemaInSync -update`, included in `all` and named in the header artifact list beside the other -update artifacts. It is deliberately NOT called `schema`: the script's existing `helm-schema` target means the CHART's `values.schema.json`, and the two filenames are one word apart, so the header, the usage text and the AGENTS.md row each say which is which.
+
+AC #4 was proven by staling the artifact on purpose rather than by inspection: injecting a `$comment` key made `go test ./internal/config -run TestConfigSchemaInSync` fail with its regenerate hint; `just gen` then fixed it and the test passed with no further step; the result diffed byte-identical to the pre-stale file.
+
+SCOPE ADDITION, deliberate and reported: counting the table turned up a second generated artifact in the same defect class. `docs/alert-profiles.md` is emitted by `build_rules.py --docs-out` and was drift-gated NOWHERE — `just gen-check`'s `git diff --exit-code` covered `deploy/grafana`, `deploy/alerts` and `internal/catalog/capability_counts.json`, and that path sits outside all three. It happened to be in sync, so adding it to the gate was safe rather than a red build. Fixed here because it is the same one-line hole this task exists to close; a separate task would have left a known-ungated artifact in place while the generated-artifact story was open on the desk.
+
+So the true family count is ELEVEN, not the ten AGENTS.md claimed while listing nine rows — the count was wrong because two rows were missing, not one.
+
+Gate: `just check` exit 0 with the new alert-profiles path in gen-check; `just --fmt --check` 0; `bash -n` and `shellcheck` clean on the script; CodeRabbit `findings: 0` across all three changed files on the rknightion plan.
+<!-- SECTION:FINAL_SUMMARY:END -->
