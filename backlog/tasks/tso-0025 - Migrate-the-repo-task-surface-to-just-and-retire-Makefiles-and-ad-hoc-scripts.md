@@ -1,9 +1,11 @@
 ---
 id: TSO-0025
 title: Migrate the repo task surface to just and retire Makefiles and ad-hoc scripts
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-28 19:05'
+updated_date: '2026-08-29 08:40'
 labels: []
 dependencies: []
 priority: medium
@@ -874,3 +876,9 @@ not change them.
 - [ ] #2 golangci-lint run
 - [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Run started from the commissioned 2026-08-28 wave2 goal. Preflight found the clean checkout at 62edf04 while origin/main had advanced to f55db60 through two unrelated dependency/action updates; main was fast-forwarded before implementation. The ordered plan in §8 remains the plan of record.
+<!-- SECTION:NOTES:END -->

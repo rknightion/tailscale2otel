@@ -1,11 +1,8 @@
 project_name: "tailscale2otel"
 default_status: "To Do"
 statuses: ["To Do", "In Progress", "Parked", "Done"]
-definition_of_done:
-  - "go build ./... && go vet ./... && go test -race ./..."
-  - "golangci-lint run"
-  - "scripts/regen-generated.sh (only if a generated artifact's inputs changed)"
 labels: []
+definition_of_done: ["just check passes (the full gate; it is what CI enforces)", "just gen leaves no diff (only if a generated artifact's inputs changed)", "just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]"]
 date_format: yyyy-mm-dd
 max_column_width: 20
 auto_open_browser: true
