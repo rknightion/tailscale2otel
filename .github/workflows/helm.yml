@@ -124,6 +124,15 @@ jobs:
       contents: read
     uses: rknightion/.github/.github/workflows/helm-validate.yml@97f4a7ad0cd1ddd83562a30b9061ef8295242405 # v1.14.0
     with:
+      # This chart renders CRD kinds (ServiceMonitor) that kubeconform has no
+      # built-in schema for. Give it the schema rather than reaching for
+      # -ignore-missing-schemas: that flag skips EVERY unschema'd kind
+      # silently, so the check passes while validating nothing. sf2loki
+      # carried it for exactly that reason and its ExternalSecret and
+      # SecretStore had therefore never once been validated.
+      schema-locations: >-
+        default
+        https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{.Group}/{.ResourceKind}_{.ResourceAPIVersion}.json
       chart-path: deploy/helm/tailscale2otel
       kubernetes-versions: "1.29.0"
 
