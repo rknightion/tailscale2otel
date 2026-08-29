@@ -81,7 +81,7 @@ jobs:
       id-token: write     # cosign keyless signing
       packages: write     # goreleaser reads the registry for existing artifacts
       attestations: write # SLSA build provenance on the archives
-    uses: rknightion/.github/.github/workflows/binaries.yml@b3f1cef6e76ce206b01e1a3bae63ce115a1cf570 # v1.10.0
+    uses: rknightion/.github/.github/workflows/binaries.yml@873962525bd50b84dfdb3226efab8c8e2cd6a9a2 # v1.11.0
     with:
       release-tag: ${{ needs.rc.outputs.tag }}
       install-cosign: true
