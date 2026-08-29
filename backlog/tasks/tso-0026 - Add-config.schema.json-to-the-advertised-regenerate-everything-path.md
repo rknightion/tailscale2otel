@@ -4,7 +4,7 @@ title: Add config.schema.json to the advertised regenerate-everything path
 status: Done
 assignee: []
 created_date: '2026-08-28 22:24'
-updated_date: '2026-08-29 11:27'
+updated_date: '2026-08-29 11:28'
 labels:
   - needs-triage
 dependencies:
@@ -42,9 +42,9 @@ Sequenced after **TSO-0025**: that task's AC #4 freezes the `just check` leg lis
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
 ## Final Summary
@@ -61,4 +61,6 @@ SCOPE ADDITION, deliberate and reported: counting the table turned up a second g
 So the true family count is ELEVEN, not the ten AGENTS.md claimed while listing nine rows — the count was wrong because two rows were missing, not one.
 
 Gate: `just check` exit 0 with the new alert-profiles path in gen-check; `just --fmt --check` 0; `bash -n` and `shellcheck` clean on the script; CodeRabbit `findings: 0` across all three changed files on the rknightion plan.
+
+Definition-of-done items carry the pre-TSO-0025 wording (this task was created before `backlog/config.yml` switched to `just check` / `just gen`), but all three are satisfied by the single `just check` run: it executes the root build, vet and race tests, `golangci-lint`, and `gen-check`, which regenerated every artifact and left no diff.
 <!-- SECTION:FINAL_SUMMARY:END -->
