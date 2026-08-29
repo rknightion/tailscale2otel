@@ -1,11 +1,11 @@
 ---
 id: TSO-0025
 title: Migrate the repo task surface to just and retire Makefiles and ad-hoc scripts
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-28 19:05'
-updated_date: '2026-08-29 10:57'
+updated_date: '2026-08-29 11:18'
 labels:
   - 'wave:2-fleet'
 dependencies: []
@@ -866,7 +866,7 @@ not change them.
 - [x] #5 Only .github/workflows/ci.yml and helm.yml change; their build-test, module-verify, docs-catalog, dashboards-drift, govulncheck, docker-build, coverage, lint-template and configcheck jobs each carry a SHA-pinned `extractions/setup-just` step with `just-version: '1.58.0'` and call `just <recipe>`, while the `ci-success` and `helm-success` job names and `needs:` lists, all `permissions:`, `concurrency:`, `timeout-minutes:`, `persist-credentials: false`, every `uses:` and every matrix are unchanged, and every scripts/ci-retry.sh network-fetch line stays literal in the workflow.
 - [x] #6 internal/ci/workflowcontract_test.go resolves workflow steps through the justfile (a stdlib recipe-body reader with transitive dependency expansion, no shelling out to `just`) and `go test ./internal/ci` is green, with TestSchemaDrivenDecodeTestsRideAGatedLeg, TestModuleVerifyRunsTheFullPerModuleGate, TestRootModuleTidyIsChecked, TestGeneratedGrafanaArtifactsAreDriftGated, TestPrometheusRulesAreCheckedByPromtool, TestDashboardsDriftRunsPromqlcheck, TestPythonGeneratorTestsRunInCI and TestDocumentedInstallCommandsAreChecked each still failing when the underlying command is removed from the recipe.
 - [x] #7 A test beside TestEveryGoModuleIsCoveredByCIVerification asserts every directory holding a go.mod (excluding .git, .capture, .claude, dist) appears in the justfile's `modules :=` line, so a fifth module cannot be added and silently skipped now that verify-modules.sh's find-based discovery is gone.
-- [ ] #8 `scripts/verify-modules.sh` is deleted and `grep -rn verify-modules` outside .git and docs/superpowers returns nothing; every KEEP script still exists and is reachable via a recipe — setup.sh (just setup), regen-generated.sh (just gen / gen-check / helm-gen-check), check-secret-hygiene.sh (just hygiene), notices.sh (just notices), sbom.sh (just sbom), wait-for-module-proxy.sh (just wait-for-proxy), bump-module-major.sh (just bump-major), render-tests.sh (just helm-lint), compose-tests.sh (just compose-check), check_doc_commands.py (just docs-check), verify_deployment.py (just verify-deploy), grafana-prune-rules.py (just prune-rules), check_release_assets.py (just release-check) — and ci-retry.sh, cloud-environment-setup.sh, review_changelog.py and .githooks/pre-commit remain deliberately recipe-less.
+- [x] #8 `scripts/verify-modules.sh` is deleted and `git grep -n 'verify-modules' -- ':!backlog' ':!archive' ':!docs/superpowers'` returns nothing, so no active tracked product, source, script, workflow or documentation surface still references it; every KEEP script still exists and is reachable via a recipe — setup.sh (just setup), regen-generated.sh (just gen / gen-check / helm-gen-check), check-secret-hygiene.sh (just hygiene), notices.sh (just notices), sbom.sh (just sbom), wait-for-module-proxy.sh (just wait-for-proxy), bump-module-major.sh (just bump-major), render-tests.sh (just helm-lint), compose-tests.sh (just compose-check), check_doc_commands.py (just docs-check), verify_deployment.py (just verify-deploy), grafana-prune-rules.py (just prune-rules), check_release_assets.py (just release-check) — and ci-retry.sh, cloud-environment-setup.sh, review_changelog.py and .githooks/pre-commit remain deliberately recipe-less.
 - [x] #9 AGENTS.md carries the Task interface section naming `just check` as the gate, no longer instructs anyone to run raw `go build ./... && go vet ./... && go test -race ./...`, `golangci-lint run`, `scripts/regen-generated.sh` or `scripts/verify-modules.sh`, and does not paste the recipe list; README.md:253, docs/alerts.md and deploy/CLAUDE.md name `just gen` instead of `scripts/regen-generated.sh`; `just docs-check` still passes after the edits.
 - [x] #10 backlog/config.yml's definition_of_done names `just check` and `just gen` (and the justfile authoring rule) instead of raw go/golangci-lint commands and scripts/regen-generated.sh, and was changed through the backlog CLI rather than by hand-editing the file.
 <!-- AC:END -->
@@ -875,7 +875,7 @@ not change them.
 <!-- DOD:BEGIN -->
 - [x] #1 go build ./... && go vet ./... && go test -race ./...
 - [x] #2 golangci-lint run
-- [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
+- [x] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -973,4 +973,25 @@ These seven Go repos are near-identical applications and had drifted into **two 
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Migrated the repository to the frozen just task surface, taught workflow contracts to resolve recipes transitively, converted CI and Helm to SHA-pinned setup-just with just 1.58.0, updated contributor documentation and Backlog Definition of Done, and deleted the absorbed module-verifier script. Local evidence is green and idempotent; hosted CI and Helm are green at the workflow checkpoint. Task remains Parked only because AC #8 demands an empty repository-wide historical grep that conflicts with the commissioned task text and out-of-scope history.
+
+## Closeout (2026-08-29, main session)
+
+AC #8 was AMENDED before checking, because as written it was unsatisfiable — the park was correct, not a shortfall.
+
+Two independent defects in the old wording. `grep -rn --exclude-dir=docs/superpowers` never excluded anything: `--exclude-dir` matches a directory BASENAME, so it searched the very directory it claimed to skip (7 files there). And it dropped the "outside the deleted file itself" qualifier that this task's own section 8 carries, so it necessarily matched `archive/` (32 hits in the frozen issue export), `backlog/` (this task quotes the grep command in its own text) and untracked `.claude/worktrees`. Rob chose the `git grep` form on 2026-08-29: it uses real pathspec exclusions and, seeing only tracked files, sidesteps the worktrees and gitignored `codex/` structurally rather than by enumeration.
+
+Verified in this session, not carried over from the wave report:
+
+- `git grep -n 'verify-modules' -- ':!backlog' ':!archive' ':!docs/superpowers'` — no output.
+- `just check` run twice consecutively, both exit 0, `git status --porcelain` empty after the second (AC #2 and AC #4 re-proven at the current head, not at the checkpoint).
+- `just --list` shows all seven mandatory recipes; `just --groups` lists exactly the six allowed groups; `just --dump --dump-format json` and `just --fmt --check` both exit 0.
+- `ci: check snapshot image smoke` — conformant with the fleet standard ratified in 9684f86, so this repo's shape is the ratified one rather than a recorded deviation.
+
+TERMINAL CI: run 33249452889 at d447e90 completed `success` with `ci-success: success`. The wave's own final SHA (c13f382) never reached a terminal conclusion — four consecutive runs were cancelled by a concurrent session's pushes — so this is the green the closeout waited for. Helm does not run at d447e90 (path filters; that commit touched only auto-rc.yml) and is green at its last triggering SHAs: 33244634292 at 4180c7a and 33249272618 at 0a3dacf.
+
+DoD #3 is checked on evidence rather than on the conditional: no generated input changed, AND `gen-check` regenerated inside both `just check` runs and left no diff.
+
+CORRECTION for anyone reading the wave-2 handover: govulncheck is NOT newly Renovate-managed by this migration. `justfile:21` holds `govulncheck_version := "v1.3.0"` with NO `# renovate:` annotation, `renovate.json` has no justfile matcher, and the justfile's own comment at line 17 says the pin TRACKS the `go install` line in the CI jobs. The version moved; its invisibility to Renovate did not change. It remains four minor versions behind (current v1.7.0). Making it managed is real, unstarted work — do not record it as a gain of this task.
+
+Concurrency note: this task was edited by two sessions. The fleet-campaign session appended 9684f86 and d54b388 as comments only, touching neither the description nor the acceptance criteria, and handed the closeout over explicitly before this session wrote to it.
 <!-- SECTION:FINAL_SUMMARY:END -->
