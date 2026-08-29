@@ -12,6 +12,7 @@
 package ci_test
 
 import (
+	"bufio"
 	"errors"
 	"io/fs"
 	"os"
@@ -29,6 +30,131 @@ const (
 	repoDir     = "../.."
 	workflowDir = repoDir + "/.github/workflows"
 )
+
+type justRecipe struct {
+	dependencies []string
+	body         []string
+}
+
+// justRecipes parses the small, stable subset of just syntax this repository
+// uses. Tests cannot shell out to just: the root-module test job must remain
+// meaningful before setup-just runs, and a missing local binary must never turn
+// a workflow contract into a skip.
+func justRecipes(t *testing.T) map[string]justRecipe {
+	t.Helper()
+	f, err := os.Open(filepath.Join(repoDir, "justfile"))
+	if err != nil {
+		t.Fatalf("open justfile: %v", err)
+	}
+	defer f.Close()
+
+	header := regexp.MustCompile(`^([a-z0-9-]+)([^:]*):(.*)$`)
+	recipes := make(map[string]justRecipe)
+	var current string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if match := header.FindStringSubmatch(line); match != nil {
+			current = match[1]
+			if _, exists := recipes[current]; exists {
+				t.Fatalf("justfile declares recipe %q more than once", current)
+			}
+			recipes[current] = justRecipe{dependencies: strings.Fields(match[3])}
+			continue
+		}
+		if current != "" && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
+			recipe := recipes[current]
+			recipe.body = append(recipe.body, strings.TrimSpace(line))
+			recipes[current] = recipe
+			continue
+		}
+		if strings.TrimSpace(line) != "" {
+			current = ""
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("scan justfile: %v", err)
+	}
+	if len(recipes) == 0 {
+		t.Fatal("justfile parser found no recipes; every recipe-backed assertion would be vacuous")
+	}
+	return recipes
+}
+
+func expandedRecipeBody(t *testing.T, names ...string) string {
+	t.Helper()
+	recipes := justRecipes(t)
+	var lines []string
+	visiting := make(map[string]bool)
+	expanded := make(map[string]bool)
+	var expand func(string)
+	expand = func(name string) {
+		if expanded[name] {
+			return
+		}
+		if visiting[name] {
+			t.Fatalf("justfile dependency cycle reaches %q", name)
+		}
+		recipe, ok := recipes[name]
+		if !ok {
+			t.Fatalf("justfile has no recipe %q", name)
+		}
+		visiting[name] = true
+		for _, dependency := range recipe.dependencies {
+			expand(dependency)
+		}
+		lines = append(lines, recipe.body...)
+		visiting[name] = false
+		expanded[name] = true
+	}
+	for _, name := range names {
+		expand(name)
+	}
+	if len(lines) == 0 {
+		t.Fatalf("recipes %v expand to an empty body", names)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func workflowScript(steps []any) string {
+	var script strings.Builder
+	for _, raw := range steps {
+		if step, ok := raw.(map[string]any); ok {
+			if run, ok := step["run"].(string); ok {
+				script.WriteString(run)
+				script.WriteByte('\n')
+			}
+		}
+	}
+	return script.String()
+}
+
+// recipeBackedWorkflowBody keeps the ordered migration green while workflows
+// still carry their legacy command, but always returns the justfile recipe body
+// for the substantive assertion. Consequently, deleting a command from a
+// recipe fails even during the transition; the legacy workflow cannot mask it.
+func recipeBackedWorkflowBody(t *testing.T, steps []any, recipe string, legacy ...string) string {
+	t.Helper()
+	script := workflowScript(steps)
+	invokesRecipe := false
+	for line := range strings.SplitSeq(script, "\n") {
+		trimmed := strings.TrimSpace(line)
+		invocation := "just " + recipe
+		if trimmed == invocation || strings.HasPrefix(trimmed, invocation+" ") ||
+			strings.HasPrefix(trimmed, invocation+"\t") {
+			invokesRecipe = true
+			break
+		}
+	}
+	if !invokesRecipe {
+		for _, command := range legacy {
+			if !strings.Contains(script, command) {
+				t.Fatalf("workflow neither invokes `just %s` nor carries transitional command %q", recipe, command)
+			}
+		}
+	}
+	return expandedRecipeBody(t, recipe)
+}
 
 func readWorkflow(t *testing.T, name string) map[string]any {
 	t.Helper()
@@ -264,18 +390,8 @@ func TestSchemaDrivenDecodeTestsRideAGatedLeg(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s has no steps list", leg)
 	}
-	var found bool
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if run, ok := step["run"].(string); ok && strings.Contains(run, "go test -race ./...") {
-			found = true
-			break
-		}
-	}
-	if !found {
+	body := recipeBackedWorkflowBody(t, steps, "test", "go test -race ./...")
+	if !strings.Contains(body, "go test -race") || !strings.Contains(body, "./...") {
 		t.Errorf("no step in %s runs `go test -race ./...`. The schema-driven decode tests in "+
 			"internal/tsapi/contract have no job of their own — they gate only by riding this leg.", leg)
 	}
@@ -410,6 +526,26 @@ func TestEveryGoModuleIsCoveredByCIVerification(t *testing.T) {
 	}
 }
 
+func TestEveryGoModuleIsCoveredByJustVerification(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join(repoDir, "justfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(`(?m)^modules := "([^"]+)"$`).FindSubmatch(b)
+	if match == nil {
+		t.Fatal("justfile has no parseable modules := line; all module-coverage assertions would be vacuous")
+	}
+	covered := make(map[string]bool)
+	for _, module := range strings.Fields(string(match[1])) {
+		covered[module] = true
+	}
+	for _, module := range goModules(t) {
+		if !covered[module] {
+			t.Errorf("module %q is absent from justfile's modules list; without a go.work, just check cannot reach it", module)
+		}
+	}
+}
+
 // The per-module verification job has to actually verify something. A matrix that
 // names every module but only builds it would satisfy the test above while
 // checking almost nothing, so the steps themselves are asserted.
@@ -424,42 +560,24 @@ func TestModuleVerifyRunsTheFullPerModuleGate(t *testing.T) {
 	if !ok {
 		t.Fatal("module-verify has no steps list")
 	}
-	var script strings.Builder
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if run, ok := step["run"].(string); ok {
-			script.WriteString(run)
-			script.WriteString("\n")
-		}
-	}
-	// Match each command as an INVOKED line, not merely as a substring of the
-	// concatenated script. A substring match is satisfied by the command's name
-	// appearing inside an error message — which is exactly how a first version of
-	// this test passed after the `go mod tidy` invocation had been removed, since
-	// the remediation message still said "run 'go mod tidy'".
-	invoked := func(cmd string) bool {
-		for _, line := range strings.Split(script.String(), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), cmd) {
-				return true
-			}
-		}
-		return false
-	}
+	body := strings.Join([]string{
+		recipeBackedWorkflowBody(t, steps, "test-modules", "go build ./...", "go test -race ./..."),
+		recipeBackedWorkflowBody(t, steps, "vet", "go vet ./..."),
+		recipeBackedWorkflowBody(t, steps, "tidy-check", "go mod tidy"),
+		recipeBackedWorkflowBody(t, steps, "vuln", "govulncheck ./..."),
+	}, "\n")
 	for _, want := range []struct {
 		cmd string
 		why string
 	}{
-		{"go build ./...", "a module that does not compile is not verified"},
-		{"go vet ./...", "vet catches the mistakes the compiler accepts"},
-		{"go test -race ./...", "a module with no test leg has no behavioral guarantee at all"},
-		{"go mod tidy", "Renovate bumps a dependency in one module and leaves the nested ones stale; " +
+		{"go build -C", "a module that does not compile is not verified"},
+		{"go vet -C", "vet catches the mistakes the compiler accepts"},
+		{"go test -C", "a module with no test leg has no behavioral guarantee at all"},
+		{"go mod tidy -C", "Renovate bumps a dependency in one module and leaves the nested ones stale; " +
 			"a tidy-diff is what catches it, and tools/configcheck/go.sum really had drifted"},
 		{"govulncheck ./...", "the root govulncheck cannot reach a nested module without a go.work"},
 	} {
-		if !invoked(want.cmd) {
+		if !strings.Contains(body, want.cmd) {
 			t.Errorf("no step in module-verify invokes %q — %s", want.cmd, want.why)
 		}
 	}
@@ -480,20 +598,9 @@ func TestRootModuleTidyIsChecked(t *testing.T) {
 	if !ok {
 		t.Fatal("build-test has no steps list")
 	}
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		run, ok := step["run"].(string)
-		if !ok {
-			continue
-		}
-		for _, line := range strings.Split(run, "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "go mod tidy") {
-				return
-			}
-		}
+	body := recipeBackedWorkflowBody(t, steps, "tidy-check", "go mod tidy")
+	if strings.Contains(body, "go mod tidy -C") {
+		return
 	}
 	t.Error("build-test never invokes `go mod tidy`. The root module is excluded from the " +
 		"module-verify matrix, so without a tidy leg here nothing checks it — which is how three " +
@@ -526,21 +633,12 @@ func TestGeneratedGrafanaArtifactsAreDriftGated(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s has no steps list", gate)
 	}
-	var script strings.Builder
-	for _, raw := range steps {
-		if step, ok := raw.(map[string]any); ok {
-			if run, ok := step["run"].(string); ok {
-				script.WriteString(run)
-				script.WriteString("\n")
-			}
-		}
-	}
-	body := script.String()
+	body := recipeBackedWorkflowBody(t, steps, "gen-check", "regen-generated.sh dashboards", "git diff --exit-code")
 	if !strings.Contains(body, "regen-generated.sh dashboards") {
 		t.Errorf("%s does not regenerate via scripts/regen-generated.sh — the CI gate and the "+
 			"local command must be the same code path, or one of them drifts", gate)
 	}
-	if !strings.Contains(body, "git diff --exit-code") {
+	if !strings.Contains(body, "if ! git diff --exit-code") {
 		t.Errorf("%s regenerates but never diffs, so it would pass on stale artifacts", gate)
 	}
 	for _, dir := range []string{"deploy/grafana", "deploy/alerts"} {
@@ -575,16 +673,7 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	if !ok {
 		t.Fatal("dashboards-drift has no steps list")
 	}
-	var script strings.Builder
-	for _, raw := range steps {
-		if step, ok := raw.(map[string]any); ok {
-			if run, ok := step["run"].(string); ok {
-				script.WriteString(run)
-				script.WriteString("\n")
-			}
-		}
-	}
-	body := script.String()
+	body := recipeBackedWorkflowBody(t, steps, "rules-check", "promtool check rules", "promtool test rules")
 	if !strings.Contains(body, "promtool check rules") {
 		t.Error("dashboards-drift never runs `promtool check rules`, so no rule expression is " +
 			"ever parsed by a Prometheus-native checker")
@@ -602,7 +691,7 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	}
 	// The tarball is verified against the release's own published sums rather than
 	// a checksum pasted here, which would silently rot on the next version bump.
-	if !strings.Contains(body, "sha256sums.txt") {
+	if !strings.Contains(workflowScript(steps), "sha256sums.txt") {
 		t.Error("the promtool download is not verified against the release's sha256sums.txt")
 	}
 	// `check rules` proves the expressions parse; it does not run them. A rule can
@@ -631,20 +720,9 @@ func TestDashboardsDriftRunsPromqlcheck(t *testing.T) {
 	if !ok {
 		t.Fatal("dashboards-drift has no steps list")
 	}
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		run, ok := step["run"].(string)
-		if !ok {
-			continue
-		}
-		for line := range strings.SplitSeq(run, "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "go run -C tools/promqlcheck") {
-				return
-			}
-		}
+	body := recipeBackedWorkflowBody(t, steps, "promql", "go run -C tools/promqlcheck")
+	if strings.Contains(body, "go run -C tools/promqlcheck") {
+		return
 	}
 	t.Error("dashboards-drift never invokes `go run -C tools/promqlcheck`, so every panel " +
 		"query and Grafana rule expression goes unparsed. Note `go run ./tools/promqlcheck` " +
@@ -681,43 +759,16 @@ func TestPythonGeneratorTestsRunInCI(t *testing.T) {
 	if !ok {
 		t.Fatal("dashboards-drift has no steps list")
 	}
-	var script strings.Builder
-	for _, raw := range steps {
-		if step, ok := raw.(map[string]any); ok {
-			if run, ok := step["run"].(string); ok {
-				script.WriteString(run)
-				script.WriteString("\n")
-			}
-		}
-	}
-	body := script.String()
+	body := recipeBackedWorkflowBody(t, steps, "test-python", "unittest discover")
 	if !strings.Contains(body, "unittest discover") {
 		t.Error("dashboards-drift never runs `python3 -m unittest discover`, so the generator " +
 			"unit tests execute nowhere and only pass by being run by hand")
-	}
-	// Narrow to the unittest STEP before checking which directories it covers.
-	// Searching the whole job for "scripts" matched `scripts/regen-generated.sh`
-	// on an unrelated step, so the assertion passed whether or not scripts/ was
-	// in the discover loop.
-	var unittestStep string
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if run, _ := step["run"].(string); strings.Contains(run, "unittest discover") {
-			unittestStep = run
-			break
-		}
-	}
-	if unittestStep == "" {
-		t.Fatal("no step in dashboards-drift runs `unittest discover`")
 	}
 	// scripts/ carries the release-completeness gate (#442), whose own logic
 	// would otherwise run for the first time during a release — the one moment
 	// it is being relied upon.
 	for _, dir := range []string{"deploy/grafana/gen", "deploy/alerts/gen", "scripts"} {
-		if !strings.Contains(unittestStep, dir) {
+		if !strings.Contains(body, dir) {
 			t.Errorf("dashboards-drift does not run the unit tests in %s", dir)
 		}
 	}
@@ -1438,17 +1489,8 @@ func TestDocumentedInstallCommandsAreChecked(t *testing.T) {
 		t.Fatal("ci.yml has no docs-catalog job")
 	}
 	steps, _ := job["steps"].([]any)
-	var found bool
-	for _, raw := range steps {
-		step, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if run, _ := step["run"].(string); strings.Contains(run, "check_doc_commands.py") {
-			found = true
-		}
-	}
-	if !found {
+	body := recipeBackedWorkflowBody(t, steps, "docs-check", "check_doc_commands.py")
+	if !strings.Contains(body, "check_doc_commands.py") {
 		t.Error("docs-catalog does not run scripts/check_doc_commands.py, so a documented " +
 			"install command can reference a chart value or environment variable that does " +
 			"not exist and nothing fails")
