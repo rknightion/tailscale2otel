@@ -38,19 +38,17 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
-      - name: helm lint
-        run: helm lint "$CHART_DIR"
-
-      - name: helm template
-        run: helm template t "$CHART_DIR" > /dev/null
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
 
       # Asserts the credential-routing contract (#470) and the rollout-trigger contract
       # (#469): no credential value reaches any ConfigMap, pod annotation, label or arg;
       # credential-free configs keep the ConfigMap; an unsafe combination fails the
       # render. Pure `helm template` + yq, no cluster. yq is preinstalled on
       # ubuntu-latest runners.
-      - name: chart render contracts (credential routing, rollout trigger)
-        run: deploy/helm/tests/render-tests.sh
+      - name: helm lint, template, and chart render contracts
+        run: just helm-lint
 
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
@@ -100,27 +98,20 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: tools/configcheck/go.sum
 
-      - name: Build configcheck (separate module)
-        working-directory: tools/configcheck
-        run: go build -o /tmp/configcheck .
-
       # Render the chart and extract the ConfigMap's config.yaml so config.Load
       # exercises the cross-field rules JSON Schema draft-07 cannot express.
-      - name: Render Helm config
-        run: |
-          helm template t "$CHART_DIR" --show-only templates/configmap.yaml \
-            | yq '.data."config.yaml"' > /tmp/rendered-config.yaml
-          echo "--- rendered config (head) ---"
-          head -20 /tmp/rendered-config.yaml
-
       - name: Validate example + rendered config
-        run: /tmp/configcheck config.example.yaml /tmp/rendered-config.yaml
+        run: just config-check
 
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside ci.yml's `ci-success`), so helm legs can be added or renamed without re-touching

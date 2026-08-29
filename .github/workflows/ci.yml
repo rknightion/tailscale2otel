@@ -22,19 +22,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: go vet
-        run: go vet ./...
+        run: just vet .
 
       - name: go build
-        run: go build ./...
+        run: just build .
 
       - name: go test -race
-        run: go test -race ./...
+        run: just test
 
       # The root module gets the same tidy-diff as the tool modules (#437): three
       # of its requirements were marked `// indirect` while being imported
@@ -42,14 +46,7 @@ jobs:
       # source, so any diff is drift. It does NOT move versions — the OTEL
       # lockstep pins in CLAUDE.md are unaffected by it.
       - name: go mod tidy leaves no diff
-        run: |
-          cp go.mod /tmp/go.mod.before
-          cp go.sum /tmp/go.sum.before
-          go mod tidy
-          if ! diff -u /tmp/go.mod.before go.mod || ! diff -u /tmp/go.sum.before go.sum; then
-            echo "::error::the root module is not tidy — run 'go mod tidy' and commit the result"
-            exit 1
-          fi
+        run: just tidy-check .
 
   lint:
     timeout-minutes: 10
@@ -107,6 +104,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -116,38 +117,23 @@ jobs:
       - name: install govulncheck (pinned)
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
-      - name: go build
-        working-directory: ${{ matrix.module }}
-        run: go build ./...
-
-      - name: go vet
-        working-directory: ${{ matrix.module }}
-        run: go vet ./...
-
       # -race here too: these modules parse untrusted-ish inputs (a spec, a config)
       # and the cost is trivial at this size.
-      - name: go test -race
-        working-directory: ${{ matrix.module }}
-        run: go test -race ./...
+      - name: go build + go test -race
+        run: just test-modules ${{ matrix.module }}
+
+      - name: go vet
+        run: just vet ${{ matrix.module }}
 
       # Renovate bumps a dependency in the root module and a tool module's go.mod
       # keeps the old requirement, or a `replace ../..` goes stale after a module
       # major bump. `go mod tidy` is a pure function of the source, so any diff it
       # produces is drift.
       - name: go mod tidy leaves no diff
-        working-directory: ${{ matrix.module }}
-        run: |
-          cp go.mod /tmp/go.mod.before
-          cp go.sum /tmp/go.sum.before
-          go mod tidy
-          if ! diff -u /tmp/go.mod.before go.mod || ! diff -u /tmp/go.sum.before go.sum; then
-            echo "::error::${{ matrix.module }} is not tidy — run 'go mod tidy' in that module and commit the result"
-            exit 1
-          fi
+        run: just tidy-check ${{ matrix.module }}
 
       - name: govulncheck
-        working-directory: ${{ matrix.module }}
-        run: govulncheck ./...
+        run: just vuln ${{ matrix.module }}
 
   docs-catalog:
     timeout-minutes: 10
@@ -158,22 +144,19 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: tools/metricscatalog/go.sum
 
-      - name: Build metricscatalog (separate module)
-        working-directory: tools/metricscatalog
-        run: go build -o /tmp/metricscatalog .
-
       # Fail if the generated metric/log tables in docs/metrics.md drift from the
       # in-code telemetry catalog. Regenerate with `go run ./tools/metricscatalog
       # -write` (from the repo root) and commit the result.
-      - name: docs/metrics.md is in sync with the in-code telemetry catalog
-        run: /tmp/metricscatalog -check
-
       # Every --set key and TS2OTEL_* variable in a documented install command
       # must resolve against the chart schema and the env-var reference (#445).
       # Helm accepts an unknown --set path silently and the config loader ignores
@@ -182,8 +165,8 @@ jobs:
       # runtime error. The README shipped exactly that for months: `secrets.*`
       # against a chart whose key is `secret`, which installed with no
       # credentials at all.
-      - name: documented install commands reference real values
-        run: python3 scripts/check_doc_commands.py
+      - name: generated catalog and documented commands are in sync
+        run: just docs-check
 
   # deploy/grafana/tailscale2otel.json and deploy/alerts/tailscale2otel.grafana-rules.yaml
   # are GENERATED from their stdlib-Python generators, and were the only generated
@@ -204,6 +187,10 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -228,26 +215,10 @@ jobs:
       # logic would be exercised for the first time at the exact moment it is
       # relied upon.
       - name: generator unit tests
-        run: |
-          set -euo pipefail
-          for d in deploy/grafana/gen deploy/alerts/gen scripts; do
-            echo "::group::$d"
-            python3 -m unittest discover -s "$d" -t "$d" -v
-            echo "::endgroup::"
-          done
+        run: just test-python
 
-      - name: regenerate the generated dashboard and rule artifacts
-        run: scripts/regen-generated.sh dashboards promrules counts
-
-      - name: fail on diff
-        run: |
-          if ! git diff --exit-code -- deploy/grafana deploy/alerts internal/catalog/capability_counts.json; then
-            echo "::error::generated dashboards, rules, or capability counts are out of date — run 'scripts/regen-generated.sh dashboards promrules counts' and commit the result"
-            exit 1
-          fi
-
-      - name: check public capability-count summaries
-        run: python3 scripts/check-capability-counts.py
+      - name: generated dashboard and rule artifacts are in sync
+        run: just gen-check
 
       # promtool parses every PromQL expression and validates the rule structure,
       # which no Go-side check does: the reference tests in internal/catalog check
@@ -283,10 +254,7 @@ jobs:
       # outside its own repo, so those are counted and reported unparsed rather
       # than silently skipped.
       - name: promqlcheck (dashboard + rule expressions)
-        run: go run -C tools/promqlcheck . -root "$PWD"
-
-      - name: promtool check rules
-        run: promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
+        run: just promql
 
       # `check rules` only proves the expressions parse. These execute them
       # against synthetic series and assert what actually fires — the only way to
@@ -294,8 +262,8 @@ jobs:
       # that matter are the ones a syntax check cannot reach: absent() coverage,
       # counter resets across a restart, multi-tailnet label preservation, and
       # "healthy zero" versus "absent" on a feature probe.
-      - name: promtool test rules
-        run: promtool test rules deploy/alerts/tests/*.yaml
+      - name: promtool check and test rules
+        run: just rules-check
 
   govulncheck:
     timeout-minutes: 10
@@ -306,6 +274,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -315,7 +287,7 @@ jobs:
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
 
       - name: govulncheck
-        run: govulncheck ./...
+        run: just vuln .
 
   goreleaser-snapshot:
     timeout-minutes: 20
@@ -351,6 +323,9 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           persist-credentials: false
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
       - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
 
       # Lives in this job on purpose: it already has a checkout, Docker and buildx, and
@@ -362,7 +337,7 @@ jobs:
       - name: repository secret-hygiene gate (.gitignore + Docker build context)
         env:
           HYGIENE_REQUIRE_DOCKER: "1"
-        run: scripts/check-secret-hygiene.sh
+        run: just hygiene
 
       # Nothing in CI ever resolved the Compose assets — this job builds from the
       # Dockerfile directly, so a broken docker-compose.yaml could not fail
@@ -374,7 +349,7 @@ jobs:
       # --self-test mutates the resolved documents to prove the assertions can
       # fail; a checker never shown to fail proves nothing.
       - name: Compose assets resolve in both default and file-backed modes
-        run: deploy/tests/compose-tests.sh --self-test
+        run: just compose-check
 
       # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
       # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
@@ -417,36 +392,7 @@ jobs:
       # runtime with no shell — so it also proves the secret files are readable
       # by uid 65532.
       - name: file-based secrets are read by the real image
-        run: |
-          set -euo pipefail
-          d="$(mktemp -d)"
-          printf '%s' 'tskey-smoke-not-a-real-secret' > "$d/oauth_client_secret"
-          chmod 644 "$d"/*
-          out="$(docker run --rm \
-            -v "$d/oauth_client_secret:/run/secrets/oauth_client_secret:ro" \
-            -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-            -e TS2OTEL_TAILSCALE__AUTH__METHOD=oauth \
-            -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=smoke \
-            -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE=/run/secrets/oauth_client_secret \
-            tailscale2otel:ci -validate 2>&1)" || {
-              echo "::error::-validate failed with a file-backed secret:"; echo "$out"; exit 1; }
-          echo "$out"
-          # The secret VALUE must never be echoed back by validation output.
-          if grep -q 'tskey-smoke-not-a-real-secret' <<<"$out"; then
-            echo "::error::the credential value appeared in -validate output"; exit 1
-          fi
-          # Negative half: the SAME config with a path that does not exist must
-          # FAIL, or the check above would pass just as well on an ignored file.
-          if docker run --rm \
-            -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-            -e TS2OTEL_TAILSCALE__AUTH__METHOD=oauth \
-            -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=smoke \
-            -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE=/run/secrets/absent \
-            tailscale2otel:ci -validate >/dev/null 2>&1; then
-            echo "::error::a missing *_FILE path was accepted; the file is not actually being read"
-            exit 1
-          fi
-          echo "file-backed secret read, value not echoed, missing path rejected"
+        run: just smoke tailscale2otel:ci
 
   # Test coverage -> Codacy. Deliberately NOT in ci-success's `needs`: coverage reporting is
   # informational, so a Codacy outage — or a fork PR with no secret — must never block merges or
@@ -470,6 +416,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.58.0'
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -477,7 +427,7 @@ jobs:
           cache: true
 
       - name: go test (coverage profile)
-        run: go test -covermode=atomic -coverprofile=coverage.out ./...
+        run: just coverage
 
       - name: Upload coverage to Codacy
         if: ${{ env.CODACY_PROJECT_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
