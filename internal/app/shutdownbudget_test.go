@@ -145,6 +145,6 @@ func TestChartMinimumMatchesDrain(t *testing.T) {
 	if *min != want {
 		t.Errorf("values.schema.json enforces a minimum of %d; the worst-case staged drain is %s "+
 			"so it must be %d. Update the `@schema minimum:` annotation in values.yaml and "+
-			"regenerate with scripts/regen-generated.sh helm.", *min, worstCaseDrain(), want)
+			"regenerate with just gen helm.", *min, worstCaseDrain(), want)
 	}
 }

@@ -1003,6 +1003,7 @@ var reusableCallJobs = map[string]bool{
 	"dependency-review.yml/dependency-review": true,
 	"docker-security.yml/docker-security":     true,
 	"ghcr-cleanup.yml/prune":                  true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"helm.yml/helm-schema-validate":           true, // reusable call to rknightion/.github: GitHub does not allow timeout-minutes on uses jobs
 	"publish.yml/image":                       true,
 	"release-please.yml/publish":              true,
 	"release-please.yml/edge":                 true,

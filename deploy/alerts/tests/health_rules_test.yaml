@@ -8,7 +8,7 @@
 # contains the Prometheus-backed portion of the recommended catalogue; see
 # deploy/alerts/README.md for its support boundary. Regenerate it before running:
 #
-#   scripts/regen-generated.sh promrules
+#   just gen promrules
 #   promtool test rules deploy/alerts/tests/*.yaml
 #
 # Alert names are the CamelCased rule titles (`prom_alertname` in the generator),

@@ -89,7 +89,7 @@ def load_shipped():
             continue  # the folder manifest
         out[doc["metadata"]["name"]] = doc
     if not out:
-        die("no shipped manifests under %s — run scripts/regen-generated.sh" % SHIPPED, code=2)
+        die("no shipped manifests under %s — run just gen" % SHIPPED, code=2)
     return out
 
 

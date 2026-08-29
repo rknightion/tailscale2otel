@@ -1484,7 +1484,7 @@ assert_rc0 "Y: ingress.extra passthrough renders"
 case_ "Z. values.schema.json strictness (#304)"
 # The generated schema (deploy/helm/tailscale2otel/values.schema.json, regenerated
 # from values.yaml's `# @schema additionalProperties:false` annotations by
-# `scripts/regen-generated.sh helm`) rejects an unknown key on every CHART-AUTHORED
+# `just gen helm`) rejects an unknown key on every CHART-AUTHORED
 # object, while intentionally free-form maps (labels/annotations/headers/tags/
 # nodeSelector/resources.requests|limits/extraEnv valueFrom/...) stay open.
 
@@ -1563,7 +1563,7 @@ assert_rc0 "Z: metrics.podMonitor.labels accepts an arbitrary key"
 # Root strictness is the one part of the schema that does NOT come from a values.yaml
 # annotation — a `# @schema` comment at the top of the file attaches to the first KEY,
 # not to the root mapping. It comes from --schema-root.additional-properties=false in
-# scripts/regen-generated.sh and the matching `additionalProperties: false` input in
+# just gen and the matching `additionalProperties: false` input in
 # .github/workflows/helm.yml. Those two must move together: drop either and this
 # assertion is the thing that notices.
 render --set secrets.foo=bar

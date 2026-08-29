@@ -2182,7 +2182,7 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
 
 <!-- GENERATED FILE. Do not hand-edit — regenerate with:
        python3 deploy/alerts/gen/build_rules.py --docs-out docs/alert-profiles.md
-     (or `scripts/regen-generated.sh dashboards`, which regenerates this alongside
+     (or `just gen dashboards`, which regenerates this alongside
      deploy/alerts/grafana-managed/). Content is derived entirely from the PROFILES
      table and each rule's evaluation policy in deploy/alerts/gen/build_rules.py; a
      unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts. -->
@@ -2401,7 +2401,7 @@ _PROM_HEADER = """\
 #
 # This is the committed recommended-profile artifact for Prometheus, Mimir, and
 # Cortex rulers. Regenerate it with:
-#   scripts/regen-generated.sh promrules
+#   just gen promrules
 #
 # It contains every Prometheus-backed rule in the catalogue, including recording
 # rules and runbook_url annotations. Loki-backed rules are omitted because a

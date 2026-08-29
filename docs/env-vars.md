@@ -24,7 +24,7 @@ collectors.flowlogs.interval        ->  TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL
 A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 
 > This table is **generated** from [`../config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml).
-> Do not edit between the markers; run `scripts/regen-generated.sh envref` (or
+> Do not edit between the markers; run `just gen envref` (or
 > `go test ./internal/config -run TestEnvReferenceDocInSync -update`) to refresh it.
 
 <!-- BEGIN GENERATED: env-vars -->

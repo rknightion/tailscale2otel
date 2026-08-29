@@ -9,7 +9,7 @@
 # The committed Prometheus-compatible rule artifact is generated; see
 # health_rules_test.yaml for the support boundary and commands. In short:
 #
-#   scripts/regen-generated.sh promrules
+#   just gen promrules
 #   promtool test rules deploy/alerts/tests/*.yaml
 rule_files:
   - ../prometheus/tailscale2otel.rules.yaml

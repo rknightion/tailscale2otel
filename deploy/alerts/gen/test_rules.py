@@ -954,7 +954,7 @@ class PrometheusRenderingTest(unittest.TestCase):
         self.assertEqual(
             want, PROM_RULES.read_text(),
             "committed Prometheus rules are out of date with the generator -- run "
-            "'scripts/regen-generated.sh promrules' and commit the result",
+            "'just gen promrules' and commit the result",
         )
 
     def test_shipped_groups_are_the_stable_public_names(self):
@@ -1264,7 +1264,7 @@ class AlertProfilesDocTest(unittest.TestCase):
             want, got,
             "docs/alert-profiles.md is out of date with its generator -- run "
             "'python3 deploy/alerts/gen/build_rules.py --docs-out docs/alert-profiles.md' "
-            "(or 'scripts/regen-generated.sh dashboards') and commit the result")
+            "(or 'just gen dashboards') and commit the result")
 
     def test_doc_mentions_every_profile(self):
         text = ALERT_PROFILES_DOC.read_text()

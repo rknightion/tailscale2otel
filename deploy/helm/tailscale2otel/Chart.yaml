@@ -22,7 +22,7 @@ type: application
 # own repro `--set secrets.foo=...` (a plausible typo that rendered NO credential and no
 # error) is now rejected by name. Root strictness is the one part of the schema with no
 # values.yaml annotation — a `# @schema` comment at the top of the file attaches to the
-# first key, not the root mapping — so it lives in scripts/regen-generated.sh
+# first key, not the root mapping — so it lives in just gen
 # (--schema-root.additional-properties=false) and .github/workflows/helm.yml
 # (additionalProperties: false). Those two must move together or local regeneration
 # drifts from CI; render-tests case Z is what notices.

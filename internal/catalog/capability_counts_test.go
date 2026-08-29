@@ -44,10 +44,10 @@ func TestCapabilityCountsSourceInSync(t *testing.T) {
 
 	actual, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read %s: %v; run scripts/regen-generated.sh counts", path, err)
+		t.Fatalf("read %s: %v; run just gen counts", path, err)
 	}
 	if !bytes.Equal(actual, want) {
-		t.Fatalf("%s is stale; run scripts/regen-generated.sh counts", path)
+		t.Fatalf("%s is stale; run just gen counts", path)
 	}
 }
 

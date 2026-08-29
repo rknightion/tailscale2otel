@@ -130,7 +130,7 @@ def load_schema_paths():
         with open(SCHEMA, encoding="utf-8") as f:
             doc = json.load(f)
     except (OSError, ValueError) as exc:
-        die("cannot read %s: %s (run scripts/regen-generated.sh helm)" % (SCHEMA, exc))
+        die("cannot read %s: %s (run just gen helm)" % (SCHEMA, exc))
 
     known, open_prefixes = set(), set()
 

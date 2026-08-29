@@ -101,7 +101,7 @@ func TestRenderEnvReferenceEscapesAndLists(t *testing.T) {
 
 // TestEnvReferenceDocInSync is the drift gate: docs/env-vars.md must equal the
 // table generated from config.example.yaml. It rides the normal `go test` run
-// (no separate tool/module). Regenerate with `scripts/regen-generated.sh envref`
+// (no separate tool/module). Regenerate with `just gen envref`
 // or `go test ./internal/config -run TestEnvReferenceDocInSync -update`.
 func TestEnvReferenceDocInSync(t *testing.T) {
 	exPath := filepath.Join("..", "..", "config.example.yaml")
@@ -133,6 +133,6 @@ func TestEnvReferenceDocInSync(t *testing.T) {
 	}
 	if want != string(current) {
 		t.Errorf("docs/env-vars.md is out of date with config.example.yaml — regenerate with " +
-			"`scripts/regen-generated.sh envref` (or `go test ./internal/config -run TestEnvReferenceDocInSync -update`) and commit the result")
+			"`just gen envref` (or `go test ./internal/config -run TestEnvReferenceDocInSync -update`) and commit the result")
 	}
 }

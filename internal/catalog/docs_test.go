@@ -26,7 +26,7 @@ func TestDocsMetricsInSync(t *testing.T) {
 	if out != string(src) {
 		// metricscatalog is a SEPARATE Go module, so `go run ./tools/metricscatalog`
 		// from the repo root fails ("main module does not contain package"). Use -C
-		// with an absolute -file, or `scripts/regen-generated.sh metrics`.
+		// with an absolute -file, or `just gen metrics`.
 		t.Errorf("%s is out of date with the in-code telemetry catalog; regenerate it with "+
 			"`go run -C tools/metricscatalog . -write -file \"$PWD/docs/metrics.md\"` "+
 			"(from the repo root) and commit the result", path)

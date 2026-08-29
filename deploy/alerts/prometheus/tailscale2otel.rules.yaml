@@ -2,7 +2,7 @@
 #
 # This is the committed recommended-profile artifact for Prometheus, Mimir, and
 # Cortex rulers. Regenerate it with:
-#   scripts/regen-generated.sh promrules
+#   just gen promrules
 #
 # It contains every Prometheus-backed rule in the catalogue, including recording
 # rules and runbook_url annotations. Loki-backed rules are omitted because a

@@ -87,7 +87,7 @@ def run_source_check(root: Path, write: bool) -> bool:
     if completed.returncode:
         print(
             "capability count source is stale or could not be derived; "
-            "run scripts/regen-generated.sh counts after fixing the reported source",
+            "run just gen counts after fixing the reported source",
             file=sys.stderr,
         )
         return False
@@ -99,15 +99,15 @@ def load_counts(root: Path) -> dict[str, int]:
     try:
         raw = json.loads(path.read_text())
     except FileNotFoundError:
-        raise ValueError(f"missing {path}; run scripts/regen-generated.sh counts") from None
+        raise ValueError(f"missing {path}; run just gen counts") from None
     except json.JSONDecodeError as err:
-        raise ValueError(f"invalid {path}: {err}; run scripts/regen-generated.sh counts") from err
+        raise ValueError(f"invalid {path}: {err}; run just gen counts") from err
     if (
         not isinstance(raw, dict)
         or set(raw) != COUNT_KEYS
         or not all(type(raw[key]) is int and raw[key] >= 0 for key in COUNT_KEYS)
     ):
-        raise ValueError(f"invalid {path}; run scripts/regen-generated.sh counts")
+        raise ValueError(f"invalid {path}; run just gen counts")
     return raw
 
 
@@ -129,7 +129,7 @@ def check_summaries(root: Path, counts: dict[str, int]) -> list[str]:
             if int(actual) != expected:
                 errors.append(
                     f"{pattern.path}: {key} is {actual}, source says {expected}; "
-                    "edit the public summary or run scripts/regen-generated.sh counts "
+                    "edit the public summary or run just gen counts "
                     "after changing its source"
                 )
     return errors

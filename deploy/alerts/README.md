@@ -142,7 +142,7 @@ time**: an unknown runbook slug, an unreferenced runbook section, a missing pane
 title, or a title matching more than one panel each **fail the build**. Panels
 are resolved by **title**, never by a literal id — ids come from a counter in
 `../grafana/gen/build.py` and renumber whenever a panel is inserted. This is why
-`build.py` must run before `build_rules.py` (`scripts/regen-generated.sh
+`build.py` must run before `build_rules.py` (`just gen
 dashboards` already does, in that order).
 
 Nothing in this repo monitors Grafana's own ruler or datasource health, and a
@@ -159,7 +159,7 @@ PromQL and semantically wrong (dropping the lower bound on the key-expiry window
 makes every long-dead host alert forever):
 
 ```bash
-scripts/regen-generated.sh promrules
+just gen promrules
 promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```
@@ -340,7 +340,7 @@ python3 deploy/alerts/gen/validate_manifests.py
 python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 
 # 3. EXECUTE the committed Prometheus-compatible rules
-scripts/regen-generated.sh promrules
+just gen promrules
 promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```
