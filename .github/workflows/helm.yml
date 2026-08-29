@@ -132,7 +132,7 @@ jobs:
       # SecretStore had therefore never once been validated.
       schema-locations: >-
         default
-        https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{.Group}/{.ResourceKind}_{.ResourceAPIVersion}.json
+        https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
       chart-path: deploy/helm/tailscale2otel
       kubernetes-versions: "1.29.0"
 
