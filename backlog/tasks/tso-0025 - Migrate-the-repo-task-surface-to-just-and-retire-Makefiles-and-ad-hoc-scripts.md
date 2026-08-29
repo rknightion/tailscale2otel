@@ -1,11 +1,11 @@
 ---
 id: TSO-0025
 title: Migrate the repo task surface to just and retire Makefiles and ad-hoc scripts
-status: In Progress
+status: Parked
 assignee:
   - '@codex'
 created_date: '2026-08-28 19:05'
-updated_date: '2026-08-29 09:18'
+updated_date: '2026-08-29 09:22'
 labels:
   - 'wave:2-fleet'
 dependencies: []
@@ -859,22 +859,22 @@ not change them.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A top-level `justfile` exists and `just --list` shows all seven mandatory recipes (default, setup, fmt, fmt-check, lint, test, check), each public recipe carrying a `#` doc comment and — apart from default and setup — a `[group(...)]` drawn only from check/build/dev/gen/infra/release; `just --groups` lists no other group.
-- [ ] #2 `just check` passes on a clean checkout and a second consecutive run leaves `git status --porcelain` empty (idempotent, re-runnable, does not dirty the tree).
-- [ ] #3 `just --fmt --check` exits 0 and `just --dump --dump-format json` exits 0 — no unstable feature is used, so `--list` and `--dump` stay usable by agents.
-- [ ] #4 `just check` reproduces every leg ci-success and helm-success gate except the goreleaser and container legs (which `just ci` adds): golangci-lint, go vet, go test -race and go mod tidy diffs across all five Go modules (., tools/apidrift, tools/configcheck, tools/metricscatalog, tools/promqlcheck), the three python -m unittest suites, regen-generated.sh dashboards promrules counts + git diff --exit-code, metricscatalog -check, check_doc_commands.py, helm lint/template/render-tests.sh, configcheck against config.example.yaml and the rendered chart config, promqlcheck, promtool check rules + test rules, check-secret-hygiene.sh and compose-tests.sh --self-test.
-- [ ] #5 Only .github/workflows/ci.yml and helm.yml change; their build-test, module-verify, docs-catalog, dashboards-drift, govulncheck, docker-build, coverage, lint-template and configcheck jobs each carry a SHA-pinned `extractions/setup-just` step with `just-version: '1.58.0'` and call `just <recipe>`, while the `ci-success` and `helm-success` job names and `needs:` lists, all `permissions:`, `concurrency:`, `timeout-minutes:`, `persist-credentials: false`, every `uses:` and every matrix are unchanged, and every scripts/ci-retry.sh network-fetch line stays literal in the workflow.
-- [ ] #6 internal/ci/workflowcontract_test.go resolves workflow steps through the justfile (a stdlib recipe-body reader with transitive dependency expansion, no shelling out to `just`) and `go test ./internal/ci` is green, with TestSchemaDrivenDecodeTestsRideAGatedLeg, TestModuleVerifyRunsTheFullPerModuleGate, TestRootModuleTidyIsChecked, TestGeneratedGrafanaArtifactsAreDriftGated, TestPrometheusRulesAreCheckedByPromtool, TestDashboardsDriftRunsPromqlcheck, TestPythonGeneratorTestsRunInCI and TestDocumentedInstallCommandsAreChecked each still failing when the underlying command is removed from the recipe.
-- [ ] #7 A test beside TestEveryGoModuleIsCoveredByCIVerification asserts every directory holding a go.mod (excluding .git, .capture, .claude, dist) appears in the justfile's `modules :=` line, so a fifth module cannot be added and silently skipped now that verify-modules.sh's find-based discovery is gone.
+- [x] #1 A top-level `justfile` exists and `just --list` shows all seven mandatory recipes (default, setup, fmt, fmt-check, lint, test, check), each public recipe carrying a `#` doc comment and — apart from default and setup — a `[group(...)]` drawn only from check/build/dev/gen/infra/release; `just --groups` lists no other group.
+- [x] #2 `just check` passes on a clean checkout and a second consecutive run leaves `git status --porcelain` empty (idempotent, re-runnable, does not dirty the tree).
+- [x] #3 `just --fmt --check` exits 0 and `just --dump --dump-format json` exits 0 — no unstable feature is used, so `--list` and `--dump` stay usable by agents.
+- [x] #4 `just check` reproduces every leg ci-success and helm-success gate except the goreleaser and container legs (which `just ci` adds): golangci-lint, go vet, go test -race and go mod tidy diffs across all five Go modules (., tools/apidrift, tools/configcheck, tools/metricscatalog, tools/promqlcheck), the three python -m unittest suites, regen-generated.sh dashboards promrules counts + git diff --exit-code, metricscatalog -check, check_doc_commands.py, helm lint/template/render-tests.sh, configcheck against config.example.yaml and the rendered chart config, promqlcheck, promtool check rules + test rules, check-secret-hygiene.sh and compose-tests.sh --self-test.
+- [x] #5 Only .github/workflows/ci.yml and helm.yml change; their build-test, module-verify, docs-catalog, dashboards-drift, govulncheck, docker-build, coverage, lint-template and configcheck jobs each carry a SHA-pinned `extractions/setup-just` step with `just-version: '1.58.0'` and call `just <recipe>`, while the `ci-success` and `helm-success` job names and `needs:` lists, all `permissions:`, `concurrency:`, `timeout-minutes:`, `persist-credentials: false`, every `uses:` and every matrix are unchanged, and every scripts/ci-retry.sh network-fetch line stays literal in the workflow.
+- [x] #6 internal/ci/workflowcontract_test.go resolves workflow steps through the justfile (a stdlib recipe-body reader with transitive dependency expansion, no shelling out to `just`) and `go test ./internal/ci` is green, with TestSchemaDrivenDecodeTestsRideAGatedLeg, TestModuleVerifyRunsTheFullPerModuleGate, TestRootModuleTidyIsChecked, TestGeneratedGrafanaArtifactsAreDriftGated, TestPrometheusRulesAreCheckedByPromtool, TestDashboardsDriftRunsPromqlcheck, TestPythonGeneratorTestsRunInCI and TestDocumentedInstallCommandsAreChecked each still failing when the underlying command is removed from the recipe.
+- [x] #7 A test beside TestEveryGoModuleIsCoveredByCIVerification asserts every directory holding a go.mod (excluding .git, .capture, .claude, dist) appears in the justfile's `modules :=` line, so a fifth module cannot be added and silently skipped now that verify-modules.sh's find-based discovery is gone.
 - [ ] #8 `scripts/verify-modules.sh` is deleted and `grep -rn verify-modules` outside .git and docs/superpowers returns nothing; every KEEP script still exists and is reachable via a recipe — setup.sh (just setup), regen-generated.sh (just gen / gen-check / helm-gen-check), check-secret-hygiene.sh (just hygiene), notices.sh (just notices), sbom.sh (just sbom), wait-for-module-proxy.sh (just wait-for-proxy), bump-module-major.sh (just bump-major), render-tests.sh (just helm-lint), compose-tests.sh (just compose-check), check_doc_commands.py (just docs-check), verify_deployment.py (just verify-deploy), grafana-prune-rules.py (just prune-rules), check_release_assets.py (just release-check) — and ci-retry.sh, cloud-environment-setup.sh, review_changelog.py and .githooks/pre-commit remain deliberately recipe-less.
-- [ ] #9 AGENTS.md carries the Task interface section naming `just check` as the gate, no longer instructs anyone to run raw `go build ./... && go vet ./... && go test -race ./...`, `golangci-lint run`, `scripts/regen-generated.sh` or `scripts/verify-modules.sh`, and does not paste the recipe list; README.md:253, docs/alerts.md and deploy/CLAUDE.md name `just gen` instead of `scripts/regen-generated.sh`; `just docs-check` still passes after the edits.
-- [ ] #10 backlog/config.yml's definition_of_done names `just check` and `just gen` (and the justfile authoring rule) instead of raw go/golangci-lint commands and scripts/regen-generated.sh, and was changed through the backlog CLI rather than by hand-editing the file.
+- [x] #9 AGENTS.md carries the Task interface section naming `just check` as the gate, no longer instructs anyone to run raw `go build ./... && go vet ./... && go test -race ./...`, `golangci-lint run`, `scripts/regen-generated.sh` or `scripts/verify-modules.sh`, and does not paste the recipe list; README.md:253, docs/alerts.md and deploy/CLAUDE.md name `just gen` instead of `scripts/regen-generated.sh`; `just docs-check` still passes after the edits.
+- [x] #10 backlog/config.yml's definition_of_done names `just check` and `just gen` (and the justfile authoring rule) instead of raw go/golangci-lint commands and scripts/regen-generated.sh, and was changed through the backlog CLI rather than by hand-editing the file.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 go build ./... && go vet ./... && go test -race ./...
-- [ ] #2 golangci-lint run
+- [x] #1 go build ./... && go vet ./... && go test -race ./...
+- [x] #2 golangci-lint run
 - [ ] #3 scripts/regen-generated.sh (only if a generated artifact's inputs changed)
 <!-- DOD:END -->
 
@@ -882,6 +882,10 @@ not change them.
 
 <!-- SECTION:NOTES:BEGIN -->
 Run started from the commissioned 2026-08-28 wave2 goal. Preflight found the clean checkout at 62edf04 while origin/main had advanced to f55db60 through two unrelated dependency/action updates; main was fast-forwarded before implementation. The ordered plan in §8 remains the plan of record.
+
+Implementation and all in-scope verification are complete. Authored commits: e81471a (justfile), aa35103 (workflow-contract resolver and module coverage), 4180c7a (CI and Helm conversion), dd3c458 (documentation), c8cbf11 (Backlog Definition of Done), 495611c (retired verifier deletion). Two consecutive exact-head just check runs passed and the second left git status --porcelain empty; just --fmt --check, JSON dump parsing, actionlint, docs-check, all eight required negative tests, and CodeRabbit gates passed. Hosted checkpoint 4180c7ab365b986697342f0106cae5ec1d276b59 passed CI run 33244634311 including ci-success and Helm run 33244634292 including helm-success.
+
+Park boundary: AC #8 cannot be checked literally. scripts/verify-modules.sh is deleted, every KEEP script and required recipe was verified, and the active source/product sweep is empty. However the commissioned grep necessarily finds the term in committed historical archives, older completed tasks, backlog/docs, codex goal/report history, TSO-0025 itself, and untracked .claude worktrees. Those files are outside this task and the authorized write set. The final exact-head CI run is also subject to main concurrency cancellation; the run-end report records the terminal hosted state after this tracker commit.
 <!-- SECTION:NOTES:END -->
 
 ## Comments
@@ -908,3 +912,9 @@ Both sides currently sit on **1.58.0** and are Renovate-managed. `ci-tools`' `To
 **While you are in the workflow files, check the hub pin.** On 2026-08-29 Renovate was unfrozen for `rknightion/.github` in `m7kni/renovate-config` — it had been `enabled: false` on the mistaken belief that callers tracked `@main`, which froze the fleet across 19 different hub SHAs (v1.3.1 June → v1.9.7 August) so that no hub fix ever propagated. Bumps now arrive as one grouped, CI-gated, automerged PR per repo. **A `uses:` whose comment is not a real `# vX.Y.Z` still cannot be bumped** (it resolves to a digest-only update, which the fleet rules disable) — if you find one, repair the comment as part of this task.
 ---
 <!-- COMMENTS:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Migrated the repository to the frozen just task surface, taught workflow contracts to resolve recipes transitively, converted CI and Helm to SHA-pinned setup-just with just 1.58.0, updated contributor documentation and Backlog Definition of Done, and deleted the absorbed module-verifier script. Local evidence is green and idempotent; hosted CI and Helm are green at the workflow checkpoint. Task remains Parked only because AC #8 demands an empty repository-wide historical grep that conflicts with the commissioned task text and out-of-scope history.
+<!-- SECTION:FINAL_SUMMARY:END -->
