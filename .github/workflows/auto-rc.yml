@@ -1,4 +1,4 @@
-# Automatic release candidates. On every push to main that passes CI, cut
+# Automatic release candidates. When CI concludes green on main, cut
 # vX.Y.Z-rc.N against the version release-please is already staging in its open
 # release PR, then publish the image, chart and binaries for it.
 #
@@ -7,8 +7,19 @@
 # merge. The RC path never writes to the changelog or the release PR.
 name: auto-rc
 
+# Fires off CI's completion rather than the push itself. The old `push:` trigger
+# started this workflow immediately and then burned a runner slot in
+# `rc / wait-for-ci` polling for a CI run that was still queued behind it —
+# measured fleet-wide at 20.6 runner-hours of pure polling, and 5 of 17 in-flight
+# jobs at one sample. workflow_run fires only once CI has a verdict, so there is
+# nothing to wait for.
+#
+# `workflows:` matches CI's `name:` field, not its filename. If ci.yml is ever
+# renamed, this silently stops firing and RCs stop being cut with no error.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
@@ -21,12 +32,18 @@ concurrency:
 
 jobs:
   rc:
+    # workflow_run fires for FAILED and cancelled runs too, so the conclusion
+    # check is what actually gates the RC on green CI.
+    if: github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: write      # create the RC tag and the GitHub prerelease
       pull-requests: read  # find the open release-please PR
-      checks: read         # poll ci-success for this commit
-    uses: rknightion/.github/.github/workflows/auto-rc.yml@0e56520d848f5fda8cbfa0bda17797ef41f2a5a7 # v1.9.8
+    uses: rknightion/.github/.github/workflows/auto-rc.yml@ec685e063babbaed1917883cfa8dd7f0a88d8533 # main (pending release; Renovate will move this to a tag)
     with:
+      # Under workflow_run, github.sha is the DEFAULT BRANCH HEAD, not the
+      # commit CI ran on — it races ahead on rapid pushes. head_sha is the
+      # commit the triggering run actually tested.
+      sha: ${{ github.event.workflow_run.head_sha }}
       image-ref: ghcr.io/rknightion/tailscale2otel
 
   # Same image + chart path a stable release takes, just with an RC tag.
