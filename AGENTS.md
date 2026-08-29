@@ -4,19 +4,28 @@ Polls the Tailscale API (and optionally receives its log stream / webhooks) and 
 **OpenTelemetry-native metrics + logs** over OTLP, optimized for Grafana Cloud. Single static Go
 binary. See `README.md` for the user-facing pitch and `docs/metrics.md` for the signal catalog.
 
-## Commands
+## Task interface
 
-```sh
-go build ./cmd/tailscale2otel        # build the binary (or: go build ./...)
-go test -race ./...                  # unit + integration tests (race detector always on in CI)
-go vet ./...
-golangci-lint run                    # lint (v2; config in .golangci.yml)
-golangci-lint fmt                    # apply gofmt + goimports (there is no separate gofmt step)
-go generate ./...                    # regenerate portservice data + install the git hooks (see below)
-./tailscale2otel -config config.yaml # run; set otlp.protocol: stdout for local debug w/o a backend
-```
+This repo's task surface is a `justfile`. Discover it, don't guess it:
 
-`govulncheck` is a CI gate: `go install golang.org/x/vuln/cmd/govulncheck@v1.3.0 && govulncheck ./...`.
+    just --list                        # human-readable
+    just --dump --dump-format json     # machine-readable
+    just --show <recipe>               # what a recipe actually runs
+
+- `just check` is the full gate and is what CI enforces. It must pass before you commit.
+  `just ci` adds the two heavy legs (`goreleaser` cross-compile, container image + smoke)
+  that `ci.yml` also gates.
+- Prefer `just <recipe>` over the underlying tool. If you are typing `go test`, you want `just test`.
+- Run `just` with stdin from /dev/null. Recipes marked `[confirm]` are destructive — stop and ask
+  before running one; never pass `--yes` or `JUST_YES=1`.
+- If a task you need does not exist, add a recipe with a `#` doc comment and a `[group(...)]`
+  rather than running a bare command.
+- `just setup` once per clone: it installs the pinned `golangci-lint`, `govulncheck` and the two
+  Helm generators, and wires `core.hooksPath` at `.githooks`.
+
+`just run` starts the exporter with `config.yaml`; set `otlp.protocol: stdout` for local debug without a backend.
+
+`govulncheck` is a CI gate: run `just vuln`; `just setup` installs the pinned binary.
 
 > **A clean local `actionlint` does NOT mean the actionlint CI lane will pass.** actionlint shells
 > out to whatever `shellcheck` is on PATH, and its findings depend on that version. A local
@@ -32,13 +41,15 @@ go generate ./...                    # regenerate portservice data + install the
 
 Ten artifact families are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
-without the README). `scripts/regen-generated.sh` reproduces them all locally, byte-for-byte with CI:
+without the README). `just gen` reproduces them all locally, byte-for-byte with CI:
 
 ```sh
-scripts/regen-generated.sh tools  # ONCE PER MACHINE: install the pinned helm tools (see below)
-scripts/regen-generated.sh        # all (also accepts promrules / counts to scope)
-go run -C tools/metricscatalog . -write -file "$PWD/docs/metrics.md"   # just docs/metrics.md
-go test ./internal/config -run TestEnvReferenceDocInSync -update       # just docs/env-vars.md
+just gen tools                         # ONCE PER MACHINE: install the pinned helm tools (see below)
+just gen                               # all (also accepts targets to scope)
+just gen helm                          # just the chart README.md + values.schema.json
+just gen dashboards promrules counts   # just dashboards, rules + capability counts
+just gen metrics                        # just docs/metrics.md
+just gen envref                         # just docs/env-vars.md
 ```
 
 | generated file | inputs | tool |
@@ -51,14 +62,14 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 | `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
 | `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 | `deploy/alerts/prometheus/tailscale2otel.rules.yaml` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --prom-out …` (stdlib only) |
-| `internal/catalog/capability_counts.json` | in-code catalog + shipped dashboard/rule artifacts | `scripts/check-capability-counts.py --write` (stdlib only) |
+| `internal/catalog/capability_counts.json` | in-code catalog + shipped dashboard/rule artifacts | `just gen counts` (`check-capability-counts.py`, stdlib only) |
 
-> **The two helm tools are version-pinned — install them with `scripts/regen-generated.sh tools`.**
+> **The two helm tools are version-pinned — install them with `just gen tools` (or `just setup`).**
 > CI pins the *actions*, and each action installs one specific tool binary; a local tool of any other
 > version generates **different output**, which lands as unrelated churn or a red `fail-on-diff`. The
 > script now verifies the installed version against the pin and **loudly SKIPs rather than writing a
-> wrong file**, so a mismatch can no longer silently corrupt an artifact. The pins live at the top of
-> `scripts/regen-generated.sh` — **when Renovate bumps `losisin/helm-docs-github-action` or
+> wrong file**, so a mismatch can no longer silently corrupt an artifact. The pins live in the generation
+> task — **when Renovate bumps `losisin/helm-docs-github-action` or
 > `losisin/helm-values-schema-json-action` in `.github/workflows/helm.yml`, update them to match**
 > (the action version ≠ the tool version: action `v3.0.1` installs tool `v2.5.0`).
 >
@@ -69,7 +80,7 @@ go test ./internal/config -run TestEnvReferenceDocInSync -update       # just do
 > goreleaser would (`-X main.version=1.14.2`); don't hand-install these tools without it.
 
 > **The pre-commit hook installs itself.** Git can't run anything on clone (by design), so once per
-> clone run `go generate ./...` (or `scripts/setup.sh`) — either points `core.hooksPath` at `.githooks`
+> clone run `just setup`, `go generate ./...` (or `scripts/setup.sh`) — either points `core.hooksPath` at `.githooks`
 > via `cmd/tailscale2otel/generate.go`. CI never runs `go generate`, so this never fires there.
 > `.githooks/pre-commit` then regenerates *only* the artifacts your staged changes touch and re-stages
 > them; it's a silent no-op otherwise. A missing tool is a loud SKIP, never a block (CI's fail-on-diff
@@ -85,12 +96,12 @@ CI re-validates all ten artifact families via `fail-on-diff` (the Helm pair in G
 `docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
 `TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
 normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's
-`dashboards-drift` job, which runs `scripts/regen-generated.sh dashboards promrules counts` and then
+`dashboards-drift` job, which runs `just gen dashboards promrules counts` and then
 `git diff --exit-code`, including the shipped Prometheus rules and public capability-count source).
 The local tools above are installed on this machine.
 
 > **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
-> `scripts/regen-generated.sh coverage` rebuilds only the *page* from the manifest. The manifest itself
+> `just gen coverage` rebuilds only the *page* from the manifest. The manifest itself
 > is updated by hand-running `go test ./internal/catalog -run TestSignalDispositionsInSync -update`,
 > which is deliberately **non-silencing**: it derives `visualized`/`alertable`/`recorded`/
 > `drives_a_variable` from the actual dashboard and rule artifacts and prunes dead rows, but leaves a
@@ -165,8 +176,7 @@ The local tools above are installed on this machine.
   refactor. Standard-library `testing` only — **no testify**.
 - **Assert telemetry, not internals:** every collector/processor test drives the code against
   `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and asserts the emitted metrics/logs.
-- After every change run `go build ./... && go vet ./... && go test -race ./...` and keep
-  `golangci-lint run` clean; commit a **green** state between units of work.
+- After every change run `just check`; commit a **green** state between units of work.
 - Go 1.27 toolchain — `testing/synctest` (fake clock) is used for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
 - **Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it** — the client
@@ -281,8 +291,9 @@ are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tool
 
 ## CI gates (a PR must pass all of these)
 
-Root module: `go vet` · `go build` · `go test -race` · `golangci-lint` · `govulncheck` ·
-`docs/metrics.md` in sync (`metricscatalog -check`) · GoReleaser snapshot build · Docker image build.
+The local gate is `just check`: it runs `just vet` · `just build` · `just test` · `just lint` · `just vuln` ·
+`docs/metrics.md` in sync (`just docs-check`) and the other repository checks. `just ci` adds the
+GoReleaser snapshot build and Docker image + smoke legs.
 The Helm workflow additionally gates: `helm lint`/`template`, `values.schema.json` drift, `helm-docs`
 drift, and `configcheck` on both `config.example.yaml` and the chart-rendered config.
 
@@ -294,9 +305,8 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
 > `lint` matrix runs `golangci-lint` across all four. Before that job existed the tool modules were
 > lint-only, and `tools/configcheck/go.sum` had silently drifted 82 lines out of tidy (#437).
 >
-> **Run `scripts/verify-modules.sh` locally** — it mirrors those legs for every module (discovered by
-> walking for `go.mod`, so a new module is covered the day it is added) and SKIPs loudly rather than
-> silently passing when `golangci-lint`/`govulncheck` are absent. `internal/ci/workflowcontract_test.go`
+> **Run `just check` locally** — it mirrors those legs for every module, with the justfile's module list
+> kept complete by `internal/ci`'s coverage contract. `internal/ci/workflowcontract_test.go`
 > fails if a module is missing from either CI matrix, or if `module-verify` stops running a leg.
 >
 > **It also runs `promqlcheck` against the ARTIFACTS, which is a different question from the module
@@ -391,7 +401,7 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   pushes, and deleting a rule the repo no longer ships are all his own stack and his call already
   made. Just do it and report what changed. **`gcx resources push` is ADDITIVE** — it creates and
   updates but never deletes, so a rule removed from the repo keeps evaluating forever until deleted
-  by hand. Run `python3 scripts/verify_deployment.py` (read-only; exit 0 in sync, 1 drift, 2
+  by hand. Run `just verify-deploy` (read-only; exit 0 in sync, 1 drift, 2
   unreachable) after any push, and to find orphans. This permission covers Grafana only — it does
   NOT extend to mutating the tailnet itself.
 - **Do NOT push DASHBOARDS with `gcx` — they are delivered by GitSync.** `.github/workflows/
@@ -416,7 +426,7 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   release tooling assume it.
 - **A breaking change (`!`) that cuts a new MAJOR needs the Go module path moved first.** release-please
   does not maintain it, and a major tagged against a stale `/vN` path fails the GoReleaser binaries job
-  (this really happened at v2.0.0 — #174). Run `scripts/bump-module-major.sh` and land it on `main`
+  (this really happened at v2.0.0 — #174). Run `just bump-major` and land it on `main`
   before merging the release PR; `TestModulePathMatchesReleaseVersion` fails the release PR if you
   forget. See `deploy/CLAUDE.md`.
 

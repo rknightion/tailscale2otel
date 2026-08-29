@@ -48,7 +48,7 @@ python3 deploy/alerts/gen/build_rules.py --out deploy/alerts/grafana-managed
 
 Every `*.json` in the output directory is deleted before writing, so a renamed or removed rule
 cannot linger as a stale file that keeps getting pushed. The Prometheus-compatible file is generated
-alongside it with `scripts/regen-generated.sh promrules`. Both outputs are deterministic and checked
+alongside it with `just gen promrules`. Both outputs are deterministic and checked
 for drift in CI.
 
 Every rule follows the canonical Grafana 3-node pipeline (A query → B reduce → C threshold),
@@ -178,7 +178,7 @@ evaluates once loaded.
 `promtool test rules` is the only local check that **runs** rules rather than only parsing them:
 
 ```bash
-scripts/regen-generated.sh promrules
+just gen promrules
 promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
 promtool test rules deploy/alerts/tests/*.yaml
 ```

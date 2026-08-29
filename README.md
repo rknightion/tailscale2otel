@@ -250,7 +250,7 @@ Small single-purpose packages under `internal/`: `telemetry` (OTEL facade), `col
 (scheduler/registry/checkpoints + one package per source), `tsapi` (Tailscale client),
 `provider`/`hsapi` (control-plane abstraction + Headscale), `flowlog`/`audit` (records + processors),
 `enrich` (device cache), `rdns`, `config`, and the `stream`/`webhook` receivers. Four committed files
-are generated — run `scripts/regen-generated.sh` before committing changes that touch them.
+are generated — run `just gen` before committing changes that touch them.
 
 ## API drift CI
 

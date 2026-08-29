@@ -252,7 +252,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         path. If you add a top-level directory the image needs, re-include it
         there or the build fails with a missing package.
 
-        `scripts/check-secret-hygiene.sh` gates both halves: it asserts every
+        `just hygiene` runs `scripts/check-secret-hygiene.sh`, which gates both halves: it asserts every
         documented secret path is git-ignored, that the committed example files
         stay trackable, and — by planting disposable sentinel files and inspecting
         the context from inside the builder — that nothing sensitive reaches a
@@ -282,7 +282,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         into your shell history and
         exposes it in `ps` output to every other user on the machine for the
         duration of the install. Use one of the three modes below instead;
-        `scripts/check_doc_commands.py` fails CI if any documented command in
+        `just docs-check` runs `scripts/check_doc_commands.py`, which fails CI if any documented command in
         this repository puts a credential inline.
 
     ### Preferred: a pre-created Secret (`existingSecret`)

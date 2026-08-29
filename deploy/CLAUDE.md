@@ -19,7 +19,7 @@ consumed by operators or by the release pipelines.
   policy, audit); `-health` answers "is the exporter healthy?" (collection, ingestion,
   delivery, runtime, cost). Split in #526 from the single 437-panel
   `tailscale2otel-overview`. **Generated** from `grafana/gen/` — edit the generator, not the
-  JSON; regenerate BOTH with `scripts/regen-generated.sh dashboards` (or `python3
+  JSON; regenerate BOTH with `just gen dashboards` (or `python3
   grafana/gen/build.py --out-dir <repo-root>`). The generator is modular: `dashboards.py`
   (what dashboards exist and what is on each), `builder.py` (primitives + the scoped
   sentinel registry), `variables.py`, `maps.py`, `tabs/*.py` (one module per tab), `build.py`
@@ -118,7 +118,7 @@ checkpoint store it does NOT fall back to memory when the path is unwritable —
 switched off instead, so an operator who asked for history is never shown one that looks like it.
 
 Two files in the chart are **generated and drift-checked in CI** (the `Helm` workflow) — regenerate
-with `scripts/regen-generated.sh helm`, do not hand-edit:
+with `just gen helm`, do not hand-edit:
 
 - `values.schema.json` — JSON Schema **draft-07** (Helm only validates draft-07), generated from
   `values.yaml` by `losisin/helm-values-schema-json-action` (which installs tool **v2.5.0**).
@@ -136,7 +136,7 @@ with `scripts/regen-generated.sh helm`, do not hand-edit:
 > render suite's contract W once hardcoding `:3.0.0`. Rationale is also in `README.md.gotmpl`.
 
 **Both tools are version-pinned** — a different local version silently generates different output.
-Install the pinned pair once per machine with `scripts/regen-generated.sh tools`; the script verifies
+Install the pinned pair once per machine with `just gen tools`; the script verifies
 the version before regenerating and SKIPs loudly rather than writing a wrong file. See the root
 `CLAUDE.md` (and the script header) for the pins and the helm-docs ldflag gotcha.
 
