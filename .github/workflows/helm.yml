@@ -113,6 +113,20 @@ jobs:
       - name: Validate example + rendered config
         run: just config-check
 
+  # This chart published to GHCR with no schema validation against the real
+  # Kubernetes API schemas at all — `just helm-lint` above only checks helm's
+  # own lint rules and this repo's render contracts, never that the rendered
+  # manifests are schema-valid. No kubeVersion floor is declared in Chart.yaml,
+  # so this validates against the reusable's own default floor (1.29.0).
+  helm-schema-validate:
+    name: helm schema validate (kubeconform)
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/helm-validate.yml@97f4a7ad0cd1ddd83562a30b9061ef8295242405 # v1.14.0
+    with:
+      chart-path: deploy/helm/tailscale2otel
+      kubernetes-versions: "1.29.0"
+
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside ci.yml's `ci-success`), so helm legs can be added or renamed without re-touching
   # protection. The pull_request trigger above has no path filter on purpose, so this always reports
@@ -122,7 +136,7 @@ jobs:
     name: helm-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-template, configcheck]
+    needs: [lint-template, configcheck, helm-schema-validate]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
