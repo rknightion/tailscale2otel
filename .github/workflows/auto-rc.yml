@@ -38,6 +38,11 @@ jobs:
     permissions:
       contents: write      # create the RC tag and the GitHub prerelease
       pull-requests: read  # find the open release-please PR
+      # Still required even though wait-for-ci is skipped in this mode: GitHub
+      # validates a reusable workflow's job permissions at STARTUP, before any
+      # `if:` is evaluated. The reusable keeps wait-for-ci for push-triggered
+      # callers, so dropping this here is a startup_failure with zero jobs.
+      checks: read
     uses: rknightion/.github/.github/workflows/auto-rc.yml@ec685e063babbaed1917883cfa8dd7f0a88d8533 # main (pending release; Renovate will move this to a tag)
     with:
       # Under workflow_run, github.sha is the DEFAULT BRANCH HEAD, not the
