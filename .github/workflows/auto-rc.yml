@@ -43,7 +43,7 @@ jobs:
       # `if:` is evaluated. The reusable keeps wait-for-ci for push-triggered
       # callers, so dropping this here is a startup_failure with zero jobs.
       checks: read
-    uses: rknightion/.github/.github/workflows/auto-rc.yml@ec685e063babbaed1917883cfa8dd7f0a88d8533 # main (pending release; Renovate will move this to a tag)
+    uses: rknightion/.github/.github/workflows/auto-rc.yml@873962525bd50b84dfdb3226efab8c8e2cd6a9a2 # v1.11.0
     with:
       # Under workflow_run, github.sha is the DEFAULT BRANCH HEAD, not the
       # commit CI ran on — it races ahead on rapid pushes. head_sha is the
