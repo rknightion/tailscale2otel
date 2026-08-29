@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@codex'
 created_date: '2026-08-28 19:05'
-updated_date: '2026-08-29 10:42'
+updated_date: '2026-08-29 10:57'
 labels:
   - 'wave:2-fleet'
 dependencies: []
@@ -929,6 +929,43 @@ This supersedes the frozen wording *"`check` is the complete local gate and repr
 Eleven of the 42 lanes arrived at this shape independently before it was ratified, which is why it won.
 
 **If this repo has no such legs, it has no `ci` recipe at all** and `check` is the whole gate. Do not add an empty one.
+---
+
+author: campaign-ordering
+created: 2026-08-29 10:57
+---
+## Fleet alignment — the 2otel family converges on one CI shape
+
+These seven Go repos are near-identical applications and had drifted into **two naming dialects and materially different coverage**. The migration rewrites every `run:` block anyway, so converge them in the same change rather than preserving the drift in new clothes.
+
+**Canonical job names** — used by tailscale2otel, graph2otel, polylens2otel and rfc6035-2otel, so this is the majority convention, not an invention:
+
+`build-test` · `lint` · `govulncheck` · `goreleaser-snapshot` · `docker-build` · `coverage` · `ci-success`
+
+`opnsense2otel` and `transceiver-exporter` currently use a second dialect — `tests`, `race`, `docker-build-verify`. Rename to the canonical set as part of this task.
+
+**`ci-success` is the only check the branch ruleset gates**, so jobs can be renamed or merged freely *provided* `ci-success`'s `needs:` list is updated in the same commit. Never rename `ci-success` itself.
+
+**Required gates, and where each lives after the migration:**
+
+| Gate | Recipe | Note |
+| --- | --- | --- |
+| build + test + `-race` | `just test` | `-race` belongs in the standard test run |
+| golangci-lint | `just lint` | needs a `.golangci.yml`, schema v2 |
+| **gosec** | `just lint` | **a golangci-lint linter, NOT a separate job** — enable it in `.golangci.yml`. Four of the seven already do it this way; a standalone gosec job would be a third dialect |
+| govulncheck | `just vuln` | pinned `golang.org/x/vuln/cmd/govulncheck@v1.3.0`, matching the family |
+| goreleaser snapshot | `just snapshot` | cross-compile ⇒ belongs in `ci`, not `check` |
+| container build | `just image` | needs a Docker daemon ⇒ belongs in `ci`, not `check` |
+
+**Already done for you (2026-08-29):** `govulncheck` was added to `opnsense2otel`, `transceiver-exporter` and `codexlb2otel` ahead of the migration, because those three had no dependency vulnerability scanning at all. Convert those jobs to `just vuln` like any other; do not re-add them.
+
+**Still missing, fix as part of this task:**
+
+- `opnsense2otel` — has `.golangci.yml` but **`gosec` is not enabled** in it.
+- `transceiver-exporter` — **no `.golangci.yml` at all**, and no `-race` in its test job.
+- `codexlb2otel` — no `.golangci.yml`, no `-race`, no container build, and **no `ci-success` job and no branch ruleset**, so nothing gates its CI. Adding an aggregator is the right fix but is a separate decision; raise it rather than assuming.
+
+**One known trap:** the `govulncheck@v1.3.0` pins are invisible to Renovate — `go install pkg@version` inside a `run:` block matches no manager. All five are four minor versions behind (current is v1.7.0). Once the version moves into the justfile as a `# renovate:`-annotated `:=` assignment, it becomes managed. That is a real benefit of this migration, not incidental.
 ---
 <!-- COMMENTS:END -->
 
