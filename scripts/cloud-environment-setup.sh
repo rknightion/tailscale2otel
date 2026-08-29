@@ -113,6 +113,10 @@ install_release_tools
 echo "== installing pinned generated-artifact tools"
 # This repository helper supplies the nonstandard helm-docs version ldflag and
 # installs helm-values-schema-json at the exact versions used by CI.
+#
+# Called as a SCRIPT, not as `just gen-tools`: this environment has no `just` on
+# PATH (nothing above installs one), so the `tools` entry point has to stay
+# script-callable. Every other generator is reached through the justfile.
 scripts/regen-generated.sh tools
 
 install_promtool() {

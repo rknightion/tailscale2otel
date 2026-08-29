@@ -35,7 +35,7 @@ setup:
     go install golang.org/x/vuln/cmd/govulncheck@{{ govulncheck_version }}
     # Installs helm-docs v1.14.2 (with the version ldflag) and
     # helm-values-schema-json v2.5.0 — the exact versions the helm.yml actions use.
-    just gen tools
+    just gen-tools
     for m in {{ modules }}; do
       echo "== go mod download ($m)"
       (cd "$m" && go mod download)
@@ -155,17 +155,91 @@ vuln module="":
       (cd "$m" && govulncheck ./...)
     done
 
-# regenerate every committed generated artifact (idempotent; run before committing)
+# regenerate every committed generated artifact, or only the named families
 [group('gen')]
+[script('bash')]
 gen *targets:
-    scripts/regen-generated.sh {{ targets }}
+    set -euo pipefail
+    # Every family is a `gen-<target>` recipe, so `just --list` is the target list
+    # and an unknown target fails as a just error. This spelling is kept because
+    # the docs, the CI job names and a dozen test failure messages say
+    # `just gen helm` / `just gen counts`; `just gen-helm` is the same thing.
+    targets='{{ targets }}'
+    for t in ${targets:-all}; do
+      just "gen-$t"
+    done
+
+# Private: `just gen` is the advertised entry point, and this exists so `just gen`
+# and `just gen all` are one definition rather than two lists.
+#
+# Deliberately does NOT depend on gen-tools — regenerating must stay
+# side-effect-free for the pre-commit hook; installing is a once-per-machine act.
+# gen-coverage runs LAST: the coverage page reports on what the dashboards
+# reference, so it has to see the freshly generated ones.
+#
+# regenerate every generated artifact, in dependency order
+[private]
+gen-all: gen-helm gen-metrics gen-envref gen-config-schema gen-dashboards gen-promrules gen-counts gen-coverage
+
+# install the pinned helm-docs + helm-values-schema-json (once per machine)
+[group('gen')]
+gen-tools:
+    scripts/regen-generated.sh tools
+
+# regenerate the chart's README.md and values.schema.json
+[group('gen')]
+gen-helm: gen-helm-docs gen-helm-schema
+
+# regenerate deploy/helm/tailscale2otel/README.md from Chart.yaml + values.yaml + the template
+[group('gen')]
+gen-helm-docs:
+    scripts/regen-generated.sh helm-docs
+
+# regenerate the CHART's values.schema.json from values.yaml (draft 7)
+[group('gen')]
+gen-helm-schema:
+    scripts/regen-generated.sh helm-schema
+
+# regenerate the ROOT config.schema.json from the Config struct + config.example.yaml
+[group('gen')]
+gen-config-schema:
+    scripts/regen-generated.sh config-schema
+
+# regenerate docs/metrics.md from the in-code telemetry catalog
+[group('gen')]
+gen-metrics:
+    scripts/regen-generated.sh metrics
+
+# regenerate docs/env-vars.md from config.example.yaml
+[group('gen')]
+gen-envref:
+    scripts/regen-generated.sh envref
+
+# regenerate docs/signal-coverage.md from internal/catalog/signal_dispositions.json
+[group('gen')]
+gen-coverage:
+    scripts/regen-generated.sh coverage
+
+# regenerate the Grafana dashboards, the Grafana-managed rules and docs/alert-profiles.md
+[group('gen')]
+gen-dashboards:
+    scripts/regen-generated.sh dashboards
+
+# regenerate deploy/alerts/prometheus/tailscale2otel.rules.yaml
+[group('gen')]
+gen-promrules:
+    scripts/regen-generated.sh promrules
+
+# regenerate internal/catalog/capability_counts.json from the catalog + shipped artifacts
+[group('gen')]
+gen-counts:
+    scripts/regen-generated.sh counts
 
 # regenerate the Grafana, alert-rule and capability-count artifacts and fail on drift
 [group('check')]
 [script('bash')]
-gen-check:
+gen-check: gen-dashboards gen-promrules gen-counts
     set -euo pipefail
-    scripts/regen-generated.sh dashboards promrules counts
     if ! git diff --exit-code -- deploy/grafana deploy/alerts docs/alert-profiles.md internal/catalog/capability_counts.json; then
       echo "::error::generated dashboards, rules, or capability counts are out of date — run 'just gen dashboards promrules counts' and commit the result" >&2
       exit 1
@@ -194,9 +268,8 @@ helm-lint:
 # regenerate the chart README + values.schema.json and fail on drift
 [group('check')]
 [script('bash')]
-helm-gen-check:
+helm-gen-check: gen-helm
     set -euo pipefail
-    scripts/regen-generated.sh helm
     if ! git diff --exit-code -- {{ chart_dir }}/README.md {{ chart_dir }}/values.schema.json; then
       echo "::error::chart README.md or values.schema.json is out of date — run 'just gen helm' and commit the result" >&2
       exit 1
