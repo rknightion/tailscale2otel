@@ -279,6 +279,19 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+        {{- /*
+          Sidecars, rendered VERBATIM after the exporter so an operator can add a
+          companion process that has to share this pod's network namespace or its
+          volumes (the motivating case is a tailscale sidecar for tailnet-reachable
+          node-metrics targets). The chart adds nothing to them on purpose: a sidecar
+          that needs NET_ADMIN, root, or a writable root filesystem must say so in its
+          own securityContext, which overrides podSecurityContext — weakening the pod
+          default to suit a sidecar would silently relax the exporter too.
+        */}}
+        {{- include "tailscale2otel.validateExtraContainers" . }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
         - name: config
           {{- if include "tailscale2otel.usesExternalConfig" . }}

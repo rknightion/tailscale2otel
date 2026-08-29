@@ -170,6 +170,50 @@ extraVolumes: []
 # Paired with extraVolumes above by name.
 extraVolumeMounts: []
 
+# -- Extra SIDECAR containers appended to the pod spec as-is, after the exporter. For a
+# companion process that has to share the exporter's network namespace or its volumes —
+# the motivating case is a `tailscale` sidecar giving the pod tailnet membership, which is
+# what config.collectors.node_metrics.discovery needs to reach devices on 100.64.0.0/10
+# (no Kubernetes egress mechanism expresses "every address in the tailnet", and a per-target
+# ExternalName Service does not scale to a DISCOVERED target set).
+#
+# Each entry is a standard Kubernetes Container and is rendered VERBATIM — the chart adds no
+# securityContext, resources, probes, volumeMounts or env of its own. A sidecar needing what
+# the exporter drops must say so in its OWN container securityContext, which overrides
+# podSecurityContext; do not weaken podSecurityContext to suit a sidecar, or the exporter
+# silently loses the same hardening.
+#
+# Names must be unique and must not collide with the exporter's own container
+# ("tailscale2otel"); rendering FAILS rather than producing a Pod the API server rejects.
+#
+# TWO WAYS TO RUN A TAILSCALE SIDECAR, and the cheap one is usually enough:
+#
+#   * USERSPACE (TS_USERSPACE=true, the image default) needs NO capabilities and NO host
+#     device. It gives no routes, so the exporter reaches the tailnet through the sidecar's
+#     outbound HTTP proxy: set TS_OUTBOUND_HTTP_PROXY_LISTEN and point the exporter's
+#     HTTP_PROXY at it via extraEnv. That covers node-metrics scraping, which is plain HTTP.
+#     Set HTTP_PROXY only — never HTTPS_PROXY — or the exporter's OTLP, Tailscale API,
+#     Pyroscope and MaxMind traffic is also sent at the tailnet, where it has no route.
+#   * KERNEL (TS_USERSPACE=false) gives the pod real 100.64.0.0/10 routes, so nothing needs
+#     proxy configuration, but it needs NET_ADMIN *and* access to /dev/net/tun — an
+#     extraVolumes hostPath plus a matching volumeMount here, or a TUN device plugin.
+#     Tailscale's own Kubernetes examples run this container `privileged: true`.
+#
+# Example (userspace; pair with extraEnv HTTP_PROXY: http://localhost:1055):
+#   extraContainers:
+#     - name: tailscale
+#       image: ghcr.io/tailscale/tailscale:v1.102.3
+#       env:
+#         - name: TS_AUTHKEY
+#           valueFrom:
+#             secretKeyRef: {name: my-ts-secret, key: TS_AUTHKEY}
+#         - name: TS_OUTBOUND_HTTP_PROXY_LISTEN
+#           value: localhost:1055
+#       securityContext:
+#         capabilities:
+#           drop: ["ALL"]
+extraContainers: [] # @schema item: object ; itemProperties: {"name":{"type":"string","minLength":1},"image":{"type":"string","minLength":1}}
+
 # -- Extra environment variables appended to the container's `env`, as-is. Each entry is a
 # standard Kubernetes EnvVar: `{name, value}` or `{name, valueFrom: {...}}` (fieldRef,
 # resourceFieldRef, configMapKeyRef, secretKeyRef). For proxy settings, custom CA paths,

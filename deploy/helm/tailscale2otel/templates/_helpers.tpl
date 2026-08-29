@@ -375,6 +375,33 @@ output and CI logs.
 {{- end -}}
 
 {{/*
+Reject an extraContainers list that would render an invalid Pod.
+
+Kubernetes requires container names to be unique within a pod and rejects the
+Deployment at admission, so this only moves the failure from `kubectl apply` to
+`helm template` — but it names the offending index and the reason, which the API
+server's message does not. The collision with the exporter's own container is the
+one worth catching early: a sidecar called "tailscale2otel" reads as a deliberate
+override of the exporter and is silently nothing of the sort.
+*/}}
+{{- define "tailscale2otel.validateExtraContainers" -}}
+{{- $seen := dict "tailscale2otel" "the exporter's own container" -}}
+{{- range $i, $c := (.Values.extraContainers | default list) -}}
+  {{- $name := $c.name | default "" -}}
+  {{- if not $name -}}
+    {{- fail (printf "extraContainers[%d] has no `name`; every entry must be a Kubernetes Container with a name" $i) -}}
+  {{- end -}}
+  {{- if not ($c.image | default "") -}}
+    {{- fail (printf "extraContainers[%d] (%s) has no `image`; the chart supplies no default for a sidecar" $i $name) -}}
+  {{- end -}}
+  {{- if hasKey $seen $name -}}
+    {{- fail (printf "extraContainers[%d] is named %q, which collides with %s. Container names must be unique within a pod." $i $name (index $seen $name)) -}}
+  {{- end -}}
+  {{- $_ := set $seen $name (printf "extraContainers[%d]" $i) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 The port number from a `host:port` listen address (#344).
 
 `splitList ":" | last` also copes with an IPv6 bind such as "[::1]:9091",

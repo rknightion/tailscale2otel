@@ -1620,5 +1620,43 @@ assert_rc0 "AA: a token plus a matching bearerTokenSecret lets the podMonitor re
 render --set config.prometheus.enabled=true
 assert_rc0 "AA: /metrics alone, with no monitor, is unaffected"
 
+case_ "AB. extraContainers (sidecars)"
+
+# --- AB: extraContainers (sidecars).
+#
+# The motivating case is a tailscale sidecar giving the pod tailnet membership for
+# node-metrics discovery. It is rendered VERBATIM and appended AFTER the exporter, and
+# it must not inherit or alter the exporter's own hardening: a sidecar declaring
+# runAsUser 0 and NET_ADMIN is exactly the shape that would be tempting to enable by
+# weakening podSecurityContext instead.
+render --set-json 'extraContainers=[{"name":"tailscale","image":"ghcr.io/tailscale/tailscale:v1.102.3","securityContext":{"runAsUser":0,"runAsNonRoot":false,"capabilities":{"add":["NET_ADMIN"]}}}]'
+assert_rc0 "AB: a sidecar renders"
+[[ "$(dep_field '[.spec.template.spec.containers[].name] | join(" ")')" == "tailscale2otel tailscale" ]] \
+  && ok "AB: the sidecar is appended after the exporter" \
+  || bad "AB: container order is $(dep_field '[.spec.template.spec.containers[].name] | join(" ")')"
+[[ "$(dep_field '.spec.template.spec.containers[0].securityContext.runAsUser')" == "65532" ]] \
+  && ok "AB: the exporter still runs as 65532 beside a root sidecar" \
+  || bad "AB: the exporter securityContext changed: $(dep_field '.spec.template.spec.containers[0].securityContext.runAsUser')"
+
+# Both guards fail at TEMPLATE time, naming the index, rather than at admission.
+render --set-json 'extraContainers=[{"name":"tailscale2otel","image":"busybox"}]'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "AB: a sidecar named like the exporter is rejected" \
+  || bad "AB: a colliding sidecar name rendered"
+grep -q "collides with the exporter's own container" <<<"$RENDER" \
+  && ok "AB: the rejection names the collision" \
+  || bad "AB: the rejection does not name the collision"
+
+render --set-json 'extraContainers=[{"name":"nope"}]'
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "AB: a sidecar with no image is rejected" \
+  || bad "AB: an imageless sidecar rendered"
+
+# Default off: no sidecar, one container.
+render
+[[ "$(dep_field '[.spec.template.spec.containers[].name] | join(" ")')" == "tailscale2otel" ]] \
+  && ok "AB: no sidecar by default" \
+  || bad "AB: default pod has $(dep_field '[.spec.template.spec.containers[].name] | join(" ")')"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

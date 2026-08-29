@@ -1958,6 +1958,22 @@
         "existingSecret": {
             "type": "string"
         },
+        "extraContainers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "image": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "name": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            }
+        },
         "extraEnv": {
             "type": "array",
             "items": {
