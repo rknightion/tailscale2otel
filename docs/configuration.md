@@ -750,7 +750,7 @@ own, whether by mounting it or by letting the downloader fetch it with your cred
 > To prove the credentials and every enabled collector actually work, use `tailscale2otel
 > -preflight`, which runs one collection cycle without starting a listener, exporting, or
 > persisting a checkpoint — see
-> [Getting started](getting-started.md#smoke-test-prove-it-works-before-any-real-rollout).
+> [Getting started](getting-started.md#check-a-configuration-before-a-rollout).
 >
 > **`-print-effective-config` shows every key's effective value, redacted, and exits** — the same
 > complete key set and redaction rules (by TYPE, never by field name) the admin status page and

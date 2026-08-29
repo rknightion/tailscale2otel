@@ -13,7 +13,7 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
      unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts. -->
 
 tailscale2otel's Grafana-managed alert catalogue (see
-[deploy/alerts/README.md](../deploy/alerts/README.md)) ships one committed manifest set:
+[deploy/alerts/README.md](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/README.md)) ships one committed manifest set:
 the **recommended** profile below, unchanged from every previous release. `baseline` and
 `strict` are alternative *installable* profiles — materialize either on demand with:
 
