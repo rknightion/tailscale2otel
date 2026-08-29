@@ -2185,10 +2185,16 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
      (or `just gen dashboards`, which regenerates this alongside
      deploy/alerts/grafana-managed/). Content is derived entirely from the PROFILES
      table and each rule's evaluation policy in deploy/alerts/gen/build_rules.py; a
-     unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts. -->
+     unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts.
+
+     The deploy/alerts/README.md link below is ABSOLUTE on purpose: this page is published
+     to the docs hub, which builds Zensical with strict = true, and deploy/ is outside docs/
+     so a relative ../deploy/... target is a broken link there and fails that build. It has
+     been hand-fixed in the generated file and silently regenerated away twice (18f38cb,
+     45e489c, 3843477) — fix it HERE, never in docs/alert-profiles.md. -->
 
 tailscale2otel's Grafana-managed alert catalogue (see
-[deploy/alerts/README.md](../deploy/alerts/README.md)) ships one committed manifest set:
+[deploy/alerts/README.md](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/README.md)) ships one committed manifest set:
 the **recommended** profile below, unchanged from every previous release. `baseline` and
 `strict` are alternative *installable* profiles — materialize either on demand with:
 
