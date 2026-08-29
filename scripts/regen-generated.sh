@@ -8,6 +8,7 @@
 #   values.schema.json  <- values.yaml                                   (helm-values-schema-json, draft 7)
 #   docs/metrics.md     <- the in-code telemetry catalog                 (tools/metricscatalog)
 #   docs/env-vars.md    <- config.example.yaml                           (TestEnvReferenceDocInSync -update)
+#   config.schema.json  <- the Config struct + config.example.yaml       (TestConfigSchemaInSync -update)
 #   docs/signal-coverage.md <- internal/catalog/signal_dispositions.json (TestSignalCoverageDocInSync -update)
 #   deploy/alerts/prometheus/tailscale2otel.rules.yaml <- alerts catalogue (build_rules.py --prom-out)
 #   internal/catalog/capability_counts.json <- catalog + shipped artifacts (check-capability-counts.py)
@@ -23,7 +24,8 @@
 #   scripts/regen-generated.sh tools            # install/pin the helm tools (see below)
 #   scripts/regen-generated.sh helm             # README.md + values.schema.json
 #   scripts/regen-generated.sh helm-docs        # just the chart README.md
-#   scripts/regen-generated.sh helm-schema      # just values.schema.json
+#   scripts/regen-generated.sh helm-schema      # just the CHART's values.schema.json
+#   scripts/regen-generated.sh config-schema    # just the ROOT config.schema.json
 #   scripts/regen-generated.sh metrics          # just docs/metrics.md
 #   scripts/regen-generated.sh envref           # just docs/env-vars.md
 #   scripts/regen-generated.sh coverage         # just docs/signal-coverage.md
@@ -175,6 +177,20 @@ regen_envref() {
   go test -C "$ROOT" ./internal/config -run TestEnvReferenceDocInSync -update -count=1 >/dev/null
 }
 
+regen_config_schema() {
+  if ! command -v go >/dev/null 2>&1; then
+    skip "go not installed -> config.schema.json not regenerated (CI will gate it)"
+    return 0
+  fi
+  note "config.schema.json (root config JSON Schema)"
+  # NOT the chart's values.schema.json — that is the `helm-schema` target. This is
+  # the repo-root schema describing config.yaml itself, generated from the Config
+  # struct and config.example.yaml by the golden test's -update mode. Its drift
+  # gate is TestConfigSchemaInSync inside the normal `go test -race ./...` run, so
+  # a stale file fails the suite rather than a dedicated workflow step.
+  go test -C "$ROOT" ./internal/config -run TestConfigSchemaInSync -update -count=1 >/dev/null
+}
+
 regen_coverage() {
   if ! command -v go >/dev/null 2>&1; then
     skip "go not installed -> docs/signal-coverage.md not regenerated (CI will gate it)"
@@ -247,16 +263,17 @@ main() {
   local targets=("$@")
   [ ${#targets[@]} -eq 0 ] && targets=(all)
 
-  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0 do_cov=0 do_promrules=0 do_counts=0
+  local do_tools=0 do_docs=0 do_schema=0 do_metrics=0 do_envref=0 do_dash=0 do_cov=0 do_promrules=0 do_counts=0 do_cfgschema=0
   for t in "${targets[@]}"; do
     case "$t" in
       # `all` deliberately does NOT install tools — it must stay side-effect-free
       # for the pre-commit hook. Run `tools` explicitly (once per machine).
-      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1; do_cov=1; do_promrules=1; do_counts=1 ;;
+      all)         do_docs=1; do_schema=1; do_metrics=1; do_envref=1; do_dash=1; do_cov=1; do_promrules=1; do_counts=1; do_cfgschema=1 ;;
       tools)       do_tools=1 ;;
       helm)        do_docs=1; do_schema=1 ;;
       helm-docs)   do_docs=1 ;;
       helm-schema) do_schema=1 ;;
+      config-schema) do_cfgschema=1 ;;
       metrics)     do_metrics=1 ;;
       envref)      do_envref=1 ;;
       coverage)    do_cov=1 ;;
@@ -272,6 +289,7 @@ main() {
   [ "$do_schema" = 1 ]  && regen_helm_schema
   [ "$do_metrics" = 1 ] && regen_metrics
   [ "$do_envref" = 1 ]  && regen_envref
+  [ "$do_cfgschema" = 1 ] && regen_config_schema
   [ "$do_dash" = 1 ]    && regen_dashboards
   [ "$do_promrules" = 1 ] && regen_promrules
   [ "$do_counts" = 1 ]  && regen_counts

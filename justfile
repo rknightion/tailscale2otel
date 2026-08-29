@@ -166,7 +166,7 @@ gen *targets:
 gen-check:
     set -euo pipefail
     scripts/regen-generated.sh dashboards promrules counts
-    if ! git diff --exit-code -- deploy/grafana deploy/alerts internal/catalog/capability_counts.json; then
+    if ! git diff --exit-code -- deploy/grafana deploy/alerts docs/alert-profiles.md internal/catalog/capability_counts.json; then
       echo "::error::generated dashboards, rules, or capability counts are out of date — run 'just gen dashboards promrules counts' and commit the result" >&2
       exit 1
     fi

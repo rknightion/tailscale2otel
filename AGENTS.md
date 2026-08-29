@@ -39,7 +39,7 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
 
 ### Regenerate generated artifacts (required before commit when you touch them)
 
-Ten artifact families are committed but **generated** — each a pure function of its inputs and each gated in CI
+Eleven artifact families are committed but **generated** — each a pure function of its inputs and each gated in CI
 by a `fail-on-diff` check (forgetting to regenerate is the classic red build, e.g. bumping `Chart.yaml`
 without the README). `just gen` reproduces them all locally, byte-for-byte with CI:
 
@@ -50,18 +50,21 @@ just gen helm                          # just the chart README.md + values.schem
 just gen dashboards promrules counts   # just dashboards, rules + capability counts
 just gen metrics                        # just docs/metrics.md
 just gen envref                         # just docs/env-vars.md
+just gen config-schema                  # just the ROOT config.schema.json (NOT the chart's values.schema.json)
 ```
 
 | generated file | inputs | tool |
 | --- | --- | --- |
 | `docs/metrics.md` | the in-code telemetry catalog | `tools/metricscatalog` |
 | `docs/env-vars.md` | `config.example.yaml` (keys, defaults, inline comments) | `TestEnvReferenceDocInSync -update` (root module; no separate tool) |
+| `config.schema.json` | the `Config` struct + `config.example.yaml` | `TestConfigSchemaInSync -update` (root module; no separate tool). The repo-ROOT schema for `config.yaml` — not the chart's `values.schema.json` below |
 | `docs/signal-coverage.md` | `internal/catalog/signal_dispositions.json` | `TestSignalCoverageDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
 | `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
 | `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
 | `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 | `deploy/alerts/prometheus/tailscale2otel.rules.yaml` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --prom-out …` (stdlib only) |
+| `docs/alert-profiles.md` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --docs-out …` (stdlib only) |
 | `internal/catalog/capability_counts.json` | in-code catalog + shipped dashboard/rule artifacts | `just gen counts` (`check-capability-counts.py`, stdlib only) |
 
 > **The two helm tools are version-pinned — install them with `just gen tools` (or `just setup`).**
@@ -92,12 +95,14 @@ just gen envref                         # just docs/env-vars.md
 > with an absolute `-file`, or build first (`cd tools/metricscatalog && go build -o /tmp/mc .`) then
 > run `/tmp/mc -check` from the repo root (the default `docs/metrics.md` path is CWD-relative).
 
-CI re-validates all ten artifact families via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
-`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md` and `docs/signal-coverage.md` via
-`TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` in the
+CI re-validates all eleven artifact families via `fail-on-diff` (the Helm pair in GitHub Actions, see `deploy/CLAUDE.md`;
+`docs/metrics.md` via `metricscatalog -check`; `docs/env-vars.md`, `docs/signal-coverage.md` and
+`config.schema.json` via `TestEnvReferenceDocInSync` / `TestSignalCoverageDocInSync` /
+`TestConfigSchemaInSync` in the
 normal `go test -race ./...` run — no extra workflow step; the two Grafana artifacts via ci.yml's
 `dashboards-drift` job, which runs `just gen dashboards promrules counts` and then
-`git diff --exit-code`, including the shipped Prometheus rules and public capability-count source).
+`git diff --exit-code`, including the shipped Prometheus rules, `docs/alert-profiles.md` and the
+public capability-count source).
 The local tools above are installed on this machine.
 
 > **`signal_dispositions.json` is the one generated-adjacent file you do NOT blindly regenerate.**
