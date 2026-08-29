@@ -9,6 +9,10 @@
 # change. Scoped this way the hook is a no-op (and silent) on the vast majority
 # of commits.
 #
+# Every command here goes through `just`, which is this repo's only supported task
+# surface — the hook must never be a second, divergent definition of how an
+# artifact is regenerated.
+#
 # Enable once per clone (it is NOT installed automatically):
 #   git config core.hooksPath .githooks
 #
@@ -18,8 +22,13 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-# Staged paths (Added/Copied/Modified/Renamed — skip Deletions).
-staged="$(git diff --cached --name-only --diff-filter=ACMR)"
+# Staged paths. DELETIONS COUNT: removing an input is as much a change to a
+# generated artifact as editing one — deleting a file under internal/config/
+# changes config.schema.json, and an ACMR-only filter let that land stale.
+# --name-status is used rather than --name-only so a RENAME contributes BOTH its
+# old and new path; a file moved OUT of an input directory still invalidates the
+# artifact it used to feed, and the new path alone cannot show that.
+staged="$(git diff --cached --name-status --diff-filter=ACMRD | awk -F'\t' '{ for (i = 2; i <= NF; i++) if ($i != "") print $i }')"
 [ -z "$staged" ] && exit 0
 
 # Decide which generated artifacts the staged changes could have invalidated.
@@ -30,6 +39,11 @@ envref_inputs='(^config\.example\.yaml$|^internal/config/envref\.go$)'
 # pruning manifest rows is a decision, so that stays a hand-run -update; this
 # just keeps the published page matching whatever the manifest already says.
 coverage_inputs='^internal/catalog/(signal_dispositions\.json|dispositions\.go)$'
+# config.schema.json is derived from the Config struct AND config.example.yaml, so
+# any change under internal/config can invalidate it — not just the example file.
+# Its drift gate is TestConfigSchemaInSync inside the normal `go test` run, which
+# means a stale file fails the SUITE rather than a dedicated workflow step.
+cfgschema_inputs='(^config\.example\.yaml$|^internal/config/)'
 
 targets=()
 git_add=()
@@ -49,16 +63,20 @@ if grep -Eq "$coverage_inputs" <<<"$staged"; then
   targets+=(coverage)
   git_add+=(docs/signal-coverage.md)
 fi
+if grep -Eq "$cfgschema_inputs" <<<"$staged"; then
+  targets+=(config-schema)
+  git_add+=(config.schema.json)
+fi
 
 [ ${#targets[@]} -eq 0 ] && exit 0
 
-if [ ! -x scripts/regen-generated.sh ]; then
-  echo "pre-commit: scripts/regen-generated.sh missing/not executable — skipping regen (CI will gate)" >&2
+if ! command -v just >/dev/null 2>&1; then
+  echo "pre-commit: just not on PATH — skipping regen (CI will gate). Install it: brew install just" >&2
   exit 0
 fi
 
 echo "pre-commit: regenerating generated artifacts (${targets[*]})"
-scripts/regen-generated.sh "${targets[@]}"
+just gen "${targets[@]}"
 
 # Re-stage anything regeneration touched so it's committed atomically, then
 # report which artifacts actually changed vs HEAD (so the commit's new contents

@@ -35,7 +35,7 @@ setup:
     go install golang.org/x/vuln/cmd/govulncheck@{{ govulncheck_version }}
     # Installs helm-docs v1.14.2 (with the version ldflag) and
     # helm-values-schema-json v2.5.0 — the exact versions the helm.yml actions use.
-    scripts/regen-generated.sh tools
+    just gen tools
     for m in {{ modules }}; do
       echo "== go mod download ($m)"
       (cd "$m" && go mod download)

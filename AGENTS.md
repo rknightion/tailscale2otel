@@ -86,8 +86,11 @@ just gen config-schema                  # just the ROOT config.schema.json (NOT 
 > clone run `just setup`, `go generate ./...` (or `scripts/setup.sh`) — either points `core.hooksPath` at `.githooks`
 > via `cmd/tailscale2otel/generate.go`. CI never runs `go generate`, so this never fires there.
 > `.githooks/pre-commit` then regenerates *only* the artifacts your staged changes touch and re-stages
-> them; it's a silent no-op otherwise. A missing tool is a loud SKIP, never a block (CI's fail-on-diff
-> stays the hard backstop); bypass a run with `git commit --no-verify`.
+> them; it's a silent no-op otherwise. **It shells out to `just gen <targets>`, never to a script** —
+> `just` is this repo's only supported task surface, and a hook calling a generator directly is a
+> second, divergent definition of how an artifact is built. A missing tool — `just` included — is a
+> loud SKIP, never a block (CI's fail-on-diff stays the hard backstop); bypass a run with
+> `git commit --no-verify`.
 
 > Gotcha: `tools/metricscatalog` and `tools/configcheck` are **separate Go modules** (own `go.mod`,
 > `replace ../..`). `go run ./tools/metricscatalog` from the repo root **fails** ("main module does
