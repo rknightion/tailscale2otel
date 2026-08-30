@@ -50,6 +50,7 @@ const configSchemaDescription = "JSON Schema for tailscale2otel's config.yaml. "
 var (
 	secretType             = reflect.TypeFor[Secret]()
 	durationTypeForSchema  = reflect.TypeFor[Duration]()
+	postureCheckType       = reflect.TypeFor[PostureComplianceCheck]()
 	defaultDurationExample = "30s"
 )
 
@@ -101,6 +102,8 @@ var rulesBySuffix = map[string]schemaRule{
 	"log_level":                         {enum: []string{"debug", "info", "warn", "error"}},
 	"delivery.mode":                     {enum: []string{"otlp", "prometheus", "dual"}},
 	"otlp.protocol":                     {enum: []string{"grpc", "http", "stdout"}},
+	"otlp.metric_temporality":           {enum: []string{"cumulative", "delta"}},
+	"admin.tls.client_auth":             {enum: []string{"", "require_and_verify", "verify_if_given", "require", "request", "none"}},
 	"checkpoint.store":                  {enum: []string{"memory", "file"}},
 	"checkpoint.evidence_store":         {enum: []string{"memory", "file"}},
 	"source":                            {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
@@ -141,19 +144,21 @@ var rulesBySuffix = map[string]schemaRule{
 	// that fails config.example.yaml. Matching is longest-suffix-first, so these
 	// win; both spellings are needed because the collectors block nests
 	// k8s_audit.objectstore while the tailnets block nests objectstore.k8s_audit.
-	"k8s_audit.objectstore.layout":      {enum: []string{"", "recorder"}},
-	"objectstore.k8s_audit.layout":      {enum: []string{"", "recorder"}},
-	"capacity_profile":                  {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
-	"metric_export_batch_size":          {min: f64(1)},
-	"prometheus.max_requests_in_flight": {min: f64(1)},
-	"rollup_top_n":                      {min: f64(0)},
-	"label_value_sample_cap":            {min: f64(0)},
-	"dedup_capacity":                    {min: f64(1)},
-	"max_seen_keys":                     {min: f64(1)},
-	"warning_threshold":                 {min: f64(0)},
-	"critical_threshold":                {min: f64(0)},
-	"sampler_arg":                       {min: f64(0), max: f64(1)},
-	"port":                              {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
+	"k8s_audit.objectstore.layout":               {enum: []string{"", "recorder"}},
+	"objectstore.k8s_audit.layout":               {enum: []string{"", "recorder"}},
+	"capacity_profile":                           {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
+	"metric_export_batch_size":                   {min: f64(1)},
+	"prometheus.max_requests_in_flight":          {min: f64(1)},
+	"collectors.devices.subrequest_concurrency":  {min: f64(1)},
+	"collectors.services.subrequest_concurrency": {min: f64(1)},
+	"rollup_top_n":                               {min: f64(0)},
+	"label_value_sample_cap":                     {min: f64(0)},
+	"dedup_capacity":                             {min: f64(1)},
+	"max_seen_keys":                              {min: f64(1)},
+	"warning_threshold":                          {min: f64(0)},
+	"critical_threshold":                         {min: f64(0)},
+	"sampler_arg":                                {min: f64(0), max: f64(1)},
+	"port":                                       {min: f64(1), max: f64(65535)}, // collectors.node_metrics.discovery.port
 }
 
 // applyRule looks up path (and, failing that, each of its dotted suffixes,
@@ -381,6 +386,9 @@ func (b *schemaBuilder) sliceSchema(t reflect.Type, path string) map[string]any 
 			"type":                 "object",
 			"additionalProperties": false,
 			"properties":           b.structProperties(elem, path),
+		}
+		if elem == postureCheckType {
+			items["required"] = []string{"name", "attribute", "equals"}
 		}
 	default:
 		panic(fmt.Sprintf("config schema: unsupported slice element kind %s at %q — teach schema.go about it", elem.Kind(), path))

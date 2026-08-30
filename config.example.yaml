@@ -83,6 +83,7 @@ tailscale:
     rate_limit: 0                     # global requests/sec across ALL collectors (0 = unlimited)
   max_response_bytes: 4194304         # cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated
   max_log_response_bytes: 33554432    # cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it
+  organization: ""                    # opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative
 # Both budgets are fleet-wide (they apply to every entry in tailnets: below too) and
 # bound the exporter's peak decode memory. Decoding costs SEVERAL TIMES the wire size,
 # so keep them well under the deployment's memory limit (Helm default: 256Mi).
@@ -166,6 +167,8 @@ otlp:
     key_file: ""                      # client private key path (for mutual TLS)
   metric_interval: 60s                # how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape)
   metric_export_batch_size: 10000     # maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels)
+  metric_temporality: cumulative      # cumulative (Grafana Cloud default) | delta
+  outage_summary_interval: 5m         # repeat a concise diagnostic while an OTLP outage continues
   limits:                             # bound ONE log record before export (a valid request can still carry one enormous record)
     log_body_bytes: 32768             # cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting
     log_attribute_value_bytes: 4096   # cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split)
@@ -263,6 +266,7 @@ delivery:
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
 enrichment:
   cache_ttl: 5m                       # staleness alarm threshold for the IP/nodeID -> name device cache
+  device_cache_stale_after: 0s        # mark cached identity stale after this age; 0 preserves fresh-until-replaced behaviour
   reverse_dns:                        # opt-in PTR enrichment: resolve EXTERNAL (non-Tailscale) flow IPs to hostnames
     enabled: false                    # off by default (can add ~one flow-metric series per external IP when on)
     server: ""                        # resolver "ip" or "ip:port" (default :53); empty = system/container resolver
@@ -327,6 +331,8 @@ collectors:
     collect_connectivity: true        # emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls)
     collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
     collect_device_invites: true      # also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count
+    subrequest_concurrency: 1         # bounded posture/invite request pool; 1 preserves sequential requests
+    posture_compliance_checks: []     # exact checks: [{name: managed, attribute: custom:managed, equals: "true"}]; missing/different fails
     posture_log_mode: changes         # needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted
     expiry_log_mode: daily            # node-key AND posture-attribute expiry WARN cadence: daily (change + at most one reminder/24h, default) | always (every scrape, legacy) | off; metrics always emit
     attribute_namespaces:             # needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable
@@ -477,6 +483,8 @@ collectors:
   log_stream:                         # log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)
     enabled: true
     interval: 600s
+    configuration_interval: 0s        # 0 inherits interval; otherwise probe configuration-log delivery independently
+    network_interval: 0s              # 0 inherits interval; otherwise probe network-log delivery independently
   oauth_apps:                         # OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it)
     enabled: true
     interval: 300s
@@ -484,6 +492,7 @@ collectors:
     enabled: true
     interval: 600s
     collect_hosts: false              # also fetch per-service backing-host detail — one extra API call per service (N+1)
+    subrequest_concurrency: 1         # bounded backing-host request pool; 1 preserves sequential requests
     collect_tag_rollup: true          # emit tailscale.services.by_tag (one series per ACL tag); false disables the rollup
     tag_rollup_limit: 50              # cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag="__other__" (0/negative = unlimited)
   node_metrics:                       # OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md
@@ -522,11 +531,16 @@ collectors:
       include_host_labels: true       # attach host.name/host.id for joins with tailscale.device.*
       include_tags_label: true        # attach tailscale.tags to each target's series
 
+# ── Scheduler first-tick spread ────────────────────────────────────────────────
+scheduler:
+  initial_stagger_window: 3s          # spread initial collector ticks; current single-runtime default is 3s
+
 # ── Durable state (poll cursors and semantic evidence) ─────────────────────────
 checkpoint:
   store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
   evidence_store: file                # file (default; preserves ACL revision/audit provenance across restarts) | memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file.
   file_path: /var/lib/tailscale2otel/checkpoints.json   # used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.
+  write_debounce: 0s                  # coalesce nearby file writes; 0 preserves synchronous Set durability
 
 # ── Receiver write-ahead log (OPTIONAL: durable local acceptance) ───────────────
 # Disabled is fully stateless. When enabled, a successful receiver ACK means the
@@ -560,6 +574,7 @@ streaming:
   auto_configure: false               # on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope
   max_body_bytes: 0                   # cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
+  per_route_max_concurrent_requests: 0 # per-tailnet admission cap; 0 selects an automatic fair share of the global budget
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/token/public_url/
   # auto_configure above. Every route selects exactly one tailnets[].name.
   routes: []
@@ -578,6 +593,7 @@ webhook:
   dedup_audit_events: false           # best-effort: drop a webhook event already counted via the audit logs
   max_body_bytes: 0                   # cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
+  per_route_max_concurrent_requests: 0 # per-tailnet admission cap; 0 selects an automatic fair share of the global budget
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/secret above.
   # A delivery is accepted only when every event names one matching tailnet.
   routes: []
@@ -614,12 +630,18 @@ admin:
   listen: "127.0.0.1:9091"            # serves /healthz, /readyz, and the status page. Loopback by default: the status page is REFUSED (403) on a network-reachable bind without admin.auth.token, so widen this only together with a token
   landing_page: true                  # serve the human status page at / and machine-readable /api/status.json
   status_refresh_interval: 5s         # how often the status page re-polls /api/status.json (1s freshness ticker is independent)
+  support_bundle_log_tail_records: 200 # bounded redaction-safe recent log records included in support bundles; 0 disables capture
   auth:
     token: ""                         # gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty is allowed only on a loopback listen — on any other bind the status page + JSON APIs are REFUSED with 403 (/healthz and /readyz stay open)
     token_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+    failure_limit: 5                  # failures from one source inside failure_window before throttling; 0 disables
+    failure_window: 1m                # rolling window for failed authentication attempts
+    failure_backoff: 30s              # throttle duration after the per-source limit is reached
   tls:
     cert_file: ""                     # serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)
     key_file: ""                      # HTTPS key for admin.tls.cert_file
+    client_ca_file: ""                # require a client certificate signed by this CA; needs cert_file/key_file
+    client_auth: ""                   # require_and_verify by default when client_ca_file is set; same modes as prometheus.tls
 
 # ── Built-in flow view (served at /flows on the admin server) ──────────────────
 flows:
@@ -637,6 +659,8 @@ flows:
     flush_interval: 5s                # force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once directory is set
     query_timeout: 15s                # give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once directory is set
     sweep_interval: 1h                # how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set
+    incremental_vacuum_interval: 0s   # periodic SQLite page reclamation; 0 inherits sweep_interval
+    incremental_vacuum_pages: 1000    # maximum pages reclaimed per vacuum tick
 
 # ── Built-in audit/webhook event explorer (served at /events on the admin server) ──
 events:

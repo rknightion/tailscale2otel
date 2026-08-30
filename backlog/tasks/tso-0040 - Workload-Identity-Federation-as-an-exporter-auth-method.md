@@ -1,10 +1,10 @@
 ---
 id: TSO-0040
 title: Workload Identity Federation as an exporter auth method
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 22:43'
+updated_date: '2026-08-30 23:58'
 labels: []
 milestone: m-3
 dependencies: []
@@ -31,6 +31,14 @@ Tailscale Workload Identity Federation (GA ~2026-02) exchanges an external OIDC 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 verifies and freezes the existing workload_identity config seams; lane B later implements and adversarially verifies exchange, refresh, diagnostics, workflow, and authorised live identity creation.
+
+Treat POST /api/v2/oauth/token-exchange as a documented out-of-spec contract exception: do not add it to the generated OpenAPI operation ledger; add dedicated tests pinning the path, form-encoded client_id and jwt fields, success token response, and message-bearing error response.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
@@ -72,4 +80,8 @@ So the task splits, with different acceptance bars:
 If the live half cannot finish in one run, the offline half plus a created identity plus the workflow is a complete honest delivery: check AC#1 against the integration test and say plainly that live end-to-end is pending the first scheduled run. Do not park the whole task for it.
 
 Never record the created identity secret on the task — description and scopes only.
+
+Root answered the contract-ledger fork: because the exchange endpoint is absent from both vendored and live OpenAPI, it stays outside the generated operation ledger and is guarded by dedicated auth-path contract tests.
+
+CodeRabbit requested narrowing the live credential authority. Root declined that finding because it conflicts with the owner's explicit frozen authorization for this run. Live work remains limited to creating what WIF needs and excludes ACLs, devices, existing keys, and stream configuration; no credential value will enter the tracker.
 <!-- SECTION:NOTES:END -->

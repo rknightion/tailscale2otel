@@ -2377,6 +2377,126 @@ func (c *Config) validationChecks() []configCheck {
 		return nil
 	})
 
+	add("otlp.metric_temporality", oneOfRemediation("otlp.metric_temporality", "cumulative", "delta"), func() error {
+		if !oneOf(c.OTLP.MetricTemporality, "cumulative", "delta") {
+			return fmt.Errorf("otlp.metric_temporality %q invalid: must be cumulative or delta", c.OTLP.MetricTemporality)
+		}
+		return nil
+	})
+	add("otlp.outage_summary_interval", "Set otlp.outage_summary_interval to a positive duration.", func() error {
+		if c.OTLP.OutageSummaryInterval.D() <= 0 {
+			return fmt.Errorf("otlp.outage_summary_interval must be > 0")
+		}
+		return nil
+	})
+	add("scheduler.initial_stagger_window", "Set scheduler.initial_stagger_window between 0 and 1h.", func() error {
+		d := c.Scheduler.InitialStaggerWindow.D()
+		if d < 0 || d > time.Hour {
+			return fmt.Errorf("scheduler.initial_stagger_window must be between 0 and 1h")
+		}
+		return nil
+	})
+	add("collectors.devices.subrequest_concurrency", "Set collectors.devices.subrequest_concurrency to at least 1.", func() error {
+		if c.Collectors.Devices.SubrequestConcurrency < 1 {
+			return fmt.Errorf("collectors.devices.subrequest_concurrency must be >= 1")
+		}
+		return nil
+	})
+	add("collectors.devices.posture_compliance_checks", "Use at most 32 uniquely named checks with non-empty attributes.", func() error {
+		if len(c.Collectors.Devices.PostureComplianceChecks) > 32 {
+			return fmt.Errorf("collectors.devices.posture_compliance_checks: at most 32 checks are allowed")
+		}
+		seen := make(map[string]struct{}, len(c.Collectors.Devices.PostureComplianceChecks))
+		for i, check := range c.Collectors.Devices.PostureComplianceChecks {
+			if strings.TrimSpace(check.Name) == "" || strings.TrimSpace(check.Attribute) == "" {
+				return fmt.Errorf("collectors.devices.posture_compliance_checks[%d]: name and attribute are required", i)
+			}
+			if _, ok := seen[check.Name]; ok {
+				return fmt.Errorf("collectors.devices.posture_compliance_checks[%d]: duplicate name %q", i, check.Name)
+			}
+			seen[check.Name] = struct{}{}
+		}
+		return nil
+	})
+	add("collectors.services.subrequest_concurrency", "Set collectors.services.subrequest_concurrency to at least 1.", func() error {
+		if c.Collectors.Services.SubrequestConcurrency < 1 {
+			return fmt.Errorf("collectors.services.subrequest_concurrency must be >= 1")
+		}
+		return nil
+	})
+	add("collectors.log_stream intervals", "Use non-negative independent probe intervals; zero inherits interval.", func() error {
+		if c.Collectors.LogStream.ConfigurationInterval.D() < 0 || c.Collectors.LogStream.NetworkInterval.D() < 0 {
+			return fmt.Errorf("collectors.log_stream configuration_interval and network_interval must be >= 0")
+		}
+		return nil
+	})
+	add("enrichment.device_cache_stale_after", "Set enrichment.device_cache_stale_after to a non-negative duration.", func() error {
+		if c.Enrichment.DeviceCacheStaleAfter.D() < 0 {
+			return fmt.Errorf("enrichment.device_cache_stale_after must be >= 0")
+		}
+		return nil
+	})
+	add("checkpoint.write_debounce", "Set checkpoint.write_debounce between 0 and 1m.", func() error {
+		if d := c.Checkpoint.WriteDebounce.D(); d < 0 || d > time.Minute {
+			return fmt.Errorf("checkpoint.write_debounce must be between 0 and 1m")
+		}
+		return nil
+	})
+	add("receiver per-route admission", "Set per-route receiver admission limits to zero or a positive integer.", func() error {
+		if c.Streaming.PerRouteMaxConcurrentRequests < 0 || c.Webhook.PerRouteMaxConcurrentRequests < 0 {
+			return fmt.Errorf("receiver per_route_max_concurrent_requests must be >= 0")
+		}
+		return nil
+	})
+	add("admin.auth failure throttling", "Use non-negative limits and positive window/backoff when enabled.", func() error {
+		a := c.Admin.Auth
+		if a.FailureLimit < 0 || a.FailureWindow.D() < 0 || a.FailureBackoff.D() < 0 {
+			return fmt.Errorf("admin.auth failure_limit, failure_window and failure_backoff must be non-negative")
+		}
+		if a.FailureLimit > 0 && (a.FailureWindow.D() <= 0 || a.FailureBackoff.D() <= 0) {
+			return fmt.Errorf("admin.auth failure_window and failure_backoff must be > 0 when failure_limit is enabled")
+		}
+		return nil
+	})
+	add("admin.support_bundle_log_tail_records", "Set admin.support_bundle_log_tail_records between 0 and 10000.", func() error {
+		if n := c.Admin.SupportBundleLogTailRecords; n < 0 || n > 10000 {
+			return fmt.Errorf("admin.support_bundle_log_tail_records must be between 0 and 10000")
+		}
+		return nil
+	})
+	add("admin.tls.client_ca_file", "Set admin TLS cert/key and a readable client CA together.", func() error {
+		if c.Admin.TLS.ClientCAFile == "" {
+			return nil
+		}
+		if c.Admin.TLS.CertFile == "" || c.Admin.TLS.KeyFile == "" {
+			return fmt.Errorf("admin.tls.client_ca_file requires admin.tls.cert_file and key_file")
+		}
+		return c.validateCAFile("admin.tls.client_ca_file", c.Admin.TLS.ClientCAFile)
+	})
+	add("admin.tls.client_auth", oneOfRemediation("admin.tls.client_auth", "require_and_verify", "verify_if_given", "require", "request", "none"), func() error {
+		m := c.Admin.TLS.ClientAuth
+		if m != "" && !oneOf(m, "require_and_verify", "verify_if_given", "require", "request", "none") {
+			return fmt.Errorf("admin.tls.client_auth %q invalid", m)
+		}
+		if m != "" && m != "none" && (c.Admin.TLS.CertFile == "" || c.Admin.TLS.KeyFile == "") {
+			return fmt.Errorf("admin.tls.client_auth %q requires admin.tls.cert_file and admin.tls.key_file", m)
+		}
+		if (m == "require_and_verify" || m == "verify_if_given") && c.Admin.TLS.ClientCAFile == "" {
+			return fmt.Errorf("admin.tls.client_auth %q requires admin.tls.client_ca_file", m)
+		}
+		return nil
+	})
+	add("flows.store incremental vacuum", "Use a non-negative interval and positive page count when enabled.", func() error {
+		s := c.Flows.Store
+		if s.IncrementalVacuumInterval.D() < 0 || s.IncrementalVacuumPages < 0 {
+			return fmt.Errorf("flows.store incremental vacuum values must be non-negative")
+		}
+		if s.IncrementalVacuumInterval.D() > 0 && s.IncrementalVacuumPages < 1 {
+			return fmt.Errorf("flows.store.incremental_vacuum_pages must be >= 1 when vacuum is enabled")
+		}
+		return nil
+	})
+
 	return checks
 }
 

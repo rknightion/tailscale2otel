@@ -325,6 +325,7 @@ func equalAny(a, b []any) bool {
 // for YOUR field, and if it is not, give it a longer, more specific key in
 // rulesBySuffix rather than editing this list to match.
 var ruleApplications = []string{
+	"admin.tls.client_auth",
 	"cardinality.critical_threshold",
 	"cardinality.flow.metrics_mode",
 	"cardinality.flow.rollup_top_n",
@@ -337,6 +338,7 @@ var ruleApplications = []string{
 	"collectors.auditlogs.objectstore.max_seen_keys",
 	"collectors.auditlogs.source",
 	"collectors.devices.expiry_log_mode",
+	"collectors.devices.subrequest_concurrency",
 	"collectors.devices.posture_log_mode",
 	"collectors.flowlogs.dedup_capacity",
 	"collectors.flowlogs.log_mode",
@@ -351,6 +353,7 @@ var ruleApplications = []string{
 	"collectors.node_metrics.discovery.port",
 	"collectors.node_metrics.discovery.port_overrides.*",
 	"collectors.node_metrics.discovery.scheme",
+	"collectors.services.subrequest_concurrency",
 	"delivery.mode",
 	"flows.capacity_profile",
 	"ingress_wal.corruption",
@@ -359,6 +362,7 @@ var ruleApplications = []string{
 	"otlp.compression",
 	"otlp.credential_reload.interval",
 	"otlp.metric_export_batch_size",
+	"otlp.metric_temporality",
 	"otlp.protocol",
 	"profiling.pyroscope.credential_reload.interval",
 	"profiling.pyroscope.tailnet_label",

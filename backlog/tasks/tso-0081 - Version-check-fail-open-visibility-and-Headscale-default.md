@@ -1,10 +1,10 @@
 ---
 id: TSO-0081
 title: Version-check fail-open visibility and Headscale default
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-5
 dependencies: []
@@ -30,3 +30,9 @@ version_checks.* silently emit nothing when the upstream fetch is blocked (inter
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+F1 records that no new operator key is needed: existing version_checks controls remain, while lane J adds fail-open observability and the provider-sensitive Headscale default.
+<!-- SECTION:PLAN:END -->

@@ -320,6 +320,7 @@ or broken upstream (or a proxy in front of it) cannot stream an unbounded body i
 |-----|---------|-------------|
 | `tailscale.max_response_bytes` | `4194304` (4 MiB) | Cap on ONE snapshot-endpoint response body (devices, keys, dns, services, settings, posture, invites, …) before it is decoded. Must be `> 0`. Sized from a live capture at ~1.8 KiB/device, i.e. roughly 2,400 devices. These endpoints are **not paginated**, so a larger tailnet needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. |
 | `tailscale.max_log_response_bytes` | `33554432` (32 MiB) | The same cap for the bulk log pulls (`logging/network`, `logging/configuration`), which are legitimately multi-MB: roughly 13,600 flow records at ~2.4 KiB each. Must be `> 0`. If you hit it, shorten the collector's poll window rather than raising this. |
+| `tailscale.organization` | `""` | Opt in to alpha Organizations API roster discovery. Empty keeps `tailscale.tailnet` or `tailnets[]` authoritative. Discovery supplies names only; each tailnet still needs credentials. |
 
 A value above 64 MiB triggers a startup warning: decoding allocates several times the wire size, so a
 budget that large can exceed a typical container memory limit before the cap ever engages.
@@ -474,6 +475,8 @@ OTLP.
 | `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint (ignored when `protocol: stdout`). For `protocol: http` this is a full base **URL** — for Grafana Cloud use the `…/otlp` base and the per-signal `/v1/metrics`, `/v1/logs`, and `/v1/traces` paths are appended for you (traces are a real third signal — see [`tracing`](#tracing-otel-traces-pillar) — and the exporter appends its path the same way as metrics and logs). For `protocol: grpc` it must instead be a bare **`host:port`** address (no scheme or path, e.g. `otlp-gateway-prod-us-central-0.grafana.net:443`); a URL-shaped value is rejected at startup. |
 | `otlp.metric_interval` | `60s` | How often metrics are pushed. `60s` aligns with the default 1 data-point-per-minute scrape cadence and avoids Grafana Cloud DPM churn. |
 | `otlp.metric_export_batch_size` | `10000` | Maximum datapoints per OTLP metric request. The metric SDK splits one cumulative collection into sequential requests at this boundary, preventing a single high-cardinality payload from blocking all metric delivery. This is not an exact byte limit: serialized size varies with metric names, labels, and values. Smaller values reduce request size at the cost of more requests per export interval. |
+| `otlp.metric_temporality` | `cumulative` | Metric aggregation temporality: `cumulative` (required guidance for Grafana Cloud) or `delta`. |
+| `otlp.outage_summary_interval` | `5m` | How often a continuing OTLP delivery outage is summarized again. |
 | `otlp.limits.log_body_bytes` | `32768` | Cap one log record's body before export. The receivers' request-body limits bound a whole inbound HTTP request, but a perfectly valid request can still contain one enormous record that dominates a batch or breaches the backend's per-record limit. Truncation is UTF-8 safe (a multi-byte rune is never split), runs **after** redaction so a secret can never be truncated into a partially-redacted string, and leaves an explicit marker. Minimum 64 bytes — a smaller bound would leave no room beside the marker. There is deliberately no unlimited setting; set a large value if you want effectively no bound. |
 | `otlp.limits.log_attribute_value_bytes` | `4096` | Cap each individual string-valued log attribute. Non-string attribute kinds are fixed-size by construction and unaffected. **Never** applied to metric labels, which must stay byte-exact or the series splits. Same minimum and truncation semantics as `log_body_bytes`. |
 | `otlp.headers` | `{}` | Extra raw headers added to every OTLP request (an alternative to `grafana_cloud`). |
@@ -612,6 +615,7 @@ audit records.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enrichment.cache_ttl` | `5m` | Staleness-alarm threshold for the device cache. If the cache hasn't refreshed within this window, a staleness signal is raised. |
+| `enrichment.device_cache_stale_after` | `0s` | Age after which cached control-plane identity is explicitly marked stale. `0` preserves fresh-until-replaced behaviour. |
 
 > Enrichment depends on the `devices` collector. If `devices` is disabled, flow/audit IP→name
 > resolution silently degrades to `unknown`/`external`.
@@ -946,6 +950,8 @@ received record. Either way, **metrics are never capped — only logs.**
 | `collectors.devices.collect_connectivity` | `true` | Emit per-device NAT/connectivity health (`tailscale.device.connectivity.*`: hard_nat, endpoints, direct_capable, udp, ipv6) plus the fleet connectivity rollups (`tailscale.devices.hard_nat`/`direct_capable`/`client_supports`). Read from the inline device data — **no extra API call**. Per-device gauges additionally gated by `cardinality.per_entity.device`. |
 | `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit posture log events. |
 | `collectors.devices.collect_device_invites` | `true` | Also fetch outstanding device share invites per device (one **extra API call per device per tick**, N+1) and emit `tailscale.device_invites.count`. Requires the `device_invites:read` OAuth scope (covered by `all:read`). Per-device failures are non-fatal. |
+| `collectors.devices.subrequest_concurrency` | `1` | Maximum concurrent per-device posture/invite calls. `1` preserves sequential behaviour. |
+| `collectors.devices.posture_compliance_checks` | `[]` | Bounded exact-match checks with `name`, `attribute`, and `equals`; a missing or different attribute counts as failing. Names become label values, not metric names. |
 | `collectors.devices.posture_log_mode` | `changes` | Controls the `tailscale.device.posture` log (requires `collect_posture`). `changes` — full dump on first scrape then deltas only. `always` — every scrape. `off` — suppress the log (the posture gauge metric is still emitted). |
 | `collectors.devices.expiry_log_mode` | `daily` | Controls both node-key and posture-attribute expiry WARN cadence. `daily` logs a change immediately plus at most one reminder per 24h; `always` preserves every-scrape behavior; `off` suppresses only the logs. Metrics still emit. |
 | `collectors.devices.attribute_namespaces` | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Device posture-attribute namespace prefixes promoted to `tailscale.device.attribute{,.info}` metrics (requires `collect_posture`). `["*"]` promotes every namespace; `[]` disables the attribute metrics. Comma-separated in env: `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf`. |
@@ -1205,6 +1211,7 @@ field the export does not. Neither field is required.
 | `collectors.posture_integrations.enabled` / `.interval` | `true` / `600s` | MDM/EDR posture-integration gauges. |
 | `collectors.posture_integrations.snapshot_enabled` | `false` | Emit the complete posture-integration response to logs on change plus a heartbeat. |
 | `collectors.log_stream.enabled` / `.interval` | `true` / `600s` | Log-streaming configuration gauges. |
+| `collectors.log_stream.configuration_interval` / `.network_interval` | `0s` / `0s` | Independent probe cadences. `0` inherits the shared `interval`. |
 | `collectors.oauth_apps.enabled` / `.interval` | `true` / `300s` | OAuth-application inventory (count, per-app scope/node-attribute gauges). Alpha API — idles silently (no error) on tailnets without it enabled. |
 
 ### `collectors.services`
@@ -1214,6 +1221,7 @@ field the export does not. Neither field is required.
 | `collectors.services.enabled` | `true` | Emit Tailscale VIP-Services gauges and counts. |
 | `collectors.services.interval` | `600s` | Poll cadence. |
 | `collectors.services.collect_hosts` | `false` | Also fetch per-service backing-host detail — one extra API call per service (N+1). Off by default. |
+| `collectors.services.subrequest_concurrency` | `1` | Maximum concurrent backing-host subrequests. `1` preserves sequential behaviour. |
 | `collectors.services.collect_tag_rollup` | `true` | Emit the `tailscale.services.by_tag` distribution gauge (one series per ACL tag). `false` disables this rollup while service count and other enabled signals continue. |
 | `collectors.services.tag_rollup_limit` | `50` | Cap on distinct tag series for `tailscale.services.by_tag`: the busiest N tags by service count keep their own series; the rest fold into a single `tailscale.tag="__other__"` series. `0` or negative = unlimited. |
 
@@ -1302,6 +1310,12 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 
 ---
 
+## `scheduler` — initial tick spread
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `scheduler.initial_stagger_window` | `3s` | Window across which initial collector ticks are spread. The default preserves the existing single-runtime behaviour. |
+
 ## `checkpoint` — poll cursors and semantic evidence {#checkpoint-poll-high-water-marks}
 
 Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs` with
@@ -1315,6 +1329,7 @@ current ACL revision and the newest authoritative ACL-change audit timestamp.
 | `checkpoint.store` | `file` | `file` \| `memory`. See below. |
 | `checkpoint.evidence_store` | `file` | `file` \| `memory`, independently of poll cursors. `memory` resets ACL revision provenance on restart and emits an actionable warning. |
 | `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where either file-backed class persists. Both classes share one atomic JSON file, so existing ACL evidence keys remain readable. The parent directory is created automatically; if it cannot be made writable the affected class logs a WARN and falls back to `memory`. |
+| `checkpoint.write_debounce` | `0s` | Coalesce nearby checkpoint writes. `0` preserves synchronous `Set` durability; shutdown always flushes once this is enabled. |
 
 - **`file`** (default) — the high-water mark is persisted to `file_path` with an atomic write on each
   tick and reloaded at startup, so polling **resumes from the exact high-water mark** across restarts
@@ -1423,6 +1438,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.auto_configure` | `false` | On startup, PUT this receiver as a Splunk-HEC log-streaming sink. **Requires `enabled: true`, `public_url`, and an OAuth client with the `log_streaming` scope.** |
 | `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. When `ingress_wal.enabled=true` and this receiver is enabled, set an explicit value `> 0` and `<= 67108864` (64 MiB). |
 | `streaming.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**. `max_body_bytes` caps one body; this caps their sum, so N simultaneous in-limit POSTs cannot exceed the process memory budget. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1`. Raise it only alongside the container/process memory limit — worst-case buffering is roughly this × `max_body_bytes`. |
+| `streaming.per_route_max_concurrent_requests` | `0` | Maximum concurrent requests admitted for one multi-tailnet route. `0` selects an automatic fair share of the global budget. |
 | `streaming.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, exact rooted `path`, `token` or `token_file`, optional `public_url`, and per-route `auto_configure`. Every route tailnet must match one configured `tailnets[]` runtime; paths and tailnets are unique. Non-empty routes replace legacy `path`/token/public-url/auto-configure identity. |
 
 > **Validation:** `auto_configure: true` errors at startup unless both `streaming.enabled: true` and
@@ -1476,6 +1492,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.tolerance` | `5m` | Allowed clock skew in **both** directions: a signed timestamp older than `now - tolerance` **or** newer than `now + tolerance` is rejected (the boundary itself is allowed). The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable until its future timestamp plus this window — turning a short skew allowance into a much longer one. `0` disables the timestamp check. |
 | `webhook.max_body_bytes` | `0` | Cap on the **raw** request body read before signature verification. `0` selects a 1 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413 and counted into `tailscale.webhook.rejected{reason="too_large"}`. Distinct from `streaming.max_body_bytes`, which caps a *decompressed* body. When `ingress_wal.enabled=true` and this receiver is enabled, set an explicit value `> 0` and `<= 67108864` (64 MiB). |
 | `webhook.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**, before the HMAC is verified. The signature covers the whole body, so buffering necessarily precedes authentication; `max_body_bytes` caps one body and this caps their sum, so unauthenticated senders cannot multiply it. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1` and counted into `tailscale.webhook.rejected{reason="overloaded"}`. Worst-case buffering is roughly this × `max_body_bytes`. |
+| `webhook.per_route_max_concurrent_requests` | `0` | Maximum concurrent requests admitted for one multi-tailnet route. `0` selects an automatic fair share of the global budget. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
 | `webhook.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, `secret` or `secret_file`. Every route tailnet must match one configured `tailnets[]` runtime and is unique. A delivery is routed only when every event carries the same non-empty matching tailnet, before that route's HMAC is verified; non-empty routes replace legacy `path`/secret identity. |
 
@@ -1616,10 +1633,16 @@ internet.
 | `admin.listen` | `127.0.0.1:9091` | Listen address. **Loopback by default.** The status page is enabled by default and is refused with HTTP 403 on any network-reachable bind without `admin.auth.token`, so a wildcard default made the exporter's own UI unusable out of the box. Widen it only together with a token (or a tailnet IP plus network controls). |
 | `admin.landing_page` | `true` | Serve the human status page at `/` and machine-readable `/api/status.json`. |
 | `admin.status_refresh_interval` | `5s` | How often the status page's JS re-polls `/api/status.json` to patch the live view. The 1s freshness ticker is independent. |
+| `admin.support_bundle_log_tail_records` | `200` | Maximum redaction-safe recent log records included in a support bundle. `0` disables capture. |
 | `admin.auth.token` | `""` | When set, the status page and pprof require this token as the HTTP Basic password (browsers prompt) **or** `Authorization: Bearer <token>`. When **empty**, the status page and JSON APIs are served only on a **loopback** `admin.listen`; on any other bind they are refused with HTTP 403 (see below). `/healthz` and `/readyz` are never gated either way. Set via `TS2OTEL_ADMIN__AUTH__TOKEN`. |
 | `admin.auth.token_file` | `""` | Read `admin.auth.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `admin.auth.failure_limit` | `5` | Failed attempts from one source inside `failure_window` before throttling; `0` disables. |
+| `admin.auth.failure_window` | `1m` | Rolling authentication-failure window. |
+| `admin.auth.failure_backoff` | `30s` | Throttle duration after the source reaches the limit. |
 | `admin.tls.cert_file` | `""` | HTTPS certificate for the admin server. Set together with `key_file` (both-or-neither); unset serves plain HTTP. |
 | `admin.tls.key_file` | `""` | HTTPS key for `admin.tls.cert_file`. Both paths must exist and be readable at startup. |
+| `admin.tls.client_ca_file` | `""` | CA for admin-listener mutual TLS. Requires the server certificate/key pair. |
+| `admin.tls.client_auth` | `""` | Client-certificate mode, matching `prometheus.tls.client_auth`; empty selects `require_and_verify` when a CA is set. |
 
 > **The status page fails closed.** With no `admin.auth.token`, the landing page and every JSON API
 > (`/`, `/api/status.json`, `/api/cardinality.json`, `/api/config.json`, `/api/rdns/purge`) are served
@@ -1705,6 +1728,8 @@ before enabling this in a deployment with a shared backup destination.
 | `flows.store.flush_interval` | `5s`, bounds `100ms`–`5m` | How often a partial batch is forced to disk, so a quiet tailnet's last few connections don't sit in memory indefinitely between flushes. |
 | `flows.store.query_timeout` | `15s`, bounds `1s`–`5m` | Timeout on a single read from the store. A window scan that exceeds it fails honestly rather than hanging the admin page. |
 | `flows.store.sweep_interval` | `1h`, bounds `1m`–`24h` | How often the retention window and the row cap are enforced. |
+| `flows.store.incremental_vacuum_interval` | `0s` | Periodic SQLite page reclamation; `0` inherits `sweep_interval`. |
+| `flows.store.incremental_vacuum_pages` | `1000` | Maximum pages reclaimed per vacuum tick. |
 
 ---
 

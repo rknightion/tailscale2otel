@@ -1,10 +1,10 @@
 ---
 id: TSO-0052
 title: Bound the N+1 per-device subrequests in the devices/services collectors
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 09:47'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-4
 dependencies: []
@@ -31,3 +31,9 @@ collect_device_invites defaults ON (internal/config/defaults.go:183) and issues 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes bounded per-device subrequest concurrency with current sequential behaviour preserved by default; lane C later implements pools and timing evidence.
+<!-- SECTION:PLAN:END -->

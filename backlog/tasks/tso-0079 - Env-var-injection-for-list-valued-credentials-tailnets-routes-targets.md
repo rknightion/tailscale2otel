@@ -1,10 +1,10 @@
 ---
 id: TSO-0079
 title: 'Env-var injection for list-valued credentials (tailnets, routes, targets)'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-6
 dependencies: []
@@ -30,3 +30,9 @@ tailnets:, streaming.routes, webhook.routes and node_metrics.targets are file-on
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+F1 records that no persistent config key is needed: this task adds an environment overlay convention for existing list-valued credential fields; lane J later implements merge and precedence tests.
+<!-- SECTION:PLAN:END -->

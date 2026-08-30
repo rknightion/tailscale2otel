@@ -60,7 +60,8 @@ func Default() *Config {
 			MaxResponseBytes: 4 << 20, // 4 MiB — snapshot endpoints only; ~5,800 nodes at ~715 B each
 		},
 		Tailscale: TailscaleConfig{
-			Tailnet: "-", // the authenticated principal's default tailnet (works out of the box for single-tailnet OAuth)
+			Tailnet:      "-", // the authenticated principal's default tailnet (works out of the box for single-tailnet OAuth)
+			Organization: "",  // opt-in alpha organization roster discovery
 			Auth: TailscaleAuth{
 				Method: "oauth",
 				OAuth: OAuthConfig{
@@ -91,6 +92,8 @@ func Default() *Config {
 			// interval (1 data-point-per-minute), avoiding Grafana Cloud DPM churn.
 			MetricInterval:        dur(60 * time.Second),
 			MetricExportBatchSize: 10000,
+			MetricTemporality:     "cumulative",
+			OutageSummaryInterval: dur(5 * time.Minute),
 			// Generous enough to be a no-op for every record this exporter
 			// normally produces, so the bound only engages on a genuinely
 			// pathological record rather than quietly reshaping normal output.
@@ -119,7 +122,8 @@ func Default() *Config {
 		},
 		Delivery: DeliveryConfig{Mode: "otlp"},
 		Enrichment: EnrichmentConfig{
-			CacheTTL: dur(5 * time.Minute),
+			CacheTTL:              dur(5 * time.Minute),
+			DeviceCacheStaleAfter: 0,
 			ReverseDNS: ReverseDNSConfig{
 				Enabled:     false,
 				Timeout:     dur(2 * time.Second),
@@ -177,14 +181,16 @@ func Default() *Config {
 		},
 		Collectors: Collectors{
 			Devices: DevicesCollector{
-				Enabled:              true,
-				Interval:             dur(60 * time.Second),
-				CollectRoutes:        false,
-				CollectPosture:       false,
-				CollectConnectivity:  true,
-				CollectDeviceInvites: true,
-				PostureLogMode:       "changes",
-				ExpiryLogMode:        "daily",
+				Enabled:                 true,
+				Interval:                dur(60 * time.Second),
+				CollectRoutes:           false,
+				CollectPosture:          false,
+				CollectConnectivity:     true,
+				CollectDeviceInvites:    true,
+				SubrequestConcurrency:   1,
+				PostureComplianceChecks: nil,
+				PostureLogMode:          "changes",
+				ExpiryLogMode:           "daily",
 				// Opt-out default: once collect_posture is on, the integration
 				// namespaces plus ip are promoted to attribute metrics. node is
 				// covered by the curated posture gauge; custom is excluded (unbounded).
@@ -268,15 +274,18 @@ func Default() *Config {
 				Interval:        dur(600 * time.Second),
 				SnapshotEnabled: false,
 			},
-			LogStream: SimpleCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+			LogStream: LogStreamCollector{
+				Enabled:               true,
+				Interval:              dur(600 * time.Second),
+				ConfigurationInterval: 0,
+				NetworkInterval:       0,
 			},
 			Services: ServicesCollector{
-				Enabled:          true,
-				Interval:         dur(600 * time.Second),
-				CollectTagRollup: true,
-				TagRollupLimit:   50,
+				Enabled:               true,
+				Interval:              dur(600 * time.Second),
+				CollectTagRollup:      true,
+				TagRollupLimit:        50,
+				SubrequestConcurrency: 1,
 			},
 			OAuthApps: SimpleCollector{
 				Enabled:  true,
@@ -307,10 +316,12 @@ func Default() *Config {
 				},
 			},
 		},
+		Scheduler: SchedulerConfig{InitialStaggerWindow: dur(3 * time.Second)},
 		Checkpoint: CheckpointConfig{
 			Store:         "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
 			EvidenceStore: "file", // semantic evidence must survive restarts even when poll cursors are intentionally in memory
 			FilePath:      LegacyCheckpointPath,
+			WriteDebounce: 0,
 		},
 		IngressWAL: IngressWALConfig{
 			Enabled:    false,
@@ -320,17 +331,19 @@ func Default() *Config {
 			Corruption: "fail",
 		},
 		Streaming: StreamingConfig{
-			Enabled:       false,
-			Listen:        ":8088",
-			Path:          "/services/collector/event",
-			Decompress:    "auto",
-			AutoConfigure: false,
+			Enabled:                       false,
+			Listen:                        ":8088",
+			Path:                          "/services/collector/event",
+			Decompress:                    "auto",
+			AutoConfigure:                 false,
+			PerRouteMaxConcurrentRequests: 0,
 		},
 		Webhook: WebhookConfig{
-			Enabled:   false,
-			Listen:    ":8089",
-			Path:      "/tailscale/webhook",
-			Tolerance: dur(5 * time.Minute),
+			Enabled:                       false,
+			Listen:                        ":8089",
+			Path:                          "/tailscale/webhook",
+			Tolerance:                     dur(5 * time.Minute),
+			PerRouteMaxConcurrentRequests: 0,
 		},
 		SelfObservability: SelfObservabilityConfig{
 			Enabled: true,
@@ -366,9 +379,15 @@ func Default() *Config {
 			// Compose maps no admin port at all. Container probes are unaffected
 			// either way — /healthz and /readyz are never gated, and the -healthcheck
 			// subcommand runs inside the container where loopback is the right answer.
-			Listen:                "127.0.0.1:9091",
-			LandingPage:           true,
-			StatusRefreshInterval: dur(5 * time.Second),
+			Listen:                      "127.0.0.1:9091",
+			LandingPage:                 true,
+			StatusRefreshInterval:       dur(5 * time.Second),
+			SupportBundleLogTailRecords: 200,
+			Auth: AdminAuth{
+				FailureLimit:   5,
+				FailureWindow:  dur(time.Minute),
+				FailureBackoff: dur(30 * time.Second),
+			},
 		},
 		Flows: FlowsConfig{
 			Enabled:       true,
@@ -387,14 +406,16 @@ func Default() *Config {
 			// imported so internal/config does not pull in the sqlite driver just
 			// to read seven numbers.
 			Store: FlowsStoreConfig{
-				Retention:     dur(30 * 24 * time.Hour), // sqlitestore.DefaultRetention
-				MaxRows:       5_000_000,                // sqlitestore.DefaultMaxRows
-				MaxExportRows: 50_000,                   // sqlitestore.DefaultMaxExportRows
-				QueueSize:     8192,                     // sqlitestore.DefaultQueueSize
-				BatchSize:     512,                      // sqlitestore.DefaultBatchSize
-				FlushInterval: dur(5 * time.Second),     // sqlitestore.DefaultFlushInterval
-				QueryTimeout:  dur(15 * time.Second),    // sqlitestore.DefaultQueryTimeout
-				SweepInterval: dur(time.Hour),           // sqlitestore.DefaultSweepInterval
+				Retention:                 dur(30 * 24 * time.Hour), // sqlitestore.DefaultRetention
+				MaxRows:                   5_000_000,                // sqlitestore.DefaultMaxRows
+				MaxExportRows:             50_000,                   // sqlitestore.DefaultMaxExportRows
+				QueueSize:                 8192,                     // sqlitestore.DefaultQueueSize
+				BatchSize:                 512,                      // sqlitestore.DefaultBatchSize
+				FlushInterval:             dur(5 * time.Second),     // sqlitestore.DefaultFlushInterval
+				QueryTimeout:              dur(15 * time.Second),    // sqlitestore.DefaultQueryTimeout
+				SweepInterval:             dur(time.Hour),           // sqlitestore.DefaultSweepInterval
+				IncrementalVacuumInterval: 0,
+				IncrementalVacuumPages:    1000,
 			},
 		},
 		Events: EventsConfig{

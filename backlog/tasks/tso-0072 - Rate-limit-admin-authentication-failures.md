@@ -1,10 +1,10 @@
 ---
 id: TSO-0072
 title: Rate-limit admin authentication failures
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-5
 dependencies: []
@@ -31,3 +31,9 @@ requireAdminAuth (internal/app/admin.go:226-256) counts rejections but never thr
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes bounded admin auth-failure throttling controls with conservative defaults; lane G later implements and security-tests the limiter and telemetry.
+<!-- SECTION:PLAN:END -->

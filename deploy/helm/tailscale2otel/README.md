@@ -202,13 +202,19 @@ extraVolumeMounts:
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Affinity rules for pod scheduling. |
+| config.admin.auth.failure_backoff | string | `"30s"` |  |
+| config.admin.auth.failure_limit | int | `5` | Failed attempts from one source inside failure_window before throttling; 0 disables. |
+| config.admin.auth.failure_window | string | `"1m"` |  |
 | config.admin.auth.token | string | `""` | Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled. |
 | config.admin.auth.token_file | string | `""` | Read admin.auth.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.admin.enabled | bool | `true` | Enable the admin probe server. |
 | config.admin.landing_page | bool | `true` | Serve the human status page at / and machine-readable JSON at /api/status.json. |
 | config.admin.listen | string | `":9091"` | Address the admin server binds; serves /healthz and /readyz. Bind to loopback/tailnet for defense-in-depth. |
 | config.admin.status_refresh_interval | string | `"5s"` | How often the status page's JS re-polls /api/status.json to patch the live view. The page's 1s freshness ticker is independent of this. |
+| config.admin.support_bundle_log_tail_records | int | `200` | Redaction-safe recent log records included in support bundles; 0 disables capture. |
 | config.admin.tls.cert_file | string | `""` | HTTPS certificate for the admin server. Set together with key_file (both-or-neither); leaving both empty serves plain HTTP. The chart's liveness/readiness probes follow this automatically: setting both files renders them with scheme: HTTPS (#342). Setting admin TLS through TS2OTEL_ADMIN__TLS__* env vars instead is invisible to the chart and leaves the probes on HTTP — use these config keys. |
+| config.admin.tls.client_auth | string | `""` | Client certificate mode; empty defaults to require_and_verify when a CA is set. |
+| config.admin.tls.client_ca_file | string | `""` | Require a client certificate signed by this CA. Needs cert_file/key_file. |
 | config.admin.tls.key_file | string | `""` | HTTPS private key paired with cert_file. Both paths must exist and be readable at startup. |
 | config.cardinality.critical_threshold | int | `8000` | Status-page cardinality view flags a metric critically at/above this count (>= warning_threshold; <= metric_limit when set; 0 disables). |
 | config.cardinality.derp_region_rollup | bool | `true` | Emit per-DERP-region rollup gauges (tailscale.derp.region.*) on the devices collector. |
@@ -233,6 +239,7 @@ extraVolumeMounts:
 | config.checkpoint.evidence_store | string | `"file"` | Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to preserve ACL revision/audit provenance across restarts even in streamed deployments. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Shared state path when either store is file (mount a writable persistent volume here). |
 | config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
+| config.checkpoint.write_debounce | string | `"0s"` | Coalesce nearby checkpoint writes; 0 preserves synchronous Set durability. |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
 | config.collectors.acl.snapshot_enabled | bool | `false` | EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and group member, to the logs backend. This overrides pii_filter for those bodies, so logs retention holds tailnet identity data. |
@@ -283,7 +290,9 @@ extraVolumeMounts:
 | config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
 | config.collectors.devices.expiry_log_mode | string | `"daily"` | Node-key and posture-attribute expiry WARN cadence: daily (change plus at most one reminder per 24h, default), always (every scrape, legacy), or off. Metrics always emit. |
 | config.collectors.devices.interval | string | `"60s"` | Poll interval. |
+| config.collectors.devices.posture_compliance_checks | list | `[]` | Exact-match posture checks; missing/different attributes count as failing. |
 | config.collectors.devices.posture_log_mode | string | `"changes"` | How the tailscale.device.posture log behaves when collect_posture is on: changes (full dump on the first scrape, then deltas only), always (every scrape), or off (suppress the log; the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume. |
+| config.collectors.devices.subrequest_concurrency | int | `1` | Bounded concurrency for posture/invite per-device subrequests. 1 is sequential. |
 | config.collectors.devices.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
@@ -354,8 +363,10 @@ extraVolumeMounts:
 | config.collectors.keys.expiry_log_mode | string | `"daily"` | Expiry WARN cadence: daily (change plus at most one reminder per 24h, default), always (every scrape, legacy), or off. Metrics always emit. |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |
+| config.collectors.log_stream.configuration_interval | string | `"0s"` | Independent configuration-log probe cadence; 0 inherits interval. |
 | config.collectors.log_stream.enabled | bool | `true` | Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error) when no SIEM sink is configured for a log type. |
 | config.collectors.log_stream.interval | string | `"600s"` | Poll interval. |
+| config.collectors.log_stream.network_interval | string | `"0s"` | Independent network-log probe cadence; 0 inherits interval. |
 | config.collectors.node_metrics.discovery.address_order | string | `"ipv4"` | Preferred address family: ipv4 | ipv6 (falls back to the other). |
 | config.collectors.node_metrics.discovery.enabled | bool | `false` | Turn on dynamic target discovery. |
 | config.collectors.node_metrics.discovery.exclude_external | bool | `true` | Skip shared/external devices. |
@@ -390,6 +401,7 @@ extraVolumeMounts:
 | config.collectors.services.collect_tag_rollup | bool | `true` | Emit the tailscale.services.by_tag distribution gauge (one series per ACL tag). false disables this rollup while service count and other enabled signals continue. |
 | config.collectors.services.enabled | bool | `true` | Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts). |
 | config.collectors.services.interval | string | `"600s"` | Poll interval. |
+| config.collectors.services.subrequest_concurrency | int | `1` | Bounded concurrency for backing-host subrequests. 1 is sequential. |
 | config.collectors.services.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |
 | config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
@@ -403,6 +415,7 @@ extraVolumeMounts:
 | config.delivery | object | `{"mode":"otlp"}` | Process-wide telemetry topology. otlp preserves historical push-only delivery; prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces; dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus. |
 | config.delivery.mode | string | `"otlp"` | Delivery mode: otlp \| prometheus \| dual. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
+| config.enrichment.device_cache_stale_after | string | `"0s"` | Mark control-plane identity cached longer than this as stale; 0 disables. |
 | config.enrichment.geoip.acknowledge_cardinality | bool | `false` | Acknowledge the cardinality cost of cardinality.flow.geo_dims on the RAW flow families and silence the startup advisory. Set true once cardinality.metric_limit is sized for it. |
 | config.enrichment.geoip.asn_database | string | `""` | Path to a GeoLite2/GeoIP2 ASN .mmdb. The AS number and organization ride flow LOGS only. |
 | config.enrichment.geoip.country_database | string | `""` | Path to a GeoLite2/GeoIP2 Country .mmdb. A City database also works and additionally fills locality, region and coordinates on flow LOGS. Left empty when download.enabled is set, it defaults to where the downloader installs the file. |
@@ -434,6 +447,8 @@ extraVolumeMounts:
 | config.flows.store.batch_size | int | `512` | Rows written per transaction by the background writer. |
 | config.flows.store.directory | string | `""` | Directory to hold this tailnet's flows-<tailnet>.db. Empty (default) = disabled. Point it at the persistence PVC's mount, e.g. /var/lib/tailscale2otel/flows, and set persistence.enabled=true — see the sizing note on that block below. Must be writable; if it cannot be opened the flow view is switched OFF (and /flows 404s) rather than silently falling back to memory, so an operator who asked for history is never shown a view that looks like it. OTLP export is unaffected. Rows carry user identities (emails) and land on disk and in backups — the configured pii_filter is applied before a row is written, same as the OTLP export path. |
 | config.flows.store.flush_interval | string | `"5s"` | How often a partial batch is forced to disk, so a quiet tailnet's last few connections do not sit in memory indefinitely between flushes. |
+| config.flows.store.incremental_vacuum_interval | string | `"0s"` | Periodic SQLite page reclamation; 0 inherits sweep_interval. |
+| config.flows.store.incremental_vacuum_pages | int | `1000` | Maximum pages reclaimed per vacuum tick. |
 | config.flows.store.max_export_rows | int | `50000` | Cap on how many rows a single CSV/JSON export may read, so an export cannot try to materialise the whole retained window in one request. |
 | config.flows.store.max_rows | int | `5000000` | Hard cap on retained rows, enforced independently of retention so a traffic flood cannot fill the disk before the next sweep runs. |
 | config.flows.store.query_timeout | string | `"15s"` | Timeout on a single read from the store. A window scan that exceeds it fails honestly rather than hanging the admin page. |
@@ -513,6 +528,7 @@ extraVolumeMounts:
 | config.otlp.max_request_size | int | `0` | Bytes; a client-side REJECTION guard, not a splitter — it fails an oversized request instead of shipping it into a backend 413. Use metric_export_batch_size to actually stay under an ingest limit. 0 = no cap. |
 | config.otlp.metric_export_batch_size | int | `10000` | Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads. |
 | config.otlp.metric_interval | string | `"60s"` | How often metrics are pushed (the metric export interval). |
+| config.otlp.metric_temporality | string | `"cumulative"` | Metric aggregation temporality: cumulative (Grafana Cloud default) or delta. |
 | config.otlp.metrics | object | `{"compression":"","enabled":null,"endpoint":"","grpc_reconnection_period":"0s","headers":{},"max_request_size":0,"protocol":"","retry":{"enabled":null,"initial_interval":"0s","max_elapsed_time":"0s","max_interval":"0s"},"timeout":"0s","tls":{"ca_file":"","cert_file":"","insecure":null,"insecure_skip_verify":null,"key_file":""}}` | Send ONE signal (metrics) somewhere else — a different collector, tenant, credential or protocol. Every field here inherits the matching otlp.* value above when left empty/null, EXCEPT headers, which REPLACES otlp.headers rather than merging — a credential never crosses a signal boundary. |
 | config.otlp.metrics.compression | string | `""` | Empty inherits otlp.compression. |
 | config.otlp.metrics.enabled | string | `nil` | null inherits (the signal is on); false stops exporting this signal without disturbing the others. |
@@ -528,6 +544,7 @@ extraVolumeMounts:
 | config.otlp.metrics.tls.insecure | string | `nil` | null inherits; explicit true/false overrides. |
 | config.otlp.metrics.tls.insecure_skip_verify | string | `nil` | null inherits; explicit true/false overrides. |
 | config.otlp.metrics.tls.key_file | string | `""` | Empty inherits otlp.tls.key_file. |
+| config.otlp.outage_summary_interval | string | `"5m"` | Re-summary cadence while an OTLP delivery outage continues. |
 | config.otlp.protocol | string | `"http"` | Export protocol: http | grpc | stdout (stdout = local debug). |
 | config.otlp.retry.enabled | string | `nil` | An explicit false genuinely disables retry (distinct from omitting this whole block, which keeps the exporter's own default of retry-on). Unset (null) here means "leave the exporter default". |
 | config.otlp.retry.initial_interval | string | `"5s"` | First backoff delay. |
@@ -607,6 +624,7 @@ extraVolumeMounts:
 | config.resource.deployment_environment | string | `""` | deployment.environment.name — outside service.*, so it lands in target_info only and may vary per environment. |
 | config.resource.from_env | bool | `false` | Also read OTEL_RESOURCE_ATTRIBUTES / OTEL_SERVICE_NAME, filtered by the same rules. Off by default: it hands the ambient environment a channel onto a per-series label surface. |
 | config.resource.service_namespace | string | `""` | service.namespace — promoted to a job-adjacent LABEL on every series. Keep it low-cardinality and stable across deploys. |
+| config.scheduler.initial_stagger_window | string | `"3s"` | Spread initial collector ticks across this window. The existing default is 3s. |
 | config.self_observability.enabled | bool | `true` | Emit the exporter's own health metrics (scrape/api/export/build_info/enrich/runtime). |
 | config.self_observability.instance_id | string | `""` | service.instance.id resource attribute; empty falls back to the pod/host name. Override with TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID (e.g. set to the pod name via the Downward API). |
 | config.streaming.auto_configure | bool | `false` | PUT this receiver as a Splunk-HEC log-streaming sink on startup (requires public_url). Registers BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either. NEVER enable against a tailnet whose streaming you do not intend to overwrite. |
@@ -616,6 +634,7 @@ extraVolumeMounts:
 | config.streaming.max_body_bytes | int | `0` | Cap on DECOMPRESSED body; 0 = 64MiB default, <0 = unlimited (413 on exceed). When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB. |
 | config.streaming.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.streaming.path | string | `"/services/collector/event"` | HTTP path the receiver serves (the Splunk-HEC event endpoint). |
+| config.streaming.per_route_max_concurrent_requests | int | `0` | Per-route admission cap; 0 selects an automatic fair share of the global budget. |
 | config.streaming.public_url | string | `""` | Externally reachable receiver URL; REQUIRED when auto_configure: true. |
 | config.streaming.routes | list | `[]` | FILE-ONLY multi-tailnet routes. Each item has tailnet, exact path, token or token_file, optional public_url, and optional auto_configure. Non-empty replaces legacy path/token identity. |
 | config.streaming.tls.cert_file | string | `""` | TLS certificate file; set with key_file to serve the receiver over HTTPS. |
@@ -639,6 +658,7 @@ extraVolumeMounts:
 | config.tailscale.http.timeout | string | `"30s"` | Per-request HTTP timeout for Tailscale API calls. |
 | config.tailscale.max_log_response_bytes | int | `33554432` | Same ceiling for the bulk log pulls (flow logs, audit logs), which are legitimately multi-MB, in bytes (32 MiB). Decoding costs several times the wire size, so keep both budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory. |
 | config.tailscale.max_response_bytes | int | `4194304` | Cap on the response body read from a Tailscale snapshot endpoint (devices, keys, dns, services, …) before it is decoded, in bytes (4 MiB). Bounds peak decode memory. Fleet-wide: a tailnets[] entry does NOT override it. |
+| config.tailscale.organization | string | `""` | Opt in to alpha organization-tailnet roster discovery. Empty keeps the explicit tailscale.tailnet/tailnets configuration authoritative. |
 | config.tailscale.tailnet | string | `"-"` | Tailnet name, or "-" for the auth principal's default tailnet (the default, which works out of the box for single-tailnet OAuth). Override with the TS2OTEL_TAILSCALE__TAILNET env var (set via secret above). |
 | config.tracing | object | `{"enabled":false,"remote_parent":"trust","sampler":"parentbased_always_on","sampler_arg":1,"samplers":{"background":{"arg":0,"sampler":""},"receiver":{"arg":0,"sampler":""},"scrape":{"arg":0,"sampler":""}}}` | OTEL traces pillar (spans for the exporter's own work). OFF by default; reuses otlp.* for the endpoint/protocol/headers/TLS. |
 | config.tracing.enabled | bool | `false` | Emit spans. When true, also enables trace-based exemplars on tailscale2otel.api.duration. |
@@ -663,6 +683,7 @@ extraVolumeMounts:
 | config.webhook.max_body_bytes | int | `0` | Cap on the RAW body read before signature verification; 0 = 1 MiB default, <0 = unlimited (413 on exceed). Distinct from streaming.max_body_bytes, which caps a decompressed body. When ingress_wal.enabled, an enabled receiver must set this explicitly to >0 and <=64MiB. |
 | config.webhook.max_concurrent_requests | int | `0` | How many requests may buffer a body AT ONCE, before the HMAC is verified. max_body_bytes caps one body; this caps their sum, so unauthenticated senders cannot multiply it. 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly this x max_body_bytes, so raise it together with resources.limits.memory. |
 | config.webhook.path | string | `"/tailscale/webhook"` | HTTP path the receiver serves. |
+| config.webhook.per_route_max_concurrent_requests | int | `0` | Per-route admission cap; 0 selects an automatic fair share of the global budget. |
 | config.webhook.routes | list | `[]` | FILE-ONLY multi-tailnet routes. Each item has tailnet and secret or secret_file. Non-empty replaces legacy path/secret identity; all events must name one route tailnet. |
 | config.webhook.secret | string | `""` | HMAC-SHA256 verification secret. Empty is accepted only on loopback; otherwise the receiver refuses every request with HTTP 403 before reading its body. Set via TS2OTEL_WEBHOOK__SECRET (secret). |
 | config.webhook.secret_file | string | `""` | Read webhook.secret from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |

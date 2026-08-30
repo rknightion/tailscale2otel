@@ -61,6 +61,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__HTTP__RATE_LIMIT` | `0` | `restart` | global requests/sec across ALL collectors (0 = unlimited) |
 | `TS2OTEL_TAILSCALE__MAX_RESPONSE_BYTES` | `4194304` | `restart` | cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated |
 | `TS2OTEL_TAILSCALE__MAX_LOG_RESPONSE_BYTES` | `33554432` | `restart` | cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it |
+| `TS2OTEL_TAILSCALE__ORGANIZATION` | `""` | `restart` | opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative |
 | `TS2OTEL_OTLP__PROTOCOL` | `http` | `restart` | http \| grpc \| stdout (stdout = print signals to the console for local debug, no backend) |
 | `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | `restart` | OTLP base URL (the exporter appends /v1/metrics, /v1/logs and /v1/traces itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | `restart` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |
@@ -73,6 +74,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TLS__KEY_FILE` | `""` | `file_content` | client private key path (for mutual TLS) |
 | `TS2OTEL_OTLP__METRIC_INTERVAL` | `60s` | `restart` | how often metrics are pushed (60s aligns with a 1-data-point-per-minute scrape) |
 | `TS2OTEL_OTLP__METRIC_EXPORT_BATCH_SIZE` | `10000` | `restart` | maximum datapoints per OTLP metric request; lower this when a backend has a small request-size limit (serialized bytes vary with labels) |
+| `TS2OTEL_OTLP__METRIC_TEMPORALITY` | `cumulative` | `restart` | cumulative (Grafana Cloud default) \| delta |
+| `TS2OTEL_OTLP__OUTAGE_SUMMARY_INTERVAL` | `5m` | `restart` | repeat a concise diagnostic while an OTLP outage continues |
 | `TS2OTEL_OTLP__LIMITS__LOG_BODY_BYTES` | `32768` | `restart` | cap a log record's body; UTF-8 safe, applied AFTER redaction, leaves a truncation marker. Minimum 64 — there is no unlimited setting |
 | `TS2OTEL_OTLP__LIMITS__LOG_ATTRIBUTE_VALUE_BYTES` | `4096` | `restart` | cap each string-valued log ATTRIBUTE; never applied to metric labels (those must stay byte-exact or series split) |
 | `TS2OTEL_OTLP__COMPRESSION` | `""` | `restart` | gzip \| none. Empty defers to OTEL_EXPORTER_OTLP[_<SIGNAL>]_COMPRESSION, then the exporter default. TS2OTEL_OTLP__COMPRESSION |
@@ -145,6 +148,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TRACES__RETRY__MAX_ELAPSED_TIME` | `0s` | `restart` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_DELIVERY__MODE` | `otlp` | `restart` | otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.<signal>.endpoint explicitly opts that signal back in under prometheus mode |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | `restart` | staleness alarm threshold for the IP/nodeID -> name device cache |
+| `TS2OTEL_ENRICHMENT__DEVICE_CACHE_STALE_AFTER` | `0s` | `restart` | mark cached identity stale after this age; 0 preserves fresh-until-replaced behaviour |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__ENABLED` | `false` | `restart` | off by default (can add ~one flow-metric series per external IP when on) |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__SERVER` | `""` | `restart` | resolver "ip" or "ip:port" (default :53); empty = system/container resolver |
 | `TS2OTEL_ENRICHMENT__REVERSE_DNS__TIMEOUT` | `2s` | `restart` | per-lookup timeout |
@@ -194,6 +198,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_CONNECTIVITY` | `true` | `restart` | emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls) |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_POSTURE` | `false` | `restart` | also fetch device posture (MDM/EDR) — enables the posture metrics + log |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_DEVICE_INVITES` | `true` | `restart` | also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count |
+| `TS2OTEL_COLLECTORS__DEVICES__SUBREQUEST_CONCURRENCY` | `1` | `restart` | bounded posture/invite request pool; 1 preserves sequential requests |
 | `TS2OTEL_COLLECTORS__DEVICES__POSTURE_LOG_MODE` | `changes` | `restart` | needs collect_posture: changes (log only on change) \| always (every scrape) \| off (no log); the posture METRIC is always emitted |
 | `TS2OTEL_COLLECTORS__DEVICES__EXPIRY_LOG_MODE` | `daily` | `restart` | node-key AND posture-attribute expiry WARN cadence: daily (change + at most one reminder/24h, default) \| always (every scrape, legacy) \| off; metrics always emit |
 | `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES` | `[intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]` | `restart` | needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable _(comma-separated list)_ |
@@ -322,11 +327,14 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED` | `false` | `restart` | emit the complete posture-integration response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__ENABLED` | `true` | `restart` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__INTERVAL` | `600s` | `restart` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
+| `TS2OTEL_COLLECTORS__LOG_STREAM__CONFIGURATION_INTERVAL` | `0s` | `restart` | 0 inherits interval; otherwise probe configuration-log delivery independently |
+| `TS2OTEL_COLLECTORS__LOG_STREAM__NETWORK_INTERVAL` | `0s` | `restart` | 0 inherits interval; otherwise probe network-log delivery independently |
 | `TS2OTEL_COLLECTORS__OAUTH_APPS__ENABLED` | `true` | `restart` | OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it) |
 | `TS2OTEL_COLLECTORS__OAUTH_APPS__INTERVAL` | `300s` | `restart` | OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it) |
 | `TS2OTEL_COLLECTORS__SERVICES__ENABLED` | `true` | `restart` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__INTERVAL` | `600s` | `restart` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__COLLECT_HOSTS` | `false` | `restart` | also fetch per-service backing-host detail — one extra API call per service (N+1) |
+| `TS2OTEL_COLLECTORS__SERVICES__SUBREQUEST_CONCURRENCY` | `1` | `restart` | bounded backing-host request pool; 1 preserves sequential requests |
 | `TS2OTEL_COLLECTORS__SERVICES__COLLECT_TAG_ROLLUP` | `true` | `restart` | emit tailscale.services.by_tag (one series per ACL tag); false disables the rollup |
 | `TS2OTEL_COLLECTORS__SERVICES__TAG_ROLLUP_LIMIT` | `50` | `restart` | cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__ENABLED` | `false` | `restart` | OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md |
@@ -352,9 +360,11 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INSTANCE_SOURCE` | `name` | `restart` | identity label per target: name (MagicDNS short name, unique+friendly — default) \| address (Tailscale host:port, always unique) \| hostname (OS hostname, NOT unique — collisions like "localhost" are auto-suffixed) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_HOST_LABELS` | `true` | `restart` | attach host.name/host.id for joins with tailscale.device.* |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_TAGS_LABEL` | `true` | `restart` | attach tailscale.tags to each target's series |
+| `TS2OTEL_SCHEDULER__INITIAL_STAGGER_WINDOW` | `3s` | `restart` | spread initial collector ticks; current single-runtime default is 3s |
 | `TS2OTEL_CHECKPOINT__STORE` | `file` | `restart` | file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) \| memory (RAM only; cold-starts from initial_lookback after a restart) |
 | `TS2OTEL_CHECKPOINT__EVIDENCE_STORE` | `file` | `restart` | file (default; preserves ACL revision/audit provenance across restarts) \| memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file. |
 | `TS2OTEL_CHECKPOINT__FILE_PATH` | `/var/lib/tailscale2otel/checkpoints.json` | `restart` | used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated. |
+| `TS2OTEL_CHECKPOINT__WRITE_DEBOUNCE` | `0s` | `restart` | coalesce nearby file writes; 0 preserves synchronous Set durability |
 | `TS2OTEL_INGRESS_WAL__ENABLED` | `false` | `restart` | opt in to durable local acceptance and oldest-first replay for receiver payloads |
 | `TS2OTEL_INGRESS_WAL__DIRECTORY` | `/var/lib/tailscale2otel/ingress-wal` | `restart` | absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters |
 | `TS2OTEL_INGRESS_WAL__MAX_BYTES` | `268435456` | `restart` | encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction |
@@ -372,6 +382,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__AUTO_CONFIGURE` | `false` | `restart` | on startup, register THIS receiver as the tailnet's log-streaming sink for BOTH log types (network/flow AND configuration/audit), OVERWRITING any existing sink for either; needs enabled + public_url + the log_streaming OAuth scope |
 | `TS2OTEL_STREAMING__MAX_BODY_BYTES` | `0` | `restart` | cap on the DECOMPRESSED body; 0 = 64 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB |
 | `TS2OTEL_STREAMING__MAX_CONCURRENT_REQUESTS` | `0` | `restart` | how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After) |
+| `TS2OTEL_STREAMING__PER_ROUTE_MAX_CONCURRENT_REQUESTS` | `0` | `restart` | per-tailnet admission cap; 0 selects an automatic fair share of the global budget |
 | `TS2OTEL_WEBHOOK__ENABLED` | `false` | `restart` | run the receiver for real-time Tailscale webhook events |
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | `restart` | bind address for the webhook receiver |
 | `TS2OTEL_WEBHOOK__PATH` | `/tailscale/webhook` | `restart` | endpoint path Tailscale POSTs events to |
@@ -383,6 +394,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__DEDUP_AUDIT_EVENTS` | `false` | `restart` | best-effort: drop a webhook event already counted via the audit logs |
 | `TS2OTEL_WEBHOOK__MAX_BODY_BYTES` | `0` | `restart` | cap on the raw body read before signature verification; 0 = 1 MiB default, negative = unlimited (over-cap = 413); when ingress_wal.enabled this receiver must set a positive value <= 64 MiB |
 | `TS2OTEL_WEBHOOK__MAX_CONCURRENT_REQUESTS` | `0` | `restart` | how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After) |
+| `TS2OTEL_WEBHOOK__PER_ROUTE_MAX_CONCURRENT_REQUESTS` | `0` | `restart` | per-tailnet admission cap; 0 selects an automatic fair share of the global budget |
 | `TS2OTEL_PII_FILTER__EMAILS` | `true` | `restart` | user/actor login names (often email addresses) |
 | `TS2OTEL_PII_FILTER__USER_DISPLAY_NAMES` | `true` | `restart` | actor display (human) names |
 | `TS2OTEL_PII_FILTER__USER_IDS` | `true` | `restart` | numeric/opaque user IDs (user.id) |
@@ -403,10 +415,16 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__LISTEN` | `127.0.0.1:9091` | `restart` | serves /healthz, /readyz, and the status page. Loopback by default: the status page is REFUSED (403) on a network-reachable bind without admin.auth.token, so widen this only together with a token |
 | `TS2OTEL_ADMIN__LANDING_PAGE` | `true` | `restart` | serve the human status page at / and machine-readable /api/status.json |
 | `TS2OTEL_ADMIN__STATUS_REFRESH_INTERVAL` | `5s` | `restart` | how often the status page re-polls /api/status.json (1s freshness ticker is independent) |
+| `TS2OTEL_ADMIN__SUPPORT_BUNDLE_LOG_TAIL_RECORDS` | `200` | `restart` | bounded redaction-safe recent log records included in support bundles; 0 disables capture |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | `restart` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty is allowed only on a loopback listen — on any other bind the status page + JSON APIs are REFUSED with 403 (/healthz and /readyz stay open) |
 | `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | `restart` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_ADMIN__AUTH__FAILURE_LIMIT` | `5` | `restart` | failures from one source inside failure_window before throttling; 0 disables |
+| `TS2OTEL_ADMIN__AUTH__FAILURE_WINDOW` | `1m` | `restart` | rolling window for failed authentication attempts |
+| `TS2OTEL_ADMIN__AUTH__FAILURE_BACKOFF` | `30s` | `restart` | throttle duration after the per-source limit is reached |
 | `TS2OTEL_ADMIN__TLS__CERT_FILE` | `""` | `file_content` | serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither) |
 | `TS2OTEL_ADMIN__TLS__KEY_FILE` | `""` | `file_content` | HTTPS key for admin.tls.cert_file |
+| `TS2OTEL_ADMIN__TLS__CLIENT_CA_FILE` | `""` | `file_content` | require a client certificate signed by this CA; needs cert_file/key_file |
+| `TS2OTEL_ADMIN__TLS__CLIENT_AUTH` | `""` | `restart` | require_and_verify by default when client_ca_file is set; same modes as prometheus.tls |
 | `TS2OTEL_FLOWS__ENABLED` | `true` | `restart` | keep a bounded, in-memory picture of recent traffic and serve /flows; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_FLOWS__RETENTION` | `6h` | `restart` | how far back /flows can see, as one-minute buckets (1m–24h). Memory scales with this, and with the number of tailnets in multi-tailnet mode. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_FLOWS__MAX_FUTURE_SKEW` | `5m` | `restart` | local-view admission only: reject records further ahead of this process clock (0–1h); OTLP emission is unchanged |
@@ -420,6 +438,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__STORE__FLUSH_INTERVAL` | `5s` | `restart` | force a partial batch to disk on this timer (100ms–5m) so a quiet tailnet's last few rows do not sit in memory indefinitely. Only takes effect once directory is set |
 | `TS2OTEL_FLOWS__STORE__QUERY_TIMEOUT` | `15s` | `restart` | give up a single read against the store after this long (1s–5m) rather than hang the admin page. Only takes effect once directory is set |
 | `TS2OTEL_FLOWS__STORE__SWEEP_INTERVAL` | `1h` | `restart` | how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set |
+| `TS2OTEL_FLOWS__STORE__INCREMENTAL_VACUUM_INTERVAL` | `0s` | `restart` | periodic SQLite page reclamation; 0 inherits sweep_interval |
+| `TS2OTEL_FLOWS__STORE__INCREMENTAL_VACUUM_PAGES` | `1000` | `restart` | maximum pages reclaimed per vacuum tick |
 | `TS2OTEL_EVENTS__ENABLED` | `true` | `restart` | keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_EVENTS__MAX_EVENTS` | `5000` | `restart` | how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | `restart` | backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it |
@@ -492,6 +512,6 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED` | `true` | `restart` | newly observed ACL, SSH and auto-approver risk findings. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED |
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP` | `false` | `restart` | each new risk finding remains individually visible. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP |
 
-**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets` (`restart`), `otlp.headers` (`restart`), `otlp.metrics.headers` (`restart`), `otlp.logs.headers` (`restart`), `otlp.traces.headers` (`restart`), `collectors.node_metrics.targets` (`restart`), `collectors.node_metrics.discovery.port_overrides` (`restart`), `streaming.routes` (`restart`), `webhook.routes` (`restart`), `profiling.pyroscope.tags` (`restart`), `profiling.pyroscope.headers` (`restart`), `resource.attributes` (`restart`).
+**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets` (`restart`), `otlp.headers` (`restart`), `otlp.metrics.headers` (`restart`), `otlp.logs.headers` (`restart`), `otlp.traces.headers` (`restart`), `collectors.devices.posture_compliance_checks` (`restart`), `collectors.node_metrics.targets` (`restart`), `collectors.node_metrics.discovery.port_overrides` (`restart`), `streaming.routes` (`restart`), `webhook.routes` (`restart`), `profiling.pyroscope.tags` (`restart`), `profiling.pyroscope.headers` (`restart`), `resource.attributes` (`restart`).
 
 <!-- END GENERATED: env-vars -->

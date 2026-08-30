@@ -1,10 +1,10 @@
 ---
 id: TSO-0076
 title: Debounce checkpoint writes across collectors
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-6
 dependencies: []
@@ -30,3 +30,9 @@ Every checkpoint Set re-marshals and double-fsyncs the entire shared JSON file (
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes checkpoint write debounce with zero preserving synchronous writes; lane C later implements coalescing and shutdown flush.
+<!-- SECTION:PLAN:END -->

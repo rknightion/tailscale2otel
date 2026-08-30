@@ -92,6 +92,7 @@ func (c *Config) pathFields() []pathField {
 		{"otlp.traces.tls.key_file", &c.OTLP.Traces.TLS.KeyFile},
 		{"admin.tls.cert_file", &c.Admin.TLS.CertFile},
 		{"admin.tls.key_file", &c.Admin.TLS.KeyFile},
+		{"admin.tls.client_ca_file", &c.Admin.TLS.ClientCAFile},
 		{"admin.auth.token_file", &c.Admin.Auth.TokenFile},
 		{"prometheus.tls.cert_file", &c.Prometheus.TLS.CertFile},
 		{"prometheus.tls.key_file", &c.Prometheus.TLS.KeyFile},

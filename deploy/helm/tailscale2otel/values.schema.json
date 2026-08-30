@@ -14,6 +14,15 @@
                         "auth": {
                             "type": "object",
                             "properties": {
+                                "failure_backoff": {
+                                    "type": "string"
+                                },
+                                "failure_limit": {
+                                    "type": "integer"
+                                },
+                                "failure_window": {
+                                    "type": "string"
+                                },
                                 "token": {
                                     "type": "string"
                                 },
@@ -35,10 +44,19 @@
                         "status_refresh_interval": {
                             "type": "string"
                         },
+                        "support_bundle_log_tail_records": {
+                            "type": "integer"
+                        },
                         "tls": {
                             "type": "object",
                             "properties": {
                                 "cert_file": {
+                                    "type": "string"
+                                },
+                                "client_auth": {
+                                    "type": "string"
+                                },
+                                "client_ca_file": {
                                     "type": "string"
                                 },
                                 "key_file": {
@@ -138,6 +156,9 @@
                             "type": "string"
                         },
                         "store": {
+                            "type": "string"
+                        },
+                        "write_debounce": {
                             "type": "string"
                         }
                     },
@@ -326,8 +347,14 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "posture_compliance_checks": {
+                                    "type": "array"
+                                },
                                 "posture_log_mode": {
                                     "type": "string"
+                                },
+                                "subrequest_concurrency": {
+                                    "type": "integer"
                                 },
                                 "tag_rollup_limit": {
                                     "type": "integer"
@@ -581,10 +608,16 @@
                         "log_stream": {
                             "type": "object",
                             "properties": {
+                                "configuration_interval": {
+                                    "type": "string"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
                                 "interval": {
+                                    "type": "string"
+                                },
+                                "network_interval": {
                                     "type": "string"
                                 }
                             },
@@ -719,6 +752,9 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "subrequest_concurrency": {
+                                    "type": "integer"
+                                },
                                 "tag_rollup_limit": {
                                     "type": "integer"
                                 }
@@ -786,6 +822,9 @@
                     "type": "object",
                     "properties": {
                         "cache_ttl": {
+                            "type": "string"
+                        },
+                        "device_cache_stale_after": {
                             "type": "string"
                         },
                         "geoip": {
@@ -921,6 +960,12 @@
                                 },
                                 "flush_interval": {
                                     "type": "string"
+                                },
+                                "incremental_vacuum_interval": {
+                                    "type": "string"
+                                },
+                                "incremental_vacuum_pages": {
+                                    "type": "integer"
                                 },
                                 "max_export_rows": {
                                     "type": "integer"
@@ -1306,6 +1351,13 @@
                         "metric_interval": {
                             "type": "string"
                         },
+                        "metric_temporality": {
+                            "type": "string",
+                            "enum": [
+                                "cumulative",
+                                "delta"
+                            ]
+                        },
                         "metrics": {
                             "type": "object",
                             "properties": {
@@ -1374,6 +1426,9 @@
                                 }
                             },
                             "additionalProperties": false
+                        },
+                        "outage_summary_interval": {
+                            "type": "string"
                         },
                         "protocol": {
                             "type": "string"
@@ -1728,6 +1783,15 @@
                     },
                     "additionalProperties": false
                 },
+                "scheduler": {
+                    "type": "object",
+                    "properties": {
+                        "initial_stagger_window": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
+                },
                 "self_observability": {
                     "type": "object",
                     "properties": {
@@ -1763,6 +1827,9 @@
                         },
                         "path": {
                             "type": "string"
+                        },
+                        "per_route_max_concurrent_requests": {
+                            "type": "integer"
                         },
                         "public_url": {
                             "type": "string"
@@ -1877,6 +1944,9 @@
                         },
                         "max_response_bytes": {
                             "type": "integer"
+                        },
+                        "organization": {
+                            "type": "string"
                         },
                         "tailnet": {
                             "type": "string"
@@ -1997,6 +2067,9 @@
                         },
                         "path": {
                             "type": "string"
+                        },
+                        "per_route_max_concurrent_requests": {
+                            "type": "integer"
                         },
                         "routes": {
                             "type": "array"

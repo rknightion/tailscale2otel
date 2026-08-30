@@ -9,6 +9,29 @@
         "auth": {
           "additionalProperties": false,
           "properties": {
+            "failure_backoff": {
+              "default": "30s",
+              "description": "throttle duration after the per-source limit is reached",
+              "examples": [
+                "30s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "failure_limit": {
+              "default": 5,
+              "description": "failures from one source inside failure_window before throttling; 0 disables",
+              "type": "integer"
+            },
+            "failure_window": {
+              "default": "1m",
+              "description": "rolling window for failed authentication attempts",
+              "examples": [
+                "1m"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
             "token": {
               "description": "gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty is allowed only on a loopback listen — on any other bind the status page + JSON APIs are REFUSED with 403 (/healthz and /readyz stay open)",
               "type": "string"
@@ -45,12 +68,35 @@
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
         },
+        "support_bundle_log_tail_records": {
+          "default": 200,
+          "description": "bounded redaction-safe recent log records included in support bundles; 0 disables capture",
+          "type": "integer"
+        },
         "tls": {
           "additionalProperties": false,
           "properties": {
             "cert_file": {
               "default": "",
               "description": "serve the admin listener over HTTPS instead of plain HTTP; set together with key_file (both-or-neither)",
+              "type": "string"
+            },
+            "client_auth": {
+              "default": "",
+              "description": "require_and_verify by default when client_ca_file is set; same modes as prometheus.tls",
+              "enum": [
+                "",
+                "require_and_verify",
+                "verify_if_given",
+                "require",
+                "request",
+                "none"
+              ],
+              "type": "string"
+            },
+            "client_ca_file": {
+              "default": "",
+              "description": "require a client certificate signed by this CA; needs cert_file/key_file",
               "type": "string"
             },
             "key_file": {
@@ -215,6 +261,15 @@
             "memory",
             "file"
           ],
+          "type": "string"
+        },
+        "write_debounce": {
+          "default": "0s",
+          "description": "coalesce nearby file writes; 0 preserves synchronous Set durability",
+          "examples": [
+            "0s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
         }
       },
@@ -561,6 +616,30 @@
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
             },
+            "posture_compliance_checks": {
+              "description": "exact checks: [{name: managed, attribute: custom:managed, equals: \"true\"}]; missing/different fails",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "attribute": {
+                    "type": "string"
+                  },
+                  "equals": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "attribute",
+                  "equals"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
             "posture_log_mode": {
               "default": "changes",
               "description": "needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted",
@@ -570,6 +649,12 @@
                 "off"
               ],
               "type": "string"
+            },
+            "subrequest_concurrency": {
+              "default": 1,
+              "description": "bounded posture/invite request pool; 1 preserves sequential requests",
+              "minimum": 1,
+              "type": "integer"
             },
             "tag_rollup_limit": {
               "default": 50,
@@ -1045,6 +1130,15 @@
         "log_stream": {
           "additionalProperties": false,
           "properties": {
+            "configuration_interval": {
+              "default": "0s",
+              "description": "0 inherits interval; otherwise probe configuration-log delivery independently",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
             "enabled": {
               "default": true,
               "description": "log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)",
@@ -1055,6 +1149,15 @@
               "description": "log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)",
               "examples": [
                 "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "network_interval": {
+              "default": "0s",
+              "description": "0 inherits interval; otherwise probe network-log delivery independently",
+              "examples": [
+                "0s"
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
@@ -1369,6 +1472,12 @@
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
             },
+            "subrequest_concurrency": {
+              "default": 1,
+              "description": "bounded backing-host request pool; 1 preserves sequential requests",
+              "minimum": 1,
+              "type": "integer"
+            },
             "tag_rollup_limit": {
               "default": 50,
               "description": "cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag=\"__other__\" (0/negative = unlimited)",
@@ -1481,6 +1590,15 @@
           "description": "staleness alarm threshold for the IP/nodeID -\u003e name device cache",
           "examples": [
             "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "device_cache_stale_after": {
+          "default": "0s",
+          "description": "mark cached identity stale after this age; 0 preserves fresh-until-replaced behaviour",
+          "examples": [
+            "0s"
           ],
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
@@ -1718,6 +1836,20 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "incremental_vacuum_interval": {
+              "default": "0s",
+              "description": "periodic SQLite page reclamation; 0 inherits sweep_interval",
+              "examples": [
+                "0s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "incremental_vacuum_pages": {
+              "default": 1000,
+              "description": "maximum pages reclaimed per vacuum tick",
+              "type": "integer"
             },
             "max_export_rows": {
               "default": 50000,
@@ -2380,6 +2512,15 @@
           "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
           "type": "string"
         },
+        "metric_temporality": {
+          "default": "cumulative",
+          "description": "cumulative (Grafana Cloud default) | delta",
+          "enum": [
+            "cumulative",
+            "delta"
+          ],
+          "type": "string"
+        },
         "metrics": {
           "additionalProperties": false,
           "properties": {
@@ -2512,6 +2653,15 @@
             }
           },
           "type": "object"
+        },
+        "outage_summary_interval": {
+          "default": "5m",
+          "description": "repeat a concise diagnostic while an OTLP outage continues",
+          "examples": [
+            "5m"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
         },
         "protocol": {
           "default": "http",
@@ -3109,6 +3259,21 @@
       },
       "type": "object"
     },
+    "scheduler": {
+      "additionalProperties": false,
+      "properties": {
+        "initial_stagger_window": {
+          "default": "3s",
+          "description": "spread initial collector ticks; current single-runtime default is 3s",
+          "examples": [
+            "3s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "self_observability": {
       "additionalProperties": false,
       "properties": {
@@ -3168,6 +3333,11 @@
           "default": "/services/collector/event",
           "description": "HEC endpoint path Tailscale POSTs to",
           "type": "string"
+        },
+        "per_route_max_concurrent_requests": {
+          "default": 0,
+          "description": "per-tailnet admission cap; 0 selects an automatic fair share of the global budget",
+          "type": "integer"
         },
         "public_url": {
           "default": "",
@@ -3785,6 +3955,11 @@
           "description": "cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated",
           "type": "integer"
         },
+        "organization": {
+          "default": "",
+          "description": "opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative",
+          "type": "string"
+        },
         "tailnet": {
           "default": "-",
           "description": "\"-\" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. \"example.com\"",
@@ -4001,6 +4176,11 @@
           "default": "/tailscale/webhook",
           "description": "endpoint path Tailscale POSTs events to",
           "type": "string"
+        },
+        "per_route_max_concurrent_requests": {
+          "default": 0,
+          "description": "per-tailnet admission cap; 0 selects an automatic fair share of the global budget",
+          "type": "integer"
         },
         "routes": {
           "items": {

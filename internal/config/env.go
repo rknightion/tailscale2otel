@@ -54,6 +54,7 @@ var structSliceEnvKeys = map[string]bool{
 	"streaming.routes":                true,
 	"webhook.routes":                  true,
 	"collectors.node_metrics.targets": true,
+	"collectors.devices.posture_compliance_checks": true,
 }
 
 // fileOnlyMapSliceEnvKeys are map-valued keys whose values are slices. A flat

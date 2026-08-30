@@ -1,10 +1,10 @@
 ---
 id: TSO-0074
 title: Include a bounded recent-log tail in the support bundle
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-5
 dependencies: []
@@ -30,3 +30,9 @@ internal/app/admin_bundle.go collects config/diagnostics/state but not the last 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes a bounded support-bundle log-tail size; lane G later implements the redaction-safe ring and bundle output.
+<!-- SECTION:PLAN:END -->

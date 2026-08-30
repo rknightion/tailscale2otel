@@ -779,6 +779,9 @@ config: # @schema additionalProperties:false
     # multi-MB, in bytes (32 MiB). Decoding costs several times the wire size, so keep both
     # budgets well under resources.limits.memory — above 64 MiB the app raises a startup advisory.
     max_log_response_bytes: 33554432
+    # -- Opt in to alpha organization-tailnet roster discovery. Empty keeps the explicit
+    # tailscale.tailnet/tailnets configuration authoritative.
+    organization: ""
 
   otlp: # @schema additionalProperties:false
     # -- Export protocol: http | grpc | stdout (stdout = local debug).
@@ -818,6 +821,10 @@ config: # @schema additionalProperties:false
     metric_interval: 60s
     # -- Maximum datapoints per OTLP metric request. Serialized bytes vary with labels; lower values trade more requests for smaller payloads.
     metric_export_batch_size: 10000
+    # -- Metric aggregation temporality: cumulative (Grafana Cloud default) or delta.
+    metric_temporality: cumulative # @schema enum:["cumulative","delta"]
+    # -- Re-summary cadence while an OTLP delivery outage continues.
+    outage_summary_interval: 5m
     limits: # @schema additionalProperties:false
       # -- Cap one log record's body before export. A receiver's request-body limit bounds a whole
       # inbound request, but a valid request can still carry one enormous record that dominates a
@@ -1006,6 +1013,8 @@ config: # @schema additionalProperties:false
     # -- Staleness alarm threshold for the device-enrichment cache (drives the
     # tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries.
     cache_ttl: 5m
+    # -- Mark control-plane identity cached longer than this as stale; 0 disables.
+    device_cache_stale_after: 0s
     reverse_dns: # @schema additionalProperties:false
       # -- Opt-in reverse-DNS (PTR) enrichment of EXTERNAL flow addresses; resolved names replace
       # the "external" bucket in tailscale.src/dst.node (flow logs always; flow metrics when
@@ -1170,6 +1179,10 @@ config: # @schema additionalProperties:false
       # call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read).
       # Emits tailscale.device_invites.count; per-device fetch failures are non-fatal.
       collect_device_invites: true
+      # -- Bounded concurrency for posture/invite per-device subrequests. 1 is sequential.
+      subrequest_concurrency: 1
+      # -- Exact-match posture checks; missing/different attributes count as failing.
+      posture_compliance_checks: []
       # -- Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info}
       # metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled.
       attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]
@@ -1556,6 +1569,10 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Independent configuration-log probe cadence; 0 inherits interval.
+      configuration_interval: 0s
+      # -- Independent network-log probe cadence; 0 inherits interval.
+      network_interval: 0s
     oauth_apps: # @schema additionalProperties:false
       # -- Enable the OAuth-application inventory collector (count, per-app scope/node-attribute
       # gauges). Alpha API — idles silently, with no error, on tailnets that do not have it.
@@ -1570,6 +1587,8 @@ config: # @schema additionalProperties:false
       # -- Also collect per-service backing-host detail (approval/configured state) — one extra API
       # call per service (N+1). Off by default.
       collect_hosts: false
+      # -- Bounded concurrency for backing-host subrequests. 1 is sequential.
+      subrequest_concurrency: 1
       # -- Emit the tailscale.services.by_tag distribution gauge (one series per ACL tag).
       # false disables this rollup while service count and other enabled signals continue.
       collect_tag_rollup: true
@@ -1643,6 +1662,10 @@ config: # @schema additionalProperties:false
         # -- Attach the tailscale.tags label to scraped series.
         include_tags_label: true
 
+  scheduler: # @schema additionalProperties:false
+    # -- Spread initial collector ticks across this window. The existing default is 3s.
+    initial_stagger_window: 3s
+
   checkpoint: # @schema additionalProperties:false
     # -- Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does
     # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
@@ -1652,6 +1675,8 @@ config: # @schema additionalProperties:false
     evidence_store: file
     # -- Shared state path when either store is file (mount a writable persistent volume here).
     file_path: "/var/lib/tailscale2otel/checkpoints.json"
+    # -- Coalesce nearby checkpoint writes; 0 preserves synchronous Set durability.
+    write_debounce: 0s
 
   # Process-global write-ahead log for accepted streaming/webhook request bodies.
   # Disabled is the stateless default. When enabled, ACK means durable local acceptance,
@@ -1705,6 +1730,8 @@ config: # @schema additionalProperties:false
     # sum); 0 = 4 default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffering is
     # roughly this x max_body_bytes, so raise it together with resources.limits.memory.
     max_concurrent_requests: 0
+    # -- Per-route admission cap; 0 selects an automatic fair share of the global budget.
+    per_route_max_concurrent_requests: 0
     # -- FILE-ONLY multi-tailnet routes. Each item has tailnet, exact path, token or token_file,
     # optional public_url, and optional auto_configure. Non-empty replaces legacy path/token identity.
     routes: []
@@ -1745,6 +1772,8 @@ config: # @schema additionalProperties:false
     # default, <0 = unlimited (503 + Retry-After on exceed). Worst-case buffered memory is roughly
     # this x max_body_bytes, so raise it together with resources.limits.memory.
     max_concurrent_requests: 0
+    # -- Per-route admission cap; 0 selects an automatic fair share of the global budget.
+    per_route_max_concurrent_requests: 0
     # -- FILE-ONLY multi-tailnet routes. Each item has tailnet and secret or secret_file.
     # Non-empty replaces legacy path/secret identity; all events must name one route tailnet.
     routes: []
@@ -1852,12 +1881,18 @@ config: # @schema additionalProperties:false
     listen: ":9091"
     # -- Serve the human status page at / and machine-readable JSON at /api/status.json.
     landing_page: true
+    # -- Redaction-safe recent log records included in support bundles; 0 disables capture.
+    support_bundle_log_tail_records: 200
     auth: # @schema additionalProperties:false
       # -- Shared secret gating the status page and pprof (HTTP Basic password or "Authorization: Bearer <token>"); /healthz and /readyz stay open. Set via TS2OTEL_ADMIN__AUTH__TOKEN (secret). Required when profiling.pprof.enabled.
       token: ""
       # -- Read admin.auth.token from this path instead of an inline value (mounted-Secret style).
       # Set the value or the file, not both; the file's content is whitespace-trimmed.
       token_file: ""
+      # -- Failed attempts from one source inside failure_window before throttling; 0 disables.
+      failure_limit: 5
+      failure_window: 1m
+      failure_backoff: 30s
     tls: # @schema additionalProperties:false
       # -- HTTPS certificate for the admin server. Set together with key_file (both-or-neither);
       # leaving both empty serves plain HTTP. The chart's liveness/readiness probes follow this
@@ -1867,6 +1902,10 @@ config: # @schema additionalProperties:false
       cert_file: ""
       # -- HTTPS private key paired with cert_file. Both paths must exist and be readable at startup.
       key_file: ""
+      # -- Require a client certificate signed by this CA. Needs cert_file/key_file.
+      client_ca_file: ""
+      # -- Client certificate mode; empty defaults to require_and_verify when a CA is set.
+      client_auth: ""
     # -- How often the status page's JS re-polls /api/status.json to patch the live view.
     # The page's 1s freshness ticker is independent of this.
     status_refresh_interval: 5s
@@ -1922,6 +1961,10 @@ config: # @schema additionalProperties:false
       query_timeout: 15s
       # -- How often the retention window and the row cap are enforced.
       sweep_interval: 1h
+      # -- Periodic SQLite page reclamation; 0 inherits sweep_interval.
+      incremental_vacuum_interval: 0s
+      # -- Maximum pages reclaimed per vacuum tick.
+      incremental_vacuum_pages: 1000
 
   events: # @schema additionalProperties:false
     # -- Build the bounded audit/webhook event store and serve /events. No effect without admin.enabled + admin.landing_page.

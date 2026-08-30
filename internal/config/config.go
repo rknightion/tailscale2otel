@@ -68,6 +68,7 @@ type Config struct {
 	Enrichment        EnrichmentConfig        `yaml:"enrichment"`
 	Cardinality       CardinalityConfig       `yaml:"cardinality"`
 	Collectors        Collectors              `yaml:"collectors"`
+	Scheduler         SchedulerConfig         `yaml:"scheduler"`
 	Checkpoint        CheckpointConfig        `yaml:"checkpoint"`
 	IngressWAL        IngressWALConfig        `yaml:"ingress_wal"`
 	Streaming         StreamingConfig         `yaml:"streaming"`
@@ -145,14 +146,19 @@ type AdminConfig struct {
 	Auth AdminAuth `yaml:"auth"`
 	// TLS optionally serves the admin listener over HTTPS instead of plain HTTP.
 	TLS AdminTLS `yaml:"tls"`
+	// SupportBundleLogTailRecords bounds the redaction-safe in-memory log tail
+	// included in support bundles. Zero disables capture.
+	SupportBundleLogTailRecords int `yaml:"support_bundle_log_tail_records" reload:"restart"`
 }
 
 // AdminTLS configures TLS for the admin server (mirrors StreamingTLS). Both
 // fields are empty by default (plain HTTP); Validate requires both-or-neither
 // and that any set path exists and is readable.
 type AdminTLS struct {
-	CertFile string `yaml:"cert_file" reload:"file_content"`
-	KeyFile  string `yaml:"key_file" reload:"file_content"`
+	CertFile     string `yaml:"cert_file" reload:"file_content"`
+	KeyFile      string `yaml:"key_file" reload:"file_content"`
+	ClientCAFile string `yaml:"client_ca_file" reload:"file_content"`
+	ClientAuth   string `yaml:"client_auth" reload:"restart"`
 }
 
 // AdminAuth gates the status page ("/" and "/api/status.json") and the pprof
@@ -166,6 +172,11 @@ type AdminAuth struct {
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
 	TokenFile string `yaml:"token_file" reload:"restart"`
+	// FailureLimit failures from one source inside FailureWindow trigger
+	// FailureBackoff. Zero disables throttling.
+	FailureLimit   int      `yaml:"failure_limit" reload:"restart"`
+	FailureWindow  Duration `yaml:"failure_window" reload:"restart"`
+	FailureBackoff Duration `yaml:"failure_backoff" reload:"restart"`
 }
 
 // FlowsConfig configures the built-in flow view served at /flows on the admin
@@ -258,6 +269,10 @@ type FlowsStoreConfig struct {
 	// SweepInterval is how often retention and the row cap are enforced.
 	// Bounded to [1m, 24h].
 	SweepInterval Duration `yaml:"sweep_interval" reload:"restart"`
+	// IncrementalVacuumInterval controls periodic SQLite page reclamation. Zero
+	// inherits SweepInterval; IncrementalVacuumPages caps work per tick.
+	IncrementalVacuumInterval Duration `yaml:"incremental_vacuum_interval" reload:"restart"`
+	IncrementalVacuumPages    int      `yaml:"incremental_vacuum_pages" reload:"restart"`
 }
 
 // EventsConfig configures the built-in bounded audit/webhook event explorer
@@ -501,6 +516,9 @@ type TailscaleConfig struct {
 	// tailnets[] field would not be).
 	MaxResponseBytes    int64 `yaml:"max_response_bytes" reload:"restart"`
 	MaxLogResponseBytes int64 `yaml:"max_log_response_bytes" reload:"restart"`
+	// Organization enables alpha organization-tailnet roster discovery when
+	// non-empty. Empty preserves explicit single- or multi-tailnet config.
+	Organization string `yaml:"organization" reload:"restart"`
 }
 
 // TailnetConfig is one entry in the multi-tailnet list. It mirrors the
@@ -752,6 +770,10 @@ type OTLPConfig struct {
 	// MetricExportBatchSize bounds the number of datapoints in each OTLP metric
 	// request. This is a count, not a serialized-byte limit.
 	MetricExportBatchSize int `yaml:"metric_export_batch_size" reload:"restart"`
+	// MetricTemporality selects cumulative (Grafana Cloud default) or delta.
+	MetricTemporality string `yaml:"metric_temporality" reload:"restart"`
+	// OutageSummaryInterval controls re-summary of a continuing export outage.
+	OutageSummaryInterval Duration `yaml:"outage_summary_interval" reload:"restart"`
 
 	// CredentialReload rotates the token/header/TLS files the OTLP exporters use
 	// without restarting the process (#362).
@@ -904,9 +926,10 @@ type OTLPLimits struct {
 
 // EnrichmentConfig configures device-enrichment caching.
 type EnrichmentConfig struct {
-	CacheTTL   Duration         `yaml:"cache_ttl" reload:"restart"`
-	ReverseDNS ReverseDNSConfig `yaml:"reverse_dns"`
-	GeoIP      GeoIPConfig      `yaml:"geoip"`
+	CacheTTL              Duration         `yaml:"cache_ttl" reload:"restart"`
+	DeviceCacheStaleAfter Duration         `yaml:"device_cache_stale_after" reload:"restart"`
+	ReverseDNS            ReverseDNSConfig `yaml:"reverse_dns"`
+	GeoIP                 GeoIPConfig      `yaml:"geoip"`
 }
 
 // GeoIPConfig configures opt-in geolocation and autonomous-system enrichment of
@@ -1117,7 +1140,7 @@ type Collectors struct {
 	Contacts            SimpleCollector    `yaml:"contacts"`
 	Webhooks            WebhooksCollector  `yaml:"webhooks"`
 	PostureIntegrations SnapshotCollector  `yaml:"posture_integrations"`
-	LogStream           SimpleCollector    `yaml:"log_stream"`
+	LogStream           LogStreamCollector `yaml:"log_stream"`
 	Services            ServicesCollector  `yaml:"services"`
 	NodeMetrics         NodeMetricsConfig  `yaml:"node_metrics"`
 	// OAuthApps is a point-in-time inventory snapshot of the tailnet's OAuth
@@ -1131,6 +1154,15 @@ type Collectors struct {
 type SimpleCollector struct {
 	Enabled  bool     `yaml:"enabled" reload:"restart"`
 	Interval Duration `yaml:"interval" reload:"restart"`
+}
+
+// LogStreamCollector permits the configuration- and network-stream probes to
+// inherit the shared interval or override it independently.
+type LogStreamCollector struct {
+	Enabled               bool     `yaml:"enabled" reload:"restart"`
+	Interval              Duration `yaml:"interval" reload:"restart"`
+	ConfigurationInterval Duration `yaml:"configuration_interval" reload:"restart"`
+	NetworkInterval       Duration `yaml:"network_interval" reload:"restart"`
 }
 
 // SnapshotCollector is a point-in-time configuration collector that can also
@@ -1203,6 +1235,11 @@ type DevicesCollector struct {
 	// device_invites:read OAuth scope (covered by the broad all:read scope).
 	// Per-device fetch failures are non-fatal. Default true.
 	CollectDeviceInvites bool `yaml:"collect_device_invites" reload:"restart"`
+	// SubrequestConcurrency bounds the per-device posture/invite request pool.
+	SubrequestConcurrency int `yaml:"subrequest_concurrency" reload:"restart"`
+	// PostureComplianceChecks are bounded exact-match checks. A device fails a
+	// check when the attribute is missing or differs from Equals.
+	PostureComplianceChecks []PostureComplianceCheck `yaml:"posture_compliance_checks" reload:"restart"`
 	// PostureLogMode controls the tailscale.device.posture LOG (requires
 	// collect_posture): "changes" (default) logs a device only when its posture
 	// changes since the last scrape — a full baseline dump on the first scrape,
@@ -1238,6 +1275,14 @@ type DevicesCollector struct {
 	// keep their own series; the rest fold into a single tailscale.tag="__other__"
 	// series so totals are preserved. Default 50; 0 or negative = unlimited.
 	TagRollupLimit int `yaml:"tag_rollup_limit" reload:"restart"`
+}
+
+// PostureComplianceCheck is one bounded, operator-named exact-match posture
+// assertion. Name becomes a label value, never a metric name.
+type PostureComplianceCheck struct {
+	Name      string `yaml:"name" reload:"restart"`
+	Attribute string `yaml:"attribute" reload:"restart"`
+	Equals    string `yaml:"equals" reload:"restart"`
 }
 
 // FlowlogsCollector configures the network-flow-logs collector. Source selects
@@ -1403,11 +1448,17 @@ type KeysCollector struct {
 // service count, with TagRollupLimit matching the devices collector's busiest-N
 // plus __other__ behavior.
 type ServicesCollector struct {
-	Enabled          bool     `yaml:"enabled" reload:"restart"`
-	Interval         Duration `yaml:"interval" reload:"restart"`
-	CollectHosts     bool     `yaml:"collect_hosts" reload:"restart"`
-	CollectTagRollup bool     `yaml:"collect_tag_rollup" reload:"restart"`
-	TagRollupLimit   int      `yaml:"tag_rollup_limit" reload:"restart"`
+	Enabled               bool     `yaml:"enabled" reload:"restart"`
+	Interval              Duration `yaml:"interval" reload:"restart"`
+	CollectHosts          bool     `yaml:"collect_hosts" reload:"restart"`
+	CollectTagRollup      bool     `yaml:"collect_tag_rollup" reload:"restart"`
+	TagRollupLimit        int      `yaml:"tag_rollup_limit" reload:"restart"`
+	SubrequestConcurrency int      `yaml:"subrequest_concurrency" reload:"restart"`
+}
+
+// SchedulerConfig controls process-wide first-tick staggering.
+type SchedulerConfig struct {
+	InitialStaggerWindow Duration `yaml:"initial_stagger_window" reload:"restart"`
 }
 
 // NodeMetricsConfig configures the optional node-local metrics scraper, which
@@ -1520,6 +1571,8 @@ type CheckpointConfig struct {
 	// such as ACL revision provenance. Both file-backed classes share FilePath.
 	EvidenceStore string `yaml:"evidence_store" reload:"restart"`
 	FilePath      string `yaml:"file_path" reload:"restart"`
+	// WriteDebounce coalesces nearby file writes. Zero preserves synchronous Set.
+	WriteDebounce Duration `yaml:"write_debounce" reload:"restart"`
 }
 
 // IngressWALConfig configures the process-global write-ahead log for accepted
@@ -1562,6 +1615,9 @@ type StreamingConfig struct {
 	// a default of 4; negative disables the limit. Raise it only alongside the
 	// process memory limit: the worst case is roughly this times max_body_bytes.
 	MaxConcurrentRequests int `yaml:"max_concurrent_requests" reload:"restart"`
+	// PerRouteMaxConcurrentRequests bounds any one route. Zero selects an
+	// automatic fair share of the global admission budget.
+	PerRouteMaxConcurrentRequests int `yaml:"per_route_max_concurrent_requests" reload:"restart"`
 	// Routes is the FILE-ONLY multi-tailnet receiver map. When non-empty it
 	// replaces the legacy path/token/public_url identity fields above; listener,
 	// TLS, decompression and resource limits remain process-wide.
@@ -1624,7 +1680,8 @@ type WebhookConfig struct {
 	// rejected{reason=overloaded} before the body is read. 0 selects a default of
 	// 4; negative disables the limit. Worst-case buffered memory is roughly this
 	// times max_body_bytes.
-	MaxConcurrentRequests int `yaml:"max_concurrent_requests" reload:"restart"`
+	MaxConcurrentRequests         int `yaml:"max_concurrent_requests" reload:"restart"`
+	PerRouteMaxConcurrentRequests int `yaml:"per_route_max_concurrent_requests" reload:"restart"`
 	// Routes is the FILE-ONLY multi-tailnet receiver map. The legacy path and
 	// secret fields remain the single-tailnet compatibility surface.
 	Routes []WebhookRoute `yaml:"routes" reload:"restart"`

@@ -140,6 +140,28 @@ func TestValidate_PrometheusClientAuthMode(t *testing.T) {
 	})
 }
 
+func TestValidate_AdminClientAuthRequiresServerTLS(t *testing.T) {
+	for _, mode := range []string{"request", "require", "verify_if_given", "require_and_verify"} {
+		t.Run(mode, func(t *testing.T) {
+			c := Default()
+			c.Admin.TLS.ClientAuth = mode
+			err := c.Validate()
+			if err == nil {
+				t.Fatalf("expected %s to require admin server TLS", mode)
+			}
+			if !strings.Contains(err.Error(), "admin.tls.cert_file") {
+				t.Fatalf("error %q should name the required admin TLS keypair", err)
+			}
+		})
+	}
+
+	c := Default()
+	c.Admin.TLS.ClientAuth = "none"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("client_auth none should remain valid without TLS: %v", err)
+	}
+}
+
 func TestValidate_PrometheusHandlerLimits(t *testing.T) {
 	t.Run("negative max_requests_in_flight", func(t *testing.T) {
 		c := Default()

@@ -1,10 +1,10 @@
 ---
 id: TSO-0034
 title: Org auto-discovery of tailnets via the alpha Organizations API
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:09'
-updated_date: '2026-08-30 09:47'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-3
 dependencies: []
@@ -31,3 +31,9 @@ Use the alpha Organizations API (listOrganizationTailnets, tailnets:read scope, 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes the organization-roster discovery config shape with a behaviour-preserving disabled default; lane A later implements pagination, roster population, inventory telemetry, contract disposition, and panel.
+<!-- SECTION:PLAN:END -->

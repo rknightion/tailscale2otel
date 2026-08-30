@@ -1,10 +1,10 @@
 ---
 id: TSO-0039
 title: 'Posture attribute values: compliance gauges with cardinality caps'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 23:22'
 labels: []
 milestone: m-3
 dependencies:
@@ -31,3 +31,9 @@ GET /device/{id}/attributes is already consumed and the posture surface keeps gr
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Root F1 freezes the smallest reversible posture-compliance config shape with bounded values; lane A later implements evaluation, telemetry, overflow behaviour, and panel.
+<!-- SECTION:PLAN:END -->
