@@ -135,7 +135,7 @@ as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 92 of the 100 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 96 of the 100 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel

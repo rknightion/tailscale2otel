@@ -17,12 +17,13 @@ import (
 var writeCapabilityCounts = flag.Bool("write-capability-counts", false, "rewrite internal/catalog/capability_counts.json")
 
 type capabilityCounts struct {
-	AlertRules     int `json:"alert_rules"`
-	Collectors     int `json:"collectors"`
-	Dashboards     int `json:"dashboards"`
-	LogEvents      int `json:"log_events"`
-	Metrics        int `json:"metrics"`
-	RecordingRules int `json:"recording_rules"`
+	AlertRules            int `json:"alert_rules"`
+	Collectors            int `json:"collectors"`
+	Dashboards            int `json:"dashboards"`
+	LogEvents             int `json:"log_events"`
+	Metrics               int `json:"metrics"`
+	PanelLinkedAlertRules int `json:"panel_linked_alert_rules"`
+	RecordingRules        int `json:"recording_rules"`
 }
 
 func TestCapabilityCountsSourceInSync(t *testing.T) {
@@ -74,9 +75,13 @@ func deriveCapabilityCounts(t *testing.T, root string) capabilityCounts {
 		}
 	}
 	for _, path := range matchingJSONFiles(t, filepath.Join(root, "deploy", "alerts", "grafana-managed")) {
-		switch manifestKind(t, path) {
+		manifest := readManifest(t, path)
+		switch manifest.Kind {
 		case "AlertRule":
 			counts.AlertRules++
+			if hasPanelIDAnnotation(t, path, manifest) {
+				counts.PanelLinkedAlertRules++
+			}
 		case "RecordingRule":
 			counts.RecordingRules++
 		}
@@ -97,16 +102,37 @@ func matchingJSONFiles(t *testing.T, dir string) []string {
 }
 
 func manifestKind(t *testing.T, path string) string {
+	return readManifest(t, path).Kind
+}
+
+type manifest struct {
+	Kind string `json:"kind"`
+	Spec struct {
+		Annotations json.RawMessage `json:"annotations"`
+	} `json:"spec"`
+}
+
+func hasPanelIDAnnotation(t *testing.T, path string, item manifest) bool {
+	t.Helper()
+	if len(item.Spec.Annotations) == 0 {
+		return false
+	}
+	var annotations map[string]string
+	if err := json.Unmarshal(item.Spec.Annotations, &annotations); err != nil {
+		t.Fatalf("parse %s annotations: %v", path, err)
+	}
+	return annotations["__panelId__"] != ""
+}
+
+func readManifest(t *testing.T, path string) manifest {
 	t.Helper()
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
-	var manifest struct {
-		Kind string `json:"kind"`
-	}
-	if err := json.Unmarshal(contents, &manifest); err != nil {
+	var result manifest
+	if err := json.Unmarshal(contents, &result); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	return manifest.Kind
+	return result
 }

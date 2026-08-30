@@ -17,6 +17,7 @@ COUNT_KEYS = {
     "dashboards",
     "log_events",
     "metrics",
+    "panel_linked_alert_rules",
     "recording_rules",
 }
 
@@ -33,6 +34,10 @@ SUMMARY_PATTERNS = (
         "README.md",
         r"ships \*\*(?P<alert_rules>\d+) alert\s+rules and "
         r"(?P<recording_rules>\d+) recording rules\*\*",
+    ),
+    SummaryPattern(
+        "README.md",
+        r"(?P<panel_linked_alert_rules>\d+) of (?P<alert_rules>\d+) link a canonical dashboard panel",
     ),
     SummaryPattern("README.md", r"All (?P<metrics>\d+) metrics and (?P<log_events>\d+) log events"),
     SummaryPattern(
@@ -54,6 +59,10 @@ SUMMARY_PATTERNS = (
         "deploy/alerts/README.md",
         r"has \*\*(?P<alert_rules>\d+) alert rules \+ "
         r"(?P<recording_rules>\d+) recording rules",
+    ),
+    SummaryPattern(
+        "deploy/alerts/README.md",
+        r"(?P<panel_linked_alert_rules>\d+) of the (?P<alert_rules>\d+) carry the",
     ),
 )
 

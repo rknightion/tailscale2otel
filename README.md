@@ -189,7 +189,7 @@ receiver auth, object-gap handling, and `auto_configure` are in
 - **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **100 alert
   rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
-  `runbook_url`, and 77 of 78 link a canonical dashboard panel. See
+  `runbook_url`, and 96 of 100 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and
   [Runbooks](https://m7kni.io/tailscale2otel/runbooks/).
 - **Admin status page** — on by default at `127.0.0.1:9091`. Liveness/readiness probes at `/healthz` and
