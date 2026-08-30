@@ -1,7 +1,7 @@
 // Package hsapi is a minimal read-only HTTP/JSON client for the Headscale
 // control-plane API (/api/v1/*), authenticated with a Bearer API key. It mirrors
-// the internal/tsapi getJSON + URL-builder pattern but without retry (small
-// tailnets; retry is a noted follow-up).
+// the internal/tsapi getJSON + URL-builder pattern, including bounded retries
+// and client-side rate limiting for transient outcomes.
 package hsapi
 
 import (
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v4/internal/httpretry"
 	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
 	"github.com/rknightion/tailscale2otel/v4/internal/redact"
 	"go.opentelemetry.io/otel/attribute"
@@ -29,7 +30,15 @@ const maxDrainBytes = 64 << 10
 type Options struct {
 	URL     string        // control-plane base URL, e.g. https://hs.example.org
 	APIKey  string        // Bearer token
-	Timeout time.Duration // per-request timeout (0 = no client timeout)
+	Timeout time.Duration // per-attempt HTTP timeout (0 = no timeout)
+
+	// MaxAttempts is the total attempts including the first; 0 or 1 disables
+	// retries. BaseDelay and MaxDelay configure retry backoff. RateLimit is the
+	// maximum requests per second across every Headscale API call; <= 0 is unlimited.
+	MaxAttempts int
+	BaseDelay   time.Duration
+	MaxDelay    time.Duration
+	RateLimit   float64
 
 	// MaxResponseBytes bounds a single successful JSON response body before it
 	// is decoded. Zero uses defaultMaxResponseBytes. See limit.go for the sizing
@@ -52,16 +61,18 @@ type Options struct {
 }
 
 // RequestInfo describes one completed Headscale API request, reported to
-// Options.OnRequest. Mirrors tsapi.RequestInfo's shape (minus fields that make
-// no sense here: hsapi's getJSON never retries, so there is no Attempts or
-// WaitDuration). Err is the transport error string ("" on any HTTP response,
+// Options.OnRequest. Mirrors tsapi.RequestInfo's shape. Err is the transport error string ("" on any HTTP response,
 // including non-2xx — those surface via Status and the returned *StatusError,
 // never via Err), and never contains response body or header data.
 type RequestInfo struct {
 	Endpoint string        // low-cardinality label (endpointLabel)
 	Status   int           // final HTTP status, 0 on transport error
-	Duration time.Duration // wall-clock of the request
-	Err      string        // transport error text, "" when an HTTP response was received
+	Attempts int           // total attempts including the first
+	Duration time.Duration // wall-clock excluding client-side rate-limit waiting
+	// WaitDuration is the cumulative time spent waiting for the client-side rate
+	// limiter across all attempts. It is excluded from Duration.
+	WaitDuration time.Duration
+	Err          string // transport error text, "" when an HTTP response was received
 }
 
 // noopAPITracer is the shared fallback for a nil Options.Tracer, so the
@@ -103,10 +114,26 @@ func NewClient(opts Options) *Client {
 	if tracer == nil {
 		tracer = noopAPITracer
 	}
+	baseDelay := opts.BaseDelay
+	if baseDelay <= 0 {
+		baseDelay = 500 * time.Millisecond
+	}
+	maxDelay := opts.MaxDelay
+	if maxDelay <= 0 {
+		maxDelay = 10 * time.Second
+	}
+	transport := &retryTransport{
+		base:           http.DefaultTransport,
+		max:            max(opts.MaxAttempts, 1),
+		baseDelay:      baseDelay,
+		maxDelay:       maxDelay,
+		attemptTimeout: opts.Timeout,
+		limiter:        httpretry.NewWaiter(opts.RateLimit),
+	}
 	return &Client{
 		baseURL:          strings.TrimRight(opts.URL, "/"),
 		apiKey:           opts.APIKey,
-		http:             httpguard.NoRedirectClient(&http.Client{Timeout: opts.Timeout}),
+		http:             httpguard.NoRedirectClient(&http.Client{Transport: transport}),
 		maxResponseBytes: maxBytes,
 		tracer:           tracer,
 		onRequest:        opts.OnRequest,
@@ -128,30 +155,32 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	base, parseErr := url.Parse(c.baseURL)
 	if parseErr != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
 		err := errors.New("headscale URL is not a valid absolute HTTP(S) origin")
-		c.observe(spanCtx, span, label, start, 0, err)
+		c.observe(spanCtx, span, label, start, 0, 0, 0, err)
 		return err
 	}
 	if base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
 		err := errors.New("headscale URL must contain only a scheme and host")
-		c.observe(spanCtx, span, label, start, 0, err)
+		c.observe(spanCtx, span, label, start, 0, 0, 0, err)
 		return err
 	}
 	if base.Scheme != "https" && !httpguard.IsLoopbackHost(base.Host) {
 		err := errors.New("headscale URL must use HTTPS except for a loopback development endpoint")
-		c.observe(spanCtx, span, label, start, 0, err)
+		c.observe(spanCtx, span, label, start, 0, 0, 0, err)
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(spanCtx, http.MethodGet, c.baseURL+path, nil)
+	state := &retryState{}
+	requestCtx := context.WithValue(spanCtx, retryStateKey{}, state)
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
-		c.observe(spanCtx, span, label, start, 0, err)
+		c.observe(spanCtx, span, label, start, 0, 0, 0, err)
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		c.observe(spanCtx, span, label, start, 0, err)
+		c.observe(spanCtx, span, label, start, 0, state.attempts, state.waitDuration, err)
 		return err
 	}
 	// Drain a BOUNDED remainder before closing so the connection stays reusable.
@@ -163,7 +192,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		statusErr := &StatusError{Path: path, Code: resp.StatusCode, Body: string(body)}
-		c.observe(spanCtx, span, label, start, resp.StatusCode, statusErr)
+		c.observe(spanCtx, span, label, start, resp.StatusCode, state.attempts, state.waitDuration, statusErr)
 		return statusErr
 	}
 	budget := c.budget()
@@ -173,11 +202,11 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 	// remains the real control.
 	if resp.ContentLength > budget.MaxBytes {
 		decodeErr := budget.ByteCeilingError()
-		c.observe(spanCtx, span, label, start, resp.StatusCode, decodeErr)
+		c.observe(spanCtx, span, label, start, resp.StatusCode, state.attempts, state.waitDuration, decodeErr)
 		return decodeErr
 	}
 	decodeErr := jsonbudget.Decode(resp.Body, budget, out)
-	c.observe(spanCtx, span, label, start, resp.StatusCode, decodeErr)
+	c.observe(spanCtx, span, label, start, resp.StatusCode, state.attempts, state.waitDuration, decodeErr)
 	return decodeErr
 }
 
@@ -194,7 +223,7 @@ func (c *Client) getJSON(ctx context.Context, path string, out any) error {
 // so an operator can see WHICH control-plane call was slow/failed even though
 // the span name (label) elides nothing here (the label space is already
 // bounded, see endpointLabel).
-func (c *Client) observe(spanCtx context.Context, span trace.Span, label string, start time.Time, status int, err error) {
+func (c *Client) observe(spanCtx context.Context, span trace.Span, label string, start time.Time, status, attempts int, waitDuration time.Duration, err error) {
 	errStr := ""
 	if err != nil {
 		var se *StatusError
@@ -213,6 +242,12 @@ func (c *Client) observe(spanCtx context.Context, span trace.Span, label string,
 			attribute.String("http.request.method", http.MethodGet),
 			attribute.String("server.address", redact.URLOrigin(c.baseURL)),
 		)
+		if attempts > 0 {
+			span.SetAttributes(attribute.Int("http.request.resend_count", attempts-1))
+		}
+		if waitDuration > 0 {
+			span.SetAttributes(attribute.Int64("headscale.rate_limit.wait_ms", waitDuration.Milliseconds()))
+		}
 		if status != 0 {
 			span.SetAttributes(attribute.Int("http.response.status_code", status))
 		}
@@ -226,11 +261,17 @@ func (c *Client) observe(spanCtx context.Context, span trace.Span, label string,
 	}
 	span.End()
 	if c.onRequest != nil {
+		duration := time.Since(start) - waitDuration
+		if duration < 0 {
+			duration = 0
+		}
 		c.onRequest(spanCtx, RequestInfo{
-			Endpoint: label,
-			Status:   status,
-			Duration: time.Since(start),
-			Err:      errStr,
+			Endpoint:     label,
+			Status:       status,
+			Attempts:     attempts,
+			Duration:     duration,
+			WaitDuration: waitDuration,
+			Err:          errStr,
 		})
 	}
 }

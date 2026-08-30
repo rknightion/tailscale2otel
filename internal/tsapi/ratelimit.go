@@ -1,113 +1,27 @@
 package tsapi
 
 import (
-	"context"
 	"net/http"
-	"sync"
-	"time"
+
+	"github.com/rknightion/tailscale2otel/v4/internal/httpretry"
 )
 
-// limiter is a small thread-safe token-bucket rate limiter. Tokens refill
-// continuously at ratePerSec and the bucket holds at most burst tokens.
-type limiter struct {
-	mu         sync.Mutex
-	ratePerSec float64
-	burst      float64
-	tokens     float64
-	last       time.Time
-}
+// Compatibility aliases keep retryTransport and its unchanged tests on their
+// existing private seam while the provider-neutral implementation lives in
+// internal/httpretry.
+type limiter = httpretry.Limiter
+type rateWaiter = httpretry.Waiter
 
-// newLimiter returns a limiter allowing ratePerSec requests per second with a
-// burst capacity of one token (the bucket starts full).
 func newLimiter(ratePerSec float64) *limiter {
-	return &limiter{
-		ratePerSec: ratePerSec,
-		burst:      1,
-		tokens:     1,
-		last:       time.Now(),
-	}
-}
-
-// reserve refills the bucket for elapsed time and, if a token is available,
-// consumes it and returns 0. Otherwise it returns the duration to wait until
-// the next token will be available (without consuming one).
-func (l *limiter) reserve(now time.Time) time.Duration {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if elapsed := now.Sub(l.last); elapsed > 0 {
-		l.tokens += elapsed.Seconds() * l.ratePerSec
-		if l.tokens > l.burst {
-			l.tokens = l.burst
-		}
-		l.last = now
-	}
-	if l.tokens >= 1 {
-		l.tokens--
-		return 0
-	}
-	need := 1 - l.tokens
-	return time.Duration(need / l.ratePerSec * float64(time.Second))
-}
-
-// Wait blocks until a token is available or ctx is done, in which case it
-// returns ctx.Err().
-func (l *limiter) Wait(ctx context.Context) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		wait := l.reserve(time.Now())
-		if wait <= 0 {
-			return nil
-		}
-		timer := time.NewTimer(wait)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
-			// Re-check: another goroutine may have taken the token first.
-		}
-	}
-}
-
-// rateWaiter blocks until a request may proceed (or ctx is done). *limiter is
-// the production implementation; tests substitute a fake.
-type rateWaiter interface {
-	Wait(ctx context.Context) error
-}
-
-// rateLimitTransport waits for a limiter token before each round-trip. It is the
-// retry transport's base, so every attempt (including retries) is rate limited.
-type rateLimitTransport struct {
-	base http.RoundTripper
-	lim  rateWaiter
-}
-
-func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := t.lim.Wait(req.Context()); err != nil {
-		return nil, err
-	}
-	return t.base.RoundTrip(req)
-}
-
-// wrapRateLimit wraps base in a rate-limiting transport at ratePerSec requests
-// per second. When ratePerSec <= 0 it returns base unchanged (pass-through).
-func wrapRateLimit(base http.RoundTripper, ratePerSec float64) http.RoundTripper {
-	if ratePerSec <= 0 {
-		return base
-	}
-	return &rateLimitTransport{base: base, lim: newLimiter(ratePerSec)}
-}
-
-// newRateWaiter returns a token-bucket rateWaiter at ratePerSec requests per
-// second, or nil when ratePerSec <= 0 (unlimited). The retryTransport waits on
-// this BEFORE applying its per-attempt HTTP timeout, so queueing for a token is
-// not charged against that timeout (which bounds only connect/headers/body I/O).
-func newRateWaiter(ratePerSec float64) rateWaiter {
-	if ratePerSec <= 0 {
+	w := httpretry.NewWaiter(ratePerSec)
+	if w == nil {
 		return nil
 	}
-	return newLimiter(ratePerSec)
+	return w.(*limiter)
 }
+
+func wrapRateLimit(base http.RoundTripper, ratePerSec float64) http.RoundTripper {
+	return httpretry.WrapRateLimit(base, ratePerSec)
+}
+
+func newRateWaiter(ratePerSec float64) rateWaiter { return httpretry.NewWaiter(ratePerSec) }

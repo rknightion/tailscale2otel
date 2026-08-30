@@ -10,10 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/httpretry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -268,10 +268,10 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			t.observe(spanCtx, req, resp, err, attempt, start, waitTotal, span)
 			return resp, err
 		}
-		jittered, next := computeBackoff(delay, t.maxDelay, t.rndFloat())
+		jittered, next := httpretry.ComputeBackoff(delay, t.maxDelay, t.rndFloat())
 		sleep := jittered
 		if resp != nil {
-			if ra := retryAfter(resp.Header.Get("Retry-After")); ra > 0 {
+			if ra := httpretry.RetryAfter(resp.Header.Get("Retry-After")); ra > 0 {
 				sleep = min(ra, t.maxDelay) // honor server backoff exactly, capped at maxDelay (#206)
 			}
 			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
@@ -332,8 +332,18 @@ func retryableOutcome(resp *http.Response, err error) bool {
 	if err != nil {
 		return classifyTransportError(err).Retryable
 	}
-	return resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
+	return httpretry.RetryableOutcome(resp, nil)
 }
+
+// computeBackoff preserves the package-private test seam while delegating the
+// provider-neutral calculation to internal/httpretry.
+func computeBackoff(delay, maxDelay time.Duration, rnd float64) (sleep, next time.Duration) {
+	return httpretry.ComputeBackoff(delay, maxDelay, rnd)
+}
+
+// retryAfter preserves the package-private test seam while delegating the
+// provider-neutral parsing to internal/httpretry.
+func retryAfter(h string) time.Duration { return httpretry.RetryAfter(h) }
 
 // observe finalizes the span for a completed logical request (sets attributes,
 // status, and ends it), then calls the onRequest hook with the span-carrying
@@ -620,17 +630,6 @@ func endpointLabel(p string) string {
 	return elideVarSegment(p)
 }
 
-// computeBackoff returns the equal-jittered sleep for the current delay and the
-// next (doubled, capped) base delay. rnd must be in [0,1). Equal jitter keeps
-// sleep in [delay/2, delay), so retries from collectors throttled together do
-// not align.
-func computeBackoff(delay, maxDelay time.Duration, rnd float64) (sleep, next time.Duration) {
-	half := delay / 2
-	sleep = half + time.Duration(rnd*float64(half))
-	next = min(delay*2, maxDelay)
-	return sleep, next
-}
-
 // rndFloat returns the jitter fraction in [0,1), using the injected source when
 // set (tests) or math/rand/v2 otherwise.
 func (t *retryTransport) rndFloat() float64 {
@@ -638,22 +637,4 @@ func (t *retryTransport) rndFloat() float64 {
 		return t.rnd()
 	}
 	return rand.Float64() //nolint:gosec // G404: backoff jitter is not security-sensitive (math/rand/v2)
-}
-
-func retryAfter(h string) time.Duration {
-	if h == "" {
-		return 0
-	}
-	if secs, err := strconv.Atoi(h); err == nil {
-		if secs <= 0 {
-			return 0
-		}
-		return time.Duration(secs) * time.Second
-	}
-	if when, err := http.ParseTime(h); err == nil {
-		if d := time.Until(when); d > 0 {
-			return d
-		}
-	}
-	return 0
 }
