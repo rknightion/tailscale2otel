@@ -239,6 +239,9 @@ func objectStoreWithBudgetDefaults(os ObjectStoreConfig) ObjectStoreConfig {
 	if os.MaxObjects == 0 {
 		os.MaxObjects = d.MaxObjects
 	}
+	if os.MaxSeenKeys == 0 {
+		os.MaxSeenKeys = d.MaxSeenKeys
+	}
 	if os.MaxObjectWireBytes == 0 {
 		os.MaxObjectWireBytes = d.MaxObjectWireBytes
 	}
@@ -506,6 +509,8 @@ func validateObjectStoreDestination(collectorName, key string, os ObjectStoreCon
 			ObjectStoreLayoutPartitioned)
 	case os.MaxObjects < 0:
 		return fmt.Errorf("%s.max_objects must be >= 0 (got %d)", key, os.MaxObjects)
+	case os.MaxSeenKeys <= 0:
+		return fmt.Errorf("%s.max_seen_keys must be > 0 (got %d); an unbounded seen-key set is a memory leak", key, os.MaxSeenKeys)
 	case os.MaxObjectWireBytes <= 0:
 		return fmt.Errorf("%s.max_object_wire_bytes must be positive "+
 			"(supplied %d; required >= 1)", key, os.MaxObjectWireBytes)

@@ -248,12 +248,13 @@ static `node_metrics` target (see the `node_metrics` section); there is no dedic
 | `headscale.url` | `""` | Headscale origin only: scheme and host (with an optional port), with no non-root path, credentials, query, or fragment, e.g. `https://headscale.example.org`. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__URL`. |
 | `headscale.api_key` | `""` | Bearer API key for the Headscale server. Required when `provider: headscale`. Set via `TS2OTEL_HEADSCALE__API_KEY`. |
 | `headscale.api_key_file` | `""` | Read `headscale.api_key` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
+| `headscale.ip_prefixes` | `[]` | Tailnet address CIDRs allocated by this Headscale. Empty preserves the Tailscale defaults. Each entry must be canonical and fully inside RFC1918, `fc00::/7`, or `100.64.0.0/10`; validation prevents this configurable range set from admitting public addresses. Comma-separated via `TS2OTEL_HEADSCALE__IP_PREFIXES`. |
 | `headscale.max_response_bytes` | `4194304` (4 MiB) | Cap on ONE Headscale API response body before it is decoded. Must be `> 0`. Sized from a measured ~715 B/node, so the default covers roughly 5,800 nodes. These endpoints are **not paginated**, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. Above 64 MiB triggers a startup warning. The same fixed structural budgets as `tailscale.max_response_bytes` apply (nesting depth, string length, array elements). |
-| `headscale.http.timeout` | `30s` | Per-request timeout for Headscale API calls. |
-| `headscale.http.retry.max_attempts` | `0` | Accepted for config parity with `tailscale.http`, but **not applied** by the minimal v1 Headscale client (which honors only `timeout`). |
-| `headscale.http.retry.base_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
-| `headscale.http.retry.max_delay` | `0s` | Accepted for parity; not applied in v1 (see above). |
-| `headscale.http.rate_limit` | `0` | Accepted for parity; not applied in v1 (see above). |
+| `headscale.http.timeout` | `30s` | Per-attempt timeout for Headscale API calls. Retry backoff and rate-limit queueing use the parent context and are not charged against this timeout. |
+| `headscale.http.retry.max_attempts` | `0` | Total attempts for retryable transport errors, HTTP 429 and HTTP 5xx. `0` or `1` means one attempt. |
+| `headscale.http.retry.base_delay` | `0s` | Initial exponential retry delay. |
+| `headscale.http.retry.max_delay` | `0s` | Retry-delay ceiling, including `Retry-After`. |
+| `headscale.http.rate_limit` | `0` | Requests per second across Headscale calls; `0` or negative is unlimited. |
 
 ---
 
@@ -931,7 +932,10 @@ received record. Either way, **metrics are never capped — only logs.**
 | `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit posture log events. |
 | `collectors.devices.collect_device_invites` | `true` | Also fetch outstanding device share invites per device (one **extra API call per device per tick**, N+1) and emit `tailscale.device_invites.count`. Requires the `device_invites:read` OAuth scope (covered by `all:read`). Per-device failures are non-fatal. |
 | `collectors.devices.posture_log_mode` | `changes` | Controls the `tailscale.device.posture` log (requires `collect_posture`). `changes` — full dump on first scrape then deltas only. `always` — every scrape. `off` — suppress the log (the posture gauge metric is still emitted). |
+| `collectors.devices.expiry_log_mode` | `daily` | Controls both node-key and posture-attribute expiry WARN cadence. `daily` logs a change immediately plus at most one reminder per 24h; `always` preserves every-scrape behavior; `off` suppresses only the logs. Metrics still emit. |
 | `collectors.devices.attribute_namespaces` | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Device posture-attribute namespace prefixes promoted to `tailscale.device.attribute{,.info}` metrics (requires `collect_posture`). `["*"]` promotes every namespace; `[]` disables the attribute metrics. Comma-separated in env: `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES=intune,jamf`. |
+| `collectors.devices.attribute_key_limit` | `200` | Busiest posture keys promoted fleet-wide; overflow keys are dropped and counted. `0` or negative is unlimited. The SDK `cardinality.metric_limit` remains the last-resort backstop. |
+| `collectors.devices.attribute_value_limit` | `50` | Busiest values per posture key on the `.info` gauge; overflow folds to `value="__other__"`. `0` or negative is unlimited. |
 | `collectors.devices.collect_tag_rollup` | `true` | Emit the `tailscale.devices.by_tag` distribution gauge (one series per ACL tag). `false` keeps the other fleet-hygiene aggregates (`untagged`/`ephemeral`/`by_version`/`key_expiry`). |
 | `collectors.devices.tag_rollup_limit` | `50` | Cap on distinct tag series for `tailscale.devices.by_tag`: the busiest N tags by device count keep their own series; the rest fold into a single `tailscale.tag="__other__"` series. `0` or negative = unlimited. |
 
@@ -947,6 +951,7 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | `collectors.flowlogs.lag` | `120s` | Tail-safety margin; query up to `now − lag` (poll only). Flow logs have a noticeable tail, hence the larger default than audit. |
 | `collectors.flowlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
 | `collectors.flowlogs.max_window` | `1h` | Catch-up cap for one tick (poll only). |
+| `collectors.flowlogs.dedup_capacity` | `16384` | Connection identities retained for poll-window and cross-source dedup. Must be positive; unlimited is deliberately unsupported because an unbounded set is a memory leak. |
 | `collectors.flowlogs.replay_overlap` | `5m` | Reread this much of completed poll history for late API records (`0` disables; maximum `1h`). Separate from the tail-safety `lag`. |
 | `collectors.flowlogs.replay_seen_capacity` | `131072` | Bounded durable hashed connection identities used to suppress the replay across restart (`1..1048576` while enabled). |
 | `collectors.flowlogs.trusted_reporter_node_ids` | `[]` | Optional allowlist of verified `FlowLog.NodeID` reporters, classified as `configured`. The reporter observation metric carries only the bounded trust/consistency classes, never these raw IDs. |
@@ -993,6 +998,7 @@ be built from it, and that is an immutable fault rather than something a retry f
 | `collectors.flowlogs.objectstore.lookback` | `1h` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Setting it below `interval` is warned about: the overlap would be smaller than the gap between listings, so an object landing between two cycles could be missed. |
 | `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. **Capped in effect at 14 days under `layout: partitioned`** — a larger value silently ingests only the most recent 14 day partitions and is warned about at startup. |
 | `collectors.flowlogs.objectstore.max_objects` | `200` | Objects ingested per cycle. Exceeding it is not an error: the remainder is counted into `tailscale2otel.objectstore.skipped{reason="per_cycle_budget"}`, logged at WARN, reported by the `tailscale2otel.objectstore.backlog` gauge, and picked up next cycle. |
+| `collectors.flowlogs.objectstore.max_seen_keys` | `5000` | Durable seen-object identities retained per destination. Too small a value can re-admit an evicted object inside the lookback as new; must be positive. |
 | `collectors.flowlogs.objectstore.max_object_wire_bytes` | `67108864` (64 MiB) | Maximum GET response bytes read from one object. A breach quarantines that object as a durable gap, including compressed objects that consume work without producing decoded rows. Must be positive. |
 | `collectors.flowlogs.objectstore.max_object_decompressed_bytes` | `33554432` (32 MiB) | Maximum decompressed bytes accepted from one object. A breach quarantines that object as a durable gap. Must be positive. |
 | `collectors.flowlogs.objectstore.max_object_records` | `100000` | Maximum records accepted from one object. A breach quarantines that object as a durable gap. Must be positive. |
@@ -1127,6 +1133,7 @@ Configuration/audit events → event logs + a counter.
 | `collectors.auditlogs.lag` | `60s` | Tail-safety margin (poll only). |
 | `collectors.auditlogs.initial_lookback` | `5m` | Cold-start reach-back (poll only). |
 | `collectors.auditlogs.max_window` | `6h` | Catch-up cap for one tick (poll only). |
+| `collectors.auditlogs.dedup_capacity` | `4096` | Audit identities retained for poll-window and audit/webhook cross-source dedup. Must be positive. |
 
 #### `collectors.auditlogs.objectstore` — the configuration-log export
 
@@ -1139,6 +1146,10 @@ objectstore` reads that export.
 — read that section for all of them; only the key prefix differs
 (`collectors.auditlogs.objectstore.*`). With a `tailnets:` list, each entry carries its own
 `objectstore.audit` block instead, with no inheritance from here.
+
+`collectors.auditlogs.objectstore.max_seen_keys` defaults to `5000`, as does
+`collectors.k8s_audit.objectstore.max_seen_keys`; both are positive bounds on the durable
+seen-object identities retained per destination.
 
 Two rules are specific to running both signals from object storage:
 
@@ -1163,6 +1174,7 @@ field the export does not. Neither field is required.
 | `collectors.users.enabled` / `.interval` | `true` / `300s` | User/role/status counts and per-user device & connection gauges. |
 | `collectors.keys.enabled` / `.interval` | `true` / `300s` | Key inventory gauges (auth keys, OAuth clients, and API tokens via the unified key model), counts bucketed by `type`/`auth_kind`/`revoked`/`invalid`, and an "expiring soon" WARN log. Per-key `key.expiry`/`key.scopes`/`key.preauthorized` gauges are gated by `cardinality.per_entity.key`. |
 | `collectors.keys.expiry_warn` | `168h` | Emit the "expiring soon" WARN log when a key expires within this window (default 7 days). |
+| `collectors.keys.expiry_log_mode` | `daily` | Expiry WARN cadence: `daily` logs a change plus at most one reminder per 24h; `always` preserves every-scrape behavior; `off` suppresses only the log. Metrics still emit. |
 | `collectors.settings.enabled` / `.interval` | `true` / `600s` | Tailnet feature-toggle gauges. |
 | `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag), plus policy risk-scoring gauges (wildcard / unrestricted / auto-approver / SSH-wildcard / posture-gated rules). |
 | `collectors.acl.validate` | `true` | Validate the tailnet's active policy each tick via `POST /tailnet/{tailnet}/acl/validate`. Despite the verb this is a **read** operation — upstream requires only the `policy_file:read` scope and it never modifies the policy; sending no body validates the *current* policy. It is the only non-GET call this exporter makes, so set `false` if you require a strictly GET-only client. Permission denial reports as unavailable, never as a passing validation. |

@@ -164,6 +164,9 @@
                         "auditlogs": {
                             "type": "object",
                             "properties": {
+                                "dedup_capacity": {
+                                    "type": "integer"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
@@ -230,6 +233,9 @@
                                         "max_objects": {
                                             "type": "integer"
                                         },
+                                        "max_seen_keys": {
+                                            "type": "integer"
+                                        },
                                         "path_style": {
                                             "type": "boolean"
                                         },
@@ -275,11 +281,17 @@
                         "devices": {
                             "type": "object",
                             "properties": {
+                                "attribute_key_limit": {
+                                    "type": "integer"
+                                },
                                 "attribute_namespaces": {
                                     "type": "array",
                                     "items": {
                                         "type": "string"
                                     }
+                                },
+                                "attribute_value_limit": {
+                                    "type": "integer"
                                 },
                                 "collect_connectivity": {
                                     "type": "boolean"
@@ -298,6 +310,9 @@
                                 },
                                 "enabled": {
                                     "type": "boolean"
+                                },
+                                "expiry_log_mode": {
+                                    "type": "string"
                                 },
                                 "interval": {
                                     "type": "string"
@@ -326,6 +341,9 @@
                         "flowlogs": {
                             "type": "object",
                             "properties": {
+                                "dedup_capacity": {
+                                    "type": "integer"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
@@ -396,6 +414,9 @@
                                             "type": "integer"
                                         },
                                         "max_objects": {
+                                            "type": "integer"
+                                        },
+                                        "max_seen_keys": {
                                             "type": "integer"
                                         },
                                         "path_style": {
@@ -497,6 +518,9 @@
                                         "max_objects": {
                                             "type": "integer"
                                         },
+                                        "max_seen_keys": {
+                                            "type": "integer"
+                                        },
                                         "path_style": {
                                             "type": "boolean"
                                         },
@@ -529,6 +553,9 @@
                             "properties": {
                                 "enabled": {
                                     "type": "boolean"
+                                },
+                                "expiry_log_mode": {
+                                    "type": "string"
                                 },
                                 "expiry_warn": {
                                     "type": "string"
@@ -999,6 +1026,12 @@
                                 }
                             },
                             "additionalProperties": false
+                        },
+                        "ip_prefixes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
                         },
                         "max_response_bytes": {
                             "type": "integer"

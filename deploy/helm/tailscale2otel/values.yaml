@@ -669,7 +669,8 @@ config: # @schema additionalProperties:false
   # name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is
   # emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set
   # per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds
-  # inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode.
+  # inline here or mount a config file. With more than one entry, streaming/webhook receivers
+  # require explicit file-only routes naming tailnets[].name; one entry may use legacy fields.
   # Default empty (single tailnet from the tailscale block below).
   # An entry may also carry its own `objectstore.flow` destination (endpoint/region/bucket/prefix
   # plus the same credential and limit fields as collectors.flowlogs.objectstore). With this list
@@ -682,6 +683,12 @@ config: # @schema additionalProperties:false
   # Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials
   # never land in a ConfigMap readable by namespace viewers.
   tailnets: []
+  # Example per-entry block (the default list stays empty):
+  # - name: acme.example.com
+  #   cardinality:
+  #     metric_limit: 0 # 0 inherits global; negative is unlimited for this tailnet
+  #     warning_threshold: 0 # 0 inherits global
+  #     critical_threshold: 0 # 0 inherits global; effective critical must be >= warning
 
   # Headscale control-plane connection. Used only when provider: headscale. The api_key is a
   # Bearer token — set it via the secret TS2OTEL_HEADSCALE__API_KEY (above), not here.
@@ -694,6 +701,9 @@ config: # @schema additionalProperties:false
     # -- Read headscale.api_key from this path instead of an inline value (mounted-Secret style).
     # Set the value or the file, not both; the file's content is whitespace-trimmed.
     api_key_file: ""
+    # -- Tailnet address CIDRs allocated by this Headscale. Empty preserves the Tailscale
+    # defaults. Entries must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10.
+    ip_prefixes: [] # @schema item: string
     # -- Cap on ONE Headscale API response body before it is decoded, in bytes.
     # Sized from a measured ~715 B/node, so 4 MiB covers roughly 5,800 nodes. These
     # endpoints are not paginated, so a larger deployment needs a larger value —
@@ -701,9 +711,9 @@ config: # @schema additionalProperties:false
     # times the wire size. A value above 64 MiB triggers a startup warning.
     max_response_bytes: 4194304
     http: # @schema additionalProperties:false
-      # -- Per-request timeout for Headscale API calls (the only http knob applied in v1).
+      # -- Per-attempt timeout for Headscale API calls; retry/rate-limit queueing is outside it.
       timeout: 30s
-      # retry/rate_limit are accepted for parity with tailscale.http but not applied by the v1 client.
+      # -- Retry policy for retryable transport errors, HTTP 429 and HTTP 5xx.
       retry: # @schema additionalProperties:false
         max_attempts: 0
         base_delay: 0s
@@ -1146,9 +1156,12 @@ config: # @schema additionalProperties:false
       # -- Emit per-device posture attributes as log records (gated; requires posture identity on).
       collect_posture: false
       # -- How the tailscale.device.posture log behaves when collect_posture is on: changes (full
-      # dump on the first scrape, then deltas only) | always (every scrape) | off (suppress the log;
+      # dump on the first scrape, then deltas only), always (every scrape), or off (suppress the log;
       # the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume.
       posture_log_mode: changes
+      # -- Node-key and posture-attribute expiry WARN cadence: daily (change plus at most one
+      # reminder per 24h, default), always (every scrape, legacy), or off. Metrics always emit.
+      expiry_log_mode: daily
       # -- Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API
       # call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read).
       # Emits tailscale.device_invites.count; per-device fetch failures are non-fatal.
@@ -1156,6 +1169,12 @@ config: # @schema additionalProperties:false
       # -- Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info}
       # metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled.
       attribute_namespaces: [intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]
+      # -- Busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and
+      # counted. 0 or negative = unlimited; cardinality.metric_limit is the final SDK guard.
+      attribute_key_limit: 200
+      # -- Busiest values per attribute key on the .info gauge; overflow folds to "__other__".
+      # 0 or negative = unlimited.
+      attribute_value_limit: 50
       # -- Emit the tailscale.devices.by_tag distribution gauge (one series per ACL tag).
       # false keeps the other fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry).
       collect_tag_rollup: true
@@ -1182,6 +1201,8 @@ config: # @schema additionalProperties:false
       initial_lookback: 5m
       # -- Maximum width of a single poll window (caps catch-up after downtime).
       max_window: 1h
+      # -- Identities retained for poll-window and cross-source dedup. Must be positive.
+      dedup_capacity: 16384
       # -- Reread this much before the durable high-water mark so records that became available
       # after the first completed query can still arrive. 0 disables; maximum 1h.
       replay_overlap: 5m
@@ -1240,6 +1261,8 @@ config: # @schema additionalProperties:false
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
+        # -- Durable seen-object identities retained per destination.
+        max_seen_keys: 5000
         # -- Maximum GET response bytes read from one object. A breach quarantines that object.
         max_object_wire_bytes: 67108864
         # -- Maximum decompressed bytes accepted from one object. A breach quarantines that object.
@@ -1293,6 +1316,8 @@ config: # @schema additionalProperties:false
       initial_lookback: 5m
       # -- Maximum width of a single poll window.
       max_window: 6h
+      # -- Identities retained for poll-window and audit/webhook cross-source dedup. Must be positive.
+      dedup_capacity: 4096
       objectstore: # @schema additionalProperties:false
         # -- Service URL of the S3-compatible store holding Tailscale's CONFIGURATION-log export,
         # e.g. https://s3.eu-west-2.amazonaws.com or a MinIO address. REQUIRED when auditlogs.source
@@ -1333,6 +1358,8 @@ config: # @schema additionalProperties:false
         initial_lookback: 6h
         # -- Objects ingested per cycle. The remainder is counted, logged and picked up next cycle.
         max_objects: 200
+        # -- Durable seen-object identities retained per destination.
+        max_seen_keys: 5000
         # -- Maximum GET response bytes read from one object. A breach quarantines that object.
         max_object_wire_bytes: 67108864
         # -- Maximum decompressed bytes accepted from one object. A breach quarantines that object.
@@ -1415,6 +1442,8 @@ config: # @schema additionalProperties:false
         # tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a
         # flow or configuration-log export does.
         max_objects: 200
+        # -- Durable seen-object identities retained per destination.
+        max_seen_keys: 5000
         # -- Maximum GET response bytes read from one object. A breach quarantines that object.
         max_object_wire_bytes: 67108864
         # -- Maximum decompressed bytes accepted from one object. A breach quarantines that object.
@@ -1466,6 +1495,9 @@ config: # @schema additionalProperties:false
       interval: 300s
       # -- Emit a tailscale.key.expiring WARN log when a key expires within this window.
       expiry_warn: 168h
+      # -- Expiry WARN cadence: daily (change plus at most one reminder per 24h, default),
+      # always (every scrape, legacy), or off. Metrics always emit.
+      expiry_log_mode: daily
     settings: # @schema additionalProperties:false
       # -- Enable the tailnet-settings collector (setting.enabled flags, key-duration).
       enabled: true

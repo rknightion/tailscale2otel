@@ -22,6 +22,7 @@ import (
 // mostly-empty struct, silently corrupting the value, so Load rejects it outright
 // instead (see structSliceEnvKeys).
 var listEnvKeys = map[string]bool{
+	"headscale.ip_prefixes":                          true,
 	"tailscale.auth.oauth.scopes":                    true,
 	"collectors.devices.attribute_namespaces":        true,
 	"collectors.flowlogs.trusted_reporter_node_ids":  true,

@@ -26,6 +26,7 @@ func defaultObjectStore() ObjectStoreConfig {
 		Lookback:                   dur(1 * time.Hour),
 		InitialLookback:            dur(6 * time.Hour),
 		MaxObjects:                 200,
+		MaxSeenKeys:                5000,
 		MaxObjectWireBytes:         64 << 20,
 		MaxObjectDecompressedBytes: 32 << 20,
 		MaxObjectRecords:           100_000,
@@ -55,6 +56,7 @@ func Default() *Config {
 		Provider:  "tailscale",
 		Headscale: HeadscaleConfig{
 			HTTP:             TailscaleHTTPConfig{Timeout: dur(30 * time.Second)},
+			IPPrefixes:       nil,
 			MaxResponseBytes: 4 << 20, // 4 MiB — snapshot endpoints only; ~5,800 nodes at ~715 B each
 		},
 		Tailscale: TailscaleConfig{
@@ -182,10 +184,13 @@ func Default() *Config {
 				CollectConnectivity:  true,
 				CollectDeviceInvites: true,
 				PostureLogMode:       "changes",
+				ExpiryLogMode:        "daily",
 				// Opt-out default: once collect_posture is on, the integration
 				// namespaces plus ip are promoted to attribute metrics. node is
 				// covered by the curated posture gauge; custom is excluded (unbounded).
 				AttributeNamespaces: []string{"intune", "jamf", "kandji", "crowdstrike", "sentinelone", "kolide", "ip"},
+				AttributeKeyLimit:   200,
+				AttributeValueLimit: 50,
 				CollectTagRollup:    true,
 				TagRollupLimit:      50,
 			},
@@ -196,6 +201,7 @@ func Default() *Config {
 				Lag:             dur(120 * time.Second),
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(1 * time.Hour),
+				DedupCapacity:   16384,
 				ReplayOverlap:   dur(5 * time.Minute),
 				// A busy tailnet can return many connection identities inside a
 				// five-minute replay window. Keep the durable guard bounded but
@@ -211,6 +217,7 @@ func Default() *Config {
 				Lag:             dur(60 * time.Second),
 				InitialLookback: dur(5 * time.Minute),
 				MaxWindow:       dur(6 * time.Hour),
+				DedupCapacity:   4096,
 				ObjectStore:     defaultObjectStore(),
 			},
 			// Off by default: it requires enableEvents in the tailscale.com/cap/kubernetes
@@ -225,9 +232,10 @@ func Default() *Config {
 				Interval: dur(300 * time.Second),
 			},
 			Keys: KeysCollector{
-				Enabled:    true,
-				Interval:   dur(300 * time.Second),
-				ExpiryWarn: dur(168 * time.Hour),
+				Enabled:       true,
+				Interval:      dur(300 * time.Second),
+				ExpiryWarn:    dur(168 * time.Hour),
+				ExpiryLogMode: "daily",
 			},
 			Settings: SimpleCollector{
 				Enabled:  true,

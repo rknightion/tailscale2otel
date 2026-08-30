@@ -236,6 +236,7 @@ extraVolumeMounts:
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
 | config.collectors.acl.validate | bool | `true` | Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only. |
+| config.collectors.auditlogs.dedup_capacity | int | `4096` | Identities retained for poll-window and audit/webhook cross-source dedup. Must be positive. |
 | config.collectors.auditlogs.enabled | bool | `true` | Enable the configuration-audit-logs collector. |
 | config.collectors.auditlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run. |
 | config.collectors.auditlogs.interval | string | `"60s"` | Poll interval. |
@@ -257,6 +258,7 @@ extraVolumeMounts:
 | config.collectors.auditlogs.objectstore.max_object_records | int | `100000` | Maximum records accepted from one object. A breach quarantines that object. |
 | config.collectors.auditlogs.objectstore.max_object_wire_bytes | int | `67108864` | Maximum GET response bytes read from one object. A breach quarantines that object. |
 | config.collectors.auditlogs.objectstore.max_objects | int | `200` | Objects ingested per cycle. The remainder is counted, logged and picked up next cycle. |
+| config.collectors.auditlogs.objectstore.max_seen_keys | int | `5000` | Durable seen-object identities retained per destination. |
 | config.collectors.auditlogs.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
 | config.collectors.auditlogs.objectstore.prefix | string | `""` | The export's root within the bucket, above the YYYY/MM/DD partitions. Use a distinct prefix when the flow and configuration exports share one bucket. |
 | config.collectors.auditlogs.objectstore.region | string | `""` | Bucket region. REQUIRED when source is objectstore: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
@@ -267,18 +269,22 @@ extraVolumeMounts:
 | config.collectors.auditlogs.source | string | `"poll"` | Ingestion source: poll | stream | both | objectstore. Pick ONE method per log type (see flowlogs.source): `both` risks double-counting and de-dup is only a best-effort failsafe (WARNed at startup). Set `stream` when config.streaming.enabled is true. |
 | config.collectors.contacts.enabled | bool | `true` | Enable the contacts collector (account/support/security contact verification; no emails emitted). |
 | config.collectors.contacts.interval | string | `"600s"` | Poll interval. |
+| config.collectors.devices.attribute_key_limit | int | `200` | Busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and counted. 0 or negative = unlimited; cardinality.metric_limit is the final SDK guard. |
 | config.collectors.devices.attribute_namespaces | list | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info} metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled. |
+| config.collectors.devices.attribute_value_limit | int | `50` | Busiest values per attribute key on the .info gauge; overflow folds to "__other__". 0 or negative = unlimited. |
 | config.collectors.devices.collect_connectivity | bool | `true` | Emit per-device NAT/connectivity health (tailscale.device.connectivity.*) plus the fleet connectivity rollups (tailscale.devices.hard_nat/direct_capable/client_supports) from the rich device payload (no extra API call). Per-device gauges additionally gated by per_entity.device. |
 | config.collectors.devices.collect_device_invites | bool | `true` | Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read). Emits tailscale.device_invites.count; per-device fetch failures are non-fatal. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
 | config.collectors.devices.collect_routes | bool | `false` | Also collect advertised/enabled subnet routes and per-DERP latency via the rich GET /devices?fields=all endpoint. |
 | config.collectors.devices.collect_tag_rollup | bool | `true` | Emit the tailscale.devices.by_tag distribution gauge (one series per ACL tag). false keeps the other fleet-hygiene aggregates (untagged/ephemeral/by_version/key_expiry). |
 | config.collectors.devices.enabled | bool | `true` | Enable the devices collector (device.online/last_seen/key_expiry/update_available). |
+| config.collectors.devices.expiry_log_mode | string | `"daily"` | Node-key and posture-attribute expiry WARN cadence: daily (change plus at most one reminder per 24h, default), always (every scrape, legacy), or off. Metrics always emit. |
 | config.collectors.devices.interval | string | `"60s"` | Poll interval. |
-| config.collectors.devices.posture_log_mode | string | `"changes"` | How the tailscale.device.posture log behaves when collect_posture is on: changes (full dump on the first scrape, then deltas only) | always (every scrape) | off (suppress the log; the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume. |
+| config.collectors.devices.posture_log_mode | string | `"changes"` | How the tailscale.device.posture log behaves when collect_posture is on: changes (full dump on the first scrape, then deltas only), always (every scrape), or off (suppress the log; the posture gauge metric is still emitted). `always` on a large fleet is a lot of log volume. |
 | config.collectors.devices.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
+| config.collectors.flowlogs.dedup_capacity | int | `16384` | Identities retained for poll-window and cross-source dedup. Must be positive. |
 | config.collectors.flowlogs.enabled | bool | `true` | Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs). |
 | config.collectors.flowlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run when no checkpoint exists. |
 | config.collectors.flowlogs.interval | string | `"60s"` | Poll interval. |
@@ -302,6 +308,7 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.max_object_records | int | `100000` | Maximum records accepted from one object. A breach quarantines that object. |
 | config.collectors.flowlogs.objectstore.max_object_wire_bytes | int | `67108864` | Maximum GET response bytes read from one object. A breach quarantines that object. |
 | config.collectors.flowlogs.objectstore.max_objects | int | `200` | Objects ingested per cycle. The remainder is counted, logged and picked up next cycle. |
+| config.collectors.flowlogs.objectstore.max_seen_keys | int | `5000` | Durable seen-object identities retained per destination. |
 | config.collectors.flowlogs.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
 | config.collectors.flowlogs.objectstore.prefix | string | `""` | The export's root within the bucket, above the YYYY/MM/DD partitions. No leading slash: it becomes part of this feed's durable checkpoint identity, so removing one later reads as a brand-new feed and re-emits already-ingested objects. |
 | config.collectors.flowlogs.objectstore.region | string | `""` | Bucket region. REQUIRED when source is objectstore: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
@@ -331,6 +338,7 @@ extraVolumeMounts:
 | config.collectors.k8s_audit.objectstore.max_object_records | int | `100000` | Maximum records accepted from one object. A breach quarantines that object. |
 | config.collectors.k8s_audit.objectstore.max_object_wire_bytes | int | `67108864` | Maximum GET response bytes read from one object. A breach quarantines that object. |
 | config.collectors.k8s_audit.objectstore.max_objects | int | `200` | Objects ingested per cycle. The remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow or configuration-log export does. |
+| config.collectors.k8s_audit.objectstore.max_seen_keys | int | `5000` | Durable seen-object identities retained per destination. |
 | config.collectors.k8s_audit.objectstore.path_style | bool | `false` | Address as <endpoint>/<bucket>/<key> rather than <bucket>.<endpoint>/<key>. Required by most non-AWS implementations; getting it backwards is a DNS failure. |
 | config.collectors.k8s_audit.objectstore.prefix | string | `""` | Root within the bucket. Usually EMPTY: tsrecorder keys are <stableID>/events/<ts>.event and <stableID>/<ts>.cast, and <stableID> differs per recorder replica, so it cannot be pinned in a prefix. |
 | config.collectors.k8s_audit.objectstore.region | string | `""` | Bucket region. REQUIRED: it is part of the request signature, so a wrong value fails every request with HTTP 403. |
@@ -339,6 +347,7 @@ extraVolumeMounts:
 | config.collectors.k8s_audit.objectstore.session_token | string | `""` | Static S3 session token, for temporary credentials only. Set via the TS2OTEL_* secret. |
 | config.collectors.k8s_audit.objectstore.session_token_file | string | `""` | Read the S3 session token from this mounted file instead of an inline value. Set the value or the file, never both. |
 | config.collectors.keys.enabled | bool | `true` | Enable the auth/API keys collector (key.expiry, keys.count). |
+| config.collectors.keys.expiry_log_mode | string | `"daily"` | Expiry WARN cadence: daily (change plus at most one reminder per 24h, default), always (every scrape, legacy), or off. Metrics always emit. |
 | config.collectors.keys.expiry_warn | string | `"168h"` | Emit a tailscale.key.expiring WARN log when a key expires within this window. |
 | config.collectors.keys.interval | string | `"300s"` | Poll interval. |
 | config.collectors.log_stream.enabled | bool | `true` | Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error) when no SIEM sink is configured for a log type. |
@@ -440,10 +449,9 @@ extraVolumeMounts:
 | config.headscale.api_key | string | `""` | Bearer API key. Prefer the TS2OTEL_HEADSCALE__API_KEY secret over an inline value. |
 | config.headscale.api_key_file | string | `""` | Read headscale.api_key from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.headscale.http.rate_limit | int | `0` |  |
-| config.headscale.http.retry.base_delay | string | `"0s"` |  |
-| config.headscale.http.retry.max_attempts | int | `0` |  |
-| config.headscale.http.retry.max_delay | string | `"0s"` |  |
-| config.headscale.http.timeout | string | `"30s"` | Per-request timeout for Headscale API calls (the only http knob applied in v1). |
+| config.headscale.http.retry | object | `{"base_delay":"0s","max_attempts":0,"max_delay":"0s"}` | Retry policy for retryable transport errors, HTTP 429 and HTTP 5xx. |
+| config.headscale.http.timeout | string | `"30s"` | Per-attempt timeout for Headscale API calls; retry/rate-limit queueing is outside it. |
+| config.headscale.ip_prefixes | list | `[]` | Tailnet address CIDRs allocated by this Headscale. Empty preserves the Tailscale defaults. Entries must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10. |
 | config.headscale.max_response_bytes | int | `4194304` | Cap on ONE Headscale API response body before it is decoded, in bytes. Sized from a measured ~715 B/node, so 4 MiB covers roughly 5,800 nodes. These endpoints are not paginated, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. A value above 64 MiB triggers a startup warning. |
 | config.headscale.url | string | `""` | Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org. |
 | config.ingress_wal.corruption | string | `"fail"` | Corruption policy. Only fail is supported: startup/drain stops rather than discarding data. |
@@ -599,7 +607,7 @@ extraVolumeMounts:
 | config.streaming.tls.key_file | string | `""` | TLS private key file paired with cert_file. |
 | config.streaming.token | string | `""` | Expected as 'Authorization: Splunk <token>'. Set via TS2OTEL_STREAMING__TOKEN (secret). |
 | config.streaming.token_file | string | `""` | Read streaming.token from this path instead of an inline value (mounted-Secret style). Set the value or the file, not both; the file's content is whitespace-trimmed. |
-| config.tailnets | list | `[]` | Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds inline here or mount a config file. Streaming/webhook receivers require single-tailnet mode. Default empty (single tailnet from the tailscale block below). An entry may also carry its own `objectstore.flow` destination (endpoint/region/bucket/prefix plus the same credential and limit fields as collectors.flowlogs.objectstore). With this list non-empty nothing is inherited from that global block, and when config.collectors.flowlogs.source is `objectstore` EVERY entry must have a complete destination of its own and no two entries may name the same bucket+prefix — otherwise startup fails, naming the tailnet. Use `*_file` credential keys pointing at a mounted Secret to keep per-tailnet S3 keys out of this file. When this list is non-empty the chart renders the whole config.yaml into a dedicated Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials never land in a ConfigMap readable by namespace viewers. |
+| config.tailnets | list | `[]` | Multi-tailnet / MSP list. Optional; mutually exclusive with an explicit tailscale.tailnet (leave it "-" when using this). Each entry observes one tailnet and is self-contained (its own name + auth + http); credentials are NOT inherited from the tailscale block. Tailnet identity is emitted as the tailscale.tailnet OTEL resource attribute (one target_info per tailnet). Set per-tailnet secrets via TS2OTEL_* env is NOT supported for the list (file-only) — provide creds inline here or mount a config file. With more than one entry, streaming/webhook receivers require explicit file-only routes naming tailnets[].name; one entry may use legacy fields. Default empty (single tailnet from the tailscale block below). An entry may also carry its own `objectstore.flow` destination (endpoint/region/bucket/prefix plus the same credential and limit fields as collectors.flowlogs.objectstore). With this list non-empty nothing is inherited from that global block, and when config.collectors.flowlogs.source is `objectstore` EVERY entry must have a complete destination of its own and no two entries may name the same bucket+prefix — otherwise startup fails, naming the tailnet. Use `*_file` credential keys pointing at a mounted Secret to keep per-tailnet S3 keys out of this file. When this list is non-empty the chart renders the whole config.yaml into a dedicated Secret (<fullname>-config) instead of a ConfigMap, so the inline per-tailnet credentials never land in a ConfigMap readable by namespace viewers. |
 | config.tailscale.auth.apikey | string | `""` | API key, used only when method: apikey. Set via TS2OTEL_TAILSCALE__AUTH__APIKEY (secret). |
 | config.tailscale.auth.apikey_file | string | `""` | Read tailscale.auth.apikey from this path instead of an inline value. Set the value or the file, not both; the file's content is whitespace-trimmed. |
 | config.tailscale.auth.method | string | `"oauth"` | Auth method: oauth (recommended) | apikey | workload_identity. Prefer an OAuth client (short-lived scoped tokens, not user-tied); a personal API key expires in <=90 days and is user-tied, and the exporter logs a WARN when apikey is selected. workload_identity is the keyless OIDC exchange — no stored secret at all, ideal for a Kubernetes ServiceAccount token. |

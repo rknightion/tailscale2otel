@@ -36,9 +36,10 @@ headscale:
   url: ""                             # Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL)
   api_key: ""                         # Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY)
   api_key_file: ""                    # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
+  ip_prefixes: []                     # tailnet address CIDRs allocated by this Headscale; empty = Tailscale defaults. Must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10
   http:                               # HTTP client used for all Headscale API calls
-    timeout: 30s                      # per-request timeout (the ONLY http knob applied in v1)
-    retry:                            # accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client
+    timeout: 30s                      # per-attempt timeout; retry queueing/rate-limit wait is outside this budget
+    retry:                            # retry policy for retryable transport errors, HTTP 429 and HTTP 5xx
       max_attempts: 0
       base_delay: 0s
       max_delay: 0s
@@ -95,8 +96,10 @@ tailscale:
 # are never inherited from the tailscale: block. Tailnet identity is emitted as the
 # tailscale.tailnet OTEL resource attribute (one target_info per tailnet); query
 # fleet-wide with `sum without(instance)(...)`. FILE-ONLY: this list of structs is
-# NOT settable via TS2OTEL_* env vars. Streaming/webhook receivers require
-# single-tailnet mode (use the tailscale: block instead). Default: empty (single
+# NOT settable via TS2OTEL_* env vars. Streaming/webhook receivers work here, but
+# a list of MORE THAN ONE tailnet must route them explicitly with streaming.routes /
+# webhook.routes (also FILE-ONLY), each naming one tailnets[].name. A list of exactly
+# one entry may still use the legacy single-listener fields. Default: empty (single
 # tailnet from the tailscale: block above).
 #
 # objectstore.flow / objectstore.audit (OPTIONAL, and REQUIRED on every entry when
@@ -112,6 +115,10 @@ tailscale:
 # tuning fields (interval/lookback/max_*) fall back to the built-in defaults.
 tailnets: []
 #   - name: acme.example.com
+#     cardinality:
+#       metric_limit: 0               # 0 = inherit global; negative = unlimited for this tailnet; positive = explicit limit
+#       warning_threshold: 0          # 0 = inherit global; otherwise the per-tailnet status warning threshold
+#       critical_threshold: 0         # 0 = inherit global; effective value must be >= warning_threshold
 #     auth:
 #       method: oauth
 #       oauth:
@@ -320,6 +327,7 @@ collectors:
     collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
     collect_device_invites: true      # also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count
     posture_log_mode: changes         # needs collect_posture: changes (log only on change) | always (every scrape) | off (no log); the posture METRIC is always emitted
+    expiry_log_mode: daily            # node-key AND posture-attribute expiry WARN cadence: daily (change + at most one reminder/24h, default) | always (every scrape, legacy) | off; metrics always emit
     attribute_namespaces:             # needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable
       - intune
       - jamf
@@ -328,6 +336,8 @@ collectors:
       - sentinelone
       - kolide
       - ip
+    attribute_key_limit: 200          # busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and counted (0/negative = unlimited); cardinality.metric_limit is still the final SDK guard
+    attribute_value_limit: 50         # busiest values per attribute key on the .info gauge; overflow folds to value="__other__" (0/negative = unlimited)
     collect_tag_rollup: true          # emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates
     tag_rollup_limit: 50              # cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited)
   flowlogs:                           # network flow logs -> traffic counters + per-connection logs
@@ -337,6 +347,7 @@ collectors:
     lag: 120s                         # poll only — query only up to now-lag so late-arriving records aren't missed
     initial_lookback: 5m              # poll only — cold-start reach-back when there is no checkpoint yet
     max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
+    dedup_capacity: 16384             # identities retained for poll-window AND cross-source dedup; must be >0 (unlimited would leak memory)
     replay_overlap: 5m                # poll only — reread this completed-window overlap for records that became available late (0 disables)
     replay_seen_capacity: 131072      # poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)
     trusted_reporter_node_ids: []     # verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured
@@ -361,6 +372,7 @@ collectors:
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
       initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
+      max_seen_keys: 5000             # durable seen-object identities retained per destination; too low can re-ingest an evicted object inside the lookback
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
       max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB
       max_object_records: 100000      # reject and quarantine one object containing more than this many records
@@ -374,6 +386,7 @@ collectors:
     lag: 60s                          # poll only
     initial_lookback: 5m              # poll only
     max_window: 6h                    # poll only
+    dedup_capacity: 4096              # identities retained for poll-window AND audit/webhook cross-source dedup; must be >0
     objectstore:                      # source: objectstore only — read the CONFIGURATION-log export Tailscale writes to an S3-compatible bucket. A separate export from the flow one: nothing here is inherited from collectors.flowlogs.objectstore, and two destinations may not name the same bucket+prefix
       endpoint: ""                    # required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region)
       region: ""                      # required — part of the request signature; a wrong value fails every request with HTTP 403
@@ -392,6 +405,7 @@ collectors:
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
       initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
+      max_seen_keys: 5000             # durable seen-object identities retained per destination
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
       max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB
       max_object_records: 100000      # reject and quarantine one object containing more than this many records
@@ -418,6 +432,7 @@ collectors:
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
       initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does
+      max_seen_keys: 5000             # durable seen-object identities retained per destination
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
       max_object_decompressed_bytes: 33554432  # reject and quarantine one object that expands beyond 32 MiB. RAISE THIS if you record long terminal sessions: only the .cast header line is read for meaning, but the whole object is still streamed, and an oversized one is quarantined rather than partially read
       max_object_records: 100000      # reject and quarantine one object containing more than this many records
@@ -431,6 +446,7 @@ collectors:
     enabled: true
     interval: 300s
     expiry_warn: 168h                 # log a WARN when a key expires within this window (default 7d)
+    expiry_log_mode: daily            # WARN cadence: daily (change + at most one reminder/24h, default) | always (every scrape, legacy) | off; metrics always emit
   settings:                           # tailnet settings snapshot
     enabled: true
     interval: 600s

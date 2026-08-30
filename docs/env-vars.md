@@ -37,10 +37,11 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_HEADSCALE__URL` | `""` | Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org (TS2OTEL_HEADSCALE__URL) |
 | `TS2OTEL_HEADSCALE__API_KEY` | `""` | Bearer API key — keep in env (TS2OTEL_HEADSCALE__API_KEY) |
 | `TS2OTEL_HEADSCALE__API_KEY_FILE` | `""` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
-| `TS2OTEL_HEADSCALE__HTTP__TIMEOUT` | `30s` | per-request timeout (the ONLY http knob applied in v1) |
-| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `0` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
-| `TS2OTEL_HEADSCALE__HTTP__RETRY__BASE_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
-| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_DELAY` | `0s` | accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client |
+| `TS2OTEL_HEADSCALE__IP_PREFIXES` | `[]` | tailnet address CIDRs allocated by this Headscale; empty = Tailscale defaults. Must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10 _(comma-separated list)_ |
+| `TS2OTEL_HEADSCALE__HTTP__TIMEOUT` | `30s` | per-attempt timeout; retry queueing/rate-limit wait is outside this budget |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_ATTEMPTS` | `0` | retry policy for retryable transport errors, HTTP 429 and HTTP 5xx |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__BASE_DELAY` | `0s` | retry policy for retryable transport errors, HTTP 429 and HTTP 5xx |
+| `TS2OTEL_HEADSCALE__HTTP__RETRY__MAX_DELAY` | `0s` | retry policy for retryable transport errors, HTTP 429 and HTTP 5xx |
 | `TS2OTEL_HEADSCALE__HTTP__RATE_LIMIT` | `0` | HTTP client used for all Headscale API calls |
 | `TS2OTEL_HEADSCALE__MAX_RESPONSE_BYTES` | `4194304` | cap (4 MiB) on ONE Headscale API response body before decoding; ~5800 nodes at ~715 B each — raise it (and the container memory limit) on a bigger deployment, these endpoints are not paginated |
 | `TS2OTEL_TAILSCALE__TAILNET` | `-` | "-" = the authenticated principal's default tailnet (works out of the box); or set your tailnet's name explicitly, e.g. "example.com" |
@@ -193,7 +194,10 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_POSTURE` | `false` | also fetch device posture (MDM/EDR) — enables the posture metrics + log |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_DEVICE_INVITES` | `true` | also fetch outstanding device share invites per device (one extra API call per device, N+1); emits tailscale.device_invites.count |
 | `TS2OTEL_COLLECTORS__DEVICES__POSTURE_LOG_MODE` | `changes` | needs collect_posture: changes (log only on change) \| always (every scrape) \| off (no log); the posture METRIC is always emitted |
+| `TS2OTEL_COLLECTORS__DEVICES__EXPIRY_LOG_MODE` | `daily` | node-key AND posture-attribute expiry WARN cadence: daily (change + at most one reminder/24h, default) \| always (every scrape, legacy) \| off; metrics always emit |
 | `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_NAMESPACES` | `[intune, jamf, kandji, crowdstrike, sentinelone, kolide, ip]` | needs collect_posture: posture-key namespaces promoted to attribute metrics; ["*"] = all, [] = disable _(comma-separated list)_ |
+| `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_KEY_LIMIT` | `200` | busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and counted (0/negative = unlimited); cardinality.metric_limit is still the final SDK guard |
+| `TS2OTEL_COLLECTORS__DEVICES__ATTRIBUTE_VALUE_LIMIT` | `50` | busiest values per attribute key on the .info gauge; overflow folds to value="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_TAG_ROLLUP` | `true` | emit tailscale.devices.by_tag (one series per ACL tag); false keeps the other fleet-hygiene aggregates |
 | `TS2OTEL_COLLECTORS__DEVICES__TAG_ROLLUP_LIMIT` | `50` | cap distinct tag series on by_tag; busiest N kept, rest fold into tag="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__ENABLED` | `true` | network flow logs -> traffic counters + per-connection logs |
@@ -202,6 +206,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LAG` | `120s` | poll only — query only up to now-lag so late-arriving records aren't missed |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__INITIAL_LOOKBACK` | `5m` | poll only — cold-start reach-back when there is no checkpoint yet |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_WINDOW` | `1h` | poll only — cap one tick's window so a long outage catches up over several ticks |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__DEDUP_CAPACITY` | `16384` | identities retained for poll-window AND cross-source dedup; must be >0 (unlimited would leak memory) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_OVERLAP` | `5m` | poll only — reread this completed-window overlap for records that became available late (0 disables) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_SEEN_CAPACITY` | `131072` | poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__TRUSTED_REPORTER_NODE_IDS` | `[]` | verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured _(comma-separated list)_ |
@@ -225,6 +230,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_SEEN_KEYS` | `5000` | durable seen-object identities retained per destination; too low can re-ingest an evicted object inside the lookback |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
@@ -237,6 +243,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__AUDITLOGS__LAG` | `60s` | poll only |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__INITIAL_LOOKBACK` | `5m` | poll only |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__MAX_WINDOW` | `6h` | poll only |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__DEDUP_CAPACITY` | `4096` | identities retained for poll-window AND audit/webhook cross-source dedup; must be >0 |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ENDPOINT` | `""` | required — service URL, e.g. https://s3.eu-west-2.amazonaws.com, or a MinIO/Ceph address (never derived from the region) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__REGION` | `""` | required — part of the request signature; a wrong value fails every request with HTTP 403 |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__BUCKET` | `""` | required — the bucket Tailscale exports configuration logs into |
@@ -254,6 +261,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back) |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_SEEN_KEYS` | `5000` | durable seen-object identities retained per destination |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
@@ -278,6 +286,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__LOOKBACK` | `1h` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | cold-start reach-back, so a first run against a long history doesn't ingest all of it |
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECTS` | `200` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does |
+| `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_SEEN_KEYS` | `5000` | durable seen-object identities retained per destination |
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_DECOMPRESSED_BYTES` | `33554432` | reject and quarantine one object that expands beyond 32 MiB. RAISE THIS if you record long terminal sessions: only the .cast header line is read for meaning, but the whole object is still streamed, and an oversized one is quarantined rather than partially read |
 | `TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__MAX_OBJECT_RECORDS` | `100000` | reject and quarantine one object containing more than this many records |
@@ -289,6 +298,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__KEYS__ENABLED` | `true` | auth-key inventory + expiry warnings |
 | `TS2OTEL_COLLECTORS__KEYS__INTERVAL` | `300s` | auth-key inventory + expiry warnings |
 | `TS2OTEL_COLLECTORS__KEYS__EXPIRY_WARN` | `168h` | log a WARN when a key expires within this window (default 7d) |
+| `TS2OTEL_COLLECTORS__KEYS__EXPIRY_LOG_MODE` | `daily` | WARN cadence: daily (change + at most one reminder/24h, default) \| always (every scrape, legacy) \| off; metrics always emit |
 | `TS2OTEL_COLLECTORS__SETTINGS__ENABLED` | `true` | tailnet settings snapshot |
 | `TS2OTEL_COLLECTORS__SETTINGS__INTERVAL` | `600s` | tailnet settings snapshot |
 | `TS2OTEL_COLLECTORS__ACL__ENABLED` | `true` | ACL policy snapshot |

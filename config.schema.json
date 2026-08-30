@@ -251,6 +251,12 @@
         "auditlogs": {
           "additionalProperties": false,
           "properties": {
+            "dedup_capacity": {
+              "default": 4096,
+              "description": "identities retained for poll-window AND audit/webhook cross-source dedup; must be \u003e0",
+              "minimum": 1,
+              "type": "integer"
+            },
             "enabled": {
               "default": true,
               "description": "configuration/audit events -\u003e event logs + a counter",
@@ -391,6 +397,12 @@
                   "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle",
                   "type": "integer"
                 },
+                "max_seen_keys": {
+                  "default": 5000,
+                  "description": "durable seen-object identities retained per destination",
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "path_style": {
                   "default": false,
                   "description": "address as \u003cendpoint\u003e/\u003cbucket\u003e/\u003ckey\u003e; required by most non-AWS implementations",
@@ -464,12 +476,22 @@
         "devices": {
           "additionalProperties": false,
           "properties": {
+            "attribute_key_limit": {
+              "default": 200,
+              "description": "busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and counted (0/negative = unlimited); cardinality.metric_limit is still the final SDK guard",
+              "type": "integer"
+            },
             "attribute_namespaces": {
               "description": "needs collect_posture: posture-key namespaces promoted to attribute metrics; [\"*\"] = all, [] = disable",
               "items": {
                 "type": "string"
               },
               "type": "array"
+            },
+            "attribute_value_limit": {
+              "default": 50,
+              "description": "busiest values per attribute key on the .info gauge; overflow folds to value=\"__other__\" (0/negative = unlimited)",
+              "type": "integer"
             },
             "collect_connectivity": {
               "default": true,
@@ -500,6 +522,16 @@
               "default": true,
               "description": "device inventory — REQUIRED for flow/audit IP-\u003ename enrichment (disabling it degrades names to unknown/external)",
               "type": "boolean"
+            },
+            "expiry_log_mode": {
+              "default": "daily",
+              "description": "node-key AND posture-attribute expiry WARN cadence: daily (change + at most one reminder/24h, default) | always (every scrape, legacy) | off; metrics always emit",
+              "enum": [
+                "daily",
+                "always",
+                "off"
+              ],
+              "type": "string"
             },
             "interval": {
               "default": "60s",
@@ -551,6 +583,12 @@
         "flowlogs": {
           "additionalProperties": false,
           "properties": {
+            "dedup_capacity": {
+              "default": 16384,
+              "description": "identities retained for poll-window AND cross-source dedup; must be \u003e0 (unlimited would leak memory)",
+              "minimum": 1,
+              "type": "integer"
+            },
             "enabled": {
               "default": true,
               "description": "network flow logs -\u003e traffic counters + per-connection logs",
@@ -704,6 +742,12 @@
                 "max_objects": {
                   "default": 200,
                   "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle",
+                  "type": "integer"
+                },
+                "max_seen_keys": {
+                  "default": 5000,
+                  "description": "durable seen-object identities retained per destination; too low can re-ingest an evicted object inside the lookback",
+                  "minimum": 1,
                   "type": "integer"
                 },
                 "path_style": {
@@ -890,6 +934,12 @@
                   "description": "objects ingested per cycle; the remainder is counted, logged and picked up next cycle. tsrecorder writes ONE event per object, so a busy cluster needs a higher value here than a flow/audit export does",
                   "type": "integer"
                 },
+                "max_seen_keys": {
+                  "default": 5000,
+                  "description": "durable seen-object identities retained per destination",
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "path_style": {
                   "default": false,
                   "description": "address as \u003cendpoint\u003e/\u003cbucket\u003e/\u003ckey\u003e; required by most non-AWS implementations",
@@ -936,6 +986,16 @@
               "default": true,
               "description": "auth-key inventory + expiry warnings",
               "type": "boolean"
+            },
+            "expiry_log_mode": {
+              "default": "daily",
+              "description": "WARN cadence: daily (change + at most one reminder/24h, default) | always (every scrape, legacy) | off; metrics always emit",
+              "enum": [
+                "daily",
+                "always",
+                "off"
+              ],
+              "type": "string"
             },
             "expiry_warn": {
               "default": "168h",
@@ -1795,7 +1855,7 @@
               "properties": {
                 "base_delay": {
                   "default": "0s",
-                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "description": "retry policy for retryable transport errors, HTTP 429 and HTTP 5xx",
                   "examples": [
                     "0s"
                   ],
@@ -1804,12 +1864,12 @@
                 },
                 "max_attempts": {
                   "default": 0,
-                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "description": "retry policy for retryable transport errors, HTTP 429 and HTTP 5xx",
                   "type": "integer"
                 },
                 "max_delay": {
                   "default": "0s",
-                  "description": "accepted for parity with tailscale.http but NOT applied by the minimal v1 Headscale client",
+                  "description": "retry policy for retryable transport errors, HTTP 429 and HTTP 5xx",
                   "examples": [
                     "0s"
                   ],
@@ -1821,7 +1881,7 @@
             },
             "timeout": {
               "default": "30s",
-              "description": "per-request timeout (the ONLY http knob applied in v1)",
+              "description": "per-attempt timeout; retry queueing/rate-limit wait is outside this budget",
               "examples": [
                 "30s"
               ],
@@ -1830,6 +1890,13 @@
             }
           },
           "type": "object"
+        },
+        "ip_prefixes": {
+          "description": "tailnet address CIDRs allocated by this Headscale; empty = Tailscale defaults. Must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "max_response_bytes": {
           "default": 4194304,
@@ -3122,6 +3189,23 @@
             },
             "type": "object"
           },
+          "cardinality": {
+            "additionalProperties": false,
+            "properties": {
+              "critical_threshold": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "metric_limit": {
+                "type": "integer"
+              },
+              "warning_threshold": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
           "http": {
             "additionalProperties": false,
             "properties": {
@@ -3241,6 +3325,10 @@
                   "max_objects": {
                     "type": "integer"
                   },
+                  "max_seen_keys": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "path_style": {
                     "type": "boolean"
                   },
@@ -3336,6 +3424,10 @@
                   "max_objects": {
                     "type": "integer"
                   },
+                  "max_seen_keys": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
                   "path_style": {
                     "type": "boolean"
                   },
@@ -3428,6 +3520,10 @@
                     "type": "integer"
                   },
                   "max_objects": {
+                    "type": "integer"
+                  },
+                  "max_seen_keys": {
+                    "minimum": 1,
                     "type": "integer"
                   },
                   "path_style": {

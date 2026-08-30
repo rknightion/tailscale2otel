@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/netip"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -1026,6 +1027,30 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("headscale.ip_prefixes", "Set canonical prefixes fully inside RFC1918, fc00::/7, or 100.64.0.0/10; use this key only with provider=headscale.", func() error {
+		if len(c.Headscale.IPPrefixes) == 0 {
+			return nil
+		}
+		if c.resolvedProvider() != "headscale" {
+			return fmt.Errorf("headscale.ip_prefixes is valid only when provider=headscale")
+		}
+		for _, raw := range c.Headscale.IPPrefixes {
+			prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+			if err != nil {
+				return fmt.Errorf("headscale.ip_prefixes entry %q is not a valid CIDR prefix: %w", raw, err)
+			}
+			if prefix != prefix.Masked() {
+				return fmt.Errorf("headscale.ip_prefixes entry %q is not canonical; use %q", raw, prefix.Masked())
+			}
+			if (prefix.Addr().Is4() && prefix.Bits() < 8) || (prefix.Addr().Is6() && prefix.Bits() < 16) {
+				return fmt.Errorf("headscale.ip_prefixes entry %q is too broad; minimum prefix length is /8 for IPv4 or /16 for IPv6", raw)
+			}
+			if !headscalePrefixAllowed(prefix) {
+				return fmt.Errorf("headscale.ip_prefixes entry %q must be fully inside RFC1918, fc00::/7, or 100.64.0.0/10", raw)
+			}
+		}
+		return nil
+	})
 
 	// log_level is documented (configuration.md) and framed as a validated enum,
 	// so reject a value outside the set here rather than silently failing open to
@@ -1729,6 +1754,18 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("collectors.flowlogs.dedup_capacity", "Set collectors.flowlogs.dedup_capacity to a positive bounded set size; unlimited is not supported.", func() error {
+		if c.Collectors.Flowlogs.DedupCapacity <= 0 {
+			return fmt.Errorf("collectors.flowlogs.dedup_capacity must be > 0 (got %d); an unbounded dedup set is a memory leak", c.Collectors.Flowlogs.DedupCapacity)
+		}
+		return nil
+	})
+	add("collectors.auditlogs.dedup_capacity", "Set collectors.auditlogs.dedup_capacity to a positive bounded set size; unlimited is not supported.", func() error {
+		if c.Collectors.Auditlogs.DedupCapacity <= 0 {
+			return fmt.Errorf("collectors.auditlogs.dedup_capacity must be > 0 (got %d); an unbounded dedup set is a memory leak", c.Collectors.Auditlogs.DedupCapacity)
+		}
+		return nil
+	})
 
 	// Feed collisions are checked once, across every destination this process will
 	// read, so a flow/audit collision and a tailnet/tailnet collision are one rule
@@ -1788,11 +1825,49 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("tailnets[].cardinality", "Use 0 to inherit each global value, a negative metric_limit for unlimited on that tailnet, and non-negative thresholds with critical >= warning after inheritance.", func() error {
+		for i, tailnet := range c.Tailnets {
+			metricLimit := tailnet.Cardinality.MetricLimit
+			if metricLimit == 0 {
+				metricLimit = c.Cardinality.MetricLimit
+			}
+			warning := tailnet.Cardinality.WarningThreshold
+			if warning == 0 {
+				warning = c.Cardinality.WarningThreshold
+			}
+			critical := tailnet.Cardinality.CriticalThreshold
+			if critical == 0 {
+				critical = c.Cardinality.CriticalThreshold
+			}
+			if tailnet.Cardinality.WarningThreshold < 0 || tailnet.Cardinality.CriticalThreshold < 0 {
+				return fmt.Errorf("tailnets[%d].cardinality warning_threshold/critical_threshold must be >= 0", i)
+			}
+			if warning > 0 && critical > 0 && critical < warning {
+				return fmt.Errorf("tailnets[%d].cardinality.critical_threshold %d invalid: effective value must be >= warning_threshold %d", i, critical, warning)
+			}
+			if metricLimit > 0 && (warning > metricLimit || critical > metricLimit) {
+				return fmt.Errorf("tailnets[%d].cardinality thresholds %d/%d exceed effective metric_limit %d", i, warning, critical, metricLimit)
+			}
+		}
+		return nil
+	})
 
 	add("collectors.devices.posture_log_mode", oneOfRemediation("collectors.devices.posture_log_mode", "changes", "always", "off"), func() error {
 		if c.Collectors.Devices.PostureLogMode != "" &&
 			!oneOf(c.Collectors.Devices.PostureLogMode, "changes", "always", "off") {
 			return fmt.Errorf("collectors.devices.posture_log_mode %q invalid: must be one of changes, always, off", c.Collectors.Devices.PostureLogMode)
+		}
+		return nil
+	})
+	add("collectors.devices.expiry_log_mode", oneOfRemediation("collectors.devices.expiry_log_mode", "daily", "always", "off"), func() error {
+		if !oneOf(c.Collectors.Devices.ExpiryLogMode, "daily", "always", "off") {
+			return fmt.Errorf("collectors.devices.expiry_log_mode %q invalid: must be one of daily, always, off", c.Collectors.Devices.ExpiryLogMode)
+		}
+		return nil
+	})
+	add("collectors.keys.expiry_log_mode", oneOfRemediation("collectors.keys.expiry_log_mode", "daily", "always", "off"), func() error {
+		if !oneOf(c.Collectors.Keys.ExpiryLogMode, "daily", "always", "off") {
+			return fmt.Errorf("collectors.keys.expiry_log_mode %q invalid: must be one of daily, always, off", c.Collectors.Keys.ExpiryLogMode)
 		}
 		return nil
 	})
@@ -2617,6 +2692,23 @@ func reservedResourceAttrReason(key string) string {
 	default:
 		return "it carries the application's own identity, which always wins"
 	}
+}
+
+func headscalePrefixAllowed(prefix netip.Prefix) bool {
+	allowed := []netip.Prefix{
+		netip.MustParsePrefix("10.0.0.0/8"),
+		netip.MustParsePrefix("172.16.0.0/12"),
+		netip.MustParsePrefix("192.168.0.0/16"),
+		netip.MustParsePrefix("100.64.0.0/10"),
+		netip.MustParsePrefix("fc00::/7"),
+	}
+	for _, container := range allowed {
+		if prefix.Addr().BitLen() == container.Addr().BitLen() &&
+			prefix.Bits() >= container.Bits() && container.Contains(prefix.Addr()) {
+			return true
+		}
+	}
+	return false
 }
 
 // minCredentialReloadInterval floors the rotation poller. Below this the

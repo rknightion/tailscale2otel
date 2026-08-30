@@ -466,6 +466,11 @@ type HeadscaleConfig struct {
 	// surrounding whitespace before use.
 	APIKeyFile string              `yaml:"api_key_file"`
 	HTTP       TailscaleHTTPConfig `yaml:"http"` // reuse the same timeout/retry/rate_limit shape
+	// IPPrefixes lists the private/CGNAT/ULA address ranges allocated by this
+	// Headscale deployment. Empty preserves the Tailscale defaults. Validation
+	// rejects public and overly broad prefixes because this set widens the
+	// node-metrics scraper's SSRF allowlist as well as address classification.
+	IPPrefixes []string `yaml:"ip_prefixes"`
 	// MaxResponseBytes bounds a single successful JSON response body before it
 	// is decoded, capping the exporter's peak decode memory (#488 — the Headscale
 	// client had the same post-hoc cap #474 removed from the Tailscale one).
@@ -501,9 +506,10 @@ type TailscaleConfig struct {
 // TailnetConfig is one entry in the multi-tailnet list. It mirrors the
 // connection-bearing fields of TailscaleConfig but names the tailnet explicitly.
 type TailnetConfig struct {
-	Name string              `yaml:"name"`
-	Auth TailscaleAuth       `yaml:"auth"`
-	HTTP TailscaleHTTPConfig `yaml:"http"`
+	Name        string              `yaml:"name"`
+	Auth        TailscaleAuth       `yaml:"auth"`
+	HTTP        TailscaleHTTPConfig `yaml:"http"`
+	Cardinality TailnetCardinality  `yaml:"cardinality"`
 	// ObjectStore holds THIS tailnet's object-store ingestion destinations, one
 	// per signal. In multi-tailnet mode it is the only place a destination may
 	// come from: nothing is inherited from collectors.flowlogs.objectstore, and
@@ -511,6 +517,15 @@ type TailnetConfig struct {
 	// is file-only, so a static credential must arrive through its *_file sibling
 	// (a mounted Secret) or the ambient chain — see FlowObjectStore.
 	ObjectStore TailnetObjectStore `yaml:"objectstore"`
+}
+
+// TailnetCardinality provides file-only per-tailnet overrides. Zero inherits
+// the corresponding global cardinality value, a negative metric_limit means
+// unlimited for this tailnet only, and a positive value is the explicit limit.
+type TailnetCardinality struct {
+	MetricLimit       int `yaml:"metric_limit"`
+	WarningThreshold  int `yaml:"warning_threshold"`
+	CriticalThreshold int `yaml:"critical_threshold"`
 }
 
 // TailnetObjectStore groups one tailnet's per-signal object-store destinations.
@@ -1139,12 +1154,22 @@ type DevicesCollector struct {
 	// then deltas; "always" logs every scrape; "off" suppresses the log. The
 	// posture info-gauge METRIC is emitted every scrape regardless.
 	PostureLogMode string `yaml:"posture_log_mode"`
+	// ExpiryLogMode controls both node-key and posture-attribute expiry warnings:
+	// daily logs changes plus at most one reminder per 24h, always preserves the
+	// legacy every-scrape behavior, and off suppresses logs without suppressing metrics.
+	ExpiryLogMode string `yaml:"expiry_log_mode"`
 	// AttributeNamespaces lists the device posture-attribute namespace prefixes (the
 	// part before ":" in a posture key, e.g. "intune", "ip") promoted to the
 	// tailscale.device.attribute{,.info} metrics (requires collect_posture). The
 	// sentinel ["*"] promotes every namespace present; an explicit empty list ([])
 	// disables the attribute metrics.
 	AttributeNamespaces []string `yaml:"attribute_namespaces"`
+	// AttributeKeyLimit caps distinct posture keys promoted to attribute metrics;
+	// over-cap keys are dropped. AttributeValueLimit caps values per key on the
+	// info gauge and folds overflow to "__other__". 0 or negative is unlimited;
+	// cardinality.metric_limit remains the last-resort SDK backstop.
+	AttributeKeyLimit   int `yaml:"attribute_key_limit"`
+	AttributeValueLimit int `yaml:"attribute_value_limit"`
 	// CollectConnectivity (default true) gates the B3 connectivity signals
 	// (hard_nat/endpoints/direct_capable/udp/ipv6 + fleet rollups). No extra API
 	// calls — read from the rich device payload already fetched.
@@ -1170,6 +1195,9 @@ type FlowlogsCollector struct {
 	Lag             Duration `yaml:"lag"`              // poll only
 	InitialLookback Duration `yaml:"initial_lookback"` // poll only
 	MaxWindow       Duration `yaml:"max_window"`       // poll only
+	// DedupCapacity bounds both poll-window and cross-source connection identity
+	// sets. It must stay positive; an unbounded dedup set is a memory leak.
+	DedupCapacity int `yaml:"dedup_capacity"`
 	// ReplayOverlap rereads this much of the most recently completed poll
 	// window so records that became available late can still be accepted.
 	// ReplaySeenCapacity bounds the durable connection identities retained to
@@ -1247,6 +1275,9 @@ type ObjectStoreConfig struct {
 	// MaxObjects bounds one cycle's work. Exceeding it is not an error: the
 	// remainder is counted, logged and picked up next cycle.
 	MaxObjects int `yaml:"max_objects"`
+	// MaxSeenKeys bounds durable seen-object identities per destination. It must
+	// stay positive; too small a value can re-admit an evicted object as new.
+	MaxSeenKeys int `yaml:"max_seen_keys"`
 	// MaxObjectWireBytes, MaxObjectDecompressedBytes, and MaxObjectRecords bound
 	// one exported object's input and expansion before any records are committed.
 	MaxObjectWireBytes         int64 `yaml:"max_object_wire_bytes"`
@@ -1269,6 +1300,9 @@ type AuditlogsCollector struct {
 	Lag             Duration `yaml:"lag"`              // poll only
 	InitialLookback Duration `yaml:"initial_lookback"` // poll only
 	MaxWindow       Duration `yaml:"max_window"`       // poll only
+	// DedupCapacity bounds both poll-window and cross-source audit/webhook event
+	// identity sets. It must stay positive; an unbounded set is a memory leak.
+	DedupCapacity int `yaml:"dedup_capacity"`
 	// ObjectStore configures the objectstore ingestion path for Tailscale's
 	// CONFIGURATION-log export. It applies only when source is "objectstore", and
 	// it is a destination of its own: the configuration and network exports are
@@ -1302,6 +1336,10 @@ type KeysCollector struct {
 	Enabled    bool     `yaml:"enabled"`
 	Interval   Duration `yaml:"interval"`
 	ExpiryWarn Duration `yaml:"expiry_warn"`
+	// ExpiryLogMode controls expiry warning cadence: daily logs changes plus at
+	// most one reminder per 24h, always preserves every-scrape behavior, and off
+	// suppresses logs without suppressing metrics.
+	ExpiryLogMode string `yaml:"expiry_log_mode"`
 }
 
 // ServicesCollector configures the Tailscale Services (VIP) collector.
