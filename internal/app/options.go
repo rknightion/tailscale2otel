@@ -5,10 +5,13 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"log/slog"
+	"net/netip"
 	"os"
+	"strings"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v4/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
@@ -261,8 +264,8 @@ func instanceID(cfg *config.Config) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// hsapiOptions maps the Headscale config into hsapi.Options. Auth is the Bearer
-// API key; the minimal client uses only the request timeout (no retry in v1).
+// hsapiOptions maps Headscale auth, timeout, retry, and rate-limit config into
+// hsapi.Options.
 //
 // tracer produces one client span per Headscale API call, bringing it to parity
 // with the Tailscale client, which has been traced since #371's baseline. The
@@ -274,6 +277,10 @@ func hsapiOptions(cfg *config.Config, tracer trace.Tracer) hsapi.Options {
 		URL:              cfg.Headscale.URL,
 		APIKey:           cfg.Headscale.APIKey.Reveal(),
 		Timeout:          cfg.Headscale.HTTP.Timeout.D(),
+		MaxAttempts:      cfg.Headscale.HTTP.Retry.MaxAttempts,
+		BaseDelay:        cfg.Headscale.HTTP.Retry.BaseDelay.D(),
+		MaxDelay:         cfg.Headscale.HTTP.Retry.MaxDelay.D(),
+		RateLimit:        cfg.Headscale.HTTP.RateLimit,
 		MaxResponseBytes: cfg.Headscale.MaxResponseBytes,
 		Tracer:           tracer,
 	}
@@ -361,7 +368,7 @@ func instanceFor(base, tailnet string, multi, piiTailnet bool) string {
 // fixed class "nodemetrics.scrape", never the target URL: targets are discovered
 // dynamically and are therefore unbounded, so per-target detail belongs in an
 // attribute rather than in the name.
-func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache deviceCacheReader, logger *slog.Logger, tracer trace.Tracer) nodemetrics.Options {
+func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache deviceCacheReader, addrSet enrich.AddrSet, logger *slog.Logger, tracer trace.Tracer) nodemetrics.Options {
 	targets := make([]nodemetrics.Target, 0, len(nm.Targets))
 	for _, t := range nm.Targets {
 		var headers map[string]string
@@ -415,8 +422,24 @@ func nodeMetricsOptions(nm config.NodeMetricsConfig, api nodeDiscoveryAPI, cache
 		if cache != nil {
 			dopts = append(dopts, withDeviceCache(cache))
 		}
+		dopts = append(dopts, withAddrSet(addrSet))
 		opts.Discoverer = newNodeDiscoverer(api, nm.Discovery, logger, dopts...)
 		opts.DiscoveryInterval = nm.Discovery.Interval.D()
 	}
 	return opts
+}
+
+// headscaleAddrSet resolves the validated Headscale prefix strings once for the
+// two consumers that must agree: device-cache classification and node-metrics
+// discovery's outbound-address allowlist. Config validation runs before app
+// construction; MustParsePrefix makes violating that seam fail closed and loud.
+func headscaleAddrSet(cfg *config.Config) enrich.AddrSet {
+	if cfg.Provider != "headscale" || len(cfg.Headscale.IPPrefixes) == 0 {
+		return enrich.DefaultAddrSet()
+	}
+	prefixes := make([]netip.Prefix, 0, len(cfg.Headscale.IPPrefixes))
+	for _, raw := range cfg.Headscale.IPPrefixes {
+		prefixes = append(prefixes, netip.MustParsePrefix(strings.TrimSpace(raw)))
+	}
+	return enrich.NewAddrSet(prefixes...)
 }

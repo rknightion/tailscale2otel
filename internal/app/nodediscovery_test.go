@@ -536,7 +536,7 @@ func TestPickAddressRejectsNonTailscaleRanges(t *testing.T) {
 		{"ts ula chosen", []string{"fd7a:115c:a1e0::1"}, "ipv6", "fd7a:115c:a1e0::1"},
 	}
 	for _, tc := range cases {
-		got, ok := pickAddress(tc.addrs, tc.order)
+		got, ok := pickAddress(tc.addrs, tc.order, enrich.DefaultAddrSet())
 		if tc.want == "" {
 			if ok {
 				t.Errorf("%s: got %s, want no address", tc.name, got)
@@ -546,5 +546,35 @@ func TestPickAddressRejectsNonTailscaleRanges(t *testing.T) {
 		if !ok || got.String() != tc.want {
 			t.Errorf("%s: got %v ok=%v, want %s", tc.name, got, ok, tc.want)
 		}
+	}
+}
+
+func TestPickAddressConfiguredPrefixRemainsNarrow(t *testing.T) {
+	set := enrich.NewAddrSet(
+		netip.MustParsePrefix("10.100.0.0/16"),
+		netip.MustParsePrefix("fd00:dead:beef::/48"),
+	)
+	cases := []struct {
+		name string
+		addr string
+		want bool
+	}{
+		{"configured IPv4", "10.100.0.5", true},
+		{"configured IPv6", "fd00:dead:beef::1", true},
+		{"metadata", "169.254.169.254", false},
+		{"loopback IPv4", "127.0.0.1", false},
+		{"loopback IPv6", "::1", false},
+		{"link local IPv4", "169.254.1.1", false},
+		{"link local IPv6", "fe80::1", false},
+		{"unrelated RFC1918", "10.99.0.1", false},
+		{"public", "8.8.8.8", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := pickAddress([]string{tc.addr}, "ipv4", set)
+			if ok != tc.want {
+				t.Fatalf("pickAddress(%s) = %s, %v; want ok=%v", tc.addr, got, ok, tc.want)
+			}
+		})
 	}
 }

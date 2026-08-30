@@ -29,6 +29,7 @@ func objectStoreOptions(cfg config.ObjectStoreConfig) objectstore.Options {
 		Lookback:                   cfg.Lookback.D(),
 		InitialLookback:            cfg.InitialLookback.D(),
 		MaxObjects:                 cfg.MaxObjects,
+		MaxSeenKeys:                cfg.MaxSeenKeys,
 		MaxObjectWireBytes:         cfg.MaxObjectWireBytes,
 		MaxObjectDecompressedBytes: cfg.MaxObjectDecompressedBytes,
 		MaxObjectRecords:           cfg.MaxObjectRecords,

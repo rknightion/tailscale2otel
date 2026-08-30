@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -249,7 +251,7 @@ func TestNodeMetricsOptions_AuthAndTLS(t *testing.T) {
 			},
 		}},
 	}
-	tg := nodeMetricsOptions(nm, nil, nil, nil, nil).Targets[0]
+	tg := nodeMetricsOptions(nm, nil, nil, enrich.DefaultAddrSet(), nil, nil).Targets[0]
 	if tg.BearerToken != "tok" || tg.BearerTokenFile != "/f" {
 		t.Errorf("bearer = %q/%q", tg.BearerToken, tg.BearerTokenFile)
 	}
@@ -267,7 +269,7 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	nm.Discovery.Enabled = true
 	nm.Discovery.Interval = config.Duration(2 * time.Minute)
 
-	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil, nil)
+	opts := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, enrich.DefaultAddrSet(), nil, nil)
 	if opts.Discoverer == nil {
 		t.Fatal("Discoverer = nil, want a discoverer when discovery is enabled")
 	}
@@ -276,8 +278,23 @@ func TestNodeMetricsOptions_DiscoveryWired(t *testing.T) {
 	}
 
 	nm.Discovery.Enabled = false
-	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, nil, nil); got.Discoverer != nil {
+	if got := nodeMetricsOptions(nm, &fakeDevicesAPI{}, nil, enrich.DefaultAddrSet(), nil, nil); got.Discoverer != nil {
 		t.Fatal("Discoverer != nil, want nil when discovery is disabled")
+	}
+}
+
+func TestHeadscaleAddrSetUsesConfiguredPrefixes(t *testing.T) {
+	cfg := config.Default()
+	cfg.Provider = "headscale"
+	cfg.Headscale.IPPrefixes = []string{"10.100.0.0/16", "fd00:dead:beef::/48"}
+	set := headscaleAddrSet(cfg)
+	for _, raw := range []string{"10.100.0.5", "fd00:dead:beef::1"} {
+		if addr := netip.MustParseAddr(raw); !set.Contains(addr) {
+			t.Errorf("configured set does not contain %s", addr)
+		}
+	}
+	if addr := netip.MustParseAddr("100.64.0.1"); set.Contains(addr) {
+		t.Errorf("configured set unexpectedly retained default address %s", addr)
 	}
 }
 

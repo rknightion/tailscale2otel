@@ -255,7 +255,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// Keep a typed reference so the status page can surface discovered nodes.
 			// Discovery uses the provider client's DevicesRich, so it works for both
 			// backends (Headscale nodes also run tailscaled on :5252).
-			nmOpts := nodeMetricsOptions(nm, cp.Client, rt.cache, withComponent(logger, compNodeMetrics), d.tracer)
+			nmOpts := nodeMetricsOptions(nm, cp.Client, rt.cache, d.addrSet, withComponent(logger, compNodeMetrics), d.tracer)
 			// Set here rather than inside nodeMetricsOptions: that function maps
 			// CONFIG onto Options and is tested as a pure config mapping, while the
 			// tracker is a per-runtime object it has no business knowing about.
@@ -268,6 +268,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), onIngest,
 			flowlogs.WithAPIState(rt.apiState),
 			flowlogs.WithAcceptedObserver(onAccepted),
+			flowlogs.WithDedupCapacity(c.Flowlogs.DedupCapacity),
 			flowlogs.WithReplay(
 				c.Flowlogs.ReplayOverlap.D(),
 				c.Flowlogs.ReplaySeenCapacity,
@@ -291,7 +292,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	if c.Auditlogs.Enabled && cp.Supports("auditlogs") && pollSource(c.Auditlogs.Source) {
 		ac := auditlogs.New(rt.client, rt.auditProc, c.Auditlogs.Interval.D(), c.Auditlogs.Lag.D(), onIngest,
 			auditlogs.WithAcceptedObserver(onAccepted),
-			auditlogs.WithAPIState(rt.apiState))
+			auditlogs.WithAPIState(rt.apiState),
+			auditlogs.WithDedupCapacity(c.Auditlogs.DedupCapacity))
 		rt.registry.RegisterWindow(ac, c.Auditlogs.Interval.D(), c.Auditlogs.InitialLookback.D(), c.Auditlogs.MaxWindow.D())
 	}
 	if c.Auditlogs.Enabled && objectStoreSource(c.Auditlogs.Source) {

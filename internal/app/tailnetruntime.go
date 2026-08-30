@@ -120,6 +120,7 @@ type runtimeDeps struct {
 	geoDB         *geoip.DB          // shared local GeoIP/ASN databases; nil when disabled
 	eventStore    *eventstore.Memory // shared bounded audit/webhook event store (#300); nil when disabled
 	webhookDedup  *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
+	addrSet       enrich.AddrSet     // shared classification + node-discovery allowlist
 	tsRelease     *release.Fetcher   // shared upstream-version fetcher; nil when disabled
 	multi         bool               // true when >1 tailnet (enables checkpoint namespacing)
 	primary       bool               // true for the first runtime; owns process-global static node_metrics targets (#59)
@@ -133,7 +134,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	cfg := d.cfg
 	selfObs := cfg.SelfObservability.Enabled
 
-	rt.cache = enrich.NewDeviceCache()
+	rt.cache = enrich.NewDeviceCache(enrich.WithAddrSet(d.addrSet))
 	rt.status = collector.NewStatusTracker()
 	rt.apiState = apistate.NewTracker()
 	rt.coverage = apistate.NewCoverage()
@@ -153,7 +154,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	// Poll-path processors: each tailnet has its own flow/audit processor bound to
 	// its emitter + enrichment cache. The dedup sets suppress the inclusive-window
 	// overlap (and, in single-tailnet, the poll<->stream cross-source overlap).
-	rt.flowDedup = dedup.New(flowDedupCapacity)
+	rt.flowDedup = dedup.New(cfg.Collectors.Flowlogs.DedupCapacity)
 	fopts := flowOptions(cfg)
 	fopts.Dedup = rt.flowDedup
 	if d.rdnsCache != nil {
@@ -189,7 +190,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	}
 	rt.flowProc = flowlog.NewProcessor(rt.cache, fopts)
 
-	rt.auditDedup = dedup.New(auditDedupCapacity)
+	rt.auditDedup = dedup.New(cfg.Collectors.Auditlogs.DedupCapacity)
 	auditOpts := []audit.Option{
 		audit.WithDedup(rt.auditDedup),
 		audit.WithLogger(withComponent(d.logger, compCollector)),

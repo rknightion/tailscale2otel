@@ -37,15 +37,6 @@ import (
 
 const heartbeatInterval = 15 * time.Second
 
-// Dedup-set capacities for the shared cross-source de-duplication carried by the
-// flow and audit processors. They bound memory while comfortably covering the
-// overlap window between the poll collectors and the streaming receiver (which
-// share one processor each). Flow windows are higher-volume than audit events.
-const (
-	flowDedupCapacity  = 16384
-	auditDedupCapacity = 4096
-)
-
 // autoConfigureTimeout bounds the optional startup log-stream registration so a
 // slow/hung Tailscale endpoint cannot delay shutdown indefinitely.
 const autoConfigureTimeout = 30 * time.Second
@@ -345,9 +336,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		// Headscale API requests were dark: untraced, and absent from both the
 		// api.* self-obs metrics and the status page's API panel, while the
 		// equivalent Tailscale calls had all three (#371). Give it the same
-		// treatment. hsapi has no retry and no client-side rate limiter, so
-		// Attempts is always 1 and WaitDuration always 0 — stated here rather
-		// than left as two silently-zero columns.
+		// treatment, including retries and client-side rate-limit wait time.
 		hsAPIStats := NewAPIStats()
 		var hsObs func(context.Context, string, int, int, time.Duration, time.Duration)
 		if cfg.SelfObservability.Enabled {
@@ -356,14 +345,15 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		hsOpts := hsapiOptions(cfg, a.tracer)
 		hsOpts.OnRequest = func(ctx context.Context, i hsapi.RequestInfo) {
 			if hsObs != nil {
-				hsObs(ctx, i.Endpoint, i.Status, 1, i.Duration, 0)
+				hsObs(ctx, i.Endpoint, i.Status, i.Attempts, i.Duration, i.WaitDuration)
 			}
 			hsAPIStats.Record(tsapi.RequestInfo{
-				Endpoint: i.Endpoint,
-				Status:   i.Status,
-				Attempts: 1,
-				Duration: i.Duration,
-				Err:      i.Err,
+				Endpoint:     i.Endpoint,
+				Status:       i.Status,
+				Attempts:     i.Attempts,
+				Duration:     i.Duration,
+				WaitDuration: i.WaitDuration,
+				Err:          i.Err,
 			})
 		}
 		hsClient := hsapi.NewClient(hsOpts)
@@ -585,7 +575,7 @@ func (a *App) buildProcessDeps() {
 	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents && len(cfg.Webhook.Routes) == 0 {
 		// Best-effort cross-SOURCE de-dup so a change reported by BOTH a webhook and
 		// the audit logs is counted once (single-tailnet only; webhook requires it).
-		a.webhookDedup = dedup.New(auditDedupCapacity)
+		a.webhookDedup = dedup.New(cfg.Collectors.Auditlogs.DedupCapacity)
 	}
 	if cfg.Webhook.Enabled && cfg.Webhook.DedupAuditEvents && len(cfg.Webhook.Routes) > 0 {
 		a.webhookDedups = make(map[string]*dedup.Set, len(cfg.Webhook.Routes))
@@ -659,7 +649,7 @@ func (a *App) addRuntimeConfigured(
 	}
 	webhookDedup := a.webhookDedup
 	if a.webhookDedups != nil {
-		webhookDedup = dedup.New(auditDedupCapacity)
+		webhookDedup = dedup.New(a.cfg.Collectors.Auditlogs.DedupCapacity)
 		a.webhookDedups[configuredName] = webhookDedup
 	}
 	newRuntime(rt, runtimeDeps{
@@ -673,6 +663,7 @@ func (a *App) addRuntimeConfigured(
 		geoDB:         a.geoDB,
 		eventStore:    a.eventStore,
 		webhookDedup:  webhookDedup,
+		addrSet:       headscaleAddrSet(a.cfg),
 		tsRelease:     a.tsRelease,
 		multi:         multi,
 		primary:       len(a.runtimes) == 0, // the first runtime owns process-global static targets

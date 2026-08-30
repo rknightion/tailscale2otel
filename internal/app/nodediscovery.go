@@ -51,14 +51,19 @@ func withDeviceCache(cache deviceCacheReader) nodeDiscovererOption {
 	return func(d *nodeDiscoverer) { d.cache = cache }
 }
 
+func withAddrSet(addrSet enrich.AddrSet) nodeDiscovererOption {
+	return func(d *nodeDiscoverer) { d.addrSet = addrSet }
+}
+
 // nodeDiscoverer turns the Tailscale device inventory into node-metrics scrape
 // targets, applying the configured online/external/tag filters and the
 // metrics-endpoint shape (scheme/port/path). It satisfies nodemetrics.Discoverer.
 type nodeDiscoverer struct {
-	api   nodeDiscoveryAPI
-	cache deviceCacheReader // nil unless withDeviceCache is passed (#85)
-	cfg   config.NodeMetricsDiscovery
-	log   *slog.Logger
+	api     nodeDiscoveryAPI
+	cache   deviceCacheReader // nil unless withDeviceCache is passed (#85)
+	addrSet enrich.AddrSet
+	cfg     config.NodeMetricsDiscovery
+	log     *slog.Logger
 }
 
 var _ nodemetrics.Discoverer = (*nodeDiscoverer)(nil)
@@ -67,7 +72,7 @@ func newNodeDiscoverer(api nodeDiscoveryAPI, cfg config.NodeMetricsDiscovery, lo
 	if log == nil {
 		log = slog.Default()
 	}
-	d := &nodeDiscoverer{api: api, cfg: cfg, log: log}
+	d := &nodeDiscoverer{api: api, cfg: cfg, log: log, addrSet: enrich.DefaultAddrSet()}
 	for _, o := range opts {
 		o(d)
 	}
@@ -162,7 +167,7 @@ func (d *nodeDiscoverer) Discover(ctx context.Context) ([]nodemetrics.Target, er
 		if !d.match(dev) {
 			continue
 		}
-		addr, ok := pickAddress(dev.addresses, d.cfg.AddressOrder)
+		addr, ok := pickAddress(dev.addresses, d.cfg.AddressOrder, d.addrSet)
 		if !ok {
 			continue // no usable Tailscale address
 		}
@@ -285,12 +290,12 @@ func (d *nodeDiscoverer) match(dev *discoveryDevice) bool {
 // so that a control-plane compromise or API quirk cannot turn the scraper into
 // an SSRF client against metadata endpoints, loopback admin ports, or RFC1918
 // services. It returns ok=false when the device has no usable Tailscale address.
-func pickAddress(addrs []string, order string) (netip.Addr, bool) {
+func pickAddress(addrs []string, order string, addrSet enrich.AddrSet) (netip.Addr, bool) {
 	var v4, v6 netip.Addr
 	var hasV4, hasV6 bool
 	for _, s := range addrs {
 		a, err := netip.ParseAddr(s)
-		if err != nil || !enrich.IsTailscaleAddr(a) {
+		if err != nil || !addrSet.Contains(a) {
 			// Only Tailscale-range addresses may become scrape targets: a non-CGNAT/
 			// non-ULA value here (control-plane compromise, API quirk) must not turn
 			// the scraper into an SSRF client against metadata/loopback services.
