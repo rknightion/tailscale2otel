@@ -312,7 +312,23 @@ var keyExpiryBucketsDays = []float64{0, 7, 30, 90, 180, 365}
 // device's node key triggers the per-device tailscale.device.key_expiring WARN
 // log event. Keys expiring further than this threshold in the future are
 // covered by the fleet-wide histogram only.
-const keyExpiryWarnDays = 14
+const (
+	keyExpiryWarnDays      = 14
+	expiryReminderInterval = 24 * time.Hour
+	expiryLogModeDaily     = "daily"
+	expiryLogModeAlways    = "always"
+	expiryLogModeOff       = "off"
+)
+
+type expiryState struct {
+	expiresAt   time.Time
+	lastEmitted time.Time
+}
+
+type attributeExpiryKey struct {
+	deviceID  string
+	attribute string
+}
 
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
@@ -338,6 +354,7 @@ type Collector struct {
 	geo               geoip.Lookup
 	subnetRouteRollup bool
 	postureLogMode    string // "changes" (default) | "always" | "off"
+	expiryLogMode     string // "daily" (default) | "always" | "off"
 
 	// attrNamespaces is the set of posture-attribute namespace prefixes (the part
 	// before ":") promoted to the tailscale.device.attribute{,.info} metrics, and
@@ -350,6 +367,12 @@ type Collector struct {
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
 	// device absent from the map is first-seen and counts as changed.
 	lastPosture map[string]string
+
+	// Expiry state is retained only while an entity remains inside the warning
+	// window. The maps are pruned to the current tick's expiring entities after
+	// each successful collection, so device churn cannot grow them forever.
+	deviceKeyExpiryState map[string]expiryState
+	attributeExpiryState map[attributeExpiryKey]expiryState
 
 	// collectTagRollup gates the tailscale.devices.by_tag distribution gauge;
 	// tagRollupLimit caps its distinct tag series (<=0 = unlimited, overflow folds
@@ -537,6 +560,53 @@ func normalizePostureLogMode(mode string) string {
 	}
 }
 
+// WithExpiryLogMode controls the cadence of both node-key and posture-attribute
+// expiry WARN events. The metrics remain emitted in every mode:
+//
+//   - "daily" (default): emit on first entry or expiry-time change, then at
+//     most one reminder per 24 hours.
+//   - "always": emit on every scrape (the legacy behavior).
+//   - "off": suppress expiry WARN events.
+//
+// An empty or unrecognized mode falls back to "daily".
+func WithExpiryLogMode(mode string) Option {
+	return func(c *Collector) { c.expiryLogMode = normalizeExpiryLogMode(mode) }
+}
+
+// normalizeExpiryLogMode maps an arbitrary mode string to a known mode,
+// defaulting unknown/empty values to "daily".
+func normalizeExpiryLogMode(mode string) string {
+	switch mode {
+	case expiryLogModeDaily, expiryLogModeAlways, expiryLogModeOff:
+		return mode
+	default:
+		return expiryLogModeDaily
+	}
+}
+
+// expiryLogDue records the current expiry timestamp and reports whether a WARN
+// should be emitted for id. State is written only for the daily mode; always
+// and off retain the legacy/suppressed behavior without building a second
+// cadence.
+func expiryLogDue[K comparable](mode string, states map[K]expiryState, id K, expiresAt, now time.Time) bool {
+	switch mode {
+	case expiryLogModeAlways:
+		return true
+	case expiryLogModeOff:
+		return false
+	}
+
+	state, seen := states[id]
+	due := !seen || !state.expiresAt.Equal(expiresAt) ||
+		now.Sub(state.lastEmitted) >= expiryReminderInterval
+	state.expiresAt = expiresAt
+	if due {
+		state.lastEmitted = now
+	}
+	states[id] = state
+	return due
+}
+
 // WithAttributeNamespaces sets the posture-attribute namespace allow-list: each
 // entry is a namespace prefix (the part before ":" in a posture key, e.g.
 // "intune", "ip") whose attributes are promoted to the
@@ -657,22 +727,25 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 // WithPerEntity) tune cardinality; per-entity gauges are emitted by default.
 func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool, opts ...Option) *Collector {
 	c := &Collector{
-		api:                 api,
-		cache:               cache,
-		interval:            interval,
-		collectRoutes:       collectRoutes,
-		collectPosture:      collectPosture,
-		perEntity:           true,
-		derpRollup:          true,
-		collectConnectivity: true,
-		subnetRouteRollup:   true,
-		postureLogMode:      postureLogChanges,
-		lastPosture:         make(map[string]string),
-		collectTagRollup:    true,
-		tagRollupLimit:      50,
-		now:                 time.Now,
-		updateAvailableData: true,
-		ephemeralData:       true,
+		api:                  api,
+		cache:                cache,
+		interval:             interval,
+		collectRoutes:        collectRoutes,
+		collectPosture:       collectPosture,
+		perEntity:            true,
+		derpRollup:           true,
+		collectConnectivity:  true,
+		subnetRouteRollup:    true,
+		postureLogMode:       postureLogChanges,
+		lastPosture:          make(map[string]string),
+		expiryLogMode:        expiryLogModeDaily,
+		deviceKeyExpiryState: make(map[string]expiryState),
+		attributeExpiryState: make(map[attributeExpiryKey]expiryState),
+		collectTagRollup:     true,
+		tagRollupLimit:       50,
+		now:                  time.Now,
+		updateAvailableData:  true,
+		ephemeralData:        true,
 
 		multipleConnectionsData:       true,
 		blocksIncomingConnectionsData: true,
@@ -784,6 +857,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	subnetAdvertised := map[string]struct{}{}
 	subnetEnabled := map[string]struct{}{}
 	routersByCIDR := map[string]int{}
+	currentDeviceKeyExpiries := make(map[string]struct{})
+	currentAttributeExpiries := make(map[attributeExpiryKey]struct{})
 
 	for i := range devs {
 		d := &devs[i]
@@ -920,7 +995,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		if c.collectPosture {
 			postureAttempted = true
-			if perr := c.emitPosture(ctx, e, d, nowT); perr != nil && postureFirstErr == nil {
+			if perr := c.emitPosture(ctx, e, d, nowT, currentAttributeExpiries); perr != nil && postureFirstErr == nil {
 				postureFirstErr = perr
 			}
 		}
@@ -1081,16 +1156,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			// covers the full distribution (including already-expired keys);
 			// this log is the actionable per-device signal.
 			if days > 0 && days <= keyExpiryWarnDays {
-				e.LogEvent(telemetry.Event{
-					Name:     docDeviceKeyExpiryLog.Name,
-					Severity: telemetry.SeverityWarn,
-					Body:     "device node key expiring soon",
-					Attrs: telemetry.Attrs{
-						semconv.HostName:           d.Hostname,
-						semconv.HostID:             d.ID,
-						attrDeviceKeyExpiresInDays: fmt.Sprintf("%.2f", days),
-					},
-				})
+				currentDeviceKeyExpiries[d.ID] = struct{}{}
+				if expiryLogDue(c.expiryLogMode, c.deviceKeyExpiryState, d.ID, d.Expires, nowT) {
+					e.LogEvent(telemetry.Event{
+						Name:     docDeviceKeyExpiryLog.Name,
+						Severity: telemetry.SeverityWarn,
+						Body:     "device node key expiring soon",
+						Attrs: telemetry.Attrs{
+							semconv.HostName:           d.Hostname,
+							semconv.HostID:             d.ID,
+							attrDeviceKeyExpiresInDays: fmt.Sprintf("%.2f", days),
+						},
+					})
+				}
 			}
 		}
 	}
@@ -1111,6 +1189,21 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if _, ok := current[id]; !ok {
 				delete(c.lastPosture, id)
 			}
+		}
+	}
+
+	// Expiry state is intentionally narrower than lastPosture: an entity that
+	// leaves the warning window must be forgotten so a later re-entry emits a
+	// fresh change warning. Attribute state is keyed by device plus attribute,
+	// since one device can carry multiple independently expiring attributes.
+	for id := range c.deviceKeyExpiryState {
+		if _, ok := currentDeviceKeyExpiries[id]; !ok {
+			delete(c.deviceKeyExpiryState, id)
+		}
+	}
+	for id := range c.attributeExpiryState {
+		if _, ok := currentAttributeExpiries[id]; !ok {
+			delete(c.attributeExpiryState, id)
 		}
 	}
 
@@ -1583,7 +1676,7 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 // (nil on success) lets Collect aggregate this tick's per-device outcomes into
 // a single apistate.Observe call after the loop (#524); it is never used to
 // fail the enclosing Collect.
-func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time) error {
+func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time, currentAttributeExpiries map[attributeExpiryKey]struct{}) error {
 	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestPostureAttributes, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
@@ -1610,7 +1703,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	// share the same namespace allow-list fence.
 	if c.attrNamespaceWildcard || len(c.attrNamespaces) > 0 {
 		c.emitAttributes(d, attrs)
-		c.emitAttributeExpiries(e, d, da.Expiries, nowT)
+		c.emitAttributeExpiries(e, d, da.Expiries, nowT, currentAttributeExpiries)
 	}
 
 	// Decide whether to emit the LOG. The signature is computed over the FULL
@@ -1700,7 +1793,7 @@ func (c *Collector) emitAttributes(d *tsapi.RichDevice, attrs map[string]any) {
 // attribute_namespaces allow-list as emitAttributes: a namespace not
 // allow-listed is skipped even if its attribute carries an expiry, so the two
 // signals never disagree about which attributes are "in scope".
-func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, nowT time.Time) {
+func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, nowT time.Time, current map[attributeExpiryKey]struct{}) {
 	for key, expiry := range expiries {
 		ns, _, ok := strings.Cut(key, ":")
 		if !ok {
@@ -1719,17 +1812,21 @@ func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevi
 
 		days := expiry.Sub(nowT).Hours() / 24
 		if days > 0 && days <= keyExpiryWarnDays {
-			e.LogEvent(telemetry.Event{
-				Name:     docDeviceAttributeExpiringLog.Name,
-				Severity: telemetry.SeverityWarn,
-				Body:     "device posture attribute expiring soon",
-				Attrs: telemetry.Attrs{
-					semconv.HostName:                 d.Hostname,
-					semconv.HostID:                   d.ID,
-					attrAttribute:                    key,
-					attrDeviceAttributeExpiresInDays: fmt.Sprintf("%.2f", days),
-				},
-			})
+			stateKey := attributeExpiryKey{deviceID: d.ID, attribute: key}
+			current[stateKey] = struct{}{}
+			if expiryLogDue(c.expiryLogMode, c.attributeExpiryState, stateKey, expiry, nowT) {
+				e.LogEvent(telemetry.Event{
+					Name:     docDeviceAttributeExpiringLog.Name,
+					Severity: telemetry.SeverityWarn,
+					Body:     "device posture attribute expiring soon",
+					Attrs: telemetry.Attrs{
+						semconv.HostName:                 d.Hostname,
+						semconv.HostID:                   d.ID,
+						attrAttribute:                    key,
+						attrDeviceAttributeExpiresInDays: fmt.Sprintf("%.2f", days),
+					},
+				})
+			}
 		}
 	}
 }

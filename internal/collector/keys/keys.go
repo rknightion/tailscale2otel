@@ -92,7 +92,18 @@ const (
 	authKindNone      = "none"
 )
 
-const defaultInterval = 300 * time.Second
+const (
+	defaultInterval        = 300 * time.Second
+	expiryReminderInterval = 24 * time.Hour
+	expiryLogModeDaily     = "daily"
+	expiryLogModeAlways    = "always"
+	expiryLogModeOff       = "off"
+)
+
+type expiryState struct {
+	expiresAt   time.Time
+	lastEmitted time.Time
+}
 
 // opListTailnetKeys is the upstream operationId of the list call.
 const opListTailnetKeys = "listTailnetKeys"
@@ -105,11 +116,13 @@ type lister interface {
 
 // Collector reports Tailscale key inventory on each tick.
 type Collector struct {
-	api        lister
-	interval   time.Duration
-	expiryWarn time.Duration
-	now        func() time.Time
-	perEntity  bool
+	api           lister
+	interval      time.Duration
+	expiryWarn    time.Duration
+	now           func() time.Time
+	perEntity     bool
+	expiryLogMode string // "daily" (default) | "always" | "off"
+	expiryState   map[string]expiryState
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -127,6 +140,53 @@ func WithPerEntity(enabled bool) Option {
 	return func(c *Collector) { c.perEntity = enabled }
 }
 
+// WithExpiryLogMode controls the cadence of the key-expiry WARN event. The
+// expiry gauge remains emitted whenever it was emitted before:
+//
+//   - "daily" (default): emit on first entry or expiry-time change, then at
+//     most one reminder per 24 hours.
+//   - "always": emit on every scrape (the legacy behavior).
+//   - "off": suppress the expiry WARN event.
+//
+// An empty or unrecognized mode falls back to "daily".
+func WithExpiryLogMode(mode string) Option {
+	return func(c *Collector) { c.expiryLogMode = normalizeExpiryLogMode(mode) }
+}
+
+// normalizeExpiryLogMode maps an arbitrary mode string to a known mode,
+// defaulting unknown/empty values to "daily".
+func normalizeExpiryLogMode(mode string) string {
+	switch mode {
+	case expiryLogModeDaily, expiryLogModeAlways, expiryLogModeOff:
+		return mode
+	default:
+		return expiryLogModeDaily
+	}
+}
+
+// expiryLogDue records the current expiry timestamp and reports whether a WARN
+// should be emitted for id. State is written only for the daily mode; always
+// and off retain the legacy/suppressed behavior without building a second
+// cadence.
+func expiryLogDue(mode string, states map[string]expiryState, id string, expiresAt, now time.Time) bool {
+	switch mode {
+	case expiryLogModeAlways:
+		return true
+	case expiryLogModeOff:
+		return false
+	}
+
+	state, seen := states[id]
+	due := !seen || !state.expiresAt.Equal(expiresAt) ||
+		now.Sub(state.lastEmitted) >= expiryReminderInterval
+	state.expiresAt = expiresAt
+	if due {
+		state.lastEmitted = now
+	}
+	states[id] = state
+	return due
+}
+
 // WithAPIState wires the shared per-operation availability tracker (#420).
 // Availability METRICS are emitted regardless; the tracker is the in-process
 // introspection copy the admin status page reads. A nil tracker is a no-op.
@@ -142,11 +202,13 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 		now = time.Now
 	}
 	c := &Collector{
-		api:        api,
-		interval:   interval,
-		expiryWarn: expiryWarn,
-		now:        now,
-		perEntity:  true,
+		api:           api,
+		interval:      interval,
+		expiryWarn:    expiryWarn,
+		now:           now,
+		perEntity:     true,
+		expiryLogMode: expiryLogModeDaily,
+		expiryState:   make(map[string]expiryState),
 	}
 	for _, o := range opts {
 		o(c)
@@ -216,6 +278,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	now := c.now()
 	counts := make(map[countKey]int)
 	byOwner := make(map[ownerKey]int)
+	currentExpiring := make(map[string]struct{})
 
 	for i := range ks {
 		k := ks[i]
@@ -252,22 +315,28 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			if c.expiryWarn > 0 {
 				until := k.Expires.Sub(now)
 				if until > 0 && until <= c.expiryWarn {
-					attrs := telemetry.Attrs{
-						attrID:          k.ID,
-						attrType:        typ,
-						attrAuthKind:    authKind,
-						attrDescription: k.Description,
-						attrExpiresIn:   strconv.Itoa(int(until.Seconds())),
+					currentExpiring[k.ID] = struct{}{}
+					if expiryLogDue(c.expiryLogMode, c.expiryState, k.ID, k.Expires, now) {
+						attrs := telemetry.Attrs{
+							attrID:          k.ID,
+							attrType:        typ,
+							attrAuthKind:    authKind,
+							attrDescription: k.Description,
+							attrExpiresIn:   strconv.Itoa(int(until.Seconds())),
+						}
+						addOwner(attrs, k)
+						addTags(attrs, k)
+						// TSO-0050: the normalized expiring-soon lifecycle event must
+						// consume this same expiry state map rather than adding a
+						// second cadence.
+						e.LogEvent(telemetry.Event{
+							Name:     docKeyExpiring.Name,
+							Severity: telemetry.SeverityWarn,
+							Body: fmt.Sprintf("Tailscale key %q (%s/%s) expires in %s",
+								keyLabel(k), typ, authKind, until.Round(time.Second)),
+							Attrs: attrs,
+						})
 					}
-					addOwner(attrs, k)
-					addTags(attrs, k)
-					e.LogEvent(telemetry.Event{
-						Name:     docKeyExpiring.Name,
-						Severity: telemetry.SeverityWarn,
-						Body: fmt.Sprintf("Tailscale key %q (%s/%s) expires in %s",
-							keyLabel(k), typ, authKind, until.Round(time.Second)),
-						Attrs: attrs,
-					})
 				}
 			}
 		}
@@ -332,6 +401,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			addTags(paAttrs, k)
 			e.Gauge(docKeyPreauthorized.Name, docKeyPreauthorized.Unit, docKeyPreauthorized.Description,
 				pa, paAttrs)
+		}
+	}
+
+	for id := range c.expiryState {
+		if _, ok := currentExpiring[id]; !ok {
+			delete(c.expiryState, id)
 		}
 	}
 

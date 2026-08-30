@@ -113,6 +113,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		devOpts := []devices.Option{
 			devices.WithPerEntity(cfg.Cardinality.PerEntity.Device),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
+			devices.WithExpiryLogMode(c.Devices.ExpiryLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(cfg.Cardinality.DerpRegionRollup),
@@ -178,6 +179,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	if c.Keys.Enabled && cp.Supports("keys") {
 		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
 			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key),
+			keys.WithExpiryLogMode(c.Keys.ExpiryLogMode),
 			keys.WithAPIState(rt.apiState)), c.Keys.Interval.D())
 	}
 	if c.Settings.Enabled && cp.Supports("settings") {

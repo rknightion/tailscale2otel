@@ -2425,3 +2425,216 @@ func TestCollect_DeviceKeyExpiring_NoLogWhenDisabledOrFarFuture(t *testing.T) {
 		}
 	}
 }
+
+func expiryLogCount(rec *telemetrytest.Recorder, eventName string) int {
+	n := 0
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == eventName {
+			n++
+		}
+	}
+	return n
+}
+
+func TestCollect_DeviceKeyExpiryLogModeDaily(t *testing.T) {
+	clock := now
+	api := &fakeAPI{devices: []tsapi.RichDevice{{
+		ID: "dev-expiry", Hostname: "expiry-host", Expires: clock.Add(5 * 24 * time.Hour),
+	}}}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return clock }))
+	c := devices.New(api, cache, 0, false, false,
+		devices.WithClock(func() time.Time { return clock }))
+
+	collect := func() *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 1 {
+		t.Fatalf("first scrape key-expiry logs = %d, want 1", got)
+	}
+	clock = now.Add(time.Minute)
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 0 {
+		t.Fatalf("60s-later key-expiry logs = %d, want 0", got)
+	}
+	clock = now.Add(24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 1 {
+		t.Fatalf("24h-later key-expiry logs = %d, want 1", got)
+	}
+
+	// A rotated key must warn immediately even though the prior key's daily
+	// reminder was just emitted.
+	api.devices[0].Expires = clock.Add(6 * 24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 1 {
+		t.Fatalf("changed-expiry key-expiry logs = %d, want 1", got)
+	}
+
+	// Leaving the warn window drops the state; re-entering is a fresh baseline.
+	api.devices[0].Expires = clock.Add(30 * 24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 0 {
+		t.Fatalf("outside-window key-expiry logs = %d, want 0", got)
+	}
+	api.devices[0].Expires = clock.Add(5 * 24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 1 {
+		t.Fatalf("re-entered key-expiry logs = %d, want 1", got)
+	}
+	api.devices = nil
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 0 {
+		t.Fatalf("device-absent key-expiry logs = %d, want 0", got)
+	}
+	api.devices = []tsapi.RichDevice{{
+		ID: "dev-expiry", Hostname: "expiry-host", Expires: clock.Add(5 * 24 * time.Hour),
+	}}
+	if got := expiryLogCount(collect(), "tailscale.device.key_expiring"); got != 1 {
+		t.Fatalf("rejoined-device key-expiry logs = %d, want 1", got)
+	}
+	if got := len(collect().MetricPoints("tailscale.device.key.expiry")); got != 1 {
+		t.Fatalf("key-expiry gauge points = %d, want 1", got)
+	}
+}
+
+func TestCollect_DeviceKeyExpiryLogModeAlwaysAndOff(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode string
+		want int
+	}{
+		{name: "always", mode: "always", want: 3},
+		{name: "off", mode: "off", want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := now
+			api := &fakeAPI{devices: []tsapi.RichDevice{{
+				ID: "dev-expiry", Hostname: "expiry-host", Expires: clock.Add(5 * 24 * time.Hour),
+			}}}
+			cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return clock }))
+			c := devices.New(api, cache, 0, false, false,
+				devices.WithClock(func() time.Time { return clock }),
+				devices.WithExpiryLogMode(tc.mode))
+			logs := 0
+			for i := 0; i < 3; i++ {
+				rec := telemetrytest.New()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatalf("Collect %d: %v", i+1, err)
+				}
+				logs += expiryLogCount(rec, "tailscale.device.key_expiring")
+				if got := len(rec.MetricPoints("tailscale.device.key.expiry")); got != 1 {
+					t.Fatalf("scrape %d key-expiry gauge points = %d, want 1", i+1, got)
+				}
+				clock = clock.Add(time.Minute)
+			}
+			if logs != tc.want {
+				t.Fatalf("key-expiry logs = %d, want %d", logs, tc.want)
+			}
+		})
+	}
+}
+
+func TestCollect_AttributeExpiryLogModeDaily(t *testing.T) {
+	clock := now
+	api := &fakeAPI{
+		devices: []tsapi.RichDevice{{ID: "dev-attr", Hostname: "attr-host"}},
+		posture: map[string]map[string]any{"dev-attr": {"custom:foo": "bar"}},
+		postureExpiries: map[string]map[string]time.Time{
+			"dev-attr": {"custom:foo": clock.Add(5 * 24 * time.Hour)},
+		},
+	}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return clock }))
+	c := devices.New(api, cache, 0, false, true,
+		devices.WithAttributeNamespaces([]string{"custom"}),
+		devices.WithClock(func() time.Time { return clock }))
+	collect := func() *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 1 {
+		t.Fatalf("first attribute-expiry logs = %d, want 1", got)
+	}
+	clock = now.Add(time.Minute)
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 0 {
+		t.Fatalf("60s-later attribute-expiry logs = %d, want 0", got)
+	}
+	clock = now.Add(24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 1 {
+		t.Fatalf("24h-later attribute-expiry logs = %d, want 1", got)
+	}
+
+	// A changed expiry is an immediate change, independent of the reminder.
+	api.postureExpiries["dev-attr"]["custom:foo"] = clock.Add(6 * 24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 1 {
+		t.Fatalf("changed attribute expiry logs = %d, want 1", got)
+	}
+
+	// Removing the attribute expiry prunes its state; re-adding it emits a new
+	// first-seen warning.
+	delete(api.postureExpiries["dev-attr"], "custom:foo")
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 0 {
+		t.Fatalf("removed attribute-expiry logs = %d, want 0", got)
+	}
+	api.postureExpiries["dev-attr"]["custom:foo"] = clock.Add(5 * 24 * time.Hour)
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 1 {
+		t.Fatalf("re-added attribute-expiry logs = %d, want 1", got)
+	}
+	api.devices = nil
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 0 {
+		t.Fatalf("device-absent attribute-expiry logs = %d, want 0", got)
+	}
+	api.devices = []tsapi.RichDevice{{ID: "dev-attr", Hostname: "attr-host"}}
+	if got := expiryLogCount(collect(), "tailscale.device.attribute.expiring"); got != 1 {
+		t.Fatalf("rejoined-device attribute-expiry logs = %d, want 1", got)
+	}
+	if got := len(collect().MetricPoints("tailscale.device.attribute.expiry")); got != 1 {
+		t.Fatalf("attribute-expiry gauge points = %d, want 1", got)
+	}
+}
+
+func TestCollect_AttributeExpiryLogModeAlwaysAndOff(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode string
+		want int
+	}{
+		{name: "always", mode: "always", want: 3},
+		{name: "off", mode: "off", want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := now
+			api := &fakeAPI{
+				devices: []tsapi.RichDevice{{ID: "dev-attr", Hostname: "attr-host"}},
+				posture: map[string]map[string]any{"dev-attr": {"custom:foo": "bar"}},
+				postureExpiries: map[string]map[string]time.Time{
+					"dev-attr": {"custom:foo": clock.Add(5 * 24 * time.Hour)},
+				},
+			}
+			cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return clock }))
+			c := devices.New(api, cache, 0, false, true,
+				devices.WithAttributeNamespaces([]string{"custom"}),
+				devices.WithClock(func() time.Time { return clock }),
+				devices.WithExpiryLogMode(tc.mode))
+			logs := 0
+			for i := 0; i < 3; i++ {
+				rec := telemetrytest.New()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatalf("Collect %d: %v", i+1, err)
+				}
+				logs += expiryLogCount(rec, "tailscale.device.attribute.expiring")
+				if got := len(rec.MetricPoints("tailscale.device.attribute.expiry")); got != 1 {
+					t.Fatalf("scrape %d attribute-expiry gauge points = %d, want 1", i+1, got)
+				}
+				clock = clock.Add(time.Minute)
+			}
+			if logs != tc.want {
+				t.Fatalf("attribute-expiry logs = %d, want %d", logs, tc.want)
+			}
+		})
+	}
+}

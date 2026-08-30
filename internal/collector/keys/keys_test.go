@@ -295,6 +295,104 @@ func TestCollect_ValidKeyStillWarns(t *testing.T) {
 	findLog(t, rec.LogRecords(), "tailscale.key.expiring")
 }
 
+func keyExpiryLogCount(rec *telemetrytest.Recorder) int {
+	n := 0
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == "tailscale.key.expiring" {
+			n++
+		}
+	}
+	return n
+}
+
+func TestCollect_ExpiryLogModeDaily(t *testing.T) {
+	clock := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+	api := &fakeLister{keys: []tsapi.Key{{ID: "daily", Type: "auth", Expires: clock.Add(5 * 24 * time.Hour)}}}
+	c := keys.New(api, 0, 7*24*time.Hour, func() time.Time { return clock })
+
+	collect := func() *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	if got := keyExpiryLogCount(collect()); got != 1 {
+		t.Fatalf("first scrape key-expiry logs = %d, want 1", got)
+	}
+	clock = clock.Add(time.Minute)
+	if got := keyExpiryLogCount(collect()); got != 0 {
+		t.Fatalf("60s-later key-expiry logs = %d, want 0", got)
+	}
+	clock = clock.Add(24 * time.Hour)
+	if got := keyExpiryLogCount(collect()); got != 1 {
+		t.Fatalf("24h-later key-expiry logs = %d, want 1", got)
+	}
+
+	// A rotated credential warns immediately even though the daily reminder was
+	// just emitted.
+	api.keys[0].Expires = clock.Add(2 * 24 * time.Hour)
+	if got := keyExpiryLogCount(collect()); got != 1 {
+		t.Fatalf("changed-expiry key-expiry logs = %d, want 1", got)
+	}
+
+	// A key leaving the warning window is pruned; re-entering warns as new.
+	api.keys[0].Expires = clock.Add(30 * 24 * time.Hour)
+	if got := keyExpiryLogCount(collect()); got != 0 {
+		t.Fatalf("outside-window key-expiry logs = %d, want 0", got)
+	}
+	api.keys[0].Expires = clock.Add(24 * time.Hour)
+	if got := keyExpiryLogCount(collect()); got != 1 {
+		t.Fatalf("re-entered key-expiry logs = %d, want 1", got)
+	}
+	api.keys = nil
+	if got := keyExpiryLogCount(collect()); got != 0 {
+		t.Fatalf("key-absent key-expiry logs = %d, want 0", got)
+	}
+	api.keys = []tsapi.Key{{ID: "daily", Type: "auth", Expires: clock.Add(24 * time.Hour)}}
+	if got := keyExpiryLogCount(collect()); got != 1 {
+		t.Fatalf("rejoined-key key-expiry logs = %d, want 1", got)
+	}
+	if got := len(collect().MetricPoints("tailscale.key.expiry")); got != 1 {
+		t.Fatalf("key-expiry gauge points = %d, want 1", got)
+	}
+}
+
+func TestCollect_ExpiryLogModeAlwaysAndOff(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode string
+		want int
+	}{
+		{name: "always", mode: "always", want: 3},
+		{name: "off", mode: "off", want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := time.Date(2024, 6, 6, 12, 0, 0, 0, time.UTC)
+			api := &fakeLister{keys: []tsapi.Key{{ID: "mode", Type: "auth", Expires: clock.Add(24 * time.Hour)}}}
+			c := keys.New(api, 0, 7*24*time.Hour, func() time.Time { return clock },
+				keys.WithExpiryLogMode(tc.mode))
+			logs := 0
+			for i := 0; i < 3; i++ {
+				rec := telemetrytest.New()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatalf("Collect %d: %v", i+1, err)
+				}
+				logs += keyExpiryLogCount(rec)
+				if got := len(rec.MetricPoints("tailscale.key.expiry")); got != 1 {
+					t.Fatalf("scrape %d key-expiry gauge points = %d, want 1", i+1, got)
+				}
+				clock = clock.Add(time.Minute)
+			}
+			if logs != tc.want {
+				t.Fatalf("key-expiry logs = %d, want %d", logs, tc.want)
+			}
+		})
+	}
+}
+
 func TestCollect_NilNowDefaultsToTimeNow(t *testing.T) {
 	// With nil now and a key already long expired, no panic and no false warn
 	// behavior is asserted here beyond a successful Collect.
