@@ -1,10 +1,11 @@
 ---
 id: TSO-0043
 title: Grants-aware policy parsing and acls-vs-grants adoption metric
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@codex'
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 09:47'
+updated_date: '2026-08-30 16:32'
 labels: []
 milestone: m-3
 dependencies: []
@@ -20,13 +21,25 @@ Grants blocks coexist with acls in the policy file (grants GA; next-gen syntax).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A policy file using only grants reports non-zero rule counts and applicable risk findings
-- [ ] #2 An adoption metric distinguishes acls vs grants rule counts
+- [x] #1 A policy file using only grants reports non-zero rule counts and applicable risk findings
+- [x] #2 An adoption metric distinguishes acls vs grants rule counts
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Latitude deviation: the run contract called for one commit per feature, but root retained the already-integrated shared-tree feature commit fa6a465 plus review-fix commit a18a5dd rather than performing prohibited destructive history surgery after integration and push. All task evidence is tied to the verified implementation head a18a5dd06f9ac9c8b84fda73bba653ded2398d5a.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Made policy parsing grants-aware and exposed the ACL-versus-grants adoption metric with dashboard coverage. Verified through collector telemetry tests, generated-surface guards, final just check, and exact-head CI run 33322449434 at a18a5dd06f9ac9c8b84fda73bba653ded2398d5a (success).
+<!-- SECTION:FINAL_SUMMARY:END -->
