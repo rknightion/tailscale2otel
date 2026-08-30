@@ -155,6 +155,7 @@ type DeviceCache struct {
 	unvPruned time.Time
 	updated   time.Time
 	now       func() time.Time
+	addrSet   AddrSet
 
 	// byService maps a Tailscale Service (VIP service) backing address to the
 	// service's name (e.g. "svc:argocd"), so flow-log peers destined for a
@@ -171,6 +172,13 @@ func WithClock(now func() time.Time) Option {
 	return func(c *DeviceCache) { c.now = now }
 }
 
+// WithAddrSet replaces the default Tailscale ranges used to classify cache
+// misses. Callers must pass the same security-validated set used by any
+// outbound node-metrics discovery allowlist.
+func WithAddrSet(addrSet AddrSet) Option {
+	return func(c *DeviceCache) { c.addrSet = addrSet }
+}
+
 // NewDeviceCache returns an empty cache ready for use.
 func NewDeviceCache(opts ...Option) *DeviceCache {
 	c := &DeviceCache{
@@ -180,6 +188,7 @@ func NewDeviceCache(opts ...Option) *DeviceCache {
 		unvAddr:   map[netip.Addr]string{},
 		byService: map[netip.Addr]string{},
 		now:       time.Now,
+		addrSet:   DefaultAddrSet(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -454,8 +463,8 @@ func (c *DeviceCache) SnapshotUnverified() []DeviceMeta {
 // ResolveName maps an "addr:port" (or bare address) to a device's short name
 // using AUTHORITATIVE data only. A Service (VIP service) backing address that
 // isn't also a known device resolves to the service name (e.g. "svc:argocd").
-// Unrecognized Tailscale-range addresses resolve to "unknown"; addresses
-// outside Tailscale's ranges resolve to "external".
+// Unrecognized configured tailnet addresses resolve to "unknown"; addresses
+// outside the configured tailnet ranges resolve to "external".
 //
 // Flow-claimed identity is deliberately invisible here. A caller that wants it
 // must use ResolveNameAny and handle the provenance it returns.
@@ -502,7 +511,7 @@ func (c *DeviceCache) resolve(addrPort string, unverified bool) (string, Provena
 	if hint != "" {
 		return hint, ProvenanceUnverified
 	}
-	if IsTailscaleAddr(addr) {
+	if c.addrSet.Contains(addr) {
 		return "unknown", ProvenanceNone // a tailnet address we don't (yet) have cached
 	}
 	return "external", ProvenanceNone // non-Tailscale address (exit-node / subnet-router traffic)
@@ -555,18 +564,4 @@ func parseAddr(s string) (netip.Addr, bool) {
 		return a, true
 	}
 	return netip.Addr{}, false
-}
-
-// Tailscale's address ranges: the IPv4 CGNAT block and the IPv6 ULA block.
-var (
-	tsCGNAT = netip.MustParsePrefix("100.64.0.0/10")
-	tsULA   = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
-)
-
-// IsTailscaleAddr reports whether a falls within Tailscale's address ranges
-// (the IPv4 CGNAT block 100.64.0.0/10 and the ULA block fd7a:115c:a1e0::/48).
-// Headscale's defaults match; custom Headscale prefixes outside these ranges
-// are not recognized.
-func IsTailscaleAddr(a netip.Addr) bool {
-	return tsCGNAT.Contains(a) || tsULA.Contains(a)
 }

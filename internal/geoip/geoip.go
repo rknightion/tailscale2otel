@@ -47,6 +47,7 @@ import (
 
 	"github.com/oschwald/maxminddb-golang/v2"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
@@ -612,12 +613,6 @@ func buildTime(epoch uint) time.Time {
 	return time.Unix(int64(epoch), 0).UTC()
 }
 
-// tailscaleULA is the /48 Tailscale allocates tailnet IPv6 addresses from. It is
-// inside fc00::/7 and so already covered by IsPrivate below, but it is named
-// here because "we never geolocate a tailnet address" is a contract of this
-// feature and should be greppable rather than implied.
-var tailscaleULA = netip.MustParsePrefix("fd7a:115c:a1e0::/48")
-
 // Enrichable reports whether addr is a globally routable unicast address worth
 // looking up. Everything else — loopback, unspecified, link-local, multicast,
 // RFC 1918 / unique-local, and the RFC 6598 CGNAT range Tailscale carves tailnet
@@ -638,14 +633,10 @@ func Enrichable(addr netip.Addr) bool {
 		addr.IsLinkLocalUnicast(), addr.IsLinkLocalMulticast(),
 		addr.IsInterfaceLocalMulticast(), addr.IsPrivate():
 		return false
-	case tailscaleULA.Contains(addr):
-		return false
-	case cgnat.Contains(addr):
-		// 100.64.0.0/10: Tailscale's IPv4 tailnet range, and carrier-grade NAT
-		// space generally. netip.Addr.IsPrivate does not cover it.
+	case enrich.IsTailscaleAddr(addr):
+		// The shared default set keeps "never geolocate a tailnet address"
+		// explicit. Its ULA is already covered by IsPrivate, while CGNAT is not.
 		return false
 	}
 	return addr.IsGlobalUnicast()
 }
-
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")

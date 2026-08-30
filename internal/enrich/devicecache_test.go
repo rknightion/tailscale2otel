@@ -201,6 +201,31 @@ func TestIsTailscaleAddr(t *testing.T) {
 	}
 }
 
+func TestAddrSet_CustomPrefix(t *testing.T) {
+	set := enrich.NewAddrSet(netip.MustParsePrefix("10.100.0.0/16"))
+
+	if addr := netip.MustParseAddr("10.100.0.5"); !set.Contains(addr) {
+		t.Errorf("AddrSet.Contains(%s) = false, want true", addr)
+	}
+	if addr := netip.MustParseAddr("8.8.8.8"); set.Contains(addr) {
+		t.Errorf("AddrSet.Contains(%s) = true, want false", addr)
+	}
+}
+
+func TestResolveNameAny_CustomTailnetPrefix(t *testing.T) {
+	set := enrich.NewAddrSet(netip.MustParsePrefix("10.100.0.0/16"))
+	c := enrich.NewDeviceCache(enrich.WithAddrSet(set))
+
+	got, provenance := c.ResolveNameAny("10.100.0.5:443")
+	if got != "unknown" || provenance != enrich.ProvenanceNone {
+		t.Fatalf("ResolveNameAny(custom tailnet address) = %q, %q; want unknown, %q", got, provenance, enrich.ProvenanceNone)
+	}
+	got, provenance = c.ResolveNameAny("8.8.8.8:53")
+	if got != "external" || provenance != enrich.ProvenanceNone {
+		t.Fatalf("ResolveNameAny(public address) = %q, %q; want external, %q", got, provenance, enrich.ProvenanceNone)
+	}
+}
+
 func TestResolveName_ServiceVIP(t *testing.T) {
 	c := enrich.NewDeviceCache()
 	vip := netip.MustParseAddr("100.124.43.64")

@@ -142,6 +142,35 @@ func TestLookup_GlobalNotSkipped(t *testing.T) {
 	}
 }
 
+func TestEnrichable_PrivateAndPublicBoundaries(t *testing.T) {
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{"10.100.0.5", false},        // custom Headscale RFC 1918 prefix
+		{"172.20.5.1", false},        // RFC 1918
+		{"192.168.44.9", false},      // RFC 1918
+		{"fd00:dead:beef::1", false}, // custom Headscale ULA prefix
+		{"100.64.1.2", false},        // default Tailscale CGNAT prefix
+		{"fd7a:115c:a1e0::1", false}, // default Tailscale ULA prefix
+		{"169.254.169.254", false},   // cloud metadata / link-local
+		{"127.0.0.1", false},         // loopback
+		{"::1", false},               // IPv6 loopback
+		{"fe80::1", false},           // IPv6 link-local
+		{"8.8.8.8", true},            // public IPv4
+		{"2606:4700::1111", true},    // public IPv6
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.addr, func(t *testing.T) {
+			addr := netip.MustParseAddr(tc.addr)
+			if got := Enrichable(addr); got != tc.want {
+				t.Fatalf("Enrichable(%s) = %v, want %v", addr, got, tc.want)
+			}
+		})
+	}
+}
+
 // Either database may be absent; the other still enriches. Configuring neither
 // is a usable (if pointless) zero state rather than an error, so the app can
 // build the DB before it knows whether the download has landed.
