@@ -16,7 +16,7 @@ ordinal: 53000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Keys and user invites carry created/expiry/updated timestamps; emit normalized lifecycle events (key created/revoked/expiring-soon, invite created/accepted) as log records to drive a timeline panel. Overlaps audit logs - the value is the always-on normalized shape independent of audit-log availability/retention. Coordinate the expiring-soon event with the key-expiry log-mode rework (candidate C1) so the two do not produce duplicate noise.
+Keys and user invites carry created/expiry/updated timestamps; emit normalized lifecycle events (key created/revoked/expiring-soon, invite created/accepted) as log records to drive a timeline panel. Overlaps audit logs - the value is the always-on normalized shape independent of audit-log availability/retention. Coordinate the expiring-soon event with the key-expiry log-mode rework (TSO-0051, a dependency) so the two do not produce duplicate noise.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
