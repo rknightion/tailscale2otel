@@ -761,7 +761,8 @@ func (a *App) Run(ctx context.Context) error {
 	// to stop its writer and flush what is still queued, so a clean shutdown does
 	// not discard connections the emit path already accepted. Deferred here, with
 	// the other resource closers, so it runs after the schedulers stop and the
-	// receiver goroutines are joined — nothing is still recording by then.
+	// receiver goroutines are joined — nothing is still recording by then. The
+	// per-runtime closes run concurrently under one bounded stage budget.
 	// Stop the annotation writer on the way out: it flushes the open rollup
 	// buckets (so a shutdown does not silently discard events already recorded
 	// into a bucket that has not closed yet), drains what is queued under ONE
@@ -773,13 +774,10 @@ func (a *App) Run(ctx context.Context) error {
 		}
 	}()
 	defer func() {
-		for _, rt := range a.runtimes {
-			if rt.flowStore == nil {
-				continue
-			}
-			if err := rt.flowStore.Close(); err != nil {
-				a.logger.Error("close flow store", "error", err, "tailnet", a.runtimeName(rt))
-			}
+		closeCtx, cancel := context.WithTimeout(context.Background(), flowStoreCloseTimeout)
+		defer cancel()
+		if err := a.closeFlowStores(closeCtx); err != nil {
+			a.logger.Error("close flow stores", "error", err)
 		}
 	}()
 	if a.adminSrv != nil {
@@ -981,6 +979,7 @@ func (a *App) Run(ctx context.Context) error {
 	// counts are exported before the telemetry pipeline shuts down. The schedulers
 	// AND receivers have stopped (so no connections are still being processed) and
 	// this is a no-op in "all" mode (nil accumulator).
+	// FlushRollup stays sequential: it is synchronous in-memory work with no context or I/O.
 	for _, rt := range a.runtimes {
 		rt.flowProc.FlushRollup(rt.emitter)
 	}

@@ -41,13 +41,14 @@ services:
     restart: unless-stopped
     # Shutdown is STAGED and each stage is separately bounded in the binary:
     # the receivers drain already-ACKed requests (10s), the ingress WAL does one
-    # final drain (10s), then the OTLP pipeline flushes and shuts down (10s) —
-    # 30s worst case, plus headroom. Compose's default is 10s, which SIGKILLs
+    # final drain (10s), then the OTLP pipeline flushes and shuts down (10s), and
+    # the flow stores close concurrently under one shared wait budget (10s) —
+    # 40s worst case, plus headroom. Compose's default is 10s, which SIGKILLs
     # the process partway through the first stage and loses the final flow
     # rollup, the WAL backlog and the last export (#332). Running the image with
-    # plain `docker run` instead? Pass --stop-timeout 45; its default is also 10.
+    # plain `docker run` instead? Pass --stop-timeout 55; its default is also 10.
     # internal/app fails the build if this stops covering the drain.
-    stop_grace_period: 45s
+    stop_grace_period: 55s
     # Hard memory ceiling (matches the Helm chart default). GOMEMLIMIT below sits
     # ~10% under this so the Go GC backs off before the cgroup OOM-kills the process.
     mem_limit: 256m

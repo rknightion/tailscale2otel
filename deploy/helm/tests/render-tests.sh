@@ -334,44 +334,44 @@ case_ "K. shutdown budget covers the staged drain (#332)"
 render
 assert_rc0 "K: default renders"
 budget="$(dep_field '.spec.template.spec.terminationGracePeriodSeconds')"
-[[ "$budget" == "45" ]] \
-  && ok "K: default terminationGracePeriodSeconds is 45" \
-  || bad "K: default terminationGracePeriodSeconds is $budget, want 45"
+[[ "$budget" == "55" ]] \
+  && ok "K: default terminationGracePeriodSeconds is 55" \
+  || bad "K: default terminationGracePeriodSeconds is $budget, want 55"
 
 # An operator lowering this is making a data-durability decision. The render
 # must fail and say so, rather than truncating a drain silently.
 #
 # TWO layers enforce it, on different inputs, and both are needed:
-#   - values.schema.json `minimum: 45` catches any NUMBER below the floor, and
+#   - values.schema.json `minimum: 55` catches any NUMBER below the floor, and
 #     fires first, so the template guard never sees those.
 #   - the template's `fail` catches null/absent, which JSON Schema `minimum`
 #     does NOT reject and which would otherwise render a budget of ZERO —
 #     an immediate SIGKILL, the worst possible outcome.
 render --set terminationGracePeriodSeconds=20
-if [[ $RENDER_RC -ne 0 ]] && grep -q 'want 45' <<<"$RENDER"; then
-  ok "K: a numeric budget below the floor is rejected by the schema, naming 45"
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'want 55' <<<"$RENDER"; then
+  ok "K: a numeric budget below the floor is rejected by the schema, naming 55"
 else
   bad "K: terminationGracePeriodSeconds=20 rendered (rc=$RENDER_RC) instead of failing"
 fi
 
-# 30 is Kubernetes' own default and the exact drain — the specific value most
-# likely to be chosen by someone "restoring the default", and the one with zero
-# margin. It must fail too.
+# 30 is Kubernetes' own default and is below the staged drain — the specific
+# value most likely to be chosen by someone "restoring the default". It must
+# fail too.
 render --set terminationGracePeriodSeconds=30
 [[ $RENDER_RC -ne 0 ]] \
-  && ok "K: 30 (the k8s default, == the drain, no margin) also fails" \
-  || bad "K: terminationGracePeriodSeconds=30 rendered; it leaves no headroom"
+  && ok "K: 30 (the k8s default, below the drain) also fails" \
+  || bad "K: terminationGracePeriodSeconds=30 rendered; it is below the drain"
 
 # null slips past the schema. Without the template guard this renders
 # `terminationGracePeriodSeconds: 0` — a zero budget, killed instantly.
 render --set terminationGracePeriodSeconds=null
-if [[ $RENDER_RC -ne 0 ]] && grep -q 'terminationGracePeriodSeconds must be at least 45' <<<"$RENDER"; then
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'terminationGracePeriodSeconds must be at least 55' <<<"$RENDER"; then
   ok "K: null is caught by the template guard, which explains the drain"
 else
   bad "K: terminationGracePeriodSeconds=null rendered (rc=$RENDER_RC); a zero budget would ship"
 fi
-grep -q 'staged drain is 30s' <<<"$RENDER" \
-  && ok "K: the failure explains WHY 45, not just that 45 is required" \
+grep -q 'staged drain is 40s' <<<"$RENDER" \
+  && ok "K: the failure explains WHY 55, not just that 55 is required" \
   || bad "K: failure message does not state the drain arithmetic"
 
 render --set terminationGracePeriodSeconds=120

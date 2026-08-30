@@ -6,7 +6,7 @@
 // allowed to finish draining lives in YAML in another directory — Compose's
 // `stop_grace_period` and the chart's `terminationGracePeriodSeconds`. Nothing
 // connected the two. Compose defaults to 10 seconds and the chart inherited
-// Kubernetes' 30, while the staged drain can legitimately run to 30 seconds, so
+// Kubernetes' 30, while the staged drain can legitimately run to 40 seconds, so
 // the container was SIGKILLed mid-flush and the final interval's flow rollup,
 // the WAL backlog and the last OTLP export were lost.
 //
@@ -30,13 +30,25 @@ import (
 // worstCaseDrain is the wall-clock a stop can take with every stage at its
 // bound. The stages run in sequence after the operator's context is canceled
 // (see Run): the schedulers return immediately on cancellation, the receiver
-// goroutines are joined, the ingress WAL performs one final drain, and the
-// telemetry pipeline is flushed and shut down.
+// goroutines are joined, the ingress WAL performs one final drain, the
+// telemetry pipeline is flushed and shut down, and the deferred flow stores
+// close concurrently under one flowStoreCloseTimeout.
 //
 // Receivers are NOT summed: stream and webhook shut down in parallel goroutines
 // joined by one receiverWG.Wait, so together they cost one receiverDrainTimeout.
+// Flow stores are NOT summed either: every runtime gets its own close goroutine
+// under one shared flowStoreCloseTimeout.
 func worstCaseDrain() time.Duration {
-	return receiverDrainTimeout + ingressWALFlushTimeout + telemetryFlushTimeout
+	return receiverDrainTimeout + ingressWALFlushTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
+}
+
+// TestWorstCaseDrainIncludesFlowStoreClose keeps the fifth shutdown stage in
+// the derived deployment budget.
+func TestWorstCaseDrainIncludesFlowStoreClose(t *testing.T) {
+	want := receiverDrainTimeout + ingressWALFlushTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
+	if got := worstCaseDrain(); got != want {
+		t.Fatalf("worstCaseDrain() = %s, want %s including the flow-store close stage", got, want)
+	}
 }
 
 // requiredBudget is the drain plus headroom. A budget merely EQUAL to the drain

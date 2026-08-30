@@ -554,12 +554,13 @@ rolloutTrigger: ""
 # -- Seconds the kubelet allows for a graceful stop before SIGKILL. Shutdown is STAGED and
 # each stage is separately bounded in the binary: the receivers drain already-ACKed requests
 # (10s), the ingress WAL performs one final drain (10s), then the OTLP pipeline flushes and
-# shuts down (10s) — 30s worst case, plus headroom. Kubernetes' own default is 30s, which is
-# exactly the drain with no margin, so a rollout could SIGKILL the pod mid-flush and lose the
-# final flow rollup, the WAL backlog and the last export. Values below the enforced minimum
-# make `helm template` fail rather than silently truncating a drain. Raise it if you raise a
-# stage timeout; `internal/app` fails the build if the two stop agreeing (#332).
-terminationGracePeriodSeconds: 45 # @schema minimum:45
+# shuts down (10s), and the flow stores close concurrently under one shared wait budget (10s) —
+# 40s worst case, plus headroom. Kubernetes' own default is 30s, which is below the drain, so a
+# rollout could SIGKILL the pod mid-flush and lose the final flow rollup, the WAL backlog and
+# the last export. Values below the enforced minimum make `helm template` fail rather than
+# silently truncating a drain. Raise it if you raise a stage timeout; `internal/app` fails the
+# build if the two stop agreeing (#332).
+terminationGracePeriodSeconds: 55 # @schema minimum:55
 
 # -- Mount config.yaml from a ConfigMap YOU manage instead of one the chart renders.
 # For GitOps/ExternalSecrets/SOPS setups where the config is produced outside Helm.

@@ -2706,7 +2706,7 @@
         },
         "terminationGracePeriodSeconds": {
             "type": "integer",
-            "minimum": 45
+            "minimum": 55
         },
         "tolerations": {
             "type": "array"
