@@ -123,3 +123,6 @@ docs/fonts/
 
 # Claude Code repo-local config. `settings.json` and `hooks/` ARE tracked — they
 .claude/
+
+# Product-development candidate list — local working doc, evaluated into Backlog items manually
+/candidates.md
