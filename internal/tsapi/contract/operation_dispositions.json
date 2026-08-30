@@ -65,6 +65,13 @@
       "note": "mutates state; tailscale2otel is strictly read-only"
     },
     {
+      "id": "createOrganizationTailnet",
+      "method": "post",
+      "path": "/organizations/{organization}/tailnets",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
       "id": "createPostureIntegration",
       "method": "post",
       "path": "/tailnet/{tailnet}/posture/integrations",
@@ -131,6 +138,13 @@
       "id": "deleteService",
       "method": "delete",
       "path": "/tailnet/{tailnet}/services/{serviceName}",
+      "disposition": "write",
+      "note": "mutates state; tailscale2otel is strictly read-only"
+    },
+    {
+      "id": "deleteTailnet",
+      "method": "delete",
+      "path": "/tailnet/{tailnet}",
       "disposition": "write",
       "note": "mutates state; tailscale2otel is strictly read-only"
     },
@@ -364,6 +378,13 @@
       "path": "/tailnet/{tailnet}/oauth-apps",
       "disposition": "consumed",
       "note": "tsapi.Client.OAuthApps"
+    },
+    {
+      "id": "listOrganizationTailnets",
+      "method": "get",
+      "path": "/organizations/{organization}/tailnets",
+      "disposition": "parked",
+      "note": "alpha Organizations API (tailnets:read scope): org-level tailnet roster; candidate for org auto-discovery in multi-tailnet mode, awaiting a product decision"
     },
     {
       "id": "listServiceHosts",
