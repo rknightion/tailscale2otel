@@ -3,10 +3,12 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -215,6 +217,12 @@ func TestConfigSchemaFieldShapes(t *testing.T) {
 		t.Errorf("otlp.metric_interval examples missing, got %#v", metricInterval["examples"])
 	}
 
+	acl := props["collectors"].(map[string]any)["properties"].(map[string]any)["acl"].(map[string]any)["properties"].(map[string]any)
+	snapshotHeartbeat := acl["snapshot_heartbeat"].(map[string]any)
+	if snapshotHeartbeat["pattern"] != positiveDurationPattern {
+		t.Errorf("collectors.acl.snapshot_heartbeat pattern = %v, want %v", snapshotHeartbeat["pattern"], positiveDurationPattern)
+	}
+
 	// Enum: otlp.protocol must be exactly the set validate.go's oneOf enforces.
 	protocol := otlp["protocol"].(map[string]any)
 	wantEnum := []any{"grpc", "http", "stdout"}
@@ -255,6 +263,37 @@ func TestConfigSchemaFieldShapes(t *testing.T) {
 	portItem, ok := portList["items"].(map[string]any)
 	if !ok || portItem["type"] != "integer" || portItem["minimum"] != float64(1) || portItem["maximum"] != float64(65535) {
 		t.Errorf("port_overrides item schema = %#v, want integer 1..65535", portList["items"])
+	}
+}
+
+func TestPositiveDurationPatternAgreesWithPositiveParsedValues(t *testing.T) {
+	re := regexp.MustCompile(positiveDurationPattern)
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "1ns", want: true},
+		{value: "500ms", want: true},
+		{value: "1.5h", want: true},
+		{value: "0s500ms", want: true},
+		{value: "0.000000001s", want: true},
+		{value: "0s", want: false},
+		{value: "-1s", want: false},
+		{value: "0.0000000001s", want: false},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			matched := re.MatchString(tc.value)
+			if matched != tc.want {
+				t.Fatalf("positiveDurationPattern match = %v, want %v", matched, tc.want)
+			}
+			if !matched {
+				return
+			}
+			parsed, err := time.ParseDuration(tc.value)
+			if err != nil || parsed <= 0 {
+				t.Fatalf("matched duration parses as %v, %v; want > 0", parsed, err)
+			}
+		})
 	}
 }
 

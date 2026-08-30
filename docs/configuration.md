@@ -941,6 +941,7 @@ received record. Either way, **metrics are never capped — only logs.**
 |-----|---------|-------------|
 | `collectors.devices.enabled` | `true` | Emit device gauges + counts and **populate the enrichment cache**. |
 | `collectors.devices.interval` | `60s` | Poll cadence. |
+| `collectors.devices.change_log_enabled` | `false` | Emit structured device add/remove and field-change records. PII-bearing fields continue to follow `pii_filter`. |
 | `collectors.devices.collect_routes` | `false` | Also emit per-device subnet-route gauges. Read from the inline device data — **no extra API call**. |
 | `collectors.devices.collect_connectivity` | `true` | Emit per-device NAT/connectivity health (`tailscale.device.connectivity.*`: hard_nat, endpoints, direct_capable, udp, ipv6) plus the fleet connectivity rollups (`tailscale.devices.hard_nat`/`direct_capable`/`client_supports`). Read from the inline device data — **no extra API call**. Per-device gauges additionally gated by `cardinality.per_entity.device`. |
 | `collectors.devices.collect_posture` | `false` | Also fetch device posture attributes (one **extra API call per device per tick**) and emit posture log events. |
@@ -1190,13 +1191,19 @@ field the export does not. Neither field is required.
 | `collectors.keys.expiry_warn` | `168h` | Emit the "expiring soon" WARN log when a key expires within this window (default 7 days). |
 | `collectors.keys.expiry_log_mode` | `daily` | Expiry WARN cadence: `daily` logs a change plus at most one reminder per 24h; `always` preserves every-scrape behavior; `off` suppresses only the log. Metrics still emit. |
 | `collectors.settings.enabled` / `.interval` | `true` / `600s` | Tailnet feature-toggle gauges. |
+| `collectors.settings.snapshot_enabled` | `false` | Emit the complete settings response to logs on change plus a heartbeat. |
 | `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag), plus policy risk-scoring gauges (wildcard / unrestricted / auto-approver / SSH-wildcard / posture-gated rules). |
+| `collectors.acl.snapshot_enabled` | `false` | **Explicit PII consent:** ship the raw policy and its diffs, including every user email and group member, to the logs backend. This opt-in overrides `pii_filter` for those raw bodies, so logs retention holds tailnet identity data. |
+| `collectors.acl.snapshot_heartbeat` | `24h` | Refresh an unchanged raw policy snapshot at this cadence. Must be positive. |
 | `collectors.acl.validate` | `true` | Validate the tailnet's active policy each tick via `POST /tailnet/{tailnet}/acl/validate`. Despite the verb this is a **read** operation — upstream requires only the `policy_file:read` scope and it never modifies the policy; sending no body validates the *current* policy. It is the only non-GET call this exporter makes, so set `false` if you require a strictly GET-only client. Permission denial reports as unavailable, never as a passing validation. |
 | `collectors.dns.enabled` / `.interval` | `true` / `600s` | Nameserver / search-path / split-zone counts, the MagicDNS and override-local flags, the count of exit-node-eligible resolvers, and a per-resolver info gauge (`tailscale.dns.resolver`) labeled by address, kind, domain, and exit-node eligibility. |
+| `collectors.dns.snapshot_enabled` | `false` | Emit the complete DNS response to logs on change plus a heartbeat. |
 | `collectors.contacts.enabled` / `.interval` | `true` / `600s` | Tailnet security-contact gauges. |
 | `collectors.webhooks.enabled` / `.interval` | `true` / `600s` | Configured webhook gauges and per-webhook status. |
+| `collectors.webhooks.snapshot_enabled` | `false` | Emit the complete webhook inventory response to logs on change plus a heartbeat. |
 | `collectors.webhooks.desired_events` | `[]` | Optional list of webhook event categories this tailnet is expected to subscribe to (e.g. `["nodeCreated","userSuspended"]`). When set, the collector reports which desired categories no endpoint covers, so a silently-unsubscribed alerting path becomes visible. Empty means coverage is still exported per category but nothing is flagged as missing. Values outside the documented event vocabulary fold to `other`. |
 | `collectors.posture_integrations.enabled` / `.interval` | `true` / `600s` | MDM/EDR posture-integration gauges. |
+| `collectors.posture_integrations.snapshot_enabled` | `false` | Emit the complete posture-integration response to logs on change plus a heartbeat. |
 | `collectors.log_stream.enabled` / `.interval` | `true` / `600s` | Log-streaming configuration gauges. |
 | `collectors.oauth_apps.enabled` / `.interval` | `true` / `300s` | OAuth-application inventory (count, per-app scope/node-attribute gauges). Alpha API — idles silently (no error) on tailnets without it enabled. |
 
@@ -2035,3 +2042,9 @@ currently-expiring key at once.
 | `grafana_annotations.categories.config_change.rollup` | `true` | Summarize the category into one region annotation per `rollup_interval` instead of a marker per event. |
 | `grafana_annotations.categories.expiry.enabled` | `true` | Publish key/device-key expiry-window entries. Needs `collectors.keys` or `collectors.devices`. |
 | `grafana_annotations.categories.expiry.rollup` | `true` | Summarize the category per `rollup_interval`. |
+| `grafana_annotations.categories.policy_change.enabled` | `true` | Publish ACL revision and policy-diff markers from the policy snapshot family. |
+| `grafana_annotations.categories.policy_change.rollup` | `false` | Keep rare policy changes individually visible. |
+| `grafana_annotations.categories.inventory.enabled` | `true` | Publish device additions, removals, and material field changes. |
+| `grafana_annotations.categories.inventory.rollup` | `true` | Summarize higher-volume device churn per `rollup_interval`. |
+| `grafana_annotations.categories.risk.enabled` | `true` | Publish newly observed ACL, SSH, and auto-approver risk findings. |
+| `grafana_annotations.categories.risk.rollup` | `false` | Keep each newly observed risk finding individually visible. |

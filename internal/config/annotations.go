@@ -80,6 +80,12 @@ type AnnotationCategories struct {
 	ConfigChange AnnotationCategoryConfig `yaml:"config_change"`
 	// Expiry is a node key or auth key entering its expiry warning window.
 	Expiry AnnotationCategoryConfig `yaml:"expiry"`
+	// PolicyChange is a policy snapshot revision or diff observed by the ACL collector.
+	PolicyChange AnnotationCategoryConfig `yaml:"policy_change"`
+	// Inventory is device inventory churn or a material field-level change.
+	Inventory AnnotationCategoryConfig `yaml:"inventory"`
+	// Risk is a newly observed ACL, SSH, or auto-approver risk finding.
+	Risk AnnotationCategoryConfig `yaml:"risk"`
 }
 
 // AnnotationCategoryConfig is one category's gate.
@@ -153,7 +159,9 @@ func (c GrafanaAnnotationsConfig) warnings() []string {
 			"Leave it empty for organization annotations, which is what makes a marker visible "+
 			"wherever it is relevant")
 	}
-	if !c.Categories.ConfigChange.Enabled && !c.Categories.Expiry.Enabled {
+	if !c.Categories.ConfigChange.Enabled && !c.Categories.Expiry.Enabled &&
+		!c.Categories.PolicyChange.Enabled && !c.Categories.Inventory.Enabled &&
+		!c.Categories.Risk.Enabled {
 		out = append(out, "grafana_annotations is enabled but every category is off, so the only "+
 			"annotation ever written will be the startup marker")
 	}

@@ -235,6 +235,8 @@ extraVolumeMounts:
 | config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
+| config.collectors.acl.snapshot_enabled | bool | `false` | EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and group member, to the logs backend. This overrides pii_filter for those bodies, so logs retention holds tailnet identity data. |
+| config.collectors.acl.snapshot_heartbeat | string | `"24h"` | Refresh an unchanged raw policy snapshot at this cadence. |
 | config.collectors.acl.validate | bool | `true` | Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only. |
 | config.collectors.auditlogs.dedup_capacity | int | `4096` | Identities retained for poll-window and audit/webhook cross-source dedup. Must be positive. |
 | config.collectors.auditlogs.enabled | bool | `true` | Enable the configuration-audit-logs collector. |
@@ -272,6 +274,7 @@ extraVolumeMounts:
 | config.collectors.devices.attribute_key_limit | int | `200` | Busiest posture attribute keys promoted fleet-wide; overflow keys are dropped and counted. 0 or negative = unlimited; cardinality.metric_limit is the final SDK guard. |
 | config.collectors.devices.attribute_namespaces | list | `["intune","jamf","kandji","crowdstrike","sentinelone","kolide","ip"]` | Posture-attribute namespace prefixes promoted to the tailscale.device.attribute{,.info} metrics (needs collect_posture). `["*"]` = every namespace incl. node/custom; `[]` = disabled. |
 | config.collectors.devices.attribute_value_limit | int | `50` | Busiest values per attribute key on the .info gauge; overflow folds to "__other__". 0 or negative = unlimited. |
+| config.collectors.devices.change_log_enabled | bool | `false` | Emit structured device add/remove and field-change records. PII-bearing fields still follow pii_filter. |
 | config.collectors.devices.collect_connectivity | bool | `true` | Emit per-device NAT/connectivity health (tailscale.device.connectivity.*) plus the fleet connectivity rollups (tailscale.devices.hard_nat/direct_capable/client_supports) from the rich device payload (no extra API call). Per-device gauges additionally gated by per_entity.device. |
 | config.collectors.devices.collect_device_invites | bool | `true` | Inventory outstanding device-share invites via GET /device/{id}/device-invites (one API call per device, N+1; needs the device_invites:read OAuth scope, covered by all:read). Emits tailscale.device_invites.count; per-device fetch failures are non-fatal. |
 | config.collectors.devices.collect_posture | bool | `false` | Emit per-device posture attributes as log records (gated; requires posture identity on). |
@@ -284,6 +287,7 @@ extraVolumeMounts:
 | config.collectors.devices.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.dns.enabled | bool | `true` | Enable the DNS collector (nameservers/search-paths/split-zones counts, MagicDNS). |
 | config.collectors.dns.interval | string | `"600s"` | Poll interval. |
+| config.collectors.dns.snapshot_enabled | bool | `false` | Emit the complete DNS response to logs on change plus a heartbeat. |
 | config.collectors.flowlogs.dedup_capacity | int | `16384` | Identities retained for poll-window and cross-source dedup. Must be positive. |
 | config.collectors.flowlogs.enabled | bool | `true` | Enable the network-flow-logs collector (aggregated metrics + full-fidelity logs). |
 | config.collectors.flowlogs.initial_lookback | string | `"5m"` | Cold-start lookback on first run when no checkpoint exists. |
@@ -381,16 +385,19 @@ extraVolumeMounts:
 | config.collectors.oauth_apps.interval | string | `"300s"` | Poll interval. |
 | config.collectors.posture_integrations.enabled | bool | `true` | Enable the device-posture-integration collector (MDM/EDR matched counts + last_sync staleness). |
 | config.collectors.posture_integrations.interval | string | `"600s"` | Poll interval. |
+| config.collectors.posture_integrations.snapshot_enabled | bool | `false` | Emit the complete posture-integration response to logs on change plus a heartbeat. |
 | config.collectors.services.collect_hosts | bool | `false` | Also collect per-service backing-host detail (approval/configured state) — one extra API call per service (N+1). Off by default. |
 | config.collectors.services.enabled | bool | `true` | Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts). |
 | config.collectors.services.interval | string | `"600s"` | Poll interval. |
 | config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |
 | config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
+| config.collectors.settings.snapshot_enabled | bool | `false` | Emit the complete settings response to logs on change plus a heartbeat. |
 | config.collectors.users.enabled | bool | `true` | Enable the users collector (users.count, per-user devices/connected/last_seen). |
 | config.collectors.users.interval | string | `"300s"` | Poll interval (user data changes slowly). |
 | config.collectors.webhooks.desired_events | list | `[]` | Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked. |
 | config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
 | config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
+| config.collectors.webhooks.snapshot_enabled | bool | `false` | Emit the complete webhook inventory response to logs on change plus a heartbeat. |
 | config.delivery | object | `{"mode":"otlp"}` | Process-wide telemetry topology. otlp preserves historical push-only delivery; prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces; dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus. |
 | config.delivery.mode | string | `"otlp"` | Delivery mode: otlp \| prometheus \| dual. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
@@ -435,6 +442,12 @@ extraVolumeMounts:
 | config.grafana_annotations.categories.config_change.rollup | bool | `true` | Roll the category up into one region annotation per rollup_interval. On by default: it is the highest-volume source, and per-event markers draw a picket fence. |
 | config.grafana_annotations.categories.expiry.enabled | bool | `true` | A node key or auth key entering its expiry warning window. Needs collectors.keys or collectors.devices. |
 | config.grafana_annotations.categories.expiry.rollup | bool | `true` | Roll the category up. On by default: a fresh deployment finds every currently expiring key at once. |
+| config.grafana_annotations.categories.inventory.enabled | bool | `true` | Device additions, removals and material field changes. |
+| config.grafana_annotations.categories.inventory.rollup | bool | `true` | Roll high-volume device churn into one region per interval. |
+| config.grafana_annotations.categories.policy_change.enabled | bool | `true` | ACL revision and policy-diff markers from the policy snapshot family. |
+| config.grafana_annotations.categories.policy_change.rollup | bool | `false` | Keep rare policy changes individually visible. |
+| config.grafana_annotations.categories.risk.enabled | bool | `true` | Newly observed ACL, SSH and auto-approver risk findings. |
+| config.grafana_annotations.categories.risk.rollup | bool | `false` | Keep each new risk finding individually visible. |
 | config.grafana_annotations.dashboard_uid | string | `""` | Confine annotations to ONE dashboard. Empty (default) writes organization annotations, visible on every board and in Explore. |
 | config.grafana_annotations.dedupe_retention | string | `"48h"` | How long a published annotation's dedupe key is remembered, so a restart cannot republish it. Must comfortably exceed the longest source overlap window. |
 | config.grafana_annotations.extra_tags | list | `[]` | Extra tags added to every annotation, e.g. [env:prod]. Every annotation already carries tailscale2otel, category:<c> and rule:<id>. |

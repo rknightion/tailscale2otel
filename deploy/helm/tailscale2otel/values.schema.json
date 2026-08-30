@@ -155,6 +155,12 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
+                                },
+                                "snapshot_heartbeat": {
+                                    "type": "string"
+                                },
                                 "validate": {
                                     "type": "boolean"
                                 }
@@ -293,6 +299,9 @@
                                 "attribute_value_limit": {
                                     "type": "integer"
                                 },
+                                "change_log_enabled": {
+                                    "type": "boolean"
+                                },
                                 "collect_connectivity": {
                                     "type": "boolean"
                                 },
@@ -334,6 +343,9 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
                                 }
                             },
                             "additionalProperties": false
@@ -685,6 +697,9 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
                                 }
                             },
                             "additionalProperties": false
@@ -712,6 +727,9 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
                                 }
                             },
                             "additionalProperties": false
@@ -739,6 +757,9 @@
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
                                 }
                             },
                             "additionalProperties": false
@@ -938,6 +959,42 @@
                                     "additionalProperties": false
                                 },
                                 "expiry": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "rollup": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "inventory": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "rollup": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "policy_change": {
+                                    "type": "object",
+                                    "properties": {
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "rollup": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                },
+                                "risk": {
                                     "type": "object",
                                     "properties": {
                                         "enabled": {

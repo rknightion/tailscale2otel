@@ -240,6 +240,20 @@
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
             },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and group member, to the logs backend. This overrides pii_filter for those bodies, so logs retention holds tailnet identity data. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_ENABLED",
+              "type": "boolean"
+            },
+            "snapshot_heartbeat": {
+              "default": "24h",
+              "description": "refresh an unchanged raw policy snapshot at this cadence. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_HEARTBEAT",
+              "examples": [
+                "24h"
+              ],
+              "pattern": "^(0+(\\.0+)?(ns|us|µs|ms|s|m|h))*(([0-9]*[1-9][0-9]*)(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)|0+\\.[0-9]{0,2}[1-9][0-9]*(us|µs)|0+\\.[0-9]{0,5}[1-9][0-9]*ms|0+\\.[0-9]{0,8}[1-9][0-9]*(s|m|h))([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$",
+              "type": "string"
+            },
             "validate": {
               "default": true,
               "description": "run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only",
@@ -493,6 +507,11 @@
               "description": "busiest values per attribute key on the .info gauge; overflow folds to value=\"__other__\" (0/negative = unlimited)",
               "type": "integer"
             },
+            "change_log_enabled": {
+              "default": false,
+              "description": "emit structured device add/remove and field-change records. PII-bearing fields still follow pii_filter. TS2OTEL_COLLECTORS__DEVICES__CHANGE_LOG_ENABLED",
+              "type": "boolean"
+            },
             "collect_connectivity": {
               "default": true,
               "description": "emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls)",
@@ -576,6 +595,11 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "emit the complete DNS response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__DNS__SNAPSHOT_ENABLED",
+              "type": "boolean"
             }
           },
           "type": "object"
@@ -1309,6 +1333,11 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "emit the complete posture-integration response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED",
+              "type": "boolean"
             }
           },
           "type": "object"
@@ -1354,6 +1383,11 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "emit the complete settings response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__SETTINGS__SNAPSHOT_ENABLED",
+              "type": "boolean"
             }
           },
           "type": "object"
@@ -1401,6 +1435,11 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "emit the complete webhook inventory response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__WEBHOOKS__SNAPSHOT_ENABLED",
+              "type": "boolean"
             }
           },
           "type": "object"
@@ -1751,6 +1790,54 @@
                 "rollup": {
                   "default": true,
                   "description": "a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "inventory": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "device additions, removals and material field changes. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ENABLED",
+                  "type": "boolean"
+                },
+                "rollup": {
+                  "default": true,
+                  "description": "device churn can be high-volume; summarize it into one region per interval. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ROLLUP",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "policy_change": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "ACL revision and policy-diff markers from the policy snapshot family. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ENABLED",
+                  "type": "boolean"
+                },
+                "rollup": {
+                  "default": false,
+                  "description": "policy changes are rare and individually meaningful. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ROLLUP",
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            },
+            "risk": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "default": true,
+                  "description": "newly observed ACL, SSH and auto-approver risk findings. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED",
+                  "type": "boolean"
+                },
+                "rollup": {
+                  "default": false,
+                  "description": "each new risk finding remains individually visible. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP",
                   "type": "boolean"
                 }
               },

@@ -1865,6 +1865,12 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("collectors.acl.snapshot_heartbeat", "Set collectors.acl.snapshot_heartbeat to a positive duration.", func() error {
+		if c.Collectors.Acl.SnapshotHeartbeat <= 0 {
+			return fmt.Errorf("collectors.acl.snapshot_heartbeat must be > 0")
+		}
+		return nil
+	})
 	add("collectors.keys.expiry_log_mode", oneOfRemediation("collectors.keys.expiry_log_mode", "daily", "always", "off"), func() error {
 		if !oneOf(c.Collectors.Keys.ExpiryLogMode, "daily", "always", "off") {
 			return fmt.Errorf("collectors.keys.expiry_log_mode %q invalid: must be one of daily, always, off", c.Collectors.Keys.ExpiryLogMode)

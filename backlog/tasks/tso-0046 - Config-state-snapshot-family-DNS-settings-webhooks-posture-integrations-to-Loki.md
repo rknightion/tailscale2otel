@@ -3,10 +3,11 @@ id: TSO-0046
 title: >-
   Config-state snapshot family: DNS, settings, webhooks, posture integrations to
   Loki
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-30 09:27'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-30 14:00'
 labels: []
 milestone: m-2
 dependencies:
@@ -34,3 +35,15 @@ Generalize the policy-snapshot pattern (TSO-0044): a shared snapshot-emitter hel
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 2 root freeze plan: add behavior-preserving per-source snapshot opt-ins for DNS, settings, webhooks, and posture integrations, all default off, plus the shared snapshot emitter.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Latitude deviation: the goal described six hand-maintained config files, but the live TestDocsConfigurationMentionsEveryKey gate proved docs/configuration.md is a seventh required config surface. Added the affected reference entries rather than weakening or bypassing the guard.
+<!-- SECTION:NOTES:END -->

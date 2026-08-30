@@ -322,6 +322,7 @@ collectors:
   devices:                            # device inventory — REQUIRED for flow/audit IP->name enrichment (disabling it degrades names to unknown/external)
     enabled: true
     interval: 60s                     # how often the device snapshot is polled
+    change_log_enabled: false         # emit structured device add/remove and field-change records. PII-bearing fields still follow pii_filter. TS2OTEL_COLLECTORS__DEVICES__CHANGE_LOG_ENABLED
     collect_routes: false             # also fetch advertised/primary subnet routes per device
     collect_connectivity: true        # emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls)
     collect_posture: false            # also fetch device posture (MDM/EDR) — enables the posture metrics + log
@@ -450,23 +451,29 @@ collectors:
   settings:                           # tailnet settings snapshot
     enabled: true
     interval: 600s
+    snapshot_enabled: false           # emit the complete settings response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__SETTINGS__SNAPSHOT_ENABLED
   acl:                                # ACL policy snapshot
     enabled: true
     interval: 600s
+    snapshot_enabled: false           # EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and group member, to the logs backend. This overrides pii_filter for those bodies, so logs retention holds tailnet identity data. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_ENABLED
+    snapshot_heartbeat: 24h           # refresh an unchanged raw policy snapshot at this cadence. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_HEARTBEAT
     validate: true                    # run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only
   dns:                                # DNS/MagicDNS settings snapshot
     enabled: true
     interval: 600s
+    snapshot_enabled: false           # emit the complete DNS response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__DNS__SNAPSHOT_ENABLED
   contacts:                           # account/support/security contact verification status (no emails emitted)
     enabled: true
     interval: 600s
   webhooks:                           # webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret)
     enabled: true
     interval: 600s
+    snapshot_enabled: false           # emit the complete webhook inventory response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__WEBHOOKS__SNAPSHOT_ENABLED
     desired_events: []                # optional expected event categories (e.g. ["nodeCreated","userSuspended"]); empty means no expectation
   posture_integrations:               # MDM/EDR posture-integration sync health: matched counts + last_sync staleness
     enabled: true
     interval: 600s
+    snapshot_enabled: false           # emit the complete posture-integration response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED
   log_stream:                         # log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink)
     enabled: true
     interval: 600s
@@ -763,3 +770,12 @@ grafana_annotations:
     expiry:
       enabled: true                    # a node key or auth key entering its expiry warning window — the marker that explains a device count stepping down. Needs collectors.keys / collectors.devices. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED
       rollup: true                     # a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP
+    policy_change:
+      enabled: true                    # ACL revision and policy-diff markers from the policy snapshot family. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ENABLED
+      rollup: false                    # policy changes are rare and individually meaningful. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ROLLUP
+    inventory:
+      enabled: true                    # device additions, removals and material field changes. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ENABLED
+      rollup: true                     # device churn can be high-volume; summarize it into one region per interval. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ROLLUP
+    risk:
+      enabled: true                    # newly observed ACL, SSH and auto-approver risk findings. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED
+      rollup: false                    # each new risk finding remains individually visible. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP

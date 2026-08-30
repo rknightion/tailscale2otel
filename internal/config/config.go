@@ -1111,12 +1111,12 @@ type Collectors struct {
 	K8sAudit            K8sAuditCollector  `yaml:"k8s_audit"`
 	Users               SimpleCollector    `yaml:"users"`
 	Keys                KeysCollector      `yaml:"keys"`
-	Settings            SimpleCollector    `yaml:"settings"`
+	Settings            SnapshotCollector  `yaml:"settings"`
 	Acl                 AclCollector       `yaml:"acl"`
-	Dns                 SimpleCollector    `yaml:"dns"`
+	Dns                 SnapshotCollector  `yaml:"dns"`
 	Contacts            SimpleCollector    `yaml:"contacts"`
 	Webhooks            WebhooksCollector  `yaml:"webhooks"`
-	PostureIntegrations SimpleCollector    `yaml:"posture_integrations"`
+	PostureIntegrations SnapshotCollector  `yaml:"posture_integrations"`
 	LogStream           SimpleCollector    `yaml:"log_stream"`
 	Services            ServicesCollector  `yaml:"services"`
 	NodeMetrics         NodeMetricsConfig  `yaml:"node_metrics"`
@@ -1133,10 +1133,26 @@ type SimpleCollector struct {
 	Interval Duration `yaml:"interval" reload:"restart"`
 }
 
+// SnapshotCollector is a point-in-time configuration collector that can also
+// emit its complete response as an opt-in structured log snapshot.
+type SnapshotCollector struct {
+	Enabled         bool     `yaml:"enabled" reload:"restart"`
+	Interval        Duration `yaml:"interval" reload:"restart"`
+	SnapshotEnabled bool     `yaml:"snapshot_enabled" reload:"restart"`
+}
+
 // AclCollector configures the ACL policy collector.
 type AclCollector struct {
 	Enabled  bool     `yaml:"enabled" reload:"restart"`
 	Interval Duration `yaml:"interval" reload:"restart"`
+	// SnapshotEnabled is explicit consent to ship the raw policy, including
+	// every user email and group member, to the logs backend. It also governs
+	// policy diffs. This opt-in overrides pii_filter for those raw bodies, so the
+	// configured logs retention holds tailnet identity data.
+	SnapshotEnabled bool `yaml:"snapshot_enabled" reload:"restart"`
+	// SnapshotHeartbeat refreshes an unchanged policy snapshot so a quiet
+	// tailnet remains queryable on a bounded dashboard time range.
+	SnapshotHeartbeat Duration `yaml:"snapshot_heartbeat" reload:"restart"`
 	// Validate runs the tailnet's active policy through the API's non-mutating
 	// POST /tailnet/{tailnet}/acl/validate on each tick, exporting whether the
 	// policy still parses and how many embedded ACL tests fail.
@@ -1157,6 +1173,9 @@ type AclCollector struct {
 type WebhooksCollector struct {
 	Enabled  bool     `yaml:"enabled" reload:"restart"`
 	Interval Duration `yaml:"interval" reload:"restart"`
+	// SnapshotEnabled emits the complete webhook inventory response as an
+	// opt-in structured log snapshot.
+	SnapshotEnabled bool `yaml:"snapshot_enabled" reload:"restart"`
 	// DesiredEvents is an optional list of webhook event categories this tailnet
 	// is expected to be subscribed to (e.g. "nodeCreated", "userSuspended").
 	// When set, the collector reports which desired categories no endpoint
@@ -1171,10 +1190,13 @@ type WebhooksCollector struct {
 // DevicesCollector configures the devices collector. Besides the snapshot
 // interval it gates the optional routes/posture fetches and the posture log.
 type DevicesCollector struct {
-	Enabled        bool     `yaml:"enabled" reload:"restart"`
-	Interval       Duration `yaml:"interval" reload:"restart"`
-	CollectRoutes  bool     `yaml:"collect_routes" reload:"restart"`
-	CollectPosture bool     `yaml:"collect_posture" reload:"restart"`
+	Enabled  bool     `yaml:"enabled" reload:"restart"`
+	Interval Duration `yaml:"interval" reload:"restart"`
+	// ChangeLogEnabled emits structured device add/remove and field-change
+	// records. PII-bearing fields still follow the process pii_filter.
+	ChangeLogEnabled bool `yaml:"change_log_enabled" reload:"restart"`
+	CollectRoutes    bool `yaml:"collect_routes" reload:"restart"`
+	CollectPosture   bool `yaml:"collect_posture" reload:"restart"`
 	// CollectDeviceInvites fetches each device's outstanding share invites
 	// (GET /device/{id}/device-invites — one API call per device, N+1) and emits
 	// the tailscale.device_invites.count aggregate. Requires the

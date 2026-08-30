@@ -1147,6 +1147,9 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval.
       interval: 60s
+      # -- Emit structured device add/remove and field-change records. PII-bearing fields still
+      # follow pii_filter.
+      change_log_enabled: false
       # -- Also collect advertised/enabled subnet routes and per-DERP latency via the rich
       # GET /devices?fields=all endpoint.
       collect_routes: false
@@ -1504,11 +1507,19 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval (settings change rarely).
       interval: 600s
+      # -- Emit the complete settings response to logs on change plus a heartbeat.
+      snapshot_enabled: false
     acl: # @schema additionalProperties:false
       # -- Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section).
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and
+      # group member, to the logs backend. This overrides pii_filter for those bodies, so logs
+      # retention holds tailnet identity data.
+      snapshot_enabled: false
+      # -- Refresh an unchanged raw policy snapshot at this cadence.
+      snapshot_heartbeat: 24h
       # -- Validate the active policy each tick via the non-mutating `POST /acl/validate` (needs only `policy_file:read`). Set false to keep the API client strictly GET-only.
       validate: true
     dns: # @schema additionalProperties:false
@@ -1516,6 +1527,8 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Emit the complete DNS response to logs on change plus a heartbeat.
+      snapshot_enabled: false
     contacts: # @schema additionalProperties:false
       # -- Enable the contacts collector (account/support/security contact verification; no emails emitted).
       enabled: true
@@ -1526,6 +1539,8 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Emit the complete webhook inventory response to logs on change plus a heartbeat.
+      snapshot_enabled: false
       # -- Optional expected webhook event categories (e.g. `["nodeCreated","userSuspended"]`); empty means no expectation is checked.
       desired_events: []
     posture_integrations: # @schema additionalProperties:false
@@ -1533,6 +1548,8 @@ config: # @schema additionalProperties:false
       enabled: true
       # -- Poll interval.
       interval: 600s
+      # -- Emit the complete posture-integration response to logs on change plus a heartbeat.
+      snapshot_enabled: false
     log_stream: # @schema additionalProperties:false
       # -- Enable the log-streaming delivery-health collector. Self-gates to configured=0 (no error)
       # when no SIEM sink is configured for a log type.
@@ -2091,6 +2108,21 @@ config: # @schema additionalProperties:false
         # -- Roll the category up. On by default: a fresh deployment finds every currently
         # expiring key at once.
         rollup: true
+      policy_change: # @schema additionalProperties:false
+        # -- ACL revision and policy-diff markers from the policy snapshot family.
+        enabled: true
+        # -- Keep rare policy changes individually visible.
+        rollup: false
+      inventory: # @schema additionalProperties:false
+        # -- Device additions, removals and material field changes.
+        enabled: true
+        # -- Roll high-volume device churn into one region per interval.
+        rollup: true
+      risk: # @schema additionalProperties:false
+        # -- Newly observed ACL, SSH and auto-approver risk findings.
+        enabled: true
+        # -- Keep each new risk finding individually visible.
+        rollup: false
 
 # --- Process-state persistence (checkpoints plus an enabled receiver WAL) ---
 persistence: # @schema additionalProperties:false

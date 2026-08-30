@@ -1,10 +1,11 @@
 ---
 id: TSO-0048
 title: Grafana annotations from audit events on the generated dashboards
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-30 09:27'
-updated_date: '2026-08-30 13:39'
+updated_date: '2026-08-30 14:00'
 labels: []
 milestone: m-2
 dependencies: []
@@ -44,6 +45,8 @@ Audit logs already land in Loki; add annotation queries to the generated dashboa
 5. Regenerate `just gen-dashboards gen-counts` and confirm the drift gate is clean.
 6. Verification: the annotation path is not exercised by `just check` end to end. Prove the classification with a unit test in `internal/annotations` for each new category (an event of that shape produces an annotation with the expected tags), and prove the layer with the generator drift gate. Say explicitly that no live Grafana write was performed.
 7. AC#1 on this task names Loki annotation queries and is now WRONG. When finalizing, note in the final summary that AC#1 was satisfied by the annotation-store route instead, per the owner decision above, and check it - do not silently leave it unchecked or quietly reinterpret it without saying so.
+
+Wave 2 root freeze plan: add policy_change, inventory, and risk annotation category config with owner-frozen defaults, then regenerate the four config-derived artifact families.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -70,4 +73,6 @@ Add annotation CATEGORIES for the state-change events Wave 2 introduces, so the 
 Each follows the existing `{enabled, rollup}` shape at `config.example.yaml:759-766`, and each needs its `rules.go` classification, its tag, and a `tag_annotation(...)` layer in `build.py:79 annotation_layers()`.
 
 Note `build.py` is a SHARED generator file - `deploy/grafana/gen/build.py` is on the single-owner list. This lane owns it for the run; no other lane may edit it concurrently.
+
+Latitude deviation: the goal described six hand-maintained config files, but the live TestDocsConfigurationMentionsEveryKey gate proved docs/configuration.md is a seventh required config surface. Added the affected reference entries rather than weakening or bypassing the guard.
 <!-- SECTION:NOTES:END -->

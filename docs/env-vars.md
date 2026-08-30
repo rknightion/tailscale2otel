@@ -189,6 +189,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__PER_ENTITY__SERVICE` | `true` | `restart` | per-service ports/hosts gauges |
 | `TS2OTEL_COLLECTORS__DEVICES__ENABLED` | `true` | `restart` | device inventory — REQUIRED for flow/audit IP->name enrichment (disabling it degrades names to unknown/external) |
 | `TS2OTEL_COLLECTORS__DEVICES__INTERVAL` | `60s` | `restart` | how often the device snapshot is polled |
+| `TS2OTEL_COLLECTORS__DEVICES__CHANGE_LOG_ENABLED` | `false` | `restart` | emit structured device add/remove and field-change records. PII-bearing fields still follow pii_filter. TS2OTEL_COLLECTORS__DEVICES__CHANGE_LOG_ENABLED |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_ROUTES` | `false` | `restart` | also fetch advertised/primary subnet routes per device |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_CONNECTIVITY` | `true` | `restart` | emit per-device NAT/connectivity health (hard_nat/endpoints/direct_capable/udp/ipv6) + fleet rollups from the device payload (no extra API calls) |
 | `TS2OTEL_COLLECTORS__DEVICES__COLLECT_POSTURE` | `false` | `restart` | also fetch device posture (MDM/EDR) — enables the posture metrics + log |
@@ -301,18 +302,24 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__KEYS__EXPIRY_LOG_MODE` | `daily` | `restart` | WARN cadence: daily (change + at most one reminder/24h, default) \| always (every scrape, legacy) \| off; metrics always emit |
 | `TS2OTEL_COLLECTORS__SETTINGS__ENABLED` | `true` | `restart` | tailnet settings snapshot |
 | `TS2OTEL_COLLECTORS__SETTINGS__INTERVAL` | `600s` | `restart` | tailnet settings snapshot |
+| `TS2OTEL_COLLECTORS__SETTINGS__SNAPSHOT_ENABLED` | `false` | `restart` | emit the complete settings response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__SETTINGS__SNAPSHOT_ENABLED |
 | `TS2OTEL_COLLECTORS__ACL__ENABLED` | `true` | `restart` | ACL policy snapshot |
 | `TS2OTEL_COLLECTORS__ACL__INTERVAL` | `600s` | `restart` | ACL policy snapshot |
+| `TS2OTEL_COLLECTORS__ACL__SNAPSHOT_ENABLED` | `false` | `restart` | EXPLICIT PII CONSENT: ship the raw policy and diffs, including every user email and group member, to the logs backend. This overrides pii_filter for those bodies, so logs retention holds tailnet identity data. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_ENABLED |
+| `TS2OTEL_COLLECTORS__ACL__SNAPSHOT_HEARTBEAT` | `24h` | `restart` | refresh an unchanged raw policy snapshot at this cadence. TS2OTEL_COLLECTORS__ACL__SNAPSHOT_HEARTBEAT |
 | `TS2OTEL_COLLECTORS__ACL__VALIDATE` | `true` | `restart` | run the non-mutating POST /acl/validate (policy_file:read scope) each tick; set false to keep the client strictly GET-only |
 | `TS2OTEL_COLLECTORS__DNS__ENABLED` | `true` | `restart` | DNS/MagicDNS settings snapshot |
 | `TS2OTEL_COLLECTORS__DNS__INTERVAL` | `600s` | `restart` | DNS/MagicDNS settings snapshot |
+| `TS2OTEL_COLLECTORS__DNS__SNAPSHOT_ENABLED` | `false` | `restart` | emit the complete DNS response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__DNS__SNAPSHOT_ENABLED |
 | `TS2OTEL_COLLECTORS__CONTACTS__ENABLED` | `true` | `restart` | account/support/security contact verification status (no emails emitted) |
 | `TS2OTEL_COLLECTORS__CONTACTS__INTERVAL` | `600s` | `restart` | account/support/security contact verification status (no emails emitted) |
 | `TS2OTEL_COLLECTORS__WEBHOOKS__ENABLED` | `true` | `restart` | webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret) |
 | `TS2OTEL_COLLECTORS__WEBHOOKS__INTERVAL` | `600s` | `restart` | webhook-endpoint inventory: count + per-endpoint subscription count (no url/secret) |
+| `TS2OTEL_COLLECTORS__WEBHOOKS__SNAPSHOT_ENABLED` | `false` | `restart` | emit the complete webhook inventory response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__WEBHOOKS__SNAPSHOT_ENABLED |
 | `TS2OTEL_COLLECTORS__WEBHOOKS__DESIRED_EVENTS` | `[]` | `restart` | optional expected event categories (e.g. ["nodeCreated","userSuspended"]); empty means no expectation _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__ENABLED` | `true` | `restart` | MDM/EDR posture-integration sync health: matched counts + last_sync staleness |
 | `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__INTERVAL` | `600s` | `restart` | MDM/EDR posture-integration sync health: matched counts + last_sync staleness |
+| `TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED` | `false` | `restart` | emit the complete posture-integration response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__POSTURE_INTEGRATIONS__SNAPSHOT_ENABLED |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__ENABLED` | `true` | `restart` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
 | `TS2OTEL_COLLECTORS__LOG_STREAM__INTERVAL` | `600s` | `restart` | log-streaming delivery health to a SIEM sink (self-gates to configured=0 when no sink) |
 | `TS2OTEL_COLLECTORS__OAUTH_APPS__ENABLED` | `true` | `restart` | OAuth-application inventory (alpha API; idles silently — no error — on tailnets without it) |
@@ -476,6 +483,12 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ROLLUP` | `true` | `restart` | highest-volume category: rolled up by default so a busy tailnet draws a timeline rather than a picket fence. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__CONFIG_CHANGE__ROLLUP |
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED` | `true` | `restart` | a node key or auth key entering its expiry warning window — the marker that explains a device count stepping down. Needs collectors.keys / collectors.devices. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ENABLED |
 | `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP` | `true` | `restart` | a fresh deployment finds every currently-expiring key at once, and one summary beats fifty markers at the same instant. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__EXPIRY__ROLLUP |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ENABLED` | `true` | `restart` | ACL revision and policy-diff markers from the policy snapshot family. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ENABLED |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ROLLUP` | `false` | `restart` | policy changes are rare and individually meaningful. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__POLICY_CHANGE__ROLLUP |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ENABLED` | `true` | `restart` | device additions, removals and material field changes. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ENABLED |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ROLLUP` | `true` | `restart` | device churn can be high-volume; summarize it into one region per interval. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__INVENTORY__ROLLUP |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED` | `true` | `restart` | newly observed ACL, SSH and auto-approver risk findings. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ENABLED |
+| `TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP` | `false` | `restart` | each new risk finding remains individually visible. TS2OTEL_GRAFANA_ANNOTATIONS__CATEGORIES__RISK__ROLLUP |
 
 **File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: `tailnets` (`restart`), `otlp.headers` (`restart`), `otlp.metrics.headers` (`restart`), `otlp.logs.headers` (`restart`), `otlp.traces.headers` (`restart`), `collectors.node_metrics.targets` (`restart`), `collectors.node_metrics.discovery.port_overrides` (`restart`), `streaming.routes` (`restart`), `webhook.routes` (`restart`), `profiling.pyroscope.tags` (`restart`), `profiling.pyroscope.headers` (`restart`), `resource.attributes` (`restart`).
 

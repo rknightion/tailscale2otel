@@ -237,30 +237,36 @@ func Default() *Config {
 				ExpiryWarn:    dur(168 * time.Hour),
 				ExpiryLogMode: "daily",
 			},
-			Settings: SimpleCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+			Settings: SnapshotCollector{
+				Enabled:         true,
+				Interval:        dur(600 * time.Second),
+				SnapshotEnabled: false,
 			},
 			Acl: AclCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
-				Validate: true,
+				Enabled:           true,
+				Interval:          dur(600 * time.Second),
+				SnapshotEnabled:   false,
+				SnapshotHeartbeat: dur(24 * time.Hour),
+				Validate:          true,
 			},
-			Dns: SimpleCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+			Dns: SnapshotCollector{
+				Enabled:         true,
+				Interval:        dur(600 * time.Second),
+				SnapshotEnabled: false,
 			},
 			Contacts: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(600 * time.Second),
 			},
 			Webhooks: WebhooksCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+				Enabled:         true,
+				Interval:        dur(600 * time.Second),
+				SnapshotEnabled: false,
 			},
-			PostureIntegrations: SimpleCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+			PostureIntegrations: SnapshotCollector{
+				Enabled:         true,
+				Interval:        dur(600 * time.Second),
+				SnapshotEnabled: false,
 			},
 			LogStream: SimpleCollector{
 				Enabled:  true,
@@ -450,7 +456,10 @@ func Default() *Config {
 				// Also rolled up: a fresh deployment finds every currently
 				// expiring key at once, and one summary beats fifty markers at
 				// the same instant.
-				Expiry: AnnotationCategoryConfig{Enabled: true, Rollup: true},
+				Expiry:       AnnotationCategoryConfig{Enabled: true, Rollup: true},
+				PolicyChange: AnnotationCategoryConfig{Enabled: true, Rollup: false},
+				Inventory:    AnnotationCategoryConfig{Enabled: true, Rollup: true},
+				Risk:         AnnotationCategoryConfig{Enabled: true, Rollup: false},
 			},
 		},
 	}

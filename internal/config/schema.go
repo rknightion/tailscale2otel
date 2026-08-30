@@ -58,10 +58,16 @@ var (
 // numbers, each immediately followed by a unit.
 const durationPattern = `^-?([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$`
 
+// positiveDurationPattern accepts the same compound duration shape without a
+// sign and requires at least one non-zero component. It is intentionally
+// narrower than durationPattern for fields Validate requires to be > 0.
+const positiveDurationPattern = `^(0+(\.0+)?(ns|us|µs|ms|s|m|h))*(([0-9]*[1-9][0-9]*)(\.[0-9]+)?(ns|us|µs|ms|s|m|h)|0+\.[0-9]{0,2}[1-9][0-9]*(us|µs)|0+\.[0-9]{0,5}[1-9][0-9]*ms|0+\.[0-9]{0,8}[1-9][0-9]*(s|m|h))([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$`
+
 // schemaRule is an enum and/or numeric-range constraint keyed by a dotted
 // config-key SUFFIX in rulesBySuffix (see applyRule).
 type schemaRule struct {
 	enum     []string
+	pattern  string
 	min, max *float64
 }
 
@@ -90,21 +96,22 @@ func f64(v float64) *float64 { return &v }
 // disclaimer — encoding it as a plain minimum would reject a value that is
 // perfectly valid whenever that gating field is false/unset.
 var rulesBySuffix = map[string]schemaRule{
-	"provider":                  {enum: []string{"tailscale", "headscale"}},
-	"log_format":                {enum: []string{"text", "json"}},
-	"log_level":                 {enum: []string{"debug", "info", "warn", "error"}},
-	"delivery.mode":             {enum: []string{"otlp", "prometheus", "dual"}},
-	"otlp.protocol":             {enum: []string{"grpc", "http", "stdout"}},
-	"checkpoint.store":          {enum: []string{"memory", "file"}},
-	"checkpoint.evidence_store": {enum: []string{"memory", "file"}},
-	"source":                    {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
-	"log_mode":                  {enum: []string{"per_connection", "per_record", "off"}},
-	"metrics_mode":              {enum: []string{"all", "rollup", "both"}},
-	"posture_log_mode":          {enum: []string{"changes", "always", "off"}},
-	"expiry_log_mode":           {enum: []string{"daily", "always", "off"}},
-	"decompress":                {enum: []string{"auto", "gzip", "zstd", "none"}},
-	"auth.method":               {enum: []string{"oauth", "apikey", "workload_identity"}},
-	"sampler":                   {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
+	"provider":                          {enum: []string{"tailscale", "headscale"}},
+	"log_format":                        {enum: []string{"text", "json"}},
+	"log_level":                         {enum: []string{"debug", "info", "warn", "error"}},
+	"delivery.mode":                     {enum: []string{"otlp", "prometheus", "dual"}},
+	"otlp.protocol":                     {enum: []string{"grpc", "http", "stdout"}},
+	"checkpoint.store":                  {enum: []string{"memory", "file"}},
+	"checkpoint.evidence_store":         {enum: []string{"memory", "file"}},
+	"source":                            {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
+	"log_mode":                          {enum: []string{"per_connection", "per_record", "off"}},
+	"metrics_mode":                      {enum: []string{"all", "rollup", "both"}},
+	"posture_log_mode":                  {enum: []string{"changes", "always", "off"}},
+	"expiry_log_mode":                   {enum: []string{"daily", "always", "off"}},
+	"collectors.acl.snapshot_heartbeat": {pattern: positiveDurationPattern},
+	"decompress":                        {enum: []string{"auto", "gzip", "zstd", "none"}},
+	"auth.method":                       {enum: []string{"oauth", "apikey", "workload_identity"}},
+	"sampler":                           {enum: []string{"always_on", "always_off", "traceidratio", "parentbased_always_on", "parentbased_traceidratio"}},
 	// The per-class overrides (#372) accept the same five strategies PLUS the
 	// empty string, which is the documented way to inherit tracing.sampler. The
 	// generic "sampler" suffix above would otherwise match them and reject the
@@ -166,6 +173,9 @@ func applyRule(s map[string]any, path string) {
 				enum[i] = v
 			}
 			s["enum"] = enum
+		}
+		if r.pattern != "" {
+			s["pattern"] = r.pattern
 		}
 		if r.min != nil {
 			s["minimum"] = *r.min

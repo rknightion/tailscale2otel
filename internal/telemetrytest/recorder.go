@@ -9,6 +9,7 @@ package telemetrytest
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -253,7 +254,7 @@ func attrMap(set attribute.Set) map[string]string {
 func flattenLogRecord(rec sdklog.Record) LogRecord {
 	attrs := map[string]string{}
 	rec.WalkAttributes(func(kv attribute.KeyValue) bool {
-		attrs[string(kv.Key)] = kv.Value.AsString()
+		attrs[string(kv.Key)] = fmt.Sprint(kv.Value.AsInterface())
 		return true
 	})
 	return LogRecord{

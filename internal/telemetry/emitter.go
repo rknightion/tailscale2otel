@@ -330,6 +330,18 @@ func (l logLimits) attrValue() int {
 // returned value never exceeds it.
 const logTruncationMarker = "…[truncated]"
 
+// SafeLogBodyBytes returns the largest body a caller should hand to LogEvent
+// when it needs a hard guarantee that the emitter will not append its
+// truncation marker. Snapshot records use this to split a larger logical body
+// into independently safe records while keeping the marker budget owned by
+// this package rather than duplicating it.
+func SafeLogBodyBytes(limit int) int {
+	if limit <= len(logTruncationMarker) {
+		return 1
+	}
+	return limit - len(logTruncationMarker)
+}
+
 // truncateLogValue returns s unchanged (with truncated=false) when it already
 // fits within limit bytes; limit <= 0 also disables truncation. Otherwise it
 // returns the longest valid-UTF-8 prefix of s — never splitting a multi-byte

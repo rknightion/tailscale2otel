@@ -1,10 +1,11 @@
 ---
 id: TSO-0044
 title: Policy file snapshots to Loki (full ACL/grants body as log records)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-30 09:27'
-updated_date: '2026-08-30 13:39'
+updated_date: '2026-08-30 14:36'
 labels: []
 milestone: m-2
 dependencies: []
@@ -49,6 +50,8 @@ The emitter owns: change detection, heartbeat cadence, chunking with seq/total, 
 4. Catalogue the new log event and give it a PANEL on `deploy/grafana/gen/tabs/policy_access.py`. The signal-coverage gate has no escape: a new signal with no panel comes back with an empty disposition and always fails. Budget for the panel; it is not optional. The panel reassembles chunks by sorting on seq within one etag.
 5. Tests, test-first: emits on ETag change; emits on heartbeat with no change; does NOT emit per poll when neither fired; chunk boundaries are UTF-8 safe; a policy that fits emits exactly one record with seq=1 total=1; the opt-in defaults off and no record is emitted when off.
 6. Gate: `just check`.
+
+Wave 2 root freeze plan: add the shared snapshot emitter plus ACL snapshot enabled/heartbeat config defaults off; regenerate all config artifacts and prove the full gate before any lane dispatch.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -77,4 +80,18 @@ Chunk at the CONFIGURED `otlp.limits.log_body_bytes` minus headroom for the trun
 `pii_filter` is NOT consulted for the snapshot body. Turning the key on IS the consent, and the config comment must say so in those terms: enabling ships the raw policy including every user email and group member it contains, and your logs retention then holds tailnet identity data. Do not build a HuJSON-aware redactor - a partially redacted ACL is not a usable ACL, and a redactor that misses a field shape leaks silently with nothing to catch it.
 
 The body stays RAW (not base64) so it is greppable in Loki, per the original design note.
+
+Latitude deviation: the goal described six hand-maintained config files, but the live TestDocsConfigurationMentionsEveryKey gate proved docs/configuration.md is a seventh required config surface. Added the affected reference entries rather than weakening or bypassing the guard.
+
+Freeze review follow-up: CodeRabbit found that effective chunk budgets of 1-3 bytes could not preserve a four-byte UTF-8 rune while honoring the configured limit. Changed snapshot.New to return an error when the safe body budget is below utf8.UTFMax. Added boundary coverage for 1, 2, and 3 bytes; negative-tested by weakening the constructor guard and observing all three cases fail, then restored it.
+
+CodeRabbit also found that runtime validation rejected non-positive snapshot heartbeats but the generated JSON Schema still admitted them. Added a positive-duration schema rule for collectors.acl.snapshot_heartbeat and regenerated config.schema.json. Negative-tested by reverting the rule to the generic signed duration pattern and observing TestConfigSchemaFieldShapes fail, then restored it.
+
+Second CodeRabbit follow-up: the review reported generated config artefacts missing, but rerunning just gen-config-schema, just gen-envref, and just gen-helm produced zero unstaged diff; the staged change already contains config.example.yaml, docs/configuration.md, docs/env-vars.md, Helm values/README/schema, and the root schema, and the completeness/drift gates pass. Disposition: factually false finding, with generator readback evidence.
+
+The review correctly identified that a textually non-zero sub-nanosecond duration could match the positive schema pattern while time.ParseDuration yields zero. Tightened the field-specific pattern to require a representable positive component, preserved representative positive and compound forms, regenerated config.schema.json, and added TestPositiveDurationPatternAgreesWithPositiveParsedValues. Negative-tested by restoring the permissive pattern and observing the 0.0000000001s case fail, then restored the fix.
+
+Third CodeRabbit follow-up: accepted the reassembly-collision finding. The goal freezes a minimum attribute set but explicitly permits the set to grow. Added tailscale.snapshot.emission_id, generated from a per-emitter random seed plus a monotonic emission sequence, so all chunks from one logical emission group together while a later heartbeat with the same revision cannot collide. Tests assert same-id chunk grouping and distinct change/heartbeat ids. Negative-tested by emitting an empty id and observing both guards fail for the intended reason, then restored the implementation.
+
+Fourth CodeRabbit disposition: the remaining major finding is intentionally downstream of Freeze. The A1 snapshot dashboard panel does not exist yet and A1 may not begin before the root freeze commit. A1 must group/reassemble chunks by tailscale.snapshot.emission_id, validate that each group has one matching revision/ETag, and sort by tailscale.snapshot.seq. This is a mandatory lane acceptance requirement, not deferred cleanup.
 <!-- SECTION:NOTES:END -->
