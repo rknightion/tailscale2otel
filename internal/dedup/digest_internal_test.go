@@ -14,7 +14,7 @@ func TestSetRetainsOnlyFixedSizeDigests(t *testing.T) {
 			t.Fatalf("retained key/value sizes = %d/%d, want %d/%d", len(key), len(value), sha256.Size, sha256.Size)
 		}
 	}
-	if got := len(s.order[0]); got != sha256.Size {
+	if got := len(s.order[0].key); got != sha256.Size {
 		t.Fatalf("retained FIFO key size = %d, want %d", got, sha256.Size)
 	}
 }

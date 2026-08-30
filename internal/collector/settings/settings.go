@@ -6,14 +6,23 @@ package settings
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 const defaultInterval = 600 * time.Second
+
+const (
+	defaultSnapshotHeartbeat = 24 * time.Hour
+	defaultSnapshotBodyBytes = 32 * 1024
+	// EventSettingsSnapshot is the opt-in JSON tailnet-settings snapshot event.
+	EventSettingsSnapshot = "tailscale.settings.snapshot"
+)
 
 // Metric names emitted by this collector.
 const (
@@ -53,6 +62,14 @@ type Collector struct {
 	tracker *apistate.Tracker
 	// now is the clock, injectable from tests.
 	now func() time.Time
+
+	// snapshot is opt-in because the settings response contains the complete
+	// tailnet configuration. The external ACL link is reduced to a presence
+	// boolean before serialization; the link itself is never telemetry.
+	snapshotEnabled   bool
+	snapshotHeartbeat time.Duration
+	snapshotBodyBytes int
+	snapshotEmitter   *snapshot.Emitter
 }
 
 // Option configures optional Collector behavior.
@@ -69,10 +86,37 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Collector) { c.now = now }
 }
 
+// WithSnapshot enables the JSON tailnet-settings snapshot. The optional body
+// limit should match otlp.limits.log_body_bytes; when omitted or non-positive,
+// the telemetry default (32 KiB) is used. The snapshot is emitted on the first
+// observation, on content changes, and on a daily heartbeat when unchanged.
+func WithSnapshot(enabled bool, maxBodyBytes ...int) Option {
+	return func(c *Collector) {
+		c.snapshotEnabled = enabled
+		if len(maxBodyBytes) > 0 && maxBodyBytes[0] > 0 {
+			c.snapshotBodyBytes = maxBodyBytes[0]
+		}
+	}
+}
+
+// WithSnapshotHeartbeat overrides the default daily heartbeat. It exists for
+// deterministic tests and leaves the public configuration surface unchanged.
+func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
+	return func(c *Collector) {
+		c.snapshotHeartbeat = heartbeat
+	}
+}
+
 // New returns a settings collector. A non-positive interval resolves to the
 // default (600s) via DefaultInterval.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: a, interval: interval, now: time.Now}
+	c := &Collector{
+		api:               a,
+		interval:          interval,
+		now:               time.Now,
+		snapshotHeartbeat: defaultSnapshotHeartbeat,
+		snapshotBodyBytes: defaultSnapshotBodyBytes,
+	}
 	for _, o := range opts {
 		o(c)
 	}
@@ -139,7 +183,75 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docSettingRole.Name, docSettingRole.Unit, docSettingRole.Description,
 		1, telemetry.Attrs{attrSettingRole: s.UsersRoleAllowedToJoinExternalTailnets})
 
+	if c.snapshotEnabled {
+		body, err := marshalSnapshot(s)
+		if err != nil {
+			return err
+		}
+		c.emitSnapshot(e, body)
+	}
+
 	return nil
+}
+
+// snapshotSettings mirrors the JSON names of the settings endpoint while
+// preserving the existing privacy fence around ACLsExternalLink. The pointer
+// boolean keeps the API's absent, present-but-empty, and present-and-set states
+// distinguishable without exporting the URI itself.
+type snapshotSettings struct {
+	DevicesApprovalOn                      bool   `json:"devicesApprovalOn"`
+	DevicesAutoUpdatesOn                   bool   `json:"devicesAutoUpdatesOn"`
+	DevicesKeyDurationDays                 int    `json:"devicesKeyDurationDays"`
+	UsersApprovalOn                        bool   `json:"usersApprovalOn"`
+	UsersRoleAllowedToJoinExternalTailnets string `json:"usersRoleAllowedToJoinExternalTailnets"`
+	NetworkFlowLoggingOn                   bool   `json:"networkFlowLoggingOn"`
+	RegionalRoutingOn                      bool   `json:"regionalRoutingOn"`
+	PostureIdentityCollectionOn            bool   `json:"postureIdentityCollectionOn"`
+	HTTPSEnabled                           bool   `json:"httpsEnabled"`
+	ACLsExternallyManagedOn                bool   `json:"aclsExternallyManagedOn"`
+	ACLsExternalLinkSet                    *bool  `json:"aclsExternalLinkSet,omitempty"`
+}
+
+func marshalSnapshot(settings *tsapi.TailnetSettings) (string, error) {
+	var linkSet *bool
+	if settings.ACLsExternalLink != nil {
+		value := *settings.ACLsExternalLink != ""
+		linkSet = &value
+	}
+	body, err := json.Marshal(snapshotSettings{
+		DevicesApprovalOn:                      settings.DevicesApprovalOn,
+		DevicesAutoUpdatesOn:                   settings.DevicesAutoUpdatesOn,
+		DevicesKeyDurationDays:                 settings.DevicesKeyDurationDays,
+		UsersApprovalOn:                        settings.UsersApprovalOn,
+		UsersRoleAllowedToJoinExternalTailnets: settings.UsersRoleAllowedToJoinExternalTailnets,
+		NetworkFlowLoggingOn:                   settings.NetworkFlowLoggingOn,
+		RegionalRoutingOn:                      settings.RegionalRoutingOn,
+		PostureIdentityCollectionOn:            settings.PostureIdentityCollectionOn,
+		HTTPSEnabled:                           settings.HTTPSEnabled,
+		ACLsExternallyManagedOn:                settings.ACLsExternallyManagedOn,
+		ACLsExternalLinkSet:                    linkSet,
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) {
+	if c.snapshotEmitter == nil {
+		emitter, err := snapshot.New(snapshot.Config{
+			Emitter:      e,
+			EventName:    EventSettingsSnapshot,
+			Kind:         snapshot.KindSettings,
+			Heartbeat:    c.snapshotHeartbeat,
+			MaxBodyBytes: c.snapshotBodyBytes,
+		})
+		if err != nil {
+			return
+		}
+		c.snapshotEmitter = emitter
+	}
+	c.snapshotEmitter.Observe(c.now(), "", body, nil)
 }
 
 func boolValue(b bool) float64 {

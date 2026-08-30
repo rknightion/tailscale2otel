@@ -132,6 +132,87 @@
             }
           }
         }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": false,
+          "hide": false,
+          "iconColor": "light-purple",
+          "name": "\u2014 policy changes only",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel",
+                "category:policy_change"
+              ],
+              "limit": 100
+            }
+          }
+        }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": false,
+          "hide": false,
+          "iconColor": "light-green",
+          "name": "\u2014 inventory changes only",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel",
+                "category:inventory"
+              ],
+              "limit": 100
+            }
+          }
+        }
+      },
+      {
+        "kind": "AnnotationQuery",
+        "spec": {
+          "builtIn": false,
+          "enable": false,
+          "hide": false,
+          "iconColor": "light-red",
+          "name": "\u2014 risk findings only",
+          "query": {
+            "kind": "DataQuery",
+            "version": "v0",
+            "group": "grafana",
+            "datasource": {
+              "name": "-- Grafana --"
+            },
+            "spec": {
+              "queryType": "tags",
+              "matchAny": false,
+              "tags": [
+                "tailscale2otel",
+                "category:risk"
+              ],
+              "limit": 100
+            }
+          }
+        }
       }
     ],
     "links": [
@@ -294,6 +375,30 @@
           "skipUrlSync": false,
           "sort": "alphabeticalAsc",
           "allValue": ".*"
+        }
+      },
+      {
+        "kind": "AdhocVariable",
+        "group": "prometheus",
+        "datasource": {
+          "name": "${ds_prometheus}"
+        },
+        "spec": {
+          "name": "deployment_filters",
+          "label": "Instance / environment",
+          "description": "",
+          "hide": "dontHide",
+          "skipUrlSync": false,
+          "allowCustomValue": true,
+          "defaultKeys": [],
+          "baseFilters": [
+            {
+              "key": "service_name",
+              "operator": "=",
+              "value": "tailscale2otel"
+            }
+          ],
+          "filters": []
         }
       }
     ],
@@ -6013,125 +6118,6 @@
         "kind": "Panel",
         "spec": {
           "id": 66,
-          "title": "Ingress WAL pending & retained entries",
-          "description": "Durable entries awaiting processor application and flush, staging files kept for bounded recovery cleanup, and transient completion markers awaiting durable cleanup. Pending climbing toward ingress_wal.max_entries fails new requests closed.",
-          "links": [],
-          "data": {
-            "kind": "QueryGroup",
-            "spec": {
-              "queries": [
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "A",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "max(tailscale2otel_ingress_wal_pending_entries_ratio)",
-                        "instant": false,
-                        "range": true,
-                        "legendFormat": "pending entries",
-                        "format": "time_series"
-                      }
-                    }
-                  }
-                },
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "B",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "max(tailscale2otel_ingress_wal_orphan_stages_ratio)",
-                        "instant": false,
-                        "range": true,
-                        "legendFormat": "retained staging files",
-                        "format": "time_series"
-                      }
-                    }
-                  }
-                },
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "C",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "max(tailscale2otel_ingress_wal_completion_markers_ratio)",
-                        "instant": false,
-                        "range": true,
-                        "legendFormat": "completion markers",
-                        "format": "time_series"
-                      }
-                    }
-                  }
-                }
-              ],
-              "queryOptions": {},
-              "transformations": []
-            }
-          },
-          "vizConfig": {
-            "kind": "VizConfig",
-            "group": "timeseries",
-            "version": "12.1.0",
-            "spec": {
-              "options": {
-                "legend": {
-                  "displayMode": "list",
-                  "placement": "bottom",
-                  "showLegend": true,
-                  "calcs": []
-                },
-                "tooltip": {
-                  "mode": "multi",
-                  "sort": "desc"
-                }
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "unit": "short",
-                  "noValue": "No ingress-WAL series. Requires ingress_wal.enabled together with a receiver that accepts payloads (streaming or webhook), and self_observability.enabled.",
-                  "custom": {
-                    "drawStyle": "line",
-                    "lineInterpolation": "smooth",
-                    "lineWidth": 1,
-                    "fillOpacity": 15,
-                    "showPoints": "never",
-                    "gradientMode": "opacity",
-                    "axisPlacement": "auto"
-                  }
-                },
-                "overrides": []
-              }
-            }
-          }
-        }
-      },
-      "panel-67": {
-        "kind": "Panel",
-        "spec": {
-          "id": 67,
           "title": "Ingress WAL on-disk bytes",
           "description": "Encoded bytes on the WAL filesystem. There is no TTL or eviction, so this is bounded only by ingress_wal.max_bytes.",
           "links": [],
@@ -6224,6 +6210,205 @@
                   }
                 },
                 "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-67": {
+        "kind": "Panel",
+        "spec": {
+          "id": 67,
+          "title": "Ingress WAL capacity fill",
+          "description": "Durable pending entries and bytes as fractions of their configured ingress-WAL limits (left axis), with raw pending entries, retained staging files and completion markers on the right axis. The warning threshold is 80%, before either limit fails new requests closed with HTTP 503.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(tailscale2otel_ingress_wal_pending_entries_fill_ratio)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "entries fill",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(tailscale2otel_ingress_wal_pending_size_fill_ratio)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "bytes fill",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(tailscale2otel_ingress_wal_pending_entries_ratio)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "pending entries",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "D",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(tailscale2otel_ingress_wal_orphan_stages_ratio)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "retained staging files",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "E",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max(tailscale2otel_ingress_wal_completion_markers_ratio)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "completion markers",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "timeseries",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "legend": {
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "calcs": []
+                },
+                "tooltip": {
+                  "mode": "multi",
+                  "sort": "desc"
+                }
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "unit": "percentunit",
+                  "min": 0,
+                  "max": 1,
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "value": null,
+                        "color": "green"
+                      },
+                      {
+                        "value": 0.8,
+                        "color": "yellow"
+                      },
+                      {
+                        "value": 1,
+                        "color": "red"
+                      }
+                    ]
+                  },
+                  "noValue": "No ingress-WAL series. Requires ingress_wal.enabled together with a receiver that accepts payloads (streaming or webhook), and self_observability.enabled.",
+                  "custom": {
+                    "drawStyle": "line",
+                    "lineInterpolation": "smooth",
+                    "lineWidth": 1,
+                    "fillOpacity": 15,
+                    "showPoints": "never",
+                    "gradientMode": "opacity",
+                    "axisPlacement": "auto"
+                  }
+                },
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": "pending entries|retained staging files|completion markers"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -7677,8 +7862,8 @@
         "kind": "Panel",
         "spec": {
           "id": 81,
-          "title": "Dedup set fill",
-          "description": "Keys currently held in each bounded dedup set (a count, despite the metric's _ratio suffix).",
+          "title": "Dedup set fill & eviction age",
+          "description": "Keys currently held in each bounded dedup set (left axis, a count despite the metric's _ratio suffix), plus the smallest residency age observed at capacity eviction and the configured overlap horizon (right axis, seconds). An age below its horizon means the set is too small; age is absent until an eviction.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -7700,7 +7885,51 @@
                         "expr": "max by (dedup_set) (tailscale2otel_dedup_size_ratio)",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "{{dedup_set}}",
+                        "legendFormat": "size {{dedup_set}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "youngest eviction {{dedup_set}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "C",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "overlap horizon {{dedup_set}}",
                         "format": "time_series"
                       }
                     }
@@ -7731,6 +7960,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "noValue": "No dedup eviction-age series. Requires self_observability.enabled and at least one dedup set eviction.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -7741,7 +7971,24 @@
                     "axisPlacement": "auto"
                   }
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": "(youngest eviction|overlap horizon) .+"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }

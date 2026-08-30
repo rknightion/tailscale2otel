@@ -15,6 +15,7 @@ const (
 	attrPosition     = "tailscale.acl.position"          // src|dst
 	attrApproverKind = "tailscale.acl.autoapprover_kind" // routes|exit_node|services
 	attrRule         = "tailscale.acl.rule"              // offending src/dst (free-text; redactable)
+	attrRiskClass    = "tailscale.acl.risk_class"        // unrestricted|ssh_wildcard|autoapprover_wildcard
 )
 
 // ruleEntry is the subset of an ACL/grant rule the risk pass inspects. Grants
@@ -39,16 +40,16 @@ type autoApproversDoc struct {
 // emitRiskScores analyzes the parsed policy and emits structural risk/hygiene
 // gauges. Each section's metrics are emitted only when the section is present
 // (and decodable), including value 0 ("present but clean").
-func (c *Collector) emitRiskScores(e telemetry.Emitter, top map[string]json.RawMessage) {
-	emitRuleRisk(e, top, "acls")
-	emitRuleRisk(e, top, "grants")
-	emitSSHRisk(e, top)
-	emitAutoApproverRisk(e, top)
+func (c *Collector) emitRiskScores(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
+	emitRuleRisk(e, top, "acls", emitFindings)
+	emitRuleRisk(e, top, "grants", emitFindings)
+	emitSSHRisk(e, top, emitFindings)
+	emitAutoApproverRisk(e, top, emitFindings)
 }
 
 // emitRuleRisk emits wildcard_rules{src,dst}, unrestricted_rules, and
 // posture_gated_rules for one rule-bearing section (acls or grants).
-func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section string) {
+func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section string, emitFindings bool) {
 	raw, ok := top[section]
 	if !ok {
 		return
@@ -71,18 +72,20 @@ func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section s
 			}
 			if ws && wd {
 				unrestricted++
-				// Emit a per-rule log event so operators can identify which
-				// rule is unrestricted, not just how many exist.
-				// Body is generic (section only) to keep the log body PII-safe;
-				// the full src/dst content is in attrRule where pii_filter
-				// (free_text_details category) can gate it.
-				rule := fmt.Sprintf("src=%v dst=%v", srcElems(en), dstElems(en))
-				e.LogEvent(telemetry.Event{
-					Name:     EventRiskyRule,
-					Severity: telemetry.SeverityWarn,
-					Body:     fmt.Sprintf("Unrestricted ACL rule in section %q", section),
-					Attrs:    telemetry.Attrs{attrSection: section, attrRule: rule},
-				})
+				if emitFindings {
+					// Emit a per-rule log event so operators can identify which
+					// rule is unrestricted, not just how many exist.
+					// Body is generic (section only) to keep the log body PII-safe;
+					// the full src/dst content is in attrRule where pii_filter
+					// (free_text_details category) can gate it.
+					rule := fmt.Sprintf("src=%v dst=%v", srcElems(en), dstElems(en))
+					e.LogEvent(telemetry.Event{
+						Name:     EventRiskyRule,
+						Severity: telemetry.SeverityWarn,
+						Body:     fmt.Sprintf("Unrestricted ACL rule in section %q", section),
+						Attrs:    telemetry.Attrs{attrSection: section, attrRule: rule, attrRiskClass: "unrestricted"},
+					})
+				}
 			}
 		}
 		// posture coverage counts all rules regardless of action (a deny rule
@@ -106,7 +109,7 @@ func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section s
 // emitSSHRisk counts Tailscale SSH rules with a wildcard source or destination.
 // SSH uses src/dst for access; its "users" field is login usernames (not source
 // identities) and is deliberately ignored here.
-func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage) {
+func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
 	raw, ok := top["ssh"]
 	if !ok {
 		return
@@ -119,6 +122,10 @@ func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage) {
 	for _, en := range entries {
 		if slices.ContainsFunc(en.Src, isWildcardSrc) || slices.ContainsFunc(en.Dst, isWildcardDst) {
 			wild++
+			if emitFindings {
+				e.LogEvent(telemetry.Event{Name: EventRiskyRule, Severity: telemetry.SeverityWarn,
+					Body: "Wildcard Tailscale SSH rule", Attrs: telemetry.Attrs{attrSection: "ssh", attrRule: fmt.Sprintf("src=%v dst=%v", en.Src, en.Dst), attrRiskClass: "ssh_wildcard"}})
+			}
 		}
 	}
 	e.Gauge(docACLSSHWildcard.Name, docACLSSHWildcard.Unit, docACLSSHWildcard.Description,
@@ -128,7 +135,7 @@ func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage) {
 // emitAutoApproverRisk emits the depth of each auto-approver kind. When the
 // autoApprovers section is present, all three kinds are emitted (0 when empty),
 // so "present but none" is an explicit signal.
-func emitAutoApproverRisk(e telemetry.Emitter, top map[string]json.RawMessage) {
+func emitAutoApproverRisk(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
 	raw, ok := top["autoApprovers"]
 	if !ok {
 		return
@@ -143,6 +150,27 @@ func emitAutoApproverRisk(e telemetry.Emitter, top map[string]json.RawMessage) {
 		float64(len(aa.ExitNode)), telemetry.Attrs{attrApproverKind: "exit_node"})
 	e.Gauge(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
 		float64(len(aa.Services)), telemetry.Attrs{attrApproverKind: "services"})
+	if !emitFindings {
+		return
+	}
+	for kind, selectors := range map[string][]string{"routes": mapValues(aa.Routes), "exit_node": aa.ExitNode, "services": mapValues(aa.Services)} {
+		if !slices.Contains(selectors, "*") {
+			continue
+		}
+		e.LogEvent(telemetry.Event{Name: EventRiskyRule, Severity: telemetry.SeverityWarn,
+			Body: "Wildcard ACL auto-approver", Attrs: telemetry.Attrs{attrSection: "autoApprovers", attrRule: fmt.Sprintf("kind=%s selectors=%v", kind, selectors), attrRiskClass: "autoapprover_wildcard"}})
+	}
+}
+
+func mapValues(entries map[string]json.RawMessage) []string {
+	var all []string
+	for _, raw := range entries {
+		var selectors []string
+		if json.Unmarshal(raw, &selectors) == nil {
+			all = append(all, selectors...)
+		}
+	}
+	return all
 }
 
 // srcElems returns the source identities of a rule: src if present, else the

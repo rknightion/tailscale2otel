@@ -1214,6 +1214,8 @@ field the export does not. Neither field is required.
 | `collectors.services.enabled` | `true` | Emit Tailscale VIP-Services gauges and counts. |
 | `collectors.services.interval` | `600s` | Poll cadence. |
 | `collectors.services.collect_hosts` | `false` | Also fetch per-service backing-host detail — one extra API call per service (N+1). Off by default. |
+| `collectors.services.collect_tag_rollup` | `true` | Emit the `tailscale.services.by_tag` distribution gauge (one series per ACL tag). `false` disables this rollup while service count and other enabled signals continue. |
+| `collectors.services.tag_rollup_limit` | `50` | Cap on distinct tag series for `tailscale.services.by_tag`: the busiest N tags by service count keep their own series; the rest fold into a single `tailscale.tag="__other__"` series. `0` or negative = unlimited. |
 
 ### `collectors.node_metrics`
 
@@ -1530,7 +1532,7 @@ Tailscale IPs, for example.
 | `pii_filter.tailscale_ips` | `true` | Tailscale overlay addresses: `100.64.0.0/10` (IPv4) and `fd7a:115c:a1e0::/48` (IPv6). |
 | `pii_filter.internal_ips` | `true` | RFC 1918 / ULA / link-local addresses (non-Tailscale private ranges). |
 | `pii_filter.external_ips` | `true` | Public/routable (non-private) IP addresses. |
-| `pii_filter.service_addrs` | `true` | VIP service names from the Tailscale Services collector. |
+| `pii_filter.service_addrs` | `true` | VIP service names and optional display names from the Tailscale Services collector. |
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability metrics and spans. The path embeds the tailnet name and device IDs, so `false` drops `url.full` and `tailscale.endpoint` from exported spans and scrubs the URL out of span status descriptions and error events. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
 | `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical — they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |

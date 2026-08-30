@@ -38,7 +38,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		RegionalRoutingOn:           true,
 		PostureIdentityCollectionOn: false,
 		DevicesKeyDurationDays:      90,
-	}}, 0, settings.WithAPIState(tr))
+	}}, 0, settings.WithAPIState(tr), settings.WithSnapshot(true))
 
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)

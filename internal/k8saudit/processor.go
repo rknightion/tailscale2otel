@@ -16,7 +16,10 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
-const schemaDriftWarningLimit = 128
+const (
+	schemaDriftWarningLimit  = 128
+	schemaDriftWarningWindow = 24 * time.Hour
+)
 
 // Processor converts decoded k8saudit objects into OTEL metrics and log
 // records. It is safe for concurrent use.
@@ -25,8 +28,10 @@ type Processor struct {
 	now             func() time.Time
 	emitCommandText bool
 
-	mu                  sync.Mutex
-	unknownSchemaValues map[string]struct{}
+	mu                     sync.Mutex
+	unknownSchemaValues    map[string]struct{}
+	unknownSchemaWindow    time.Time
+	unknownSchemaWindowSet bool
 }
 
 // Option configures a Processor at construction time.
@@ -42,7 +47,8 @@ func WithLogger(logger *slog.Logger) Option {
 // WithClock overrides the time source used for each log record's
 // ObservedTimestamp (when this process saw the object), as distinct from its
 // Timestamp (when the request/session actually happened, taken from the
-// object itself). Intended for deterministic tests; nil retains time.Now.
+// object itself), and for schema-drift warning windows. Intended for
+// deterministic tests; nil retains time.Now.
 func WithClock(now func() time.Time) Option {
 	return func(p *Processor) {
 		if now != nil {
@@ -306,8 +312,8 @@ func (p *Processor) ProcessSession(h CastHeader, e telemetry.Emitter) {
 // observeSchemaDrift records that field carried a value outside this
 // package's understanding of the tsrecorder wire schema (today, only
 // event.type is checked — see Process). It logs at most once per unique
-// (field, value) pair, and only ever logs a digest of the value, never the
-// value itself, mirroring internal/audit's schema-drift warning.
+// (field, value) pair in a warning window, and only ever logs a digest of the
+// value, never the value itself, mirroring internal/audit's schema-drift warning.
 func (p *Processor) observeSchemaDrift(field, value string, e telemetry.Emitter) {
 	e.Counter(docSchemaDrift.Name, docSchemaDrift.Unit, docSchemaDrift.Description, 1, telemetry.Attrs{
 		"field":  field,
@@ -321,7 +327,17 @@ func (p *Processor) warnUnknownSchemaValue(field, value string) {
 		return
 	}
 	key := field + "\x00" + value
+	now := p.now()
 	p.mu.Lock()
+	if !p.unknownSchemaWindowSet {
+		p.unknownSchemaWindow = now
+		p.unknownSchemaWindowSet = true
+	} else if !now.Before(p.unknownSchemaWindow.Add(schemaDriftWarningWindow)) {
+		// Start a fresh bounded warning window so a long-lived process can
+		// report a newly observed value again without reopening the flood path.
+		clear(p.unknownSchemaValues)
+		p.unknownSchemaWindow = now
+	}
 	if len(p.unknownSchemaValues) >= schemaDriftWarningLimit {
 		p.mu.Unlock()
 		return

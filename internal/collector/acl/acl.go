@@ -17,8 +17,10 @@ import (
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -102,6 +104,14 @@ type Collector struct {
 	// admin status page and the configuration-to-capability matrix (#430). A nil
 	// tracker is a no-op, so the collector still works without one.
 	tracker *apistate.Tracker
+
+	// snapshot is opt-in because policy bodies contain tailnet identity data.
+	snapshotEnabled   bool
+	snapshotHeartbeat time.Duration
+	snapshotBodyBytes int
+	snapshotState     aclpolicy.SnapshotStateStore
+	snapshotBaseline  snapshot.State
+	priorPolicy       string
 }
 
 // New returns an ACL collector. A non-positive interval resolves to the default
@@ -138,6 +148,26 @@ func WithCheckpointStore(store collector.CheckpointStore) Option {
 	return func(c *Collector) { c.checkpoints = store }
 }
 
+// WithPolicySnapshots enables raw policy snapshots and diffs. Enabling this
+// option is explicit consent to export and persist the raw policy body.
+func WithPolicySnapshots(heartbeat time.Duration, maxBodyBytes int, state aclpolicy.SnapshotStateStore) Option {
+	return func(c *Collector) {
+		c.snapshotEnabled = true
+		c.snapshotHeartbeat = heartbeat
+		c.snapshotBodyBytes = maxBodyBytes
+		c.snapshotState = state
+		if state == nil {
+			return
+		}
+		persisted, err := state.Load()
+		if err != nil {
+			return
+		}
+		c.priorPolicy = persisted.Body
+		c.snapshotBaseline = snapshot.State{Revision: persisted.Revision, Emitted: persisted.Emitted}
+	}
+}
+
 // Name returns the stable collector identifier.
 func (c *Collector) Name() string { return "acl" }
 
@@ -159,7 +189,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		return err
 	}
 
-	if !c.haveETag || raw.ETag != c.lastETag {
+	changed := !c.haveETag || raw.ETag != c.lastETag
+	if changed {
 		c.lastETag = raw.ETag
 		c.haveETag = true
 		c.lastChanged = c.observeRevision(e, raw.ETag)
@@ -177,6 +208,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// Trivial presence/size signal: bytes of the raw HuJSON policy document.
 	e.Gauge(docACLSize.Name, docACLSize.Unit, docACLSize.Description,
 		float64(len(raw.HuJSON)), nil)
+	if c.snapshotEnabled {
+		c.emitPolicySnapshot(e, raw.ETag, raw.HuJSON)
+	}
 
 	if c.policy != nil {
 		// A compile failure is swallowed on purpose: the evaluator is a side
@@ -194,11 +228,72 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		return nil
 	}
 	c.emitRuleCounts(e, top)
-	c.emitRiskScores(e, top)
+	c.emitRiskScores(e, top, changed)
 
 	c.collectValidation(ctx, e, raw.HuJSON)
 
 	return nil
+}
+
+func (c *Collector) emitPolicySnapshot(e telemetry.Emitter, revision, body string) {
+	emitter, err := snapshot.New(snapshot.Config{
+		Emitter:         e,
+		EventName:       EventPolicySnapshot,
+		Kind:            snapshot.KindPolicy,
+		Heartbeat:       c.snapshotHeartbeat,
+		MaxBodyBytes:    c.snapshotBodyBytes,
+		InitialRevision: c.snapshotBaseline.Revision,
+		InitialEmission: c.snapshotBaseline.Emitted,
+	})
+	if err != nil {
+		return
+	}
+
+	previous := c.priorPolicy
+	emitted := emitter.Observe(c.now(), revision, body, telemetry.Attrs{"tailscale.acl.etag": revision})
+	if !emitted {
+		return
+	}
+	state := emitter.State()
+	if previous != "" && state.Revision == revision && previous != body {
+		diffEmitter, err := snapshot.New(snapshot.Config{
+			Emitter:      e,
+			EventName:    EventPolicyDiff,
+			Kind:         snapshot.KindPolicy,
+			MaxBodyBytes: c.snapshotBodyBytes,
+		})
+		if err == nil {
+			diffEmitter.Observe(c.now(), revision, unifiedPolicyDiff(previous, body), telemetry.Attrs{"tailscale.acl.etag": revision})
+		}
+	}
+	c.snapshotBaseline = state
+	c.priorPolicy = body
+	if c.snapshotState != nil {
+		_ = c.snapshotState.Save(aclpolicy.SnapshotState{Revision: state.Revision, Emitted: state.Emitted, Body: body})
+	}
+}
+
+// unifiedPolicyDiff returns a compact, line-oriented unified diff. Policy files
+// are often a single HuJSON line, so recording whole old/new lines is more
+// useful than a character diff and remains directly applicable to its source.
+func unifiedPolicyDiff(previous, current string) string {
+	old := strings.SplitAfter(previous, "\n")
+	new := strings.SplitAfter(current, "\n")
+	var b strings.Builder
+	fmt.Fprintf(&b, "--- previous policy\n+++ current policy\n@@ -1,%d +1,%d @@\n", len(old), len(new))
+	for _, line := range old {
+		fmt.Fprintf(&b, "-%s", line)
+		if !strings.HasSuffix(line, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	for _, line := range new {
+		fmt.Fprintf(&b, "+%s", line)
+		if !strings.HasSuffix(line, "\n") {
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
 }
 
 func (c *Collector) observeRevision(e telemetry.Emitter, etag string) time.Time {

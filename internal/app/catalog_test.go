@@ -58,7 +58,8 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	dset.Add("a")
 	dset.Add("b") // evicts "a" => evictions 1
 	dset.Add("b") // duplicate => hits 1
-	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset}, map[string]uint64{}, map[string]uint64{})
+	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": dset},
+		map[string]time.Duration{"flow": time.Minute}, map[string]uint64{}, map[string]uint64{})
 
 	// process.uptime + process.cpu.time: a stub readCPU forces the counter to fire.
 	var lastUser, lastSys float64

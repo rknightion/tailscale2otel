@@ -57,7 +57,7 @@ from variables import build_variables, tab_controls
 # internal/annotations.Annotation.Tags() owns:
 #
 #   tailscale2otel        on every annotation — the root selector
-#   category:<c>          config_change | expiry | lifecycle
+#   category:<c>          config_change | expiry | policy_change | inventory | risk | lifecycle
 #   rule:<id>             the curated rule that produced it
 #
 # Degradation needs no conditionalRendering: a deployment that never enabled the
@@ -65,7 +65,7 @@ from variables import build_variables, tab_controls
 # matches renders nothing. Absent, not noisy.
 #
 # `matchAny: False` is load-bearing on the category layers — it ANDs the tags. With
-# matchAny true they would each match every tailscale2otel annotation and the three
+# matchAny true they would each match every tailscale2otel annotation and the six
 # layers would be identical.
 def tag_annotation(name, tags, color, enable, hide):
     """One annotation layer over the Grafana annotation store, selected by tags."""
@@ -95,6 +95,12 @@ def annotation_layers():
                        "light-orange", enable=False, hide=False),
         tag_annotation("— key expiry only", ["tailscale2otel", "category:expiry"],
                        "light-yellow", enable=False, hide=False),
+        tag_annotation("— policy changes only", ["tailscale2otel", "category:policy_change"],
+                       "light-purple", enable=False, hide=False),
+        tag_annotation("— inventory changes only", ["tailscale2otel", "category:inventory"],
+                       "light-green", enable=False, hide=False),
+        tag_annotation("— risk findings only", ["tailscale2otel", "category:risk"],
+                       "light-red", enable=False, hide=False),
     ]
 
 

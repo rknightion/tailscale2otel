@@ -16,7 +16,9 @@ package webhooks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
@@ -24,6 +26,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/entityage"
+	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
@@ -40,6 +43,13 @@ const (
 	metricDesiredUnrecognize = "tailscale.webhook_endpoints.desired_unrecognized"
 	metricEndpointAge        = "tailscale.webhook_endpoint.age"
 	logEventMismatch         = "tailscale.webhook_endpoints.event_mismatch"
+	// EventWebhooksSnapshot is the opt-in JSON webhook-inventory snapshot event.
+	EventWebhooksSnapshot = "tailscale.webhooks.snapshot"
+)
+
+const (
+	defaultSnapshotHeartbeat = 24 * time.Hour
+	defaultSnapshotBodyBytes = 32 * 1024
 )
 
 const (
@@ -77,7 +87,11 @@ type Collector struct {
 	// (#420). A nil *apistate.Tracker is a no-op.
 	tracker *apistate.Tracker
 	// now is the clock, injectable from tests.
-	now func() time.Time
+	now               func() time.Time
+	snapshotEnabled   bool
+	snapshotHeartbeat time.Duration
+	snapshotBodyBytes int
+	snapshotEmitter   *snapshot.Emitter
 }
 
 // Option configures optional Collector behavior.
@@ -108,9 +122,43 @@ func WithAPIState(t *apistate.Tracker) Option {
 	return func(c *Collector) { c.tracker = t }
 }
 
+// WithClock overrides the collector clock. It is primarily useful to make
+// snapshot-heartbeat tests deterministic; the default is time.Now.
+func WithClock(now func() time.Time) Option {
+	return func(c *Collector) { c.now = now }
+}
+
+// WithSnapshot enables the JSON webhook-inventory snapshot. The optional body
+// limit should match otlp.limits.log_body_bytes; when omitted or non-positive,
+// the telemetry default (32 KiB) is used. The snapshot is emitted on the first
+// observation, on content changes, and on a daily heartbeat when unchanged.
+func WithSnapshot(enabled bool, maxBodyBytes ...int) Option {
+	return func(c *Collector) {
+		c.snapshotEnabled = enabled
+		if len(maxBodyBytes) > 0 && maxBodyBytes[0] > 0 {
+			c.snapshotBodyBytes = maxBodyBytes[0]
+		}
+	}
+}
+
+// WithSnapshotHeartbeat overrides the default daily heartbeat. It exists for
+// deterministic tests and leaves the public configuration surface unchanged.
+func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
+	return func(c *Collector) {
+		c.snapshotHeartbeat = heartbeat
+	}
+}
+
 // New returns a webhooks collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: a, interval: interval, perEntity: true, now: time.Now}
+	c := &Collector{
+		api:               a,
+		interval:          interval,
+		perEntity:         true,
+		now:               time.Now,
+		snapshotHeartbeat: defaultSnapshotHeartbeat,
+		snapshotBodyBytes: defaultSnapshotBodyBytes,
+	}
 	for _, o := range opts {
 		o(c)
 	}
@@ -152,6 +200,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	e.Gauge(docEndpointsCount.Name, docEndpointsCount.Unit, docEndpointsCount.Description,
 		float64(len(hooks)), nil)
+	if c.snapshotEnabled {
+		body, err := marshalSnapshot(hooks)
+		if err != nil {
+			return err
+		}
+		c.emitSnapshot(e, body)
+	}
 
 	c.emitEventCoverage(e, hooks)
 	c.emitAge(e, hooks)
@@ -168,6 +223,77 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 	return nil
+}
+
+// snapshotWebhook is the safe subset of the upstream webhook shape. Endpoint
+// URLs, creator login names, and signing secrets are deliberately absent: an
+// opt-in snapshot is still not permission to export those values to logs.
+type snapshotWebhook struct {
+	EndpointID    string   `json:"endpointId"`
+	ProviderType  string   `json:"providerType"`
+	Created       string   `json:"created,omitempty"`
+	LastModified  string   `json:"lastModified,omitempty"`
+	Subscriptions []string `json:"subscriptions"`
+}
+
+type snapshotWebhooks struct {
+	Webhooks []snapshotWebhook `json:"webhooks"`
+}
+
+func snapshotTimestamp(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func marshalSnapshot(hooks []tsclient.Webhook) (string, error) {
+	ordered := append([]tsclient.Webhook(nil), hooks...)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].EndpointID != ordered[j].EndpointID {
+			return ordered[i].EndpointID < ordered[j].EndpointID
+		}
+		return string(ordered[i].ProviderType) < string(ordered[j].ProviderType)
+	})
+
+	out := make([]snapshotWebhook, len(ordered))
+	for i, hook := range ordered {
+		subscriptions := make([]string, len(hook.Subscriptions))
+		for j, subscription := range hook.Subscriptions {
+			subscriptions[j] = string(subscription)
+		}
+		sort.Strings(subscriptions)
+		out[i] = snapshotWebhook{
+			EndpointID:    hook.EndpointID,
+			ProviderType:  string(hook.ProviderType),
+			Created:       snapshotTimestamp(hook.Created),
+			LastModified:  snapshotTimestamp(hook.LastModified),
+			Subscriptions: subscriptions,
+		}
+	}
+
+	body, err := json.Marshal(snapshotWebhooks{Webhooks: out})
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) {
+	if c.snapshotEmitter == nil {
+		emitter, err := snapshot.New(snapshot.Config{
+			Emitter:      e,
+			EventName:    EventWebhooksSnapshot,
+			Kind:         snapshot.KindWebhooks,
+			Heartbeat:    c.snapshotHeartbeat,
+			MaxBodyBytes: c.snapshotBodyBytes,
+		})
+		if err != nil {
+			return
+		}
+		c.snapshotEmitter = emitter
+	}
+	c.snapshotEmitter.Observe(c.now(), "", body, nil)
 }
 
 // emitEventCoverage writes the zero-seeded per-category coverage gauge and, when

@@ -115,6 +115,7 @@ type runtimeDeps struct {
 	tracer        trace.Tracer
 	store         collector.CheckpointStore
 	evidenceStore collector.CheckpointStore
+	evidencePath  string
 	procEmitter   telemetry.Emitter  // for shared-infra self-obs (rdns)
 	rdnsCache     *rdns.Cache        // shared external-address resolver; nil when disabled
 	geoDB         *geoip.DB          // shared local GeoIP/ASN databases; nil when disabled

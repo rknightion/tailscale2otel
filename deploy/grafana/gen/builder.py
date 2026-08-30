@@ -61,6 +61,47 @@ PII = "tailscale2otel_pii_filter_category_ratio"  # PII filter self-obs gauge
 # matcher in the metric selector. For enumerating tailnets where no single metric is
 # guaranteed present, match any per-tailnet series: {__name__=~"tailscale_.+", tailscale_tailnet!=""}.
 
+# Shared audit-pipeline query helpers. These used to live in tabs/events.py, but the
+# audit-state rows now live in health_ingestion.py after the dashboard split. Keeping
+# them here avoids making one tab import another tab's retired implementation.
+CFG_DOC = "https://m7kni.io/tailscale2otel/configuration/"
+TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
+
+
+def sel(metric, extra=""):
+    """`<metric>{<tailnet/provider filter>[, <extra>]}` — the filtered selector."""
+    return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
+
+def q_hist(quantile, metric):
+    """histogram_quantile over a tailnet-filtered `<metric>_bucket`.
+
+    builder.hq() cannot be reused here: it appends `_bucket` to whatever string
+    it is given, so a selector would come out as `metric{...}_bucket`.
+    """
+    return ("histogram_quantile(%s, sum by (le) (rate(%s[%s])))"
+            % (quantile, sel(metric + "_bucket"), RI))
+
+
+# The state key #393 is shared by the audit-pipeline panels that moved to the
+# health dashboard. Presence cannot separate "switched off" from "unsupported"
+# from "never deployed" (#385), so the row names the prerequisite and stops,
+# rather than asserting a cause it cannot know.
+STATE_KEY = (
+    "\n\nReading this row — four states that otherwise look identical:\n\n"
+    "- **idle tailnet**: the collector scrape reads 1, the accepted counter has series, and "
+    "both range counters read 0. Nothing happened.\n"
+    "- **absent Loki data**: the metric counter moved over this range but the Loki counter "
+    "is 0. Events were accepted; the log records are not in the queried Loki datasource.\n"
+    "- **ingestion failure**: the scrape gauge reads 0, or the failures panel is non-zero. "
+    "Records are being attempted and lost.\n"
+    "- **audit collection not enabled**: no scrape series and no accepted counter at all. "
+    "This one is a floor, not a verdict — presence **cannot** separate a disabled collector "
+    "from a provider that does not support the API from a process that was never deployed, "
+    "so the empty states name the prerequisite instead of guessing why."
+)
+
 
 # ---------------------------------------------------------------------------
 # low-level builders

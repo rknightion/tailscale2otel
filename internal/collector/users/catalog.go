@@ -78,6 +78,20 @@ var (
 			"as age zero.",
 		Group: groupUsers,
 	}
+	docUserInviteObserved = metricdoc.LogEvent{
+		Name:        EventUserInviteObserved,
+		Severity:    "INFO",
+		Description: "Emitted once when an open user invite is first observed in a successful snapshot. This is an observation, not proof of when the invite was created; the API exposes no invite-created timestamp. The invite URL is a bearer token and is never emitted. User identity attributes follow the PII filter.",
+		Attributes:  []string{attrInviteID, attrInviteRole, attrLifecycleTransition, attrID, attrLogin},
+		Group:       groupUsers,
+	}
+	docUserInviteNoLongerOpen = metricdoc.LogEvent{
+		Name:        EventUserInviteNoLongerOpen,
+		Severity:    "INFO",
+		Description: "Emitted once when an invite present in an earlier successful open-invite snapshot is absent from a later successful snapshot. The API exposes no terminal reason, so absence is not classified as accepted, revoked, or canceled. The invite URL is never retained or emitted; user identity attributes follow the PII filter.",
+		Attributes:  []string{attrInviteID, attrInviteRole, attrLifecycleTransition, attrID, attrLogin},
+		Group:       groupUsers,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -88,7 +102,7 @@ func Catalog() []metricdoc.Metric {
 	}
 }
 
-// LogCatalog returns the log events this package emits (none).
+// LogCatalog returns the log events this package emits.
 func LogCatalog() []metricdoc.LogEvent {
-	return nil
+	return []metricdoc.LogEvent{docUserInviteObserved, docUserInviteNoLongerOpen}
 }

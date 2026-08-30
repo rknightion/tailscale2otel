@@ -27,6 +27,22 @@
   "signals": [
     {
       "kind": "log_event",
+      "name": "tailscale.acl.policy_diff",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.acl.policy_snapshot",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.acl.risky_rule",
       "surface": "operational",
       "dispositions": [
@@ -60,6 +76,14 @@
         "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on tailnet/Security \u0026 Audit \u003e Posture \u0026 Compliance."
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.device.change",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
     },
     {
       "kind": "log_event",
@@ -98,6 +122,14 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.dns.snapshot",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.k8s.api_request",
       "surface": "operational",
       "dispositions": [
@@ -116,11 +148,27 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.key.created",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.key.expiring",
       "surface": "operational",
       "dispositions": [
         "visualized",
         "drives_a_variable"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.key.revoked",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
       ]
     },
     {
@@ -158,6 +206,38 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.posture_integrations.snapshot",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.settings.snapshot",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.user_invite.no_longer_open",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.user_invite.observed",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.webhook.\u003ctype\u003e",
       "surface": "operational",
       "dispositions": [],
@@ -166,6 +246,14 @@
     {
       "kind": "log_event",
       "name": "tailscale.webhook_endpoints.event_mismatch",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
+      "name": "tailscale.webhooks.snapshot",
       "surface": "operational",
       "dispositions": [
         "visualized"
@@ -1622,6 +1710,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.service.host.info",
+      "prom_name": "tailscale_service_host_info_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.service.hosts",
       "prom_name": "tailscale_service_hosts_ratio",
       "surface": "operational",
@@ -1638,6 +1735,15 @@
       "dispositions": [
         "visualized",
         "drives_a_variable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.services.by_tag",
+      "prom_name": "tailscale_services_by_tag_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
       ]
     },
     {
@@ -2173,11 +2279,31 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.dedup.overlap_horizon",
+      "prom_name": "tailscale2otel_dedup_overlap_horizon_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.dedup.size",
       "prom_name": "tailscale2otel_dedup_size_ratio",
       "surface": "self_obs",
       "dispositions": [
         "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.dedup.youngest_eviction_age",
+      "prom_name": "tailscale2otel_dedup_youngest_eviction_age_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -2357,11 +2483,31 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.ingress_wal.pending.entries.fill",
+      "prom_name": "tailscale2otel_ingress_wal_pending_entries_fill_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.ingress_wal.pending.size",
       "prom_name": "tailscale2otel_ingress_wal_pending_size_bytes",
       "surface": "self_obs",
       "dispositions": [
         "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.ingress_wal.pending.size.fill",
+      "prom_name": "tailscale2otel_ingress_wal_pending_size_fill_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
       ]
     },
     {

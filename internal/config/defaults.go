@@ -273,8 +273,10 @@ func Default() *Config {
 				Interval: dur(600 * time.Second),
 			},
 			Services: ServicesCollector{
-				Enabled:  true,
-				Interval: dur(600 * time.Second),
+				Enabled:          true,
+				Interval:         dur(600 * time.Second),
+				CollectTagRollup: true,
+				TagRollupLimit:   50,
 			},
 			OAuthApps: SimpleCollector{
 				Enabled:  true,

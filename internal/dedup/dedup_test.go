@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 )
@@ -137,6 +138,43 @@ func TestEvictions_CountsEachEvictedKey(t *testing.T) {
 	s.Add("f")
 	if got := s.Evictions(); got != 3 {
 		t.Fatalf("Evictions() = %d after a duplicate add, want 3 (unchanged)", got)
+	}
+}
+
+func TestYoungestEvictionAge_ReportsMinimumResidencyAge(t *testing.T) {
+	clock := time.Unix(1_700_000_000, 0).UTC()
+	s := dedup.New(2, dedup.WithClock(func() time.Time { return clock }))
+
+	if age, ok := s.YoungestEvictionAge(); ok {
+		t.Fatalf("YoungestEvictionAge() before eviction = %v, %v, want absent", age, ok)
+	}
+
+	s.Add("a")
+	clock = clock.Add(10 * time.Minute)
+	s.Add("b")
+	clock = clock.Add(10 * time.Minute)
+	s.Add("c") // evicts a after 20m
+
+	if age, ok := s.YoungestEvictionAge(); !ok || age != 20*time.Minute {
+		t.Fatalf("YoungestEvictionAge() after first eviction = %v, %v, want 20m, true", age, ok)
+	}
+
+	clock = clock.Add(2 * time.Hour)
+	s.Add("d") // evicts b after 2h10m; the 20m low-water mark remains
+	if age, ok := s.YoungestEvictionAge(); !ok || age != 20*time.Minute {
+		t.Fatalf("YoungestEvictionAge() after older eviction = %v, %v, want 20m, true", age, ok)
+	}
+}
+
+func TestYoungestEvictionAge_ClampsClockRollback(t *testing.T) {
+	clock := time.Unix(1_700_000_000, 0).UTC()
+	s := dedup.New(1, dedup.WithClock(func() time.Time { return clock }))
+	s.Add("a")
+	clock = clock.Add(-time.Minute)
+	s.Add("b")
+
+	if age, ok := s.YoungestEvictionAge(); !ok || age != 0 {
+		t.Fatalf("YoungestEvictionAge() after clock rollback = %v, %v, want 0, true", age, ok)
 	}
 }
 

@@ -66,6 +66,30 @@ func TestFieldDispositionsInSync(t *testing.T) {
 	}
 }
 
+func TestValidateFieldDispositions_RejectsNotelessUnhandled(t *testing.T) {
+	base := &contract.FieldDispositionBaseline{Fields: []contract.FieldDisposition{{
+		Op:          "listExample",
+		Path:        "Value",
+		Type:        "example.Value",
+		Disposition: contract.DispUnhandled,
+	}}}
+	inv := []contract.InventoryEntry{{Op: "listExample", Path: "Value", Type: "example.Value"}}
+
+	problems := contract.ValidateFieldDispositions(base, inv)
+	if !containsProblem(problems, "unhandled field needs a parking note: listExample / Value") {
+		t.Fatalf("noteless unhandled field passed validation: %v", problems)
+	}
+}
+
+func containsProblem(problems []string, want string) bool {
+	for _, problem := range problems {
+		if problem == want {
+			return true
+		}
+	}
+	return false
+}
+
 // TestFieldDispositions_EmbeddedCopyMatchesDisk guards against a stale compiled-in
 // baseline: tools/apidrift renders the coverage report from the embedded copy, so
 // the two must be the same bytes.

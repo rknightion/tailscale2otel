@@ -15,6 +15,9 @@ THREE new panels for catalog signals that reached no panel anywhere before #526:
   * `tailscale_key_tag_scope_ratio` (info gauge, ALERTABLE-ONLY before this panel) — whether
     an OAuth client's own tag restriction exists at all, none|restricted.
 
+The lifecycle events also have a dedicated normalized Loki timeline panel: key creation/revocation/
+expiry and open-invite observations/disappearances share one chronological view.
+
 The last two are info gauges zero-seeded across every class per credential, so both panels
 query `== 1` to get each credential's ACTUAL class rather than a wall of zeros. They are
 three unrelated fields away from each other and from what the row already charts:
@@ -51,6 +54,9 @@ _INFRA = ["Time", "__name__", "job", "instance",
 
 _PE_KEY_EMPTY = ("No per-credential key series — needs the keys collector (collectors.keys) "
                  "and cardinality.per_entity.key.")
+
+_LIFECYCLE_EVENTS = ("tailscale.key.created|tailscale.key.revoked|tailscale.key.expiring|"
+                     "tailscale.user_invite.observed|tailscale.user_invite.no_longer_open")
 
 
 def tab_security_identity(scope):
@@ -133,6 +139,20 @@ def tab_security_identity(scope):
                     "tailscale_key_expires_in_seconds — seconds REMAINING, not an absolute "
                     "timestamp, so it counts down rather than up. Needs the keys collector. Read it "
                     "against the expiry tiles above: those say how many, this says which."), 12, 9),
+    ]
+
+    # TSO-0050: normalized key and open-invite transitions share one chronological
+    # Loki panel. The invite endpoint has no terminal reason, so the final event
+    # is deliberately named no_longer_open rather than accepted/revoked.
+    lifecycle = [
+        (panel("Key & user-invite lifecycle timeline", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=~`(?:%s)` |~ `$log_filter`"
+                       % _LIFECYCLE_EVENTS, maxlines=300)],
+               options=logs_opts(),
+               desc="Normalized lifecycle records for keys and open user invites. Key creation and "
+                    "revocation use the source timestamps; key expiry uses the existing expiry-warning "
+                    "cadence. User-invite records mark first observation and later disappearance from "
+                    "the open-invites endpoint; disappearance has no API-provided terminal reason."), 24, 10),
     ]
 
     # -----------------------------------------------------------------------
@@ -311,6 +331,7 @@ def tab_security_identity(scope):
         autogrid_row("Key & access expiry risk", expiry),
         row("Device share invites", devinvites, present="has_invites_dev"),
         row("Expiring keys & credentials", keyexpiring, hide_when=["pii_perdevice"]),
+        row("Key & user-invite lifecycle", lifecycle),
         autogrid_row("Key inventory & age", keyinv),
         row("Credential scope & blast radius", scoperow,
             present="has_key_scopes", hide_when=["pii_actor"]),

@@ -17,6 +17,8 @@ shrink-only pending-panel ledger:
   * tailscale.devices.by_country (`tailscale_devices_by_country_ratio`) — devices per country.
   * tailscale.device_invite — a LOG event, not a metric, so it is a Loki logs panel on the
     "Authorization & sharing" row, which is the row that covers device sharing.
+  * tailscale.device.change — a LOG event, not a metric, so it is a Loki logs panel on its own
+    "Device change log" row. The row is hidden when per-device identity is redacted.
 
 Row consolidation (#526 decision 7) — two of fleet.py's single-panel rows are folded in:
 
@@ -219,6 +221,21 @@ def tab_devices_inventory(scope):
                     "filter variable. The invite URL is a bearer token and is never emitted."), 24, 10),
     ]
 
+    # TSO-0047: one structured record for each device addition/removal and each
+    # material field change. It carries host/user identity, so keep it behind
+    # the same per-device redaction sentinel as the health tables.
+    change_log = [
+        (panel("Device inventory changes", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.change` "
+                       "|~ `$log_filter`", maxlines=300)],
+               options=logs_opts(),
+               desc="Device additions, removals and material field changes observed by the "
+                    "devices collector. The first successful poll after restart establishes "
+                    "a silent baseline; later records identify the device, transition and "
+                    "changed field. Requires collectors.devices.change_log_enabled. Hidden "
+                    "when per-device identity redaction is active."), 24, 10),
+    ]
+
     # B. Fleet hygiene row (no PII gate — counts/enums only)
     hygiene = [
         (panel("Stale devices (>30d)", "stat",
@@ -399,6 +416,7 @@ def tab_devices_inventory(scope):
     return [
         row("Inventory", inv),
         row("Authorization & sharing", authsplit),
+        row("Device change log", change_log, hide_when=["pii_perdevice"]),
         # Two same-size (12x7) timeseries -> AutoGrid, so the row reflows (#526 decision 6).
         autogrid_row("Trends", overtime),
         row("Fleet hygiene", hygiene),

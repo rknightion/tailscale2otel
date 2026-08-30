@@ -186,7 +186,8 @@ func TestRDNSOptions_CarriesEveryConfiguredValue(t *testing.T) {
 	cfg.Enrichment.ReverseDNS.StaleTTL = config.Duration(90 * time.Minute)
 	cfg.Enrichment.ReverseDNS.MaxEntries = 1234
 
-	got := rdnsOptions(cfg)
+	checkpointPath := "/var/lib/tailscale2otel/checkpoints.json"
+	got := rdnsOptions(cfg, checkpointPath)
 	for _, c := range []struct {
 		key       string
 		got, want any
@@ -197,6 +198,7 @@ func TestRDNSOptions_CarriesEveryConfiguredValue(t *testing.T) {
 		{"NegativeTTL", got.NegativeTTL, 7 * time.Minute},
 		{"StaleTTL", got.StaleTTL, 90 * time.Minute},
 		{"MaxEntries", got.MaxEntries, 1234},
+		{"SnapshotPath", got.SnapshotPath, "/var/lib/tailscale2otel/rdns.json"},
 	} {
 		if c.got != c.want {
 			t.Errorf("rdns.Options.%s = %v, want %v", c.key, c.got, c.want)

@@ -87,6 +87,15 @@ See [Configuration](configuration.md) for the full list of options once you are 
     docker compose -f deploy/docker-compose.yaml up
     ```
 
+    The base file keeps the admin listener on because its binary health check reads
+    `/readyz`. To disable admin without leaving the container permanently unhealthy,
+    add the shipped override that changes both settings together:
+
+    ```sh
+    docker compose -f deploy/docker-compose.yaml \
+                   -f deploy/docker-compose.no-admin.yaml up
+    ```
+
     That runs the **published** image, pinned to a specific release rather than
     `latest` (which moves under a running deployment). Override the tag with
     `TS2OTEL_VERSION`, e.g. `TS2OTEL_VERSION=latest docker compose ... up`. The

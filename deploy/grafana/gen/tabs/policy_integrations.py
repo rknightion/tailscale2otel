@@ -31,9 +31,9 @@ nothing declares renders permanently hidden — on screen, identical to a correc
 empty row.
 """
 
-from builder import (autogrid_row, bargauge_opts, loki_t, lot, merge, organize, panel,
-                     prom_t, RI, row, sentinel, stat_opts, thr, ts_custom, ts_opts,
-                     WIN_SLOW)
+from builder import (autogrid_row, bargauge_opts, logs_opts, loki_t, lot, merge, organize, panel,
+                     PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
+                     ts_opts, WIN_SLOW)
 from maps import BOOL_HEALTHY_OFF, BOOL_HEALTHY_ON
 
 DOCS = "https://m7kni.io/tailscale2otel"
@@ -70,6 +70,12 @@ def q_hist(quantile, metric):
 def tab_policy_integrations(scope):
     sentinel("has_services", "tailscale_services_count_ratio", scope)
     sentinel("has_svc", "tailscale_service_ports", scope)
+    # The host-info table carries host.name/host.id and must disappear when both
+    # device identity categories are explicitly redacted. service.name and the
+    # optional user value are filtered independently at the telemetry layer.
+    pii_sentinel("pii_perdevice",
+                 '(%s{category="hostnames"} == 0) and ignoring(category) (%s{category="node_ids"} == 0)'
+                 % (PII, PII), scope)
 
     services_vip = [
         (panel("Services (VIP)", "stat",
@@ -80,11 +86,20 @@ def tab_policy_integrations(scope):
                [prom_t(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), instant=True, fmt="table")],
                unit="short", transformations=[organize(exclude=_INFRA_TBL,
                                                        rename={"tailscale_service_name": "Service",
+                                                               "tailscale_service_display_name": "Display name",
                                                                "tailscale_service_approval": "Approval",
                                                                "tailscale_service_configured": "Configured",
                                                                "Value": "Hosts"})],
                desc="Backing-host count per Service, bucketed by approval + configured state. "
                     "Gated by collect_hosts + cardinality.per_entity.service."), 18, 6),
+        (panel("Service tags (rollup)", "barchart",
+               [prom_t("sum by (tailscale_tag) (%s)" % lot(sel("tailscale_services_by_tag_ratio"), WIN_SLOW),
+                       legend="{{tailscale_tag}}")],
+               unit="short", options=bargauge_opts(),
+               novalue="No service-tag rollup. Prerequisites: collectors.services.collect_tag_rollup "
+                       "and a service carrying at least one ACL tag. See " + CFG_DOC,
+               desc="Number of VIP services carrying each ACL tag. The busiest tags remain distinct "
+                    "up to collectors.services.tag_rollup_limit; the rest fold into tailscale.tag=__other__."), 12, 6),
     ]
 
     # has_svc wired (#495): both panels below read tailscale_service_ports, the
@@ -93,25 +108,53 @@ def tab_policy_integrations(scope):
     # hide working panels.
     services_detail = [
         (panel("Port rules per service", "bargauge",
-               [prom_t("max by (tailscale_service_name) (%s)" % lot(sel("tailscale_service_ports"), WIN_SLOW),
-                       legend="{{tailscale_service_name}}")],
+               [prom_t("max by (tailscale_service_name, tailscale_service_display_name) (%s)"
+                       % lot(sel("tailscale_service_ports"), WIN_SLOW),
+                       legend="{{tailscale_service_display_name}} ({{tailscale_service_name}})")],
                unit="short", options=bargauge_opts(),
                desc="Port rules exposed by each Service. Gated by cardinality.per_entity.service."), 24, 6),
         # Task 1H.8 — VIP service health (merged hosts + port-rules)
         (panel("VIP service health", "table",
                [prom_t(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t("max by (tailscale_service_name) (%s)" % lot(sel("tailscale_service_ports"), WIN_SLOW),
+                prom_t("max by (tailscale_service_name, tailscale_service_display_name) (%s)"
+                       % lot(sel("tailscale_service_ports"), WIN_SLOW),
                        instant=True, fmt="table", refid="B")],
                transformations=[merge(),
                                 organize(
                                     exclude=_INFRA_TBL,
                                     rename={"tailscale_service_name": "Service",
+                                            "tailscale_service_display_name": "Display name",
                                             "tailscale_service_approval": "Approval",
                                             "tailscale_service_configured": "Configured",
                                             "Value #A": "Hosts",
                                             "Value #B": "Port rules"})],
                desc="Merged view: hosts + port-rule count per VIP service. "
                     "Services with 1 host have no HA. Requires collect_hosts + per_entity.service."), 24, 7),
+    ]
+
+    host_identity = [
+        (panel("Backing host identity", "table",
+               [prom_t(lot(sel("tailscale_service_host_info_ratio"), WIN_SLOW), instant=True, fmt="table")],
+               transformations=[organize(exclude=_INFRA_TBL,
+                                         rename={"tailscale_service_name": "Service",
+                                                 "tailscale_service_display_name": "Display name",
+                                                 "tailscale_node_id": "Node ID",
+                                                 "host_name": "Host",
+                                                 "host_id": "Device ID",
+                                                 "os_type": "OS",
+                                                 "os_version": "OS version",
+                                                 "tailscale_user": "User",
+                                                 "tailscale_tags": "Tags",
+                                                 "tailscale_service_approval": "Approval",
+                                                 "tailscale_service_configured": "Configured",
+                                                 "Value": "Backing host"})],
+               novalue="No backing-host identity series. Prerequisites: collectors.services.collect_hosts, "
+                       "cardinality.per_entity.service, and a service with at least one backing host. See "
+                       + CFG_DOC,
+               desc="One info point per device backing a VIP service. The stable node ID is the join key "
+                    "to the devices inventory; host identity fields are present only when the devices "
+                    "cache has refreshed that node. Hidden when host and node identity redaction is active."),
+         24, 8),
     ]
 
     # ------------------------------------------------------------------
@@ -272,13 +315,40 @@ def tab_policy_integrations(scope):
                     "row."), 24, 7),
     ]
 
+    snapshots = [
+        (panel("Webhook configuration snapshots", "logs",
+               [loki_t("%s | tailscale_snapshot_kind=`webhooks` | "
+                       "event_name=`tailscale.webhooks.snapshot` |~ `$log_filter`" % LOKI_TN,
+                       maxlines=500)],
+               options=logs_opts(),
+               desc="Opt-in webhook endpoint inventory snapshots. Group chunks by the shared "
+                    "tailscale_snapshot_emission_id, require one matching "
+                    "tailscale_snapshot_revision, then sort tailscale_snapshot_seq before "
+                    "reassembly; do not join separate heartbeat emissions even when their "
+                    "revision is unchanged. Endpoint URLs, secrets, and creator login names "
+                    "are never included. Enable with collectors.webhooks.snapshot_enabled."), 24, 10),
+        (panel("Posture-integration configuration snapshots", "logs",
+               [loki_t("%s | tailscale_snapshot_kind=`posture_integrations` | "
+                       "event_name=`tailscale.posture_integrations.snapshot` |~ `$log_filter`" % LOKI_TN,
+                       maxlines=500)],
+               options=logs_opts(),
+               desc="Opt-in device-posture integration inventory snapshots. Group chunks by the "
+                    "shared tailscale_snapshot_emission_id, require one matching "
+                    "tailscale_snapshot_revision, then sort tailscale_snapshot_seq before "
+                    "reassembly; do not join separate heartbeat emissions even when their "
+                    "revision is unchanged. Provider credentials and raw sync-error text are "
+                    "never included. Enable with collectors.posture_integrations.snapshot_enabled."), 24, 10),
+    ]
+
     return [
         row("Services / VIP", services_vip, present="has_services"),
         # has_svc wired (#495): per-service port gauges only
         row("VIP service detail", services_detail, present="has_svc"),
+        row("Backing host identity", host_identity, present="has_svc", hide_when=["pii_perdevice"]),
         row("Webhook endpoint inventory", webhookinv),
         # Four same-size panels -> AutoGrid, which reflows to the viewport (#526 decision 6).
         autogrid_row("GeoIP enrichment", [geo_age, geo_downloads, geo_lookups, geo_reloads],
                      max_columns=2),
         row("Device-posture integrations", posture),
+        row("Integration configuration history (explicit snapshot opt-in)", snapshots),
     ]

@@ -79,7 +79,7 @@ EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy"]
 # itself is conditional."
 EXPECTED_GATED_LEAVES = {
     "Node Metrics": ("Fleet & Network", "has_nodemetrics"),
-    "Kubernetes Audit": ("Security & Policy", "has_k8s_audit"),
+    "Kubernetes Audit": ("Fleet & Network", "has_k8s_audit"),
 }
 
 # Domains that must stay UNGATED because every one carries at least one always-present
@@ -225,8 +225,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 460)
-        self.assertEqual(len(self.elements), 300, "tailnet dashboard")
+        self.assertEqual(total, 470)
+        self.assertEqual(len(self.elements), 310, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
         # The other half of the count above: #526 moved these two leaves rather than

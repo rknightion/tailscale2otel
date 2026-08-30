@@ -80,6 +80,8 @@ COVERED = {
     # --- ingress WAL, #386 ----------------------------------------------------
     "tailscale2otel_ingress_wal_pending_entries_ratio": INGESTION,
     "tailscale2otel_ingress_wal_pending_size_bytes": INGESTION,
+    "tailscale2otel_ingress_wal_pending_entries_fill_ratio": INGESTION,
+    "tailscale2otel_ingress_wal_pending_size_fill_ratio": INGESTION,
     "tailscale2otel_ingress_wal_orphan_stages_ratio": INGESTION,
     "tailscale2otel_ingress_wal_orphan_size_bytes": INGESTION,
     "tailscale2otel_ingress_wal_completion_markers_ratio": INGESTION,
@@ -98,6 +100,8 @@ COVERED = {
     "tailscale_stream_skipped_total": INGESTION,
     "tailscale_webhook_request_duration_seconds_bucket": INGESTION,
     "tailscale2otel_nodemetrics_metric_names_dropped_total": CARDINALITY,
+    # --- dedup eviction age, TSO-0065 ----------------------------------------
+    "tailscale2otel_dedup_youngest_eviction_age_seconds": INGESTION,
 }
 
 # Panels whose section is optional (its data exists only under a specific
@@ -212,7 +216,7 @@ class SignalCoverageTest(_TabDocs):
                 found.add(metric)
         self.assertEqual(found, set(COVERED),
                          "coverage shrank: %s no longer queried" % sorted(set(COVERED) - found))
-        self.assertEqual(len(COVERED), 33,
+        self.assertEqual(len(COVERED), 36,
                          "the assigned signal count changed; update COVERED deliberately, "
                          "not to make this test pass")
 

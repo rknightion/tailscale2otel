@@ -1350,6 +1350,11 @@
               "description": "also fetch per-service backing-host detail — one extra API call per service (N+1)",
               "type": "boolean"
             },
+            "collect_tag_rollup": {
+              "default": true,
+              "description": "emit tailscale.services.by_tag (one series per ACL tag); false disables the rollup",
+              "type": "boolean"
+            },
             "enabled": {
               "default": true,
               "description": "Tailscale Services (VIP) inventory",
@@ -1363,6 +1368,11 @@
               ],
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
+            },
+            "tag_rollup_limit": {
+              "default": 50,
+              "description": "cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag=\"__other__\" (0/negative = unlimited)",
+              "type": "integer"
             }
           },
           "type": "object"
@@ -2800,7 +2810,7 @@
         },
         "service_addrs": {
           "default": true,
-          "description": "VIP service names",
+          "description": "VIP service names and optional display names",
           "type": "boolean"
         },
         "tailnet_name": {

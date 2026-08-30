@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/audit"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -101,6 +102,43 @@ func TestProcessSchemaDriftWarningCap(t *testing.T) {
 	}
 	if got := strings.Count(logs.String(), "msg="); got != 128 {
 		t.Errorf("schema-drift warnings = %d, want hard cap 128", got)
+	}
+}
+
+func TestProcessSchemaDriftWarningWindowResetsAfterCap(t *testing.T) {
+	var logs bytes.Buffer
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	processor := audit.NewProcessor(
+		audit.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
+		audit.WithClock(func() time.Time { return now }),
+	)
+	recorder := telemetrytest.New()
+
+	for i := range 128 {
+		event := sampleEvent()
+		event.Action = "FUTURE_ACTION_" + strconv.Itoa(i)
+		processor.Process(event, recorder.Emitter())
+	}
+	// The cap still suppresses a new distinct value during the active window.
+	event := sampleEvent()
+	event.Action = "FUTURE_ACTION_0"
+	processor.Process(event, recorder.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 128 {
+		t.Fatalf("schema-drift warnings before TTL = %d, want 128", got)
+	}
+
+	// A long-lived process must become diagnosable again after one warning
+	// window. The exact boundary is intentional: it pins the daily reset rather
+	// than relying on wall-clock sleeps in the test.
+	now = now.Add(24 * time.Hour)
+	processor.Process(event, recorder.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 129 {
+		t.Fatalf("schema-drift warnings after TTL = %d, want 129", got)
+	}
+	// The reset must not remove the per-window de-duplication guarantee.
+	processor.Process(event, recorder.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 129 {
+		t.Fatalf("repeated schema-drift warning after TTL = %d, want 129", got)
 	}
 }
 

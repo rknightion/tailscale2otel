@@ -1,0 +1,6 @@
+services:
+  tailscale2otel:
+    environment:
+      TS2OTEL_ADMIN__ENABLED: "false"
+    healthcheck:
+      disable: true

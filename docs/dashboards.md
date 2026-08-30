@@ -129,6 +129,10 @@ All dashboards resolve datasources by template variable — no pinned UIDs — s
 - `${DS_PROM}` / `ds_prometheus` — a Prometheus datasource (Grafana Cloud default UID: `grafanacloud-prom`)
 - `${DS_LOKI}` / `ds_loki` — a Loki datasource (Grafana Cloud default UID: `grafanacloud-logs`)
 
+Both dashboards also expose one **Instance / environment** ad-hoc control. In a stack receiving
+several exporter installations, add `service_instance_id` and/or
+`deployment_environment_name` filters there to keep every Prometheus panel on the intended install.
+
 ## OTLP → Prometheus naming
 
 Grafana Cloud's OTLP ingest pipeline normalizes metric names before they reach PromQL. The dashboard

@@ -3,13 +3,13 @@
     "Consumed-field disposition contract (#422). Generated + hand-dispositioned.",
     "Regenerate: go test ./internal/tsapi/contract -run TestFieldDispositionsInSync -update",
     "Regeneration adds new fields with an EMPTY disposition and prunes removed ones;",
-    "it never assigns a disposition. Fill every empty one in by hand \u2014 an empty or",
+    "it never assigns a disposition. Fill every empty one in by hand — an empty or",
     "unknown disposition fails TestFieldDispositionsInSync.",
     "disposition: emitted | enrichment | excluded | unhandled",
     "  emitted    - reaches OTLP as a metric value/attribute or log attribute",
     "  enrichment - feeds a cache, derived state or a gating decision; never emitted verbatim",
     "  excluded   - decoded but deliberately dropped; the note must say privacy or cardinality",
-    "  unhandled  - decoded, no consumer yet; an acknowledged gap"
+    "  unhandled  - decoded, no consumer yet; note records the acknowledged gap"
   ],
   "fields": [
     {
@@ -189,7 +189,7 @@
     {
       "op": "getPolicyFile",
       "path": "(whole response)",
-      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) \u2014 an opaque string we never structurally decode; disposition is recorded at op level",
+      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — an opaque string we never structurally decode; disposition is recorded at op level",
       "disposition": "emitted"
     },
     {
@@ -443,7 +443,8 @@
       "op": "listConfigurationAuditLogs",
       "path": "Version",
       "type": "audit.ConfigurationResponse",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "response-envelope version, not an audit-event version; no documented change semantics or safe operational use"
     },
     {
       "op": "listDeviceInvites",
@@ -767,7 +768,8 @@
       "op": "listOAuthApps",
       "path": "Description",
       "type": "tsapi.OAuthApp",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "free-text app description has no bounded operational meaning; exporting it needs a PII policy and a concrete panel use"
     },
     {
       "op": "listOAuthApps",
@@ -797,7 +799,8 @@
       "op": "listOAuthApps",
       "path": "Updated",
       "type": "tsapi.OAuthApp",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "last-modified timestamp has no defined change classification; per-app freshness needs a new signal and dashboard panel"
     },
     {
       "op": "listServiceHosts",
@@ -815,7 +818,13 @@
       "op": "listServiceHosts",
       "path": "NodeID",
       "type": "tsapi.ServiceHost",
-      "disposition": "unhandled"
+      "disposition": "emitted"
+    },
+    {
+      "op": "listServices",
+      "path": "DisplayName",
+      "type": "tsapi.VIPService",
+      "disposition": "emitted"
     },
     {
       "op": "listServices",
@@ -833,7 +842,7 @@
       "op": "listServices",
       "path": "Tags[]",
       "type": "tsapi.VIPService",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listTailnetDevices",
@@ -1050,7 +1059,8 @@
       "op": "listTailnetDevices",
       "path": "TailnetLockKey",
       "type": "tsapi.RichDevice",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "opaque per-device public-key identifier; TailnetLockError already exposes actionable state, while this adds cardinality with no decision use"
     },
     {
       "op": "listTailnetDevices",
@@ -1146,7 +1156,8 @@
       "op": "listTailnetKeys",
       "path": "Updated",
       "type": "tsapi.Key",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "last-modified timestamp has no typed mutation reason; per-key freshness needs a new signal and dashboard panel"
     },
     {
       "op": "listTailnetKeys",
@@ -1165,7 +1176,7 @@
       "op": "listUserInvites",
       "path": "ID",
       "type": "tsapi.UserInvite",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listUserInvites",
@@ -1178,7 +1189,7 @@
       "op": "listUserInvites",
       "path": "InviterID",
       "type": "tsapi.UserInvite",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listUserInvites",
@@ -1196,7 +1207,8 @@
       "op": "listUserInvites",
       "path": "TailnetID",
       "type": "tsapi.UserInvite",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "numeric control-plane tailnet identifier is redundant with configured tailnet scoping and has no cross-tailnet operational use"
     },
     {
       "op": "listUsers",
@@ -1220,7 +1232,8 @@
       "op": "listUsers",
       "path": "DisplayName",
       "type": "tsclient.User",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "free-text personal identity; telemetry already uses ID/login subject to the PII filter, with no operational use for a display name"
     },
     {
       "op": "listUsers",
@@ -1244,7 +1257,8 @@
       "op": "listUsers",
       "path": "ProfilePicURL",
       "type": "tsclient.User",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "identity-bearing external URL has no operational signal; retaining or exporting it would add potentially sensitive endpoint text"
     },
     {
       "op": "listUsers",
@@ -1262,7 +1276,8 @@
       "op": "listUsers",
       "path": "TailnetID",
       "type": "tsclient.User",
-      "disposition": "unhandled"
+      "disposition": "unhandled",
+      "note": "owner-tailnet identifier is redundant with configured tailnet scoping and has no cross-tailnet operational use"
     },
     {
       "op": "listUsers",
@@ -1300,7 +1315,7 @@
       "op": "listWebhooks",
       "path": "LastModified",
       "type": "tsclient.Webhook",
-      "disposition": "unhandled"
+      "disposition": "emitted"
     },
     {
       "op": "listWebhooks",

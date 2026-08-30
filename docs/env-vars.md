@@ -327,6 +327,8 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__SERVICES__ENABLED` | `true` | `restart` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__INTERVAL` | `600s` | `restart` | Tailscale Services (VIP) inventory |
 | `TS2OTEL_COLLECTORS__SERVICES__COLLECT_HOSTS` | `false` | `restart` | also fetch per-service backing-host detail — one extra API call per service (N+1) |
+| `TS2OTEL_COLLECTORS__SERVICES__COLLECT_TAG_ROLLUP` | `true` | `restart` | emit tailscale.services.by_tag (one series per ACL tag); false disables the rollup |
+| `TS2OTEL_COLLECTORS__SERVICES__TAG_ROLLUP_LIMIT` | `50` | `restart` | cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag="__other__" (0/negative = unlimited) |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__ENABLED` | `false` | `restart` | OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__INTERVAL` | `60s` | `restart` | how often each target is scraped |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__TIMEOUT` | `10s` | `restart` | per-scrape HTTP timeout |
@@ -389,7 +391,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PII_FILTER__TAILSCALE_IPS` | `true` | `restart` | 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses |
 | `TS2OTEL_PII_FILTER__INTERNAL_IPS` | `true` | `restart` | RFC1918 / ULA / link-local addresses |
 | `TS2OTEL_PII_FILTER__EXTERNAL_IPS` | `true` | `restart` | public/routable addresses |
-| `TS2OTEL_PII_FILTER__SERVICE_ADDRS` | `true` | `restart` | VIP service names |
+| `TS2OTEL_PII_FILTER__SERVICE_ADDRS` | `true` | `restart` | VIP service names and optional display names |
 | `TS2OTEL_PII_FILTER__ENDPOINT_PATHS` | `true` | `restart` | Tailscale API endpoint paths (self-obs) |
 | `TS2OTEL_PII_FILTER__NETWORK_TOPOLOGY` | `true` | `restart` | route CIDRs + split-DNS domains + search paths |
 | `TS2OTEL_PII_FILTER__TAILNET_NAME` | `true` | `restart` | tailnet identifier |

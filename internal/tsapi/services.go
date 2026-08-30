@@ -6,7 +6,7 @@ import (
 )
 
 // VIPService is a Tailscale Service (VIP) — a tailnet-internal virtual service
-// fronted by one or more backing hosts. Only the non-sensitive name/ports/tags
+// fronted by one or more backing hosts. Only the service identity/ports/tags
 // are decoded; the addrs/comment/annotations fields (which carry IP addresses
 // and operator IDs) are deliberately ignored so they cannot become telemetry.
 //
@@ -17,9 +17,10 @@ import (
 // the derived service name may be. This VIPService type and the Services()
 // decode path are unaffected and still never see addrs.
 type VIPService struct {
-	Name  string
-	Ports []string
-	Tags  []string
+	Name        string
+	DisplayName string
+	Ports       []string
+	Tags        []string
 }
 
 // ServiceHost is a device backing a VIP service, with its approval and
@@ -35,9 +36,10 @@ type vipServicesResponse struct {
 }
 
 type vipService struct {
-	Name  string   `json:"name"`
-	Ports []string `json:"ports"`
-	Tags  []string `json:"tags"`
+	Name        string   `json:"name"`
+	DisplayName string   `json:"displayName"`
+	Ports       []string `json:"ports"`
+	Tags        []string `json:"tags"`
 }
 
 type serviceHostsResponse struct {

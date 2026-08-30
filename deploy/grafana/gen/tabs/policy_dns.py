@@ -1,8 +1,8 @@
 """tab_policy_dns() — the "DNS & Settings" leaf of the Policy & Config sub-tab group (#526).
 
-Split out of tabs/policy.py. Two rows: the tailnet's DNS configuration (MagicDNS, name
-servers, search paths, split-DNS zones, resolvers) and the tailnet-wide feature/setting
-switches that sit alongside it.
+Split out of tabs/policy.py. Three rows: the tailnet's DNS configuration (MagicDNS, name
+servers, search paths, split-DNS zones, resolvers), the tailnet-wide feature/setting
+switches that sit alongside it, and opt-in configuration snapshot history.
 
 Consolidation (#526 decision 7): the old single-panel "DNS resolvers" row is merged into
 "DNS". It was gated `present="has_dns_resolver"`, and that gate is deliberately NOT carried
@@ -12,8 +12,8 @@ leaf declares a sentinel as a result; there is no gated row left to consume one,
 declared sentinel that gates nothing fails the build.
 """
 
-from builder import (barchart_opts, lot, organize, panel, prom_t, row, stat_opts, thr,
-                     WIN_SLOW)
+from builder import (barchart_opts, logs_opts, loki_t, lot, organize, panel, prom_t, row,
+                     stat_opts, thr, WIN_SLOW)
 from maps import BOOL_HEALTHY_ON, BOOL_NEUTRAL
 
 DOCS = "https://m7kni.io/tailscale2otel"
@@ -24,11 +24,19 @@ _INFRA_TBL = ["Time", "__name__", "job", "instance",
               "deployment_environment_name", "otel_scope_name", "otel_scope_version"]
 
 TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+LOKI_TN = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
+           '| tailscale2otel_provider=~"$provider"')
 
 
 def sel(metric, extra=""):
     """`<metric>{<tailnet/provider filter>[, <extra>]}` — the filtered selector."""
     return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
+
+def snapshot_log(event, kind):
+    """Loki selector for one source using the shared snapshot attribute shape."""
+    return ("%s | tailscale_snapshot_kind=`%s` | event_name=`%s` |~ `$log_filter`"
+            % (LOKI_TN, kind, event))
 
 
 def tab_policy_dns(scope):
@@ -138,7 +146,27 @@ def tab_policy_dns(scope):
                     "endpoint."), 6, 5),
     ]
 
+    snapshots = [
+        (panel("DNS configuration snapshots", "logs",
+               [loki_t(snapshot_log("tailscale.dns.snapshot", "dns"), maxlines=500)],
+               options=logs_opts(),
+               desc="Opt-in DNS configuration snapshots. Group chunks by the shared "
+                    "tailscale_snapshot_emission_id, require one matching "
+                    "tailscale_snapshot_revision, then sort tailscale_snapshot_seq before "
+                    "reassembly. The snapshot includes resolver addresses and search domains, "
+                    "so it is disabled unless collectors.dns.snapshot_enabled is explicitly "
+                    "set."), 24, 10),
+        (panel("Tailnet settings snapshots", "logs",
+               [loki_t(snapshot_log("tailscale.settings.snapshot", "settings"), maxlines=500)],
+               options=logs_opts(),
+               desc="Opt-in tailnet-settings snapshots with the same canonical snapshot "
+                    "attributes and chunk-reassembly contract as DNS. The ACL external-link "
+                    "value is reduced to a presence boolean; it is never emitted. Enable with "
+                    "collectors.settings.snapshot_enabled."), 24, 10),
+    ]
+
     return [
         row("DNS", dns),
         row("Settings & features", settings),
+        row("Configuration history (explicit snapshot opt-in)", snapshots),
     ]

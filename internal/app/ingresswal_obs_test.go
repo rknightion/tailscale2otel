@@ -25,11 +25,13 @@ func TestEmitIngressWALHealthUsesProcessGlobalAttributeFreeGauges(t *testing.T) 
 	emitIngressWALHealth(rec.Emitter(), coordinator)
 
 	for name, want := range map[string]float64{
-		appcatalog.MetricIngressWALPendingEntries:    2,
-		appcatalog.MetricIngressWALPendingSize:       8,
-		appcatalog.MetricIngressWALOrphanStages:      0,
-		appcatalog.MetricIngressWALOrphanSize:        0,
-		appcatalog.MetricIngressWALCompletionMarkers: 0,
+		appcatalog.MetricIngressWALPendingEntries:     2,
+		appcatalog.MetricIngressWALPendingSize:        8,
+		appcatalog.MetricIngressWALPendingEntriesFill: 0.02,
+		appcatalog.MetricIngressWALPendingSizeFill:    8.0 / (1 << 20),
+		appcatalog.MetricIngressWALOrphanStages:       0,
+		appcatalog.MetricIngressWALOrphanSize:         0,
+		appcatalog.MetricIngressWALCompletionMarkers:  0,
 	} {
 		points := rec.MetricPoints(name)
 		if len(points) != 1 {

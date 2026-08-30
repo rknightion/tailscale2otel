@@ -122,8 +122,35 @@ def tab_policy_access(scope):
                     "the policy itself for the detail."), 10, 6),
     ]
 
+    # Snapshot chunks carry full raw policy text only after the explicit
+    # snapshot opt-in. The table is intentionally keyed by emission ID and
+    # ordered by sequence: never join same-ETag heartbeats together. Each
+    # selected emission must have exactly one revision before its chunks are
+    # concatenated in seq order by the reader/export workflow.
+    snapshots = [
+        (panel("Policy snapshots (chunked)", "logs",
+               [loki_t("%s | event_name=`tailscale.acl.policy_snapshot` |~ `$log_filter`" % LOKI_TN,
+                       maxlines=500)],
+               options={"showTime": True, "wrapLogMessage": False,
+                        "sortOrder": "Ascending", "enableLogDetails": True},
+               desc="Raw policy chunks, grouped by tailscale_snapshot_emission_id. Reassemble only "
+                    "one emission-id group whose tailscale_snapshot_revision is identical on every "
+                    "chunk, sorting tailscale_snapshot_seq ascending; do not join two same-ETag "
+                    "heartbeat groups. Disabled unless collectors.acl.snapshot_enabled explicitly "
+                    "consents to exporting user emails and group membership into log retention."), 24, 12),
+        (panel("Policy changes (unified diffs)", "logs",
+               [loki_t("%s | event_name=`tailscale.acl.policy_diff` |~ `$log_filter`" % LOKI_TN,
+                       maxlines=200)],
+               options={"showTime": True, "wrapLogMessage": True,
+                        "sortOrder": "Descending", "enableLogDetails": True},
+               desc="Unified diff from the previous raw policy body to this revision. It is emitted "
+                    "only when the snapshot opt-in is enabled and an ETag changes; the baseline is "
+                    "persisted beside checkpoint evidence so a post-restart change remains useful."), 24, 9),
+    ]
+
     return [
         row("Access control (ACL)", acl),
         # policy validation health, next to the ACL snapshot it validates
         row("ACL policy validation", aclvalidation),
+        row("Policy history (explicit raw-body opt-in)", snapshots),
     ]

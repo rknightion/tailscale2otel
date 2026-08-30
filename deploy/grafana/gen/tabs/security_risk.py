@@ -89,10 +89,11 @@ def tab_security_risk(scope):
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.acl.risky_rule` "
                        "|~ `$log_filter`", maxlines=200)],
                options=logs_opts(),
-               desc="One WARN record per unrestricted rule — wildcard `src` AND wildcard `dst` in "
-                    "a non-deny rule — naming the policy section (tailscale_acl_section) and the "
-                    "offending src/dst entries (tailscale_acl_rule). This is the detail behind the "
-                    "'Unrestricted rules' counts above: the counts say how many, this says which. "
+               desc="One WARN record per changed-policy risk finding: unrestricted ACL/grant rules, "
+                    "wildcard SSH rules, or wildcard auto-approvers. tailscale_acl_risk_class names "
+                    "which; the policy section (tailscale_acl_section) and offending entries "
+                    "(tailscale_acl_rule) carry the detail. This is the detail behind the counts above: "
+                    "the counts say how many, this says which. "
                     "Needs the acl collector (collectors.acl); the rule text is free-text and is "
                     "dropped when pii_filter.free_text_details is on, leaving the section only."), 24, 9),
     ]

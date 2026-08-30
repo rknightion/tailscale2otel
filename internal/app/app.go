@@ -561,7 +561,7 @@ func newAppShell(
 func (a *App) buildProcessDeps() {
 	cfg := a.cfg
 	if cfg.Enrichment.ReverseDNS.Enabled {
-		ropts := rdnsOptions(cfg)
+		ropts := rdnsOptions(cfg, a.checkpointPath)
 		// rdns is shared infra across tailnets; its self-obs rides the process
 		// provider. The status page reads Stats() directly regardless.
 		if cfg.SelfObservability.Enabled {
@@ -659,6 +659,7 @@ func (a *App) addRuntimeConfigured(
 		tracer:        a.tracer,
 		store:         a.store,
 		evidenceStore: a.evidenceStore,
+		evidencePath:  a.evidencePath,
 		procEmitter:   a.procEmitter,
 		rdnsCache:     a.rdnsCache,
 		geoDB:         a.geoDB,
@@ -839,11 +840,16 @@ func (a *App) Run(ctx context.Context) error {
 		// just runtimes[0]'s (#60).
 		go runDedupReporter(ctx, a.procEmitter, interval, map[string]*dedup.Set{
 			"webhook_cross": a.webhookDedup,
+		}, map[string]time.Duration{
+			"webhook_cross": a.cfg.Collectors.Auditlogs.Interval.D(),
 		})
 		for _, rt := range a.runtimes {
 			go runDedupReporter(ctx, rt.emitter, interval, map[string]*dedup.Set{
 				"flow":  rt.flowDedup,
 				"audit": rt.auditDedup,
+			}, map[string]time.Duration{
+				"flow":  maxDuration(a.cfg.Collectors.Flowlogs.Interval.D(), a.cfg.Collectors.Flowlogs.ReplayOverlap.D()),
+				"audit": a.cfg.Collectors.Auditlogs.Interval.D(),
 			})
 		}
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)

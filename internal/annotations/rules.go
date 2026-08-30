@@ -74,6 +74,16 @@ const (
 	// RuleConfigChange is the curated subset of the Tailscale configuration
 	// audit log.
 	RuleConfigChange = "tailscale.config_change"
+	// RulePolicySnapshot marks the change edge of an ACL policy snapshot. The
+	// snapshot emitter also emits heartbeat records; those are deliberately not
+	// annotations because a heartbeat is not a policy change.
+	RulePolicySnapshot = "tailscale.policy_snapshot"
+	// RulePolicyDiff marks the unified diff emitted for a changed ACL policy.
+	RulePolicyDiff = "tailscale.policy_diff"
+	// RuleInventoryChange marks one change-driven device inventory record.
+	RuleInventoryChange = "tailscale.device_inventory_change"
+	// RuleRiskFinding marks one bounded ACL risk finding.
+	RuleRiskFinding = "tailscale.acl.risk_finding"
 	// RuleKeyExpiring is an auth key / API key entering its warning window.
 	RuleKeyExpiring = "tailscale.key_expiring"
 	// RuleDeviceKeyExpiring is a device node key entering its warning window.
@@ -89,6 +99,10 @@ const (
 // against internal/catalog's declared log events.
 const (
 	eventConfigAudit     = "tailscale.config.audit"
+	eventPolicySnapshot  = "tailscale.acl.policy_snapshot"
+	eventPolicyDiff      = "tailscale.acl.policy_diff"
+	eventInventoryChange = "tailscale.device.change"
+	eventRiskyRule       = "tailscale.acl.risky_rule"
 	eventKeyExpiring     = "tailscale.key.expiring"
 	eventDeviceKeyExpiry = "tailscale.device.key_expiring"
 )
@@ -113,22 +127,44 @@ const (
 	attrKeyExpiresIn     = "tailscale.key.expires_in_seconds"
 	attrKeyOwner         = "tailscale.key.owner"
 	attrDeviceExpiryDays = "tailscale.device.key_expires_in_days"
+
+	// Snapshot attributes are the canonical shape from internal/snapshot. The
+	// ACL etag is retained as a compatibility/detail field by the policy
+	// collector and is also a useful fallback identity for hand-written emit
+	// sites.
+	attrSnapshotKind     = "tailscale.snapshot.kind"
+	attrSnapshotReason   = "tailscale.snapshot.reason"
+	attrSnapshotRevision = "tailscale.snapshot.revision"
+	attrACLEtag          = "tailscale.acl.etag"
+
+	// Device inventory change attributes are a deliberately small, bounded
+	// contract. Names, users and tags remain details (and therefore continue to
+	// pass through the configured PII redactor), never Grafana tags.
+	attrDeviceChange = "tailscale.device.change"
+	attrDeviceField  = "tailscale.device.field"
+
+	// Risk attributes are emitted by the ACL risk pass. risk_class is a closed
+	// enum; rule is free text and is redacted as configured before it reaches
+	// annotation text.
+	attrRiskClass   = "tailscale.acl.risk_class"
+	attrRiskSection = "tailscale.acl.section"
+	attrRiskRule    = "tailscale.acl.rule"
 )
 
 // Rules returns the curated, closed rule set.
 //
-// # Why these three and not more
+// # Why these rules and not more
 //
-// The categories were selected on #518. Two candidate sources were considered
-// and REJECTED, and the reasons are here rather than in a commit message
-// because "it is missing" and "it was excluded" look identical from outside:
+// The original categories were selected on #518. Wave 2 adds only sources that
+// are change-driven (or have a stable revision identity), and the reasons are
+// here rather than in a commit message because "it is missing" and "it was
+// excluded" look identical from outside:
 //
-//   - tailscale.acl.risky_rule / tailscale.acl.validation_issue /
-//     tailscale.device.tailnet_lock_error describe a STANDING posture, not a
-//     point in time. They are re-emitted for as long as the condition holds, so
-//     annotating them draws a picket fence across the dashboard rather than
-//     marking a moment. A posture regression wants an alert, which the repo
-//     already ships.
+//   - tailscale.acl.validation_issue and tailscale.device.tailnet_lock_error
+//     describe a STANDING posture, not a point in time. They are re-emitted for
+//     as long as the condition holds, so annotating them draws a picket fence
+//     across the dashboard rather than marking a moment. A posture regression
+//     wants an alert, which the repo already ships.
 //   - tailscale.network.flow is per-connection, and annotating traffic would
 //     bury every real marker under thousands of them.
 func Rules() []Rule {
@@ -176,6 +212,105 @@ func Rules() []Rule {
 					attrString(a, attrAuditAction),
 				)
 				return strings.TrimSpace(category + " " + strings.ToLower(attrString(a, attrAuditAction)))
+			},
+		},
+		{
+			ID:        RulePolicySnapshot,
+			Category:  CategoryPolicyChange,
+			EventName: eventPolicySnapshot,
+			// A snapshot heartbeat keeps Loki query results fresh but does not
+			// represent a policy edit. Only the change edge gets an annotation.
+			Match: func(a telemetry.Attrs) bool {
+				return attrString(a, attrSnapshotReason) == "change"
+			},
+			// Chunks from one snapshot share a revision, emission id and event
+			// timestamp. Revision is the source identity, so a large body still
+			// produces one marker rather than one marker per chunk.
+			Identity: func(a telemetry.Attrs, eventTime time.Time) []string {
+				return revisionIdentity(a, eventTime)
+			},
+			Detail: []string{
+				attrSnapshotKind, attrSnapshotReason, attrSnapshotRevision,
+				attrACLEtag, "tailscale.snapshot.bytes",
+			},
+			Title: func(telemetry.Attrs) string { return "ACL policy changed" },
+		},
+		{
+			ID:        RuleInventoryChange,
+			Category:  CategoryInventory,
+			EventName: eventInventoryChange,
+			// The event is dedicated, but classify its bounded transition kind
+			// explicitly so malformed/future values cannot create an unqueryable
+			// annotation class.
+			Match: func(a telemetry.Attrs) bool {
+				switch attrString(a, attrDeviceChange) {
+				case "added", "removed", "changed":
+					return true
+				default:
+					return false
+				}
+			},
+			// A source event timestamp is part of the identity: one device can
+			// materially change more than once, while re-delivery of one record
+			// retains its timestamp and therefore dedupes.
+			Identity: func(a telemetry.Attrs, eventTime time.Time) []string {
+				deviceID := attrString(a, semconv.HostID)
+				if deviceID == "" {
+					deviceID = attrString(a, semconv.HostName)
+				}
+				return []string{
+					deviceID,
+					attrString(a, attrDeviceChange),
+					attrString(a, attrDeviceField),
+					eventTime.UTC().Format(time.RFC3339Nano),
+				}
+			},
+			Detail: []string{
+				attrDeviceChange, attrDeviceField,
+				semconv.HostName, semconv.HostID, semconv.OSType, semconv.OSVersion,
+				semconv.AttrUser, semconv.AttrTags,
+			},
+			Title: func(a telemetry.Attrs) string {
+				kind := attrString(a, attrDeviceChange)
+				if kind == "" {
+					kind = "changed"
+				}
+				return "device " + kind
+			},
+		},
+		{
+			ID:        RuleRiskFinding,
+			Category:  CategoryRisk,
+			EventName: eventRiskyRule,
+			// Risk class is a bounded classifier emitted by the risk pass. An
+			// unknown value is not a useful marker and must not silently become
+			// a new unbounded tag/detail vocabulary.
+			Match: func(a telemetry.Attrs) bool {
+				switch attrString(a, attrRiskClass) {
+				case "unrestricted", "ssh_wildcard", "autoapprover_wildcard":
+					return true
+				default:
+					return false
+				}
+			},
+			// section + class + rule identify one finding. The producer emits
+			// findings only on a policy revision change, and retaining this
+			// identity suppresses a finding that remains present on later
+			// observations instead of drawing a marker on every poll.
+			Identity: func(a telemetry.Attrs, _ time.Time) []string {
+				return []string{
+					attrString(a, attrRiskClass),
+					attrString(a, attrRiskSection),
+					attrString(a, attrRiskRule),
+				}
+			},
+			Detail: []string{attrRiskClass, attrRiskSection, attrRiskRule},
+			Title: func(a telemetry.Attrs) string {
+				class := attrString(a, attrRiskClass)
+				if class == "" {
+					class = "finding"
+				}
+				return "ACL risk " + strings.ReplaceAll(class, "_", " ")
 			},
 		},
 		{
@@ -234,6 +369,22 @@ func Rules() []Rule {
 			},
 		},
 	}
+}
+
+// revisionIdentity returns the stable source revision carried by snapshot
+// records. The etag fallback keeps the rule useful for a minimal policy-diff
+// emitter that has not copied the generic snapshot revision attribute. If
+// neither is available, the event timestamp is the only identity available;
+// it still dedupes redelivery when the source preserves its timestamp.
+func revisionIdentity(a telemetry.Attrs, eventTime time.Time) []string {
+	revision := attrString(a, attrSnapshotRevision)
+	if revision == "" {
+		revision = attrString(a, attrACLEtag)
+	}
+	if revision != "" {
+		return []string{revision}
+	}
+	return []string{eventTime.UTC().Format(time.RFC3339Nano)}
 }
 
 // expiryBucket reconstructs the fixed instant a countdown points at and

@@ -30,6 +30,8 @@ const (
 	MetricKeyScopes        = "tailscale.key.scopes"
 	MetricKeyPreauthorized = "tailscale.key.preauthorized"
 	MetricKeysByOwner      = "tailscale.keys.by_owner"
+	EventKeyCreated        = "tailscale.key.created"
+	EventKeyRevoked        = "tailscale.key.revoked"
 	EventExpiring          = "tailscale.key.expiring"
 
 	// MetricKeyScopeClass is the #415 bounded REPLACEMENT for reasoning about a
@@ -56,9 +58,14 @@ const (
 	attrRevoked     = "tailscale.key.revoked"
 	attrInvalid     = "tailscale.key.invalid"
 	attrExpiresIn   = "tailscale.key.expires_in_seconds"
-	attrScopeValues = "tailscale.key.scope_values"
-	attrOwner       = "tailscale.key.owner"
-	attrTags        = "tailscale.key.tags"
+	// attrLifecycleTransition is a bounded transition label shared by the
+	// lifecycle events emitted by the inventory collectors. It is deliberately
+	// not a key identity dimension: the event name and key id identify the
+	// record, while this value makes the normalized transition explicit.
+	attrLifecycleTransition = "tailscale.lifecycle.transition"
+	attrScopeValues         = "tailscale.key.scope_values"
+	attrOwner               = "tailscale.key.owner"
+	attrTags                = "tailscale.key.tags"
 	// attrScopeClass and attrTagScope are pre-registered, frozen non-identifier
 	// attribute keys (internal/telemetry/pii/registry.go, EPIC-03/#479) — they
 	// double as both the metric name and the attribute carrying the
@@ -98,11 +105,19 @@ const (
 	expiryLogModeDaily     = "daily"
 	expiryLogModeAlways    = "always"
 	expiryLogModeOff       = "off"
+	lifecycleCreated       = "created"
+	lifecycleRevoked       = "revoked"
+	lifecycleExpiringSoon  = "expiring_soon"
 )
 
 type expiryState struct {
 	expiresAt   time.Time
 	lastEmitted time.Time
+}
+
+type lifecycleState struct {
+	createdEmitted bool
+	revokedEmitted bool
 }
 
 // opListTailnetKeys is the upstream operationId of the list call.
@@ -116,13 +131,14 @@ type lister interface {
 
 // Collector reports Tailscale key inventory on each tick.
 type Collector struct {
-	api           lister
-	interval      time.Duration
-	expiryWarn    time.Duration
-	now           func() time.Time
-	perEntity     bool
-	expiryLogMode string // "daily" (default) | "always" | "off"
-	expiryState   map[string]expiryState
+	api            lister
+	interval       time.Duration
+	expiryWarn     time.Duration
+	now            func() time.Time
+	perEntity      bool
+	expiryLogMode  string // "daily" (default) | "always" | "off"
+	expiryState    map[string]expiryState
+	lifecycleState map[string]lifecycleState
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -202,13 +218,14 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 		now = time.Now
 	}
 	c := &Collector{
-		api:           api,
-		interval:      interval,
-		expiryWarn:    expiryWarn,
-		now:           now,
-		perEntity:     true,
-		expiryLogMode: expiryLogModeDaily,
-		expiryState:   make(map[string]expiryState),
+		api:            api,
+		interval:       interval,
+		expiryWarn:     expiryWarn,
+		now:            now,
+		perEntity:      true,
+		expiryLogMode:  expiryLogModeDaily,
+		expiryState:    make(map[string]expiryState),
+		lifecycleState: make(map[string]lifecycleState),
 	}
 	for _, o := range opts {
 		o(c)
@@ -279,11 +296,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	counts := make(map[countKey]int)
 	byOwner := make(map[ownerKey]int)
 	currentExpiring := make(map[string]struct{})
+	currentKeys := make(map[string]struct{}, len(ks))
 
 	for i := range ks {
 		k := ks[i]
 		typ, authKind := classify(k)
 		revoked := !k.Revoked.IsZero()
+
+		// Keys expose source lifecycle timestamps, so these transitions can be
+		// reported without treating a snapshot boundary as an inferred event.
+		// A missing Created timestamp is unknown rather than evidence that the
+		// key was just created; if it appears on a later successful scrape, the
+		// event is emitted then. Revocation is likewise driven only by the
+		// explicit Revoked timestamp, never by Invalid or disappearance.
+		if k.ID != "" {
+			currentKeys[k.ID] = struct{}{}
+			state := c.lifecycleState[k.ID]
+			if !state.createdEmitted && !k.Created.IsZero() {
+				emitKeyLifecycle(e, EventKeyCreated, lifecycleCreated, k, typ, authKind, k.Created, now)
+				state.createdEmitted = true
+			}
+			if !state.revokedEmitted && !k.Revoked.IsZero() {
+				emitKeyLifecycle(e, EventKeyRevoked, lifecycleRevoked, k, typ, authKind, k.Revoked, now)
+				state.revokedEmitted = true
+			}
+			c.lifecycleState[k.ID] = state
+		}
 
 		counts[countKey{typ: typ, authKind: authKind, revoked: revoked, invalid: k.Invalid}]++
 		if k.UserID != "" {
@@ -318,11 +356,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					currentExpiring[k.ID] = struct{}{}
 					if expiryLogDue(c.expiryLogMode, c.expiryState, k.ID, k.Expires, now) {
 						attrs := telemetry.Attrs{
-							attrID:          k.ID,
-							attrType:        typ,
-							attrAuthKind:    authKind,
-							attrDescription: k.Description,
-							attrExpiresIn:   strconv.Itoa(int(until.Seconds())),
+							attrID:                  k.ID,
+							attrType:                typ,
+							attrAuthKind:            authKind,
+							attrDescription:         k.Description,
+							attrExpiresIn:           strconv.Itoa(int(until.Seconds())),
+							attrLifecycleTransition: lifecycleExpiringSoon,
 						}
 						addOwner(attrs, k)
 						addTags(attrs, k)
@@ -409,6 +448,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			delete(c.expiryState, id)
 		}
 	}
+	for id := range c.lifecycleState {
+		if _, ok := currentKeys[id]; !ok {
+			// A key omitted from a later inventory is not classified as revoked
+			// or deleted. Drop the bounded baseline so a genuinely reintroduced
+			// key can be observed again without retaining unbounded churn state.
+			delete(c.lifecycleState, id)
+		}
+	}
 
 	for key, n := range counts {
 		e.Gauge(docKeysCount.Name, docKeysCount.Unit, docKeysCount.Description,
@@ -443,6 +490,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	return nil
+}
+
+func emitKeyLifecycle(e telemetry.Emitter, name, transition string, k tsapi.Key,
+	typ, authKind string, eventTime, observedAt time.Time) {
+	attrs := telemetry.Attrs{
+		attrID:                  k.ID,
+		attrType:                typ,
+		attrAuthKind:            authKind,
+		attrDescription:         k.Description,
+		attrLifecycleTransition: transition,
+	}
+	addOwner(attrs, k)
+	addTags(attrs, k)
+
+	bodyVerb := transition
+	if transition == lifecycleExpiringSoon {
+		bodyVerb = "is expiring soon"
+	}
+	e.LogEvent(telemetry.Event{
+		Name:              name,
+		Severity:          telemetry.SeverityInfo,
+		Body:              fmt.Sprintf("Tailscale key %q %s", keyLabel(k), bodyVerb),
+		Timestamp:         eventTime,
+		ObservedTimestamp: observedAt,
+		Attrs:             attrs,
+	})
 }
 
 // emitScopeClass zero-seeds k's privilege class across every tsscope.Class

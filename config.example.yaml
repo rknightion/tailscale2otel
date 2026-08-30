@@ -484,6 +484,8 @@ collectors:
     enabled: true
     interval: 600s
     collect_hosts: false              # also fetch per-service backing-host detail — one extra API call per service (N+1)
+    collect_tag_rollup: true          # emit tailscale.services.by_tag (one series per ACL tag); false disables the rollup
+    tag_rollup_limit: 50              # cap distinct service-tag series; busiest N kept, rest fold into tailscale.tag="__other__" (0/negative = unlimited)
   node_metrics:                       # OPTIONAL: scrape tailscaled per-node Prometheus /metrics and forward them centrally. Off by default; see docs/node-metrics.md
     enabled: false
     interval: 60s                     # how often each target is scraped
@@ -592,7 +594,7 @@ pii_filter:
   tailscale_ips: true       # 100.64.0.0/10 + fd7a:115c:a1e0::/48 addresses
   internal_ips: true        # RFC1918 / ULA / link-local addresses
   external_ips: true        # public/routable addresses
-  service_addrs: true       # VIP service names
+  service_addrs: true       # VIP service names and optional display names
   endpoint_paths: true      # Tailscale API endpoint paths (self-obs)
   network_topology: true    # route CIDRs + split-DNS domains + search paths
   tailnet_name: true        # tailnet identifier

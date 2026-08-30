@@ -352,7 +352,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(100, len(alert_rules()))
+        self.assertEqual(102, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_durations_are_go_style_strings(self):
@@ -383,6 +383,40 @@ class RuleShapeTest(unittest.TestCase):
             for rule in group:
                 with self.subTest(uid=rule["uid"]):
                     self.assertEqual({"interval": rules.INTERVAL}, rule["trigger"])
+
+
+class IngestionCapacityAlertTest(unittest.TestCase):
+    """The capacity alerts must consume the derived signals directly.
+
+    The old dedup rule intentionally watches raw eviction rate only as a
+    paused diagnostic: steady-state evictions are normal. These checks keep
+    the actionable rules tied to the fill/age gauges added for TSO-0060 and
+    TSO-0065 rather than allowing a future edit to regress to the old
+    misleading counters.
+    """
+
+    def test_wal_alert_uses_both_fill_gauges_and_precliff_threshold(self):
+        rule = rules.rules_by_uid()["ts2o-ingress-wal-near-capacity"]
+        expr = rules.rule_expr(rule)
+        self.assertIn("tailscale2otel_ingress_wal_pending_entries_fill_ratio", expr)
+        self.assertIn("tailscale2otel_ingress_wal_pending_size_fill_ratio", expr)
+        self.assertNotIn("tailscale2otel_ingress_wal_pending_entries_ratio", expr)
+        self.assertNotIn("tailscale2otel_ingress_wal_pending_size_bytes", expr)
+        self.assertEqual("gt", rule["_prom"]["op"])
+        self.assertEqual(0.8, rule["_prom"]["thr"])
+        self.assertFalse(rule["paused"])
+        self.assertEqual("optional", rules.POLICY_BY_UID[rule["uid"]])
+
+    def test_dedup_alert_uses_eviction_age_not_raw_eviction_rate(self):
+        rule = rules.rules_by_uid()["ts2o-dedup-youngest-eviction"]
+        expr = rules.rule_expr(rule)
+        self.assertIn("tailscale2otel_dedup_youngest_eviction_age_seconds", expr)
+        self.assertIn("tailscale2otel_dedup_overlap_horizon_seconds", expr)
+        self.assertNotIn("tailscale2otel_dedup_evictions_total", expr)
+        self.assertEqual("lt", rule["_prom"]["op"])
+        self.assertEqual(1, rule["_prom"]["thr"])
+        self.assertFalse(rule["paused"])
+        self.assertEqual("optional", rules.POLICY_BY_UID[rule["uid"]])
 
 
 class AlertableSignalCoverageTest(unittest.TestCase):

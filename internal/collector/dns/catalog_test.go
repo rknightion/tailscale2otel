@@ -27,7 +27,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		SearchPaths:      []string{"example.com"},
 		OverrideLocalDNS: true,
 		MagicDNS:         true,
-	}}, 0, dns.WithAPIState(tr))
+	}}, 0, dns.WithAPIState(tr), dns.WithSnapshot(true))
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}

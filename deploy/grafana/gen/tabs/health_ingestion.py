@@ -17,6 +17,8 @@ de-duplicated before delivery. Content here is a mix of:
     catalog signals that reached no panel anywhere before #526
     (tailscale2otel.processor.queue.size/.capacity/.dropped,
     tailscale2otel.log.record.truncated, tailscale2otel.log.truncated.bytes).
+  - the ingress-WAL capacity-fill and dedup eviction-age rows added by
+    TSO-0060/TSO-0065.
 
 Consolidation (#526 decision 7): several near-duplicate single-purpose panels
 from the two source tabs are merged into one multi-series panel where the
@@ -64,54 +66,11 @@ ceiling after the audit-row addition:
     right-axis series — 2 -> 1.
 """
 
-from builder import (bargauge_opts, hq, loki_t, lot, organize, panel, prom_t, RI, row,
-                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts,
-                     vmap, WIN_FAST, WIN_SLOW)
+from builder import (bargauge_opts, CFG_DOC, hq, LOKI_TN, loki_t, lot, organize,
+                     panel, prom_t, q_hist, RI, row, sel, sentinel, STATE_KEY,
+                     stat_opts, TBL_NOISE, thr, ts_custom, ts_opts, vmap,
+                     WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON
-
-# --- copied verbatim from tabs/events.py (that module keeps its own copies for the rows
-# that stayed there — see its docstring). Not importable from here: events.py is READ-ONLY
-# to this lane and, more fundamentally, a shared helper used by two independently-owned tab
-# modules belongs in builder.py, not one tab reaching into another's module.
-CFG_DOC = "https://m7kni.io/tailscale2otel/configuration/"
-
-TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
-LOKI_TN = '{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet"'
-
-
-def sel(metric, extra=""):
-    """`<metric>{<tailnet/provider filter>[, <extra>]}` — the filtered selector."""
-    return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
-
-
-def q_hist(quantile, metric):
-    """histogram_quantile over a tailnet-filtered `<metric>_bucket`.
-
-    builder.hq() cannot be reused here: it appends `_bucket` to whatever string
-    it is given, so a selector would come out as `metric{...}_bucket`.
-    """
-    return ("histogram_quantile(%s, sum by (le) (rate(%s[%s])))"
-            % (quantile, sel(metric + "_bucket"), RI))
-
-
-# The state key #393 asks for, written once and appended to every panel in the
-# "Audit pipeline state" row so a reader lands on it wherever they look first.
-# It states its own limit on purpose: presence cannot separate "switched off"
-# from "unsupported" from "never deployed" (#385), so the row names the
-# prerequisite and stops, rather than asserting a cause it cannot know.
-STATE_KEY = (
-    "\n\nReading this row — four states that otherwise look identical:\n\n"
-    "- **idle tailnet**: the collector scrape reads 1, the accepted counter has series, and "
-    "both range counters read 0. Nothing happened.\n"
-    "- **absent Loki data**: the metric counter moved over this range but the Loki counter "
-    "is 0. Events were accepted; the log records are not in the queried Loki datasource.\n"
-    "- **ingestion failure**: the scrape gauge reads 0, or the failures panel is non-zero. "
-    "Records are being attempted and lost.\n"
-    "- **audit collection not enabled**: no scrape series and no accepted counter at all. "
-    "This one is a floor, not a verdict — presence **cannot** separate a disabled collector "
-    "from a provider that does not support the API from a process that was never deployed, "
-    "so the empty states name the prerequisite instead of guessing why."
-)
 
 # Empty-state copy, carried over verbatim from tabs/diagnostics.py (#526 — this
 # tab does not edit that file, but the prerequisite wording is still accurate
@@ -121,6 +80,8 @@ _OBJ_EMPTY = ("No object-store ingestion series. Requires collectors.flowlogs.ob
               "and self_observability.enabled.")
 _WAL_EMPTY = ("No ingress-WAL series. Requires ingress_wal.enabled together with a receiver "
               "that accepts payloads (streaming or webhook), and self_observability.enabled.")
+_DEDUP_AGE_EMPTY = ("No dedup eviction-age series. Requires self_observability.enabled and "
+                    "at least one dedup set eviction.")
 _SUBREQ_EMPTY = ("No per-entity subrequest series. Requires a collector that fans out per entity "
                  "— devices posture attributes, device invites, or user invites — and "
                  "self_observability.enabled.")
@@ -267,21 +228,27 @@ def tab_health_ingestion(scope):
     # --- durable ingress WAL (receiver acceptance before processing), moved
     # from tabs/diagnostics.py #386.
     wal = [
-        (panel("Ingress WAL pending & retained entries", "timeseries",
-               [prom_t("max(tailscale2otel_ingress_wal_pending_entries_ratio)", legend="pending entries"),
-                prom_t("max(tailscale2otel_ingress_wal_orphan_stages_ratio)", legend="retained staging files", refid="B"),
-                prom_t("max(tailscale2otel_ingress_wal_completion_markers_ratio)", legend="completion markers", refid="C")],
-               unit="short", custom=ts_custom(), options=ts_opts(), novalue=_WAL_EMPTY,
-               desc="Durable entries awaiting processor application and flush, staging files "
-                    "kept for bounded recovery cleanup, and transient completion markers "
-                    "awaiting durable cleanup. Pending climbing toward ingress_wal.max_entries "
-                    "fails new requests closed."), 12, 6),
         (panel("Ingress WAL on-disk bytes", "timeseries",
                [prom_t("max(tailscale2otel_ingress_wal_pending_size_bytes)", legend="pending"),
                 prom_t("max(tailscale2otel_ingress_wal_orphan_size_bytes)", legend="retained staging", refid="B")],
                unit="bytes", custom=ts_custom(stack="normal"), options=ts_opts(), novalue=_WAL_EMPTY,
                desc="Encoded bytes on the WAL filesystem. There is no TTL or eviction, so this "
                     "is bounded only by ingress_wal.max_bytes."), 12, 6),
+        (panel("Ingress WAL capacity fill", "timeseries",
+               [prom_t("max(tailscale2otel_ingress_wal_pending_entries_fill_ratio)", legend="entries fill"),
+                prom_t("max(tailscale2otel_ingress_wal_pending_size_fill_ratio)", legend="bytes fill", refid="B"),
+                prom_t("max(tailscale2otel_ingress_wal_pending_entries_ratio)", legend="pending entries", refid="C"),
+                prom_t("max(tailscale2otel_ingress_wal_orphan_stages_ratio)", legend="retained staging files", refid="D"),
+                prom_t("max(tailscale2otel_ingress_wal_completion_markers_ratio)", legend="completion markers", refid="E")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(), novalue=_WAL_EMPTY,
+               overrides=[{"matcher": {"id": "byRegexp", "options": "pending entries|retained staging files|completion markers"},
+                           "properties": [{"id": "unit", "value": "short"},
+                                          {"id": "custom.axisPlacement", "value": "right"}]}],
+               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               desc="Durable pending entries and bytes as fractions of their configured ingress-WAL "
+                    "limits (left axis), with raw pending entries, retained staging files and "
+                    "completion markers on the right axis. The warning threshold is 80%, before "
+                    "either limit fails new requests closed with HTTP 503."), 12, 6),
     ]
     # --- per-entity subrequest fan-out, moved from tabs/diagnostics.py #386.
     subreq = [
@@ -465,11 +432,21 @@ def tab_health_ingestion(scope):
                     "dedup keys are effectively unique, so a full set evicts one key per insert "
                     "forever even when healthy — only evictions approaching a set's capacity "
                     "within one poll interval indicate real overlap loss."), 12, 7),
-        (panel("Dedup set fill", "timeseries",
-               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="{{dedup_set}}")],
+        (panel("Dedup set fill & eviction age", "timeseries",
+               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="size {{dedup_set}}"),
+                prom_t("max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds)",
+                       legend="youngest eviction {{dedup_set}}", refid="B"),
+                prom_t("max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)",
+                       legend="overlap horizon {{dedup_set}}", refid="C")],
                unit="short", custom=ts_custom(), options=ts_opts(),
-               desc="Keys currently held in each bounded dedup set (a count, despite the "
-                    "metric's _ratio suffix)."), 12, 7),
+               overrides=[{"matcher": {"id": "byRegexp", "options": "(youngest eviction|overlap horizon) .+"},
+                           "properties": [{"id": "unit", "value": "s"},
+                                          {"id": "custom.axisPlacement", "value": "right"}]}],
+               novalue=_DEDUP_AGE_EMPTY,
+               desc="Keys currently held in each bounded dedup set (left axis, a count despite "
+                    "the metric's _ratio suffix), plus the smallest residency age observed at "
+                    "capacity eviction and the configured overlap horizon (right axis, seconds). "
+                    "An age below its horizon means the set is too small; age is absent until an eviction."), 12, 7),
     ]
     # --- NEW: processor queue (batch processor between accept and OTLP export
     # for logs/traces). Two of the five #526 pending-panel signals scheduled

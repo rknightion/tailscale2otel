@@ -24,13 +24,15 @@ var _ collector.SnapshotCollector = (*Collector)(nil)
 
 // Metric names emitted by this collector.
 const (
-	MetricUsersCount        = "tailscale.users.count"
-	MetricUserDevices       = "tailscale.user.devices"
-	MetricUserConn          = "tailscale.user.connected"
-	MetricUserLastSeen      = "tailscale.user.last_seen"
-	MetricUserInvites       = "tailscale.user_invites.count"
-	MetricUserInvitePending = "tailscale.user_invites.pending_age"
-	MetricUsersAge          = "tailscale.users.age"
+	MetricUsersCount            = "tailscale.users.count"
+	MetricUserDevices           = "tailscale.user.devices"
+	MetricUserConn              = "tailscale.user.connected"
+	MetricUserLastSeen          = "tailscale.user.last_seen"
+	MetricUserInvites           = "tailscale.user_invites.count"
+	MetricUserInvitePending     = "tailscale.user_invites.pending_age"
+	MetricUsersAge              = "tailscale.users.age"
+	EventUserInviteObserved     = "tailscale.user_invite.observed"
+	EventUserInviteNoLongerOpen = "tailscale.user_invite.no_longer_open"
 )
 
 // Attribute keys emitted by this collector.
@@ -42,7 +44,11 @@ const (
 	// enduser.*/tailscale.user.login names are gone as of v2.0.0).
 	attrID         = semconv.AttrUserID
 	attrLogin      = semconv.AttrUserName
+	attrInviteID   = "tailscale.user_invite.id"
 	attrInviteRole = "tailscale.user_invite.role"
+	// attrLifecycleTransition is shared by the normalized lifecycle events from
+	// the key and user-invite collectors. Values are a closed set defined below.
+	attrLifecycleTransition = "tailscale.lifecycle.transition"
 	// attrInviteDelivery is the bounded HOW-was-this-invite-delivered signal
 	// (#412), replacing the fabricated accepted-state label removed by #411.
 	// It never carries the invite's email address or its bearer inviteUrl —
@@ -56,8 +62,10 @@ const (
 // manual_link: lastEmailSentAt is either populated (emailed) or absent
 // (manual_link, i.e. a shareable link never dispatched by email).
 const (
-	deliveryEmailed    = "emailed"
-	deliveryManualLink = "manual_link"
+	deliveryEmailed       = "emailed"
+	deliveryManualLink    = "manual_link"
+	lifecycleObserved     = "observed"
+	lifecycleNoLongerOpen = "no_longer_open"
 )
 
 const defaultInterval = 300 * time.Second
@@ -95,6 +103,7 @@ type Collector struct {
 	activityData bool
 	directory    DirectorySink
 	now          func() time.Time
+	inviteState  map[string]inviteSnapshot
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -153,7 +162,14 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 // connected-state gauges are emitted by default; pass WithActivityData(false)
 // when the control-plane doesn't report that data.
 func New(api lister, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: api, interval: interval, perEntity: true, activityData: true, now: time.Now}
+	c := &Collector{
+		api:          api,
+		interval:     interval,
+		perEntity:    true,
+		activityData: true,
+		now:          time.Now,
+		inviteState:  make(map[string]inviteSnapshot),
+	}
 	for _, o := range opts {
 		o(c)
 	}
@@ -180,6 +196,15 @@ type comboKey struct {
 type inviteKey struct {
 	role     string
 	delivery string
+}
+
+// inviteSnapshot is the safe subset retained between successful open-invite
+// snapshots. In particular, InviteURL is deliberately absent: it is a bearer
+// token and must never be retained merely to describe a later disappearance.
+type inviteSnapshot struct {
+	role      string
+	inviterID string
+	email     string
 }
 
 // inviteDelivery classifies how an open invite was (or wasn't) delivered by
@@ -279,9 +304,20 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	inviteCounts := make(map[inviteKey]int)
+	currentInvites := make(map[string]inviteSnapshot, len(invites))
 	for i := range invites {
 		inv := invites[i]
 		inviteCounts[inviteKey{role: inv.Role, delivery: inviteDelivery(inv)}]++
+		if inv.ID != "" {
+			// Keep only non-secret fields needed for a future no-longer-open
+			// event. A duplicate ID is still one open invite; the last record is
+			// retained as the freshest safe snapshot.
+			currentInvites[inv.ID] = inviteSnapshot{
+				role:      inv.Role,
+				inviterID: inv.InviterID,
+				email:     inv.Email,
+			}
+		}
 
 		// Pending-age / delivery-staleness (#412): only invites Tailscale has
 		// actually emailed carry a delivery timestamp to measure age from: a
@@ -300,6 +336,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 
+	// UserInvites is an open-invites snapshot: a first sighting is not proof of
+	// creation, and a later absence is not proof of acceptance, revocation, or
+	// cancellation. Emit only the two observable transitions, and update the
+	// baseline only after a successful request (the error return above leaves it
+	// untouched). Lifecycle events are independent of per-entity metric gating.
+	observedAt := c.now()
+	for id, snapshot := range currentInvites {
+		if _, seen := c.inviteState[id]; !seen {
+			emitUserInviteLifecycle(e, EventUserInviteObserved, lifecycleObserved, id, snapshot, observedAt)
+		}
+	}
+	for id, snapshot := range c.inviteState {
+		if _, open := currentInvites[id]; !open {
+			emitUserInviteLifecycle(e, EventUserInviteNoLongerOpen, lifecycleNoLongerOpen, id, snapshot, observedAt)
+		}
+	}
+	c.inviteState = currentInvites
+
 	if c.directory != nil {
 		// A recompile failure is swallowed on purpose: the ACL evaluator is a
 		// side consumer of this collector and must never turn a policy problem
@@ -309,4 +363,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	return nil
+}
+
+func emitUserInviteLifecycle(e telemetry.Emitter, name, transition, id string,
+	snapshot inviteSnapshot, observedAt time.Time) {
+	attrs := telemetry.Attrs{
+		attrInviteID:            id,
+		attrInviteRole:          snapshot.role,
+		attrLifecycleTransition: transition,
+	}
+	if snapshot.inviterID != "" {
+		attrs[attrID] = snapshot.inviterID
+	}
+	if snapshot.email != "" {
+		attrs[attrLogin] = snapshot.email
+	}
+
+	body := fmt.Sprintf("Tailscale user invite %q observed", id)
+	if transition == lifecycleNoLongerOpen {
+		body = fmt.Sprintf("Tailscale user invite %q is no longer open; the API exposes no terminal reason", id)
+	}
+	e.LogEvent(telemetry.Event{
+		Name:              name,
+		Severity:          telemetry.SeverityInfo,
+		Body:              body,
+		Timestamp:         observedAt,
+		ObservedTimestamp: observedAt,
+		Attrs:             attrs,
+	})
 }

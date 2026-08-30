@@ -117,6 +117,7 @@ TAILNET = DashboardSpec(
             )),
             TabDef("Network & Flows", tab_network, None),
             TabDef("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
+            TabDef("Kubernetes Audit", tab_k8saudit, "has_k8s_audit"),
         )),
         DomainDef("Security & Policy", (
             # Decision 10 splits the key/identity overlap by QUESTION, not by deletion:
@@ -135,7 +136,6 @@ TAILNET = DashboardSpec(
                 TabDef("Identity & Credentials", tab_policy_identity, None),
                 TabDef("Integrations", tab_policy_integrations, None),
             )),
-            TabDef("Kubernetes Audit", tab_k8saudit, "has_k8s_audit"),
         )),
     ),
     sibling="tailscale2otel-health",

@@ -3,6 +3,7 @@ package users_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/users"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
@@ -359,6 +361,134 @@ func sampleInvites() []tsapi.UserInvite {
 		{ID: "i2", Role: "member"},
 		{ID: "i3", Role: "member", LastEmailSentAt: fixedNow.Add(-3 * 24 * time.Hour)},
 		{ID: "i4", Role: "admin"},
+	}
+}
+
+func userLogsNamed(rec *telemetrytest.Recorder, name string) []telemetrytest.LogRecord {
+	var out []telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == name {
+			out = append(out, lr)
+		}
+	}
+	return out
+}
+
+// TestCollect_UserInviteLifecycle is deliberately based on the open-invite
+// snapshot contract. A first observation is not treated as proof of creation,
+// and disappearance is not treated as proof of acceptance, revocation, or
+// cancellation: the API exposes no terminal reason for an invite leaving this
+// endpoint.
+func TestCollect_UserInviteLifecycle(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	api := &fakeLister{
+		users: sampleUsers(),
+		invites: []tsapi.UserInvite{{
+			ID:        "invite-1",
+			Role:      "admin",
+			InviterID: "inviter-1",
+			Email:     "invitee@example.com",
+			InviteURL: "https://example.invalid/bearer-token",
+		}},
+	}
+	c := users.New(api, 0, users.WithClock(func() time.Time { return now }))
+
+	collect := func() *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	first := collect()
+	observed := userLogsNamed(first, users.EventUserInviteObserved)
+	if len(observed) != 1 {
+		t.Fatalf("observed invite logs = %d, want 1 (%+v)", len(observed), first.LogRecords())
+	}
+	if !observed[0].Timestamp.Equal(now) {
+		t.Errorf("observed timestamp = %v, want collection time %v", observed[0].Timestamp, now)
+	}
+	for key, want := range map[string]string{
+		"tailscale.user_invite.id":       "invite-1",
+		"tailscale.user_invite.role":     "admin",
+		"tailscale.lifecycle.transition": "observed",
+		"user.id":                        "inviter-1",
+		"user.name":                      "invitee@example.com",
+	} {
+		if got := observed[0].Attrs[key]; got != want {
+			t.Errorf("observed attr %s = %q, want %q", key, got, want)
+		}
+	}
+	if strings.Contains(observed[0].Body, "bearer-token") {
+		t.Errorf("observed invite body leaked invite URL: %q", observed[0].Body)
+	}
+
+	now = now.Add(time.Minute)
+	second := collect()
+	if got := len(userLogsNamed(second, users.EventUserInviteObserved)); got != 0 {
+		t.Errorf("repeated observed invite logs = %d, want 0", got)
+	}
+	if got := len(userLogsNamed(second, users.EventUserInviteNoLongerOpen)); got != 0 {
+		t.Errorf("still-open terminal logs = %d, want 0", got)
+	}
+
+	api.invites = nil
+	now = now.Add(time.Minute)
+	third := collect()
+	closed := userLogsNamed(third, users.EventUserInviteNoLongerOpen)
+	if len(closed) != 1 {
+		t.Fatalf("no-longer-open invite logs = %d, want 1 (%+v)", len(closed), third.LogRecords())
+	}
+	if closed[0].Attrs["tailscale.lifecycle.transition"] != "no_longer_open" {
+		t.Errorf("terminal transition = %q, want no_longer_open", closed[0].Attrs["tailscale.lifecycle.transition"])
+	}
+	if !strings.Contains(closed[0].Body, "terminal reason") {
+		t.Errorf("terminal body = %q, want API terminal-reason limitation", closed[0].Body)
+	}
+
+	fourth := collect()
+	if got := len(userLogsNamed(fourth, users.EventUserInviteNoLongerOpen)); got != 0 {
+		t.Errorf("repeated no-longer-open invite logs = %d, want 0", got)
+	}
+}
+
+// TestCollect_UserInviteLifecycleRedactsIdentity verifies that the normalized
+// event keeps its bounded transition/id fields while the existing user-id and
+// email PII controls remove inviter and invitee identity from the log attrs.
+func TestCollect_UserInviteLifecycleRedactsIdentity(t *testing.T) {
+	api := &fakeLister{
+		users: sampleUsers(),
+		invites: []tsapi.UserInvite{{
+			ID:        "invite-1",
+			Role:      "member",
+			InviterID: "inviter-1",
+			Email:     "invitee@example.com",
+		}},
+	}
+	rec := telemetrytest.NewWithPII(pii.Categories{
+		pii.CatEmails:  false,
+		pii.CatUserIDs: false,
+	})
+	c := users.New(api, 0)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	logs := userLogsNamed(rec, users.EventUserInviteObserved)
+	if len(logs) != 1 {
+		t.Fatalf("observed invite logs = %d, want 1 (%+v)", len(logs), rec.LogRecords())
+	}
+	for _, key := range []string{"user.id", "user.name"} {
+		if _, ok := logs[0].Attrs[key]; ok {
+			t.Errorf("PII-disabled invite log retained %s: %+v", key, logs[0].Attrs)
+		}
+	}
+	if got := logs[0].Attrs["tailscale.lifecycle.transition"]; got != "observed" {
+		t.Errorf("transition after PII filtering = %q, want observed", got)
+	}
+	if got := logs[0].Attrs["tailscale.user_invite.id"]; got != "invite-1" {
+		t.Errorf("invite id after PII filtering = %q, want invite-1", got)
 	}
 }
 

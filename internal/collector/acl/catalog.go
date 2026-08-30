@@ -52,6 +52,14 @@ const (
 // offending src and dst entries so operators can identify the specific rule.
 const EventRiskyRule = "tailscale.acl.risky_rule"
 
+// EventPolicySnapshot carries an opt-in raw policy body. Chunks share the
+// canonical tailscale.snapshot.emission_id and are reassembled by sequence.
+const EventPolicySnapshot = "tailscale.acl.policy_snapshot"
+
+// EventPolicyDiff carries the unified diff between the prior and current raw
+// policy body on a revision change.
+const EventPolicyDiff = "tailscale.acl.policy_diff"
+
 // EventValidationIssue is the OTLP log event name emitted once per non-zero
 // validation-issue kind found in the last policy validation. Unlike
 // EventRiskyRule, it carries NO free text at all (not even under a droppable
@@ -168,8 +176,22 @@ var (
 	docACLRiskyRule = metricdoc.LogEvent{
 		Name:        EventRiskyRule,
 		Severity:    "WARN",
-		Description: "Emitted once per unrestricted ACL/grant rule (wildcard `src` **and** wildcard `dst` in a non-deny rule). Carries `tailscale.acl.section` and `tailscale.acl.rule` (the offending src/dst entries; a free-text attribute droppable via `pii_filter.free_text_details`). The log body also names the rule for readability.",
-		Attributes:  []string{attrSection, attrRule},
+		Description: "Emitted on a policy revision change for each policy-risk finding: unrestricted ACL/grant rules, wildcard SSH rules, or wildcard auto-approvers. Carries `tailscale.acl.risk_class`, `tailscale.acl.section`, and `tailscale.acl.rule` (the offending entries; a free-text attribute droppable via `pii_filter.free_text_details`).",
+		Attributes:  []string{attrSection, attrRule, attrRiskClass},
+		Group:       groupACL,
+	}
+	docACLPolicySnapshot = metricdoc.LogEvent{
+		Name:        EventPolicySnapshot,
+		Severity:    "INFO",
+		Description: "Raw ACL policy body, emitted only when collectors.acl.snapshot_enabled is set and the revision changes or its heartbeat is due. Large bodies are UTF-8-safe chunks that MUST be grouped by tailscale.snapshot.emission_id, verified to have one matching tailscale.snapshot.revision, then sorted by tailscale.snapshot.seq before reassembly.",
+		Attributes:  []string{"tailscale.acl.etag", "tailscale.snapshot.kind", "tailscale.snapshot.reason", "tailscale.snapshot.revision", "tailscale.snapshot.emission_id", "tailscale.snapshot.bytes", "tailscale.snapshot.seq", "tailscale.snapshot.total"},
+		Group:       groupACL,
+	}
+	docACLPolicyDiff = metricdoc.LogEvent{
+		Name:        EventPolicyDiff,
+		Severity:    "INFO",
+		Description: "Unified diff between the prior and current raw ACL policy bodies, emitted only with collectors.acl.snapshot_enabled on a changed policy revision. Large diffs use the same UTF-8-safe chunk contract as snapshots. The prior body is retained in the configured snapshot state store so the first post-restart revision still has a diff baseline.",
+		Attributes:  []string{"tailscale.acl.etag", "tailscale.snapshot.kind", "tailscale.snapshot.reason", "tailscale.snapshot.revision", "tailscale.snapshot.emission_id", "tailscale.snapshot.bytes", "tailscale.snapshot.seq", "tailscale.snapshot.total"},
 		Group:       groupACL,
 	}
 	docACLValidationIssue = metricdoc.LogEvent{
@@ -196,5 +218,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docACLRiskyRule, docACLValidationIssue}
+	return []metricdoc.LogEvent{docACLRiskyRule, docACLPolicySnapshot, docACLPolicyDiff, docACLValidationIssue}
 }

@@ -50,8 +50,8 @@ const (
 	// DispExcluded means the value is decoded but deliberately dropped, for
 	// privacy (PII) or cardinality reasons. The note must say which.
 	DispExcluded Disposition = "excluded"
-	// DispUnhandled means the value is decoded but has no consumer yet. An
-	// acknowledged gap, not an oversight.
+	// DispUnhandled means the value is decoded but has no consumer yet. Its
+	// parking note records the specific gap so the omission stays reviewable.
 	DispUnhandled Disposition = "unhandled"
 )
 
@@ -95,7 +95,7 @@ var baselineDoc = []string{
 	"  emitted    - reaches OTLP as a metric value/attribute or log attribute",
 	"  enrichment - feeds a cache, derived state or a gating decision; never emitted verbatim",
 	"  excluded   - decoded but deliberately dropped; the note must say privacy or cardinality",
-	"  unhandled  - decoded, no consumer yet; an acknowledged gap",
+	"  unhandled  - decoded, no consumer yet; note records the acknowledged gap",
 }
 
 // LoadFieldDispositions parses a baseline from raw JSON.
@@ -199,6 +199,9 @@ func ValidateFieldDispositions(base *FieldDispositionBaseline, inv []InventoryEn
 		case f.Disposition == DispExcluded && strings.TrimSpace(f.Note) == "":
 			problems = append(problems, fmt.Sprintf(
 				"excluded field needs a note saying privacy or cardinality: %s / %s", e.Op, e.Path))
+		case f.Disposition == DispUnhandled && strings.TrimSpace(f.Note) == "":
+			problems = append(problems, fmt.Sprintf(
+				"unhandled field needs a parking note: %s / %s", e.Op, e.Path))
 		}
 	}
 

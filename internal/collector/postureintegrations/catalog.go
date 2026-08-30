@@ -61,6 +61,22 @@ var (
 		Attributes:  commonAttrs,
 		Group:       groupPosture,
 	}
+	docPostureIntegrationsSnapshot = metricdoc.LogEvent{
+		Name:     EventPostureIntegrationsSnapshot,
+		Severity: "INFO",
+		Description: "The complete safe device-posture integration inventory as JSON, emitted only " +
+			"when collectors.posture_integrations.snapshot_enabled is set and the configuration " +
+			"changes or its daily heartbeat is due. Provider credentials and raw sync-error text " +
+			"are never included; large bodies are UTF-8-safe chunks that MUST be grouped by " +
+			"tailscale.snapshot.emission_id and sorted by tailscale.snapshot.seq before reassembly.",
+		Attributes: []string{
+			"tailscale.snapshot.kind", "tailscale.snapshot.reason",
+			"tailscale.snapshot.revision", "tailscale.snapshot.emission_id",
+			"tailscale.snapshot.bytes", "tailscale.snapshot.seq",
+			"tailscale.snapshot.total",
+		},
+		Group: groupPosture,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -68,5 +84,5 @@ func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{docCount, docMatched, docPossible, docProviderHosts, docLastSync, docError}
 }
 
-// LogCatalog returns the log events this package emits (none).
-func LogCatalog() []metricdoc.LogEvent { return nil }
+// LogCatalog returns the log events this package emits.
+func LogCatalog() []metricdoc.LogEvent { return []metricdoc.LogEvent{docPostureIntegrationsSnapshot} }

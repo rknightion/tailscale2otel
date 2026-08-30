@@ -28,6 +28,20 @@ func emitIngressWALHealth(e telemetry.Emitter, coordinator *ingressWALCoordinato
 		nil,
 	)
 	e.Gauge(
+		appcatalog.DocIngressWALPendingEntriesFill.Name,
+		appcatalog.DocIngressWALPendingEntriesFill.Unit,
+		appcatalog.DocIngressWALPendingEntriesFill.Description,
+		float64(health.PendingEntries)/float64(health.MaxEntries),
+		nil,
+	)
+	e.Gauge(
+		appcatalog.DocIngressWALPendingSizeFill.Name,
+		appcatalog.DocIngressWALPendingSizeFill.Unit,
+		appcatalog.DocIngressWALPendingSizeFill.Description,
+		float64(health.PendingBytes)/float64(health.MaxBytes),
+		nil,
+	)
+	e.Gauge(
 		appcatalog.DocIngressWALOrphanStages.Name,
 		appcatalog.DocIngressWALOrphanStages.Unit,
 		appcatalog.DocIngressWALOrphanStages.Description,

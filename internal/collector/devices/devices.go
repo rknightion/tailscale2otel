@@ -434,6 +434,13 @@ type Collector struct {
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
 
+	// changeLogBaseline is the normalized inventory snapshot used by the opt-in
+	// device change log. It is deliberately process-local: after a restart the
+	// first successful poll silently re-baselines instead of producing a storm.
+	changeLogEnabled       bool
+	changeLogBaseline      map[string]deviceChangeState
+	changeLogBaselineReady bool
+
 	// ageBuckets is this collector's own copy of the shared entity-age bucket
 	// bounds (#426), taken once in New rather than per observation. The OTEL SDK
 	// retains the bounds slice it is handed, and entityage.BucketsSeconds returns
@@ -761,6 +768,7 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		subnetRouteRollup:    true,
 		postureLogMode:       postureLogChanges,
 		lastPosture:          make(map[string]string),
+		changeLogBaseline:    make(map[string]deviceChangeState),
 		expiryLogMode:        expiryLogModeDaily,
 		deviceKeyExpiryState: make(map[string]expiryState),
 		attributeExpiryState: make(map[attributeExpiryKey]expiryState),
@@ -810,6 +818,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	apistate.Observe(e, c.tracker, c.Name(), opListTailnetDevices, apistate.Disposition{}, err, c.now())
 	if err != nil {
 		return err
+	}
+
+	// Change detection is based only on a successful inventory response. A
+	// transient API failure must leave both the enrichment cache and the prior
+	// change-log baseline untouched, so a later successful poll compares against
+	// the last known-good state.
+	if c.changeLogEnabled {
+		c.observeDeviceChanges(e, devs, c.now())
 	}
 
 	c.cache.Replace(toMetas(devs))

@@ -10,19 +10,26 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
 
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 // runDedupReporter reports the cross-source de-duplication sets' fill level
 // (tailscale2otel.dedup.size), eviction pressure (tailscale2otel.dedup.evictions),
 // and hit count (tailscale2otel.dedup.hits) — the latter two as per-interval deltas
 // — immediately and then on each interval until ctx is canceled. nil sets (a
 // receiver that's disabled) are skipped. Mirrors runCardinalityReporter. A
 // non-positive interval falls back to 60s.
-func runDedupReporter(ctx context.Context, e telemetry.Emitter, interval time.Duration, sets map[string]*dedup.Set) {
+func runDedupReporter(ctx context.Context, e telemetry.Emitter, interval time.Duration, sets map[string]*dedup.Set, horizons map[string]time.Duration) {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
 	lastEvictions := make(map[string]uint64, len(sets))
 	lastHits := make(map[string]uint64, len(sets))
-	emit := func() { emitDedup(e, sets, lastEvictions, lastHits) }
+	emit := func() { emitDedup(e, sets, horizons, lastEvictions, lastHits) }
 	emit()
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -39,7 +46,7 @@ func runDedupReporter(ctx context.Context, e telemetry.Emitter, interval time.Du
 // emitDedup records one size gauge plus eviction-delta and hit-delta counters per
 // non-nil set, advancing lastEvictions/lastHits to the current cumulative counts.
 // It is a standalone function so the catalog guard test can drive it once.
-func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, lastEvictions, lastHits map[string]uint64) {
+func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, horizons map[string]time.Duration, lastEvictions, lastHits map[string]uint64) {
 	for name, set := range sets {
 		if set == nil {
 			continue
@@ -47,6 +54,19 @@ func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, lastEvictions, l
 		attrs := telemetry.Attrs{semconv.AttrDedupSet: name}
 		e.Gauge(appcatalog.DocDedupSize.Name, appcatalog.DocDedupSize.Unit, appcatalog.DocDedupSize.Description,
 			float64(set.Len()), attrs)
+		if horizon := horizons[name]; horizon > 0 {
+			e.Gauge(appcatalog.DocDedupOverlapHorizon.Name, appcatalog.DocDedupOverlapHorizon.Unit,
+				appcatalog.DocDedupOverlapHorizon.Description, horizon.Seconds(), attrs)
+		}
+		if age, ok := set.YoungestEvictionAge(); ok {
+			e.Gauge(
+				appcatalog.DocDedupYoungestEvictionAge.Name,
+				appcatalog.DocDedupYoungestEvictionAge.Unit,
+				appcatalog.DocDedupYoungestEvictionAge.Description,
+				age.Seconds(),
+				attrs,
+			)
+		}
 
 		curEvictions := set.Evictions()
 		if d, ok := delta64(curEvictions, lastEvictions[name]); ok {

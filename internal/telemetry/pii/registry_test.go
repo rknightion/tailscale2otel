@@ -15,6 +15,7 @@ func TestRegistryCoversKnownKeys(t *testing.T) {
 		"host.name":                          CatHostnames,
 		"host.id":                            CatNodeIDs,
 		"tailscale.service.name":             CatServiceAddrs,
+		"tailscale.service.display_name":     CatServiceAddrs,
 		"endpoint":                           CatEndpointPaths,
 		"tailscale.route.cidr":               CatNetworkTopology,
 		"tailscale.tailnet":                  CatTailnetName,
@@ -41,7 +42,7 @@ func TestRegistryCoversKnownKeys(t *testing.T) {
 			t.Errorf("key %q should be IP-value-classified", k)
 		}
 	}
-	for _, k := range []string{"network.io.direction", "tailscale.key.type", "http.response.status_code", "category"} {
+	for _, k := range []string{"network.io.direction", "tailscale.key.type", "http.response.status_code", "category", "tailscale.device.change", "tailscale.device.field", "tailscale.lifecycle.transition", "tailscale.user_invite.id"} {
 		if !nonIdentifier[k] {
 			t.Errorf("key %q should be in nonIdentifier allowlist", k)
 		}

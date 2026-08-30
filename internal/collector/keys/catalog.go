@@ -38,7 +38,21 @@ var (
 		Name:        EventExpiring,
 		Severity:    "WARN",
 		Description: "Emitted when a key expires within the configured `expiry_warn` window. Carries `tailscale.key.expires_in_seconds` (seconds *until* expiry, a remaining duration — not an absolute timestamp).",
-		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrExpiresIn, attrOwner, attrTags},
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrExpiresIn, attrLifecycleTransition, attrOwner, attrTags},
+		Group:       groupKeys,
+	}
+	docKeyCreated = metricdoc.LogEvent{
+		Name:        EventKeyCreated,
+		Severity:    "INFO",
+		Description: "Emitted once for each key with a non-zero source `created` timestamp. The log timestamp is the source creation time and the observed timestamp is when the successful inventory snapshot was collected.",
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrLifecycleTransition, attrOwner, attrTags},
+		Group:       groupKeys,
+	}
+	docKeyRevoked = metricdoc.LogEvent{
+		Name:        EventKeyRevoked,
+		Severity:    "INFO",
+		Description: "Emitted once when a key has a non-zero source `revoked` timestamp. The log timestamp is the source revocation time and the observed timestamp is when the successful inventory snapshot was collected; key disappearance or invalid state is not treated as revocation.",
+		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrLifecycleTransition, attrOwner, attrTags},
 		Group:       groupKeys,
 	}
 
@@ -128,5 +142,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docKeyExpiring, docKeyScopesLog}
+	return []metricdoc.LogEvent{docKeyCreated, docKeyRevoked, docKeyExpiring, docKeyScopesLog}
 }

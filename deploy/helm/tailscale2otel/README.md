@@ -387,8 +387,10 @@ extraVolumeMounts:
 | config.collectors.posture_integrations.interval | string | `"600s"` | Poll interval. |
 | config.collectors.posture_integrations.snapshot_enabled | bool | `false` | Emit the complete posture-integration response to logs on change plus a heartbeat. |
 | config.collectors.services.collect_hosts | bool | `false` | Also collect per-service backing-host detail (approval/configured state) — one extra API call per service (N+1). Off by default. |
+| config.collectors.services.collect_tag_rollup | bool | `true` | Emit the tailscale.services.by_tag distribution gauge (one series per ACL tag). false disables this rollup while service count and other enabled signals continue. |
 | config.collectors.services.enabled | bool | `true` | Enable the Tailscale Services (VIP) collector (services.count + per-service ports/hosts). |
 | config.collectors.services.interval | string | `"600s"` | Poll interval. |
+| config.collectors.services.tag_rollup_limit | int | `50` | Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest fold into tailscale.tag="__other__". 0 or negative = unlimited. |
 | config.collectors.settings.enabled | bool | `true` | Enable the tailnet-settings collector (setting.enabled flags, key-duration). |
 | config.collectors.settings.interval | string | `"600s"` | Poll interval (settings change rarely). |
 | config.collectors.settings.snapshot_enabled | bool | `false` | Emit the complete settings response to logs on change plus a heartbeat. |

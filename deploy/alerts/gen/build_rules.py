@@ -719,6 +719,19 @@ def groups():
               "auto-configure) is logging errors. See the Reliability row on the Exporter Diagnostics tab.",
               domain="observability", paused=False,
               policy="optional", runbook="exporter-internal-errors", panel="Component errors/s"),
+        alert("ts2o-ingress-wal-near-capacity", "Ingress WAL near capacity",
+              "max by (limit) ("
+              'label_replace(tailscale2otel_ingress_wal_pending_entries_fill_ratio, "limit", "entries", "", "") or '
+              'label_replace(tailscale2otel_ingress_wal_pending_size_fill_ratio, "limit", "bytes", "", "")'
+              ")",
+              "gt", 0.8, "10m", "warning",
+              "Ingress WAL {{ $labels.limit }} capacity is above 80%",
+              "The ingress WAL is using more than 80% of its configured {{ $labels.limit }} capacity. "
+              "At 100% the receiver fails closed with HTTP 503, so processing must catch up or the "
+              "configured ingress_wal limit must be raised before new payloads are refused. This rule "
+              "is inert when ingress WAL is disabled because both fill gauges are absent.",
+              domain="observability", paused=False,
+              policy="optional", runbook="ingest-receivers", panel="Ingress WAL capacity fill"),
         alert("ts2o-dedup-set-saturated", "Dedup set saturated",
               "sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))",
               "gt", 0, "15m", "warning",
@@ -731,7 +744,20 @@ def groups():
               "out before the next poll dedups against them → boundary double-counting); only enable this "
               "with a threshold tuned to your poll interval and set size.",
               domain="observability", paused=True,
-              policy="advisory", runbook="exporter-internal-errors", panel="Dedup set fill"),
+              policy="advisory", runbook="exporter-internal-errors", panel="Dedup set fill & eviction age"),
+        alert("ts2o-dedup-youngest-eviction", "Dedup eviction younger than overlap horizon",
+              "max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds) / "
+              "on (dedup_set) max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)",
+              "lt", 1, "15m", "warning",
+              "Dedup set {{ $labels.dedup_set }} evicted a key younger than the overlap horizon",
+              "The youngest key evicted from dedup set {{ $labels.dedup_set }} was retained for less "
+              "than that set's exported configured overlap horizon. Boundary duplicates can therefore be "
+              "re-admitted and counted twice. Raise that collector's dedup_capacity or reduce its "
+              "configured overlap. The age gauge is absent "
+              "until the set has evicted at least one key.",
+              domain="observability", paused=False,
+              policy="optional", runbook="exporter-internal-errors",
+              panel="Dedup set fill & eviction age"),
         alert("ts2o-enrich-cache-stale", "Enrichment cache stale",
               "max(tailscale2otel_enrich_cache_age_seconds)", "gt", 3600, "15m", "warning",
               "Device-enrichment cache is stale",
@@ -2187,6 +2213,10 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
      table and each rule's evaluation policy in deploy/alerts/gen/build_rules.py; a
      unittest in deploy/alerts/gen/test_rules.py fails the build if this file drifts.
 
+     Recording-rule descriptions are surfaced in the generated catalogue below. The
+     Grafana RecordingRule schema deliberately has no description/annotations field,
+     so the manifests retain their exact schema while this page remains operator-visible.
+
      The deploy/alerts/README.md link below is ABSOLUTE on purpose: this page is published
      to the docs hub, which builds Zensical with strict = true, and deploy/ is outside docs/
      so a relative ../deploy/... target is a broken link there and fails that build. It has
@@ -2209,6 +2239,29 @@ materializing another profile is a command, not a checked-in directory.
 """
 
 
+def _recording_doc_rows():
+    """Return recording-rule descriptions and profile states for the generated docs."""
+    recordings = {
+        rule["uid"]: rule
+        for _, group in groups()
+        for rule in group
+        if is_recording(rule)
+    }
+    states = {}
+    for profile_name in profile_names():
+        states[profile_name] = {
+            rule["uid"]: ("enabled" if not rule["paused"] else "paused")
+            for _, group in apply_profile(profile_name)
+            for rule in group
+            if is_recording(rule)
+        }
+    return [
+        (uid, rule["metric"], rule["_desc"],
+         [states[name][uid] for name in profile_names()])
+        for uid, rule in sorted(recordings.items())
+    ]
+
+
 def generate_alert_profiles_doc():
     """The full docs/alert-profiles.md content, as a string."""
     lines = [_DOC_HEADER]
@@ -2229,6 +2282,20 @@ def generate_alert_profiles_doc():
             lines.append("\nThreshold/`for` overrides:\n\n")
             for uid, title, why in report["overrides"]:
                 lines.append("- `%s` (%s) — %s\n" % (uid, title, why))
+    lines.append("\n## Recording rules\n\n")
+    lines.append(
+        "These derived series are written by the recording-rule catalogue. The descriptions "
+        "below explain what each series means; profile state is shown so an operator can tell "
+        "whether it is active after materializing a profile.\n\n"
+    )
+    lines.append("| UID | Recorded metric | baseline | recommended | strict | Description |\n")
+    lines.append("|---|---|---|---|---|---|\n")
+    for uid, metric, desc, states in _recording_doc_rows():
+        # Descriptions are authored as prose, but escaping a pipe here keeps a future
+        # description from silently corrupting the generated table.
+        safe_desc = desc.replace("|", "\\|").replace("\n", " ")
+        lines.append("| `%s` | `%s` | %s | %s | %s | %s |\n"
+                     % (uid, metric, states[0], states[1], states[2], safe_desc))
     return "".join(lines)
 
 

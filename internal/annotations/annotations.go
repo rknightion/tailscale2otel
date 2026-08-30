@@ -51,9 +51,9 @@ import (
 	"time"
 )
 
-// Category is the closed set of annotation categories. Two are curated domain
-// categories; Lifecycle is tailscale2otel's own start marker, which doubles as
-// the startup write probe.
+// Category is the closed set of annotation categories. The first five are
+// curated domain categories; Lifecycle is tailscale2otel's own start marker,
+// which doubles as the startup write probe.
 type Category string
 
 const (
@@ -65,6 +65,14 @@ const (
 	// CategoryExpiry is a node key or auth key entering its expiry warning
 	// window. It is the annotation that explains a device count stepping down.
 	CategoryExpiry Category = "expiry"
+	// CategoryPolicyChange is an ACL policy revision or diff observed by the
+	// policy collector.
+	CategoryPolicyChange Category = "policy_change"
+	// CategoryInventory is a device added, removed, or materially changed in
+	// the device inventory.
+	CategoryInventory Category = "inventory"
+	// CategoryRisk is a newly observed bounded ACL risk finding.
+	CategoryRisk Category = "risk"
 	// CategoryLifecycle is tailscale2otel's own process start marker.
 	CategoryLifecycle Category = "lifecycle"
 )
@@ -72,7 +80,14 @@ const (
 // Categories returns every category in a stable order, so a test can enumerate
 // the closed set instead of restating it.
 func Categories() []Category {
-	return []Category{CategoryConfigChange, CategoryExpiry, CategoryLifecycle}
+	return []Category{
+		CategoryConfigChange,
+		CategoryExpiry,
+		CategoryPolicyChange,
+		CategoryInventory,
+		CategoryRisk,
+		CategoryLifecycle,
+	}
 }
 
 // Annotation is one annotation ready to publish.

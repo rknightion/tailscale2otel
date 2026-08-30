@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "165",
+      "__panelId__": "198",
       "description": "A tailscale.config.audit log was emitted at WARN (the change carried an error) in the last 10m. Inspect the Configuration audit row on the Security & Audit tab.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#audit-events",
       "summary": "Configuration-audit event carried an error"

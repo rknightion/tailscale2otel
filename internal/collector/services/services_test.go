@@ -42,9 +42,25 @@ func (f *fakeAPI) ServiceAddrs(context.Context) ([]tsapi.ServiceAddr, error) {
 
 var _ collector.SnapshotCollector = (*Collector)(nil)
 
+func pointByAttr(pts []telemetrytest.MetricPoint, want map[string]string) (telemetrytest.MetricPoint, bool) {
+	for _, p := range pts {
+		match := true
+		for k, v := range want {
+			if p.Attrs[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			return p, true
+		}
+	}
+	return telemetrytest.MetricPoint{}, false
+}
+
 func sampleServices() []tsapi.VIPService {
 	return []tsapi.VIPService{
-		{Name: "svc:argocd", Ports: []string{"tcp:443"}, Tags: []string{"tag:k8s"}},
+		{Name: "svc:argocd", DisplayName: "Argo CD", Ports: []string{"tcp:443"}, Tags: []string{"tag:k8s"}},
 		{Name: "svc:grpc", Ports: []string{"tcp:443", "tcp:80"}, Tags: []string{"tag:k8s"}},
 	}
 }
@@ -74,6 +90,17 @@ func TestCollectEmitsCountAndPorts(t *testing.T) {
 	if ports["svc:argocd"] != 1 || ports["svc:grpc"] != 2 {
 		t.Fatalf("ports = %v, want argocd 1 / grpc 2", ports)
 	}
+	for _, p := range rec.MetricPoints("tailscale.service.ports") {
+		if p.Attrs["tailscale.service.name"] == "svc:argocd" &&
+			p.Attrs["tailscale.service.display_name"] != "Argo CD" {
+			t.Errorf("argocd display name = %q, want Argo CD", p.Attrs["tailscale.service.display_name"])
+		}
+		if p.Attrs["tailscale.service.name"] == "svc:grpc" {
+			if _, ok := p.Attrs["tailscale.service.display_name"]; ok {
+				t.Errorf("svc:grpc unexpectedly has an empty display name: attrs=%v", p.Attrs)
+			}
+		}
+	}
 	// collect_hosts is off by default → no hosts series.
 	if h := rec.MetricPoints("tailscale.service.hosts"); len(h) != 0 {
 		t.Fatalf("hosts points = %d, want 0 (collect_hosts off)", len(h))
@@ -96,7 +123,7 @@ func TestPerEntityOffDropsPorts(t *testing.T) {
 
 func TestCollectHostsBuckets(t *testing.T) {
 	api := &fakeAPI{
-		svcs: []tsapi.VIPService{{Name: "svc:argocd", Ports: []string{"tcp:443"}}},
+		svcs: []tsapi.VIPService{{Name: "svc:argocd", DisplayName: "Argo CD", Ports: []string{"tcp:443"}}},
 		hosts: map[string][]tsapi.ServiceHost{
 			"svc:argocd": {
 				{NodeID: "n1", ApprovalLevel: "approved:auto", Configured: "ready"},
@@ -120,6 +147,111 @@ func TestCollectHostsBuckets(t *testing.T) {
 	}
 	if got[key{"pending", "pending"}] != 1 {
 		t.Errorf("pending/pending = %v, want 1", got[key{"pending", "pending"}])
+	}
+}
+
+func TestCollectServiceTagRollupCap(t *testing.T) {
+	api := &fakeAPI{svcs: []tsapi.VIPService{
+		{Name: "svc:alpha", Tags: []string{"tag:kept"}},
+		{Name: "svc:beta", Tags: []string{"tag:kept", "tag:folded"}},
+	}}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithTagRollup(true, 1))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.services.by_tag")
+	if len(pts) != 2 {
+		t.Fatalf("services.by_tag points = %d, want 2 (kept + __other__)", len(pts))
+	}
+	if p, ok := pointByAttr(pts, map[string]string{"tailscale.tag": "tag:kept"}); !ok || p.Value != 2 {
+		t.Errorf("services.by_tag tag:kept = %+v, want value 2", p)
+	}
+	if p, ok := pointByAttr(pts, map[string]string{"tailscale.tag": "__other__"}); !ok || p.Value != 1 {
+		t.Errorf("services.by_tag __other__ = %+v, want value 1", p)
+	}
+}
+
+func TestCollectServiceTagRollupDisabled(t *testing.T) {
+	rec := telemetrytest.New()
+	c := New(&fakeAPI{svcs: sampleServices()}, 0, WithTagRollup(false, 1))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.services.by_tag"); len(pts) != 0 {
+		t.Fatalf("services.by_tag points = %d, want 0 when rollup disabled", len(pts))
+	}
+}
+
+func TestCollectServiceHostJoinsDeviceByNodeID(t *testing.T) {
+	cache := enrich.NewDeviceCache()
+	cache.Replace([]enrich.DeviceMeta{{
+		ID:        "device-1",
+		NodeID:    "node-1",
+		Hostname:  "service-host",
+		OS:        "linux",
+		OSVersion: "1.2.3",
+		User:      "user@example.invalid",
+		Tags:      []string{"tag:server", "tag:prod"},
+	}})
+	api := &fakeAPI{
+		svcs: []tsapi.VIPService{{Name: "svc:alpha", DisplayName: "Alpha service"}},
+		hosts: map[string][]tsapi.ServiceHost{
+			"svc:alpha": {{NodeID: "node-1", ApprovalLevel: "approved:auto", Configured: "ready"}},
+		},
+	}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithEnrichCache(cache), WithCollectHosts(true))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.service.host.info")
+	if len(pts) != 1 {
+		t.Fatalf("service.host.info points = %d, want 1", len(pts))
+	}
+	p := pts[0]
+	want := map[string]string{
+		"tailscale.service.name":         "svc:alpha",
+		"tailscale.service.display_name": "Alpha service",
+		"tailscale.node.id":              "node-1",
+		"tailscale.service.approval":     "approved:auto",
+		"tailscale.service.configured":   "ready",
+		"host.name":                      "service-host",
+		"host.id":                        "device-1",
+		"os.type":                        "linux",
+		"os.version":                     "1.2.3",
+		"tailscale.user":                 "user@example.invalid",
+		"tailscale.tags":                 "tag:server,tag:prod",
+	}
+	for k, v := range want {
+		if p.Attrs[k] != v {
+			t.Errorf("service.host.info %s = %q, want %q (attrs=%v)", k, p.Attrs[k], v, p.Attrs)
+		}
+	}
+}
+
+func TestCollectServiceHostWithoutDeviceStillEmitsNodeID(t *testing.T) {
+	api := &fakeAPI{
+		svcs: []tsapi.VIPService{{Name: "svc:alpha"}},
+		hosts: map[string][]tsapi.ServiceHost{
+			"svc:alpha": {{NodeID: "node-missing", ApprovalLevel: "pending", Configured: "pending"}},
+		},
+	}
+	rec := telemetrytest.New()
+	if err := New(api, 0, WithCollectHosts(true)).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	pts := rec.MetricPoints("tailscale.service.host.info")
+	if len(pts) != 1 {
+		t.Fatalf("service.host.info points = %d, want 1", len(pts))
+	}
+	if got := pts[0].Attrs["tailscale.node.id"]; got != "node-missing" {
+		t.Errorf("missing-device node id = %q, want node-missing", got)
+	}
+	if _, ok := pts[0].Attrs["host.name"]; ok {
+		t.Errorf("missing-device host unexpectedly joined: attrs=%v", pts[0].Attrs)
 	}
 }
 

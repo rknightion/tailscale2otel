@@ -53,6 +53,18 @@ func (a *App) startAnnotator(ctx context.Context, cfg *config.Config, version st
 					Enabled: gc.Categories.Expiry.Enabled,
 					Rollup:  gc.Categories.Expiry.Rollup,
 				},
+				annotations.CategoryPolicyChange: {
+					Enabled: gc.Categories.PolicyChange.Enabled,
+					Rollup:  gc.Categories.PolicyChange.Rollup,
+				},
+				annotations.CategoryInventory: {
+					Enabled: gc.Categories.Inventory.Enabled,
+					Rollup:  gc.Categories.Inventory.Rollup,
+				},
+				annotations.CategoryRisk: {
+					Enabled: gc.Categories.Risk.Enabled,
+					Rollup:  gc.Categories.Risk.Rollup,
+				},
 			},
 			RollupInterval:  gc.RollupInterval.D(),
 			DedupeRetention: gc.DedupeRetention.D(),

@@ -403,6 +403,19 @@ var (
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrAttribute, attrDeviceAttributeExpiresInDays},
 		Group:       groupDevices,
 	}
+
+	docDeviceChangeLog = metricdoc.LogEvent{
+		Name:        eventDeviceChange,
+		Severity:    "INFO",
+		Description: "Structured device-inventory transition emitted when `collectors.devices.change_log_enabled` is on: one `added` or `removed` record per device, and one `changed` record per material field (name, hostname, OS/version, user, client version, tags, routes, or node-key expiry state). The first successful poll after process start silently establishes the baseline. Current device identity is carried on the classified host/user attributes; before/after values use the existing free-text `tailscale.audit.old`/`tailscale.audit.new` keys and therefore follow `pii_filter.free_text_details`.",
+		Attributes: []string{
+			semconv.HostName, semconv.HostID, semconv.AttrUser,
+			semconv.OSType, semconv.OSVersion, semconv.AttrTags,
+			attrNodeHostname, attrClientVersion,
+			attrDeviceChange, attrDeviceField, attrDeviceOld, attrDeviceNew,
+		},
+		Group: groupDevices,
+	}
 )
 
 // connIdentityAttrs is the per-device identity label set for the connectivity
@@ -557,5 +570,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog, docDeviceAttributeExpiringLog}
+	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog, docDeviceAttributeExpiringLog, docDeviceChangeLog}
 }

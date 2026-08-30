@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "264",
+      "__panelId__": "304",
       "description": "The loaded database's MaxMind BUILD date is more than 14 days old. Enrichment has not failed \u2014 flow records still get country/ASN attributes \u2014 but they are increasingly answered from stale allocations, and address space that changed hands is attributed to the wrong country or network. Note this measures the build date, not the download: an updater that runs on schedule and quietly fails every fetch looks perfectly healthy to any \"did we download recently\" check, and shows up only here. Check tailscale_geoip_downloads_total by result \u2014 a run of `failure` points at expired MaxMind credentials or a blocked egress path, while `unmodified` throughout means the endpoint genuinely has nothing newer. With enrichment.geoip.download disabled, whatever supplies the files (a geoipupdate cron, a mounted volume) has stopped; confirm the file mtime changed and that enrichment.geoip.reload_interval is not 0.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery",
       "summary": "The {{ $labels.geoip_database }} GeoIP database has not been rebuilt in over 14 days"

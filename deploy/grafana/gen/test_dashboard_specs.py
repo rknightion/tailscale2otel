@@ -201,7 +201,10 @@ class VariableBudgets(unittest.TestCase):
     """
 
     MAX_DASHBOARD_VARS = 15
-    MAX_VISIBLE = 6
+    # TSO-0086 deliberately adds one fleet-wide Instance / environment ad-hoc
+    # filter. It earns one control on both dashboards because it scopes every
+    # Prometheus panel when several exporter installs share a stack.
+    MAX_VISIBLE = 7
 
     @classmethod
     def setUpClass(cls):
@@ -223,6 +226,14 @@ class VariableBudgets(unittest.TestCase):
             with self.subTest(dashboard=uid):
                 self.assertLessEqual(len(self.visible(doc)), self.MAX_VISIBLE,
                                      self.visible(doc))
+
+    def test_multi_install_filter_is_dashboard_wide(self):
+        for uid, doc in self.docs.items():
+            with self.subTest(dashboard=uid):
+                variables = {v["spec"]["name"]: v for v in doc["spec"]["variables"]}
+                variable = variables["deployment_filters"]
+                self.assertEqual(variable["kind"], "AdhocVariable")
+                self.assertEqual(variable["spec"]["label"], "Instance / environment")
 
     def test_a_tab_scoped_variable_is_not_also_declared_on_the_dashboard(self):
         # Both would resolve, and the tab's copy would win on that tab only — so

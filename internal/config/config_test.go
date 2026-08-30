@@ -92,6 +92,10 @@ collectors:
     log_mode: per_record
   keys:
     expiry_warn: 72h
+  services:
+    collect_hosts: true
+    collect_tag_rollup: false
+    tag_rollup_limit: 7
 checkpoint:
   store: file
   evidence_store: memory
@@ -202,6 +206,11 @@ func TestLoadNestedValues(t *testing.T) {
 	}
 	if cfg.Collectors.Keys.ExpiryWarn.D() != 72*time.Hour {
 		t.Errorf("Keys.ExpiryWarn = %v, want 72h", cfg.Collectors.Keys.ExpiryWarn.D())
+	}
+	if !cfg.Collectors.Services.CollectHosts || cfg.Collectors.Services.CollectTagRollup ||
+		cfg.Collectors.Services.TagRollupLimit != 7 {
+		t.Errorf("Services = %+v, want collect_hosts=true collect_tag_rollup=false tag_rollup_limit=7",
+			cfg.Collectors.Services)
 	}
 	if cfg.Checkpoint.Store != "file" {
 		t.Errorf("Checkpoint.Store = %q, want file", cfg.Checkpoint.Store)

@@ -175,6 +175,17 @@ groups:
         annotations:
           summary: "tailscale2otel component {{ $labels.component }} erroring"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "IngressWALNearCapacity"
+        expr: "(max by (limit) (label_replace(tailscale2otel_ingress_wal_pending_entries_fill_ratio, \"limit\", \"entries\", \"\", \"\") or label_replace(tailscale2otel_ingress_wal_pending_size_fill_ratio, \"limit\", \"bytes\", \"\", \"\"))) > 0.8"
+        for: "10m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Ingress WAL {{ $labels.limit }} capacity is above 80%"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
       - alert: "DedupSetSaturated"
         expr: "(sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))) > 0"
         for: "15m"
@@ -185,6 +196,17 @@ groups:
           skipinvestigation: "true"
         annotations:
           summary: "Cross-source dedup set {{ $labels.dedup_set }} is evicting"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "DedupEvictionYoungerThanOverlapHorizon"
+        expr: "(max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds) / on (dedup_set) max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)) < 1"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Dedup set {{ $labels.dedup_set }} evicted a key younger than the overlap horizon"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
       - alert: "EnrichmentCacheStale"
         expr: "(max(tailscale2otel_enrich_cache_age_seconds)) > 3600"

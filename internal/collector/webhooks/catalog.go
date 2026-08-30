@@ -82,6 +82,22 @@ var (
 		Attributes: eventAttr,
 		Group:      groupWebhooks,
 	}
+	docWebhooksSnapshot = metricdoc.LogEvent{
+		Name:     EventWebhooksSnapshot,
+		Severity: "INFO",
+		Description: "The complete safe webhook-endpoint inventory as JSON, emitted only when " +
+			"collectors.webhooks.snapshot_enabled is set and the configuration changes or " +
+			"its daily heartbeat is due. Endpoint URLs, secrets, and creator login names are " +
+			"never included; large bodies are UTF-8-safe chunks that MUST be grouped by " +
+			"tailscale.snapshot.emission_id and sorted by tailscale.snapshot.seq before reassembly.",
+		Attributes: []string{
+			"tailscale.snapshot.kind", "tailscale.snapshot.reason",
+			"tailscale.snapshot.revision", "tailscale.snapshot.emission_id",
+			"tailscale.snapshot.bytes", "tailscale.snapshot.seq",
+			"tailscale.snapshot.total",
+		},
+		Group: groupWebhooks,
+	}
 )
 
 // Catalog returns the metrics this package emits, for the doc generator.
@@ -94,4 +110,6 @@ func Catalog() []metricdoc.Metric {
 }
 
 // LogCatalog returns the log events this package emits.
-func LogCatalog() []metricdoc.LogEvent { return []metricdoc.LogEvent{docMismatchLog} }
+func LogCatalog() []metricdoc.LogEvent {
+	return []metricdoc.LogEvent{docMismatchLog, docWebhooksSnapshot}
+}

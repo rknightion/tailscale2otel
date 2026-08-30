@@ -710,11 +710,17 @@
                                 "collect_hosts": {
                                     "type": "boolean"
                                 },
+                                "collect_tag_rollup": {
+                                    "type": "boolean"
+                                },
                                 "enabled": {
                                     "type": "boolean"
                                 },
                                 "interval": {
                                     "type": "string"
+                                },
+                                "tag_rollup_limit": {
+                                    "type": "integer"
                                 }
                             },
                             "additionalProperties": false

@@ -7,14 +7,23 @@ package dns
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
 
 const defaultInterval = 600 * time.Second
+
+const (
+	defaultSnapshotHeartbeat = 24 * time.Hour
+	defaultSnapshotBodyBytes = 32 * 1024
+	// EventDNSSnapshot is the opt-in JSON DNS configuration snapshot event.
+	EventDNSSnapshot = "tailscale.dns.snapshot"
+)
 
 // Metric names emitted by this collector.
 const (
@@ -77,6 +86,14 @@ type Collector struct {
 	tracker *apistate.Tracker
 	// now is the clock, injectable from tests.
 	now func() time.Time
+
+	// snapshot is opt-in because the complete DNS configuration includes
+	// resolver addresses and search domains. The emitter is initialized on the
+	// first Collect because telemetry.Emitter is scoped to that call.
+	snapshotEnabled   bool
+	snapshotHeartbeat time.Duration
+	snapshotBodyBytes int
+	snapshotEmitter   *snapshot.Emitter
 }
 
 // Option configures optional Collector behavior.
@@ -93,10 +110,38 @@ func WithClock(now func() time.Time) Option {
 	return func(c *Collector) { c.now = now }
 }
 
+// WithSnapshot enables the JSON DNS configuration snapshot. The optional body
+// limit should match otlp.limits.log_body_bytes; when omitted or non-positive,
+// the telemetry default (32 KiB) is used. The snapshot is emitted on the first
+// observation, on content changes, and on a daily heartbeat when unchanged.
+func WithSnapshot(enabled bool, maxBodyBytes ...int) Option {
+	return func(c *Collector) {
+		c.snapshotEnabled = enabled
+		if len(maxBodyBytes) > 0 && maxBodyBytes[0] > 0 {
+			c.snapshotBodyBytes = maxBodyBytes[0]
+		}
+	}
+}
+
+// WithSnapshotHeartbeat overrides the default daily heartbeat. It exists for
+// deterministic tests and leaves the public configuration surface unchanged.
+func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
+	return func(c *Collector) {
+		c.snapshotHeartbeat = heartbeat
+	}
+}
+
 // New returns a DNS collector. A non-positive interval resolves to the default
 // (600s) via DefaultInterval.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: a, interval: interval, gsb: telemetry.NewGaugeSnapshotBuilder(), now: time.Now}
+	c := &Collector{
+		api:               a,
+		interval:          interval,
+		gsb:               telemetry.NewGaugeSnapshotBuilder(),
+		now:               time.Now,
+		snapshotHeartbeat: defaultSnapshotHeartbeat,
+		snapshotBodyBytes: defaultSnapshotBodyBytes,
+	}
 	for _, o := range opts {
 		o(c)
 	}
@@ -197,7 +242,89 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// above, before any Add).
 	c.gsb.Flush(e)
 
+	if c.snapshotEnabled {
+		body, err := marshalSnapshot(cfg)
+		if err != nil {
+			return err
+		}
+		c.emitSnapshot(e, body)
+	}
+
 	return nil
+}
+
+// snapshotResolver and snapshotPreferences retain the wire names from the DNS
+// endpoint. tsapi.DNSConfig is intentionally a normalized type without JSON
+// tags, so marshaling it directly would expose Go field names rather than the
+// API response shape.
+type snapshotResolver struct {
+	Address         string `json:"address"`
+	UseWithExitNode bool   `json:"useWithExitNode"`
+}
+
+type snapshotPreferences struct {
+	OverrideLocalDNS bool `json:"overrideLocalDNS"`
+	MagicDNS         bool `json:"magicDNS"`
+}
+
+type snapshotConfig struct {
+	Nameservers []snapshotResolver            `json:"nameservers"`
+	SplitDNS    map[string][]snapshotResolver `json:"splitDNS"`
+	SearchPaths []string                      `json:"searchPaths"`
+	Preferences snapshotPreferences           `json:"preferences"`
+}
+
+func marshalSnapshot(cfg *tsapi.DNSConfig) (string, error) {
+	nameservers := make([]snapshotResolver, len(cfg.Nameservers))
+	for i, resolver := range cfg.Nameservers {
+		nameservers[i] = snapshotResolver{
+			Address:         resolver.Address,
+			UseWithExitNode: resolver.UseWithExitNode,
+		}
+	}
+
+	splitDNS := make(map[string][]snapshotResolver, len(cfg.SplitDNS))
+	for domain, resolvers := range cfg.SplitDNS {
+		out := make([]snapshotResolver, len(resolvers))
+		for i, resolver := range resolvers {
+			out[i] = snapshotResolver{
+				Address:         resolver.Address,
+				UseWithExitNode: resolver.UseWithExitNode,
+			}
+		}
+		splitDNS[domain] = out
+	}
+
+	body, err := json.Marshal(snapshotConfig{
+		Nameservers: nameservers,
+		SplitDNS:    splitDNS,
+		SearchPaths: append([]string(nil), cfg.SearchPaths...),
+		Preferences: snapshotPreferences{
+			OverrideLocalDNS: cfg.OverrideLocalDNS,
+			MagicDNS:         cfg.MagicDNS,
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) {
+	if c.snapshotEmitter == nil {
+		emitter, err := snapshot.New(snapshot.Config{
+			Emitter:      e,
+			EventName:    EventDNSSnapshot,
+			Kind:         snapshot.KindDNS,
+			Heartbeat:    c.snapshotHeartbeat,
+			MaxBodyBytes: c.snapshotBodyBytes,
+		})
+		if err != nil {
+			return
+		}
+		c.snapshotEmitter = emitter
+	}
+	c.snapshotEmitter.Observe(c.now(), "", body, nil)
 }
 
 func boolValue(b bool) float64 {

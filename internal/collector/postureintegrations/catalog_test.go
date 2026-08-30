@@ -27,7 +27,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		Status: tsapi.PostureIntegrationStatus{
 			LastSync: time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC), MatchedCount: 4, PossibleMatchedCount: 5, ProviderHostCount: 10,
 		},
-	}}}, 0)
+	}}}, 0, postureintegrations.WithSnapshot(true))
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}

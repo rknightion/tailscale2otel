@@ -25,7 +25,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		EndpointID:    "wh-1",
 		ProviderType:  "slack",
 		Subscriptions: []tsclient.WebhookSubscriptionType{"nodeCreated"},
-	}}}, 0, webhooks.WithAPIState(tr))
+	}}}, 0, webhooks.WithAPIState(tr), webhooks.WithSnapshot(true))
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}

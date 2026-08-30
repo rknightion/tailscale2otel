@@ -2,8 +2,13 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector/acl"
@@ -64,15 +69,16 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 
 // rdnsOptions maps the reverse-DNS enrichment config into rdns.Cache options.
 // Only called when enrichment.reverse_dns.enabled is true.
-func rdnsOptions(cfg *config.Config) rdns.Options {
+func rdnsOptions(cfg *config.Config, checkpointPath string) rdns.Options {
 	rd := cfg.Enrichment.ReverseDNS
 	return rdns.Options{
-		Server:      rd.Server,
-		Timeout:     rd.Timeout.D(),
-		TTL:         rd.CacheTTL.D(),
-		NegativeTTL: rd.NegativeTTL.D(),
-		StaleTTL:    rd.StaleTTL.D(),
-		MaxEntries:  rd.MaxEntries,
+		Server:       rd.Server,
+		Timeout:      rd.Timeout.D(),
+		TTL:          rd.CacheTTL.D(),
+		NegativeTTL:  rd.NegativeTTL.D(),
+		StaleTTL:     rd.StaleTTL.D(),
+		MaxEntries:   rd.MaxEntries,
+		SnapshotPath: rdns.SnapshotPath(checkpointPath),
 	}
 }
 
@@ -95,6 +101,21 @@ func pollSource(s string) bool {
 	return s == "" || s == "poll" || s == "both"
 }
 
+func aclSnapshotStatePath(evidencePath, tailnet string) string {
+	ext := filepath.Ext(evidencePath)
+	base := strings.TrimSuffix(filepath.Base(evidencePath), ext)
+	sum := sha256.Sum256([]byte(tailnet))
+	suffix := hex.EncodeToString(sum[:6])
+	return filepath.Join(filepath.Dir(evidencePath), base+".acl-policy-"+suffix+ext)
+}
+
+func aclSnapshotStateStore(evidencePath, tailnet string) aclpolicy.SnapshotStateStore {
+	if evidencePath == "" {
+		return aclpolicy.NewMemorySnapshotStateStore()
+	}
+	return aclpolicy.NewFileSnapshotStateStore(aclSnapshotStatePath(evidencePath, tailnet))
+}
+
 // registerCollectors registers the enabled collectors on the runtime's registry.
 // Each runtime has its own provider/client/emitter/cache (one per tailnet).
 // Window collectors (flowlogs/auditlogs) only poll when their source includes
@@ -112,6 +133,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	if c.Devices.Enabled && cp.Supports("devices") {
 		devOpts := []devices.Option{
 			devices.WithPerEntity(cfg.Cardinality.PerEntity.Device),
+			devices.WithChangeLog(c.Devices.ChangeLogEnabled),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithExpiryLogMode(c.Devices.ExpiryLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
@@ -185,7 +207,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	}
 	if c.Settings.Enabled && cp.Supports("settings") {
 		rt.registry.Register(settings.New(rt.client, c.Settings.Interval.D(),
-			settings.WithAPIState(rt.apiState)), c.Settings.Interval.D())
+			settings.WithAPIState(rt.apiState),
+			settings.WithSnapshot(c.Settings.SnapshotEnabled, cfg.OTLP.Limits.LogBodyBytes)), c.Settings.Interval.D())
 	}
 	if c.Acl.Enabled && cp.Supports("acl") {
 		aclStore := d.evidenceStore
@@ -208,11 +231,19 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		if rt.client != nil {
 			aclOpts = append(aclOpts, acl.WithValidator(rt.client))
 		}
+		if c.Acl.SnapshotEnabled {
+			aclOpts = append(aclOpts, acl.WithPolicySnapshots(
+				c.Acl.SnapshotHeartbeat.D(),
+				cfg.OTLP.Limits.LogBodyBytes,
+				aclSnapshotStateStore(d.evidencePath, rt.name),
+			))
+		}
 		rt.registry.Register(acl.New(cp.Client, c.Acl.Interval.D(), nil, aclOpts...), c.Acl.Interval.D())
 	}
 	if c.Dns.Enabled && cp.Supports("dns") {
 		rt.registry.Register(dns.New(rt.client, c.Dns.Interval.D(),
-			dns.WithAPIState(rt.apiState)), c.Dns.Interval.D())
+			dns.WithAPIState(rt.apiState),
+			dns.WithSnapshot(c.Dns.SnapshotEnabled, cfg.OTLP.Limits.LogBodyBytes)), c.Dns.Interval.D())
 	}
 	if c.Contacts.Enabled && cp.Supports("contacts") {
 		rt.registry.Register(contacts.New(rt.client, c.Contacts.Interval.D(),
@@ -222,11 +253,13 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(webhooks.New(rt.client, c.Webhooks.Interval.D(),
 			webhooks.WithPerEntity(cfg.Cardinality.PerEntity.Webhook),
 			webhooks.WithDesiredEvents(c.Webhooks.DesiredEvents),
-			webhooks.WithAPIState(rt.apiState)), c.Webhooks.Interval.D())
+			webhooks.WithAPIState(rt.apiState),
+			webhooks.WithSnapshot(c.Webhooks.SnapshotEnabled, cfg.OTLP.Limits.LogBodyBytes)), c.Webhooks.Interval.D())
 	}
 	if c.PostureIntegrations.Enabled && cp.Supports("posture_integrations") {
 		rt.registry.Register(postureintegrations.New(rt.client, c.PostureIntegrations.Interval.D(),
-			postureintegrations.WithAPIState(rt.apiState)), c.PostureIntegrations.Interval.D())
+			postureintegrations.WithAPIState(rt.apiState),
+			postureintegrations.WithSnapshot(c.PostureIntegrations.SnapshotEnabled, cfg.OTLP.Limits.LogBodyBytes)), c.PostureIntegrations.Interval.D())
 	}
 	if c.LogStream.Enabled && cp.Supports("log_stream") {
 		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D(),
@@ -240,6 +273,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
 			services.WithPerEntity(cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts),
+			services.WithTagRollup(c.Services.CollectTagRollup, c.Services.TagRollupLimit),
 			// Feed the service-VIP -> name map so flow logs resolve a service
 			// VIP peer to its service name instead of "unknown" (#166).
 			services.WithEnrichCache(rt.cache),

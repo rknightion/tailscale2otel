@@ -127,8 +127,10 @@ const MetricAdminAuthRejected = "tailscale2otel.admin.auth.rejected"
 // these expose their fill level and eviction pressure so an undersized set is
 // visible rather than silently dropping keys.
 const (
-	MetricDedupSize      = "tailscale2otel.dedup.size"
-	MetricDedupEvictions = "tailscale2otel.dedup.evictions"
+	MetricDedupSize                = "tailscale2otel.dedup.size"
+	MetricDedupEvictions           = "tailscale2otel.dedup.evictions"
+	MetricDedupYoungestEvictionAge = "tailscale2otel.dedup.youngest_eviction_age"
+	MetricDedupOverlapHorizon      = "tailscale2otel.dedup.overlap_horizon"
 	// MetricDedupHits counts duplicate keys suppressed by a de-duplication set
 	// (the proof the set is doing work; size+evictions alone can't show hits).
 	MetricDedupHits = "tailscale2otel.dedup.hits"
@@ -154,11 +156,13 @@ const (
 // Ingress-WAL capacity metrics are process-global and deliberately carry no
 // route, tailnet, filesystem, or error attributes.
 const (
-	MetricIngressWALPendingEntries    = "tailscale2otel.ingress_wal.pending.entries"
-	MetricIngressWALPendingSize       = "tailscale2otel.ingress_wal.pending.size"
-	MetricIngressWALOrphanStages      = "tailscale2otel.ingress_wal.orphan.stages"
-	MetricIngressWALOrphanSize        = "tailscale2otel.ingress_wal.orphan.size"
-	MetricIngressWALCompletionMarkers = "tailscale2otel.ingress_wal.completion.markers"
+	MetricIngressWALPendingEntries     = "tailscale2otel.ingress_wal.pending.entries"
+	MetricIngressWALPendingSize        = "tailscale2otel.ingress_wal.pending.size"
+	MetricIngressWALPendingEntriesFill = "tailscale2otel.ingress_wal.pending.entries.fill"
+	MetricIngressWALPendingSizeFill    = "tailscale2otel.ingress_wal.pending.size.fill"
+	MetricIngressWALOrphanStages       = "tailscale2otel.ingress_wal.orphan.stages"
+	MetricIngressWALOrphanSize         = "tailscale2otel.ingress_wal.orphan.size"
+	MetricIngressWALCompletionMarkers  = "tailscale2otel.ingress_wal.completion.markers"
 )
 
 // Ingestion-volume self-observability metric names. Emitted (via an app-built
@@ -346,6 +350,20 @@ var (
 		Description: "Encoded on-disk bytes consumed by durable ingress-WAL entries.",
 		Group:       GroupSelfObs,
 	}
+	DocIngressWALPendingEntriesFill = metricdoc.Metric{
+		Name:        MetricIngressWALPendingEntriesFill,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Fraction of the configured ingress-WAL entry capacity occupied by durable entries (0..1).",
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALPendingSizeFill = metricdoc.Metric{
+		Name:        MetricIngressWALPendingSizeFill,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Fraction of the configured ingress-WAL byte capacity occupied by durable entries (0..1).",
+		Group:       GroupSelfObs,
+	}
 	DocIngressWALOrphanStages = metricdoc.Metric{
 		Name:        MetricIngressWALOrphanStages,
 		Unit:        semconv.UnitDimensionless,
@@ -511,6 +529,22 @@ var (
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Counter,
 		Description: "Duplicate keys suppressed by a de-duplication set, by set (a hit is a record dropped because its key was already seen — proves the set is actually de-duplicating; a **count**, despite the `_total` suffix).",
+		Attributes:  []string{semconv.AttrDedupSet},
+		Group:       GroupSelfObs,
+	}
+	DocDedupYoungestEvictionAge = metricdoc.Metric{
+		Name:        MetricDedupYoungestEvictionAge,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Smallest residency age in seconds observed for a key evicted from a de-duplication set because it reached capacity, by set. Absent until the first eviction; values below the poll overlap horizon indicate the set is undersized.",
+		Attributes:  []string{semconv.AttrDedupSet},
+		Group:       GroupSelfObs,
+	}
+	DocDedupOverlapHorizon = metricdoc.Metric{
+		Name:        MetricDedupOverlapHorizon,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Configured poll-overlap horizon in seconds for a de-duplication set, by set. The flow value is the larger of its poll interval and explicit replay overlap; audit and webhook-cross values use the audit poll interval.",
 		Attributes:  []string{semconv.AttrDedupSet},
 		Group:       GroupSelfObs,
 	}
@@ -720,10 +754,11 @@ func Catalog() []metricdoc.Metric {
 		DocRuntimeGCCount, DocRuntimeGCPauseTime, DocRuntimeAllocBytes,
 		DocComponentErrors,
 		DocAdminAuthRejected,
-		DocDedupSize, DocDedupEvictions, DocDedupHits,
+		DocDedupSize, DocDedupEvictions, DocDedupHits, DocDedupYoungestEvictionAge, DocDedupOverlapHorizon,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
 		DocIngressWALPendingEntries, DocIngressWALPendingSize,
+		DocIngressWALPendingEntriesFill, DocIngressWALPendingSizeFill,
 		DocIngressWALOrphanStages, DocIngressWALOrphanSize, DocIngressWALCompletionMarkers,
 		DocIngestRecords, DocIngestBytes, DocIngestEventAge, DocIngestCaptureDelay,
 		DocIngestLastEventTimestamp, DocIngestTimestampSkew,

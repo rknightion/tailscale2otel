@@ -271,13 +271,15 @@ class DerivationSanityTest(unittest.TestCase):
         self.assertGreaterEqual(len(COUNT_RATIO_METRICS), 30,
                                  "found suspiciously few '_ratio, a count' metrics")
 
-    def test_docs_parse_finds_the_three_known_genuine_fraction_metrics(self):
-        # Only three metrics in the whole catalog are explicitly documented as a genuine
+    def test_docs_parse_finds_the_five_known_genuine_fraction_metrics(self):
+        # Only five metrics in the whole catalog are explicitly documented as a genuine
         # [0,1] fraction rather than a count wearing the _ratio suffix.
         expected = {
             "tailscale2otel_runtime_gc_cpu_fraction_ratio",
             "tailscale2otel_scrape_budget_ratio",
             "tailscale2otel_subrequest_coverage_ratio",
+            "tailscale2otel_ingress_wal_pending_entries_fill_ratio",
+            "tailscale2otel_ingress_wal_pending_size_fill_ratio",
         }
         self.assertEqual(FRACTION_RATIO_METRICS, expected)
 

@@ -1570,6 +1570,12 @@ config: # @schema additionalProperties:false
       # -- Also collect per-service backing-host detail (approval/configured state) — one extra API
       # call per service (N+1). Off by default.
       collect_hosts: false
+      # -- Emit the tailscale.services.by_tag distribution gauge (one series per ACL tag).
+      # false disables this rollup while service count and other enabled signals continue.
+      collect_tag_rollup: true
+      # -- Cap on distinct tag series for by_tag: busiest N tags keep their own series, the rest
+      # fold into tailscale.tag="__other__". 0 or negative = unlimited.
+      tag_rollup_limit: 50
     # Optional: scrape tailscaled per-node Prometheus /metrics endpoints and forward
     # them centrally over OTLP. Off by default; disabled when no targets are configured.
     node_metrics: # @schema additionalProperties:false

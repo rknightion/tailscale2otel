@@ -194,6 +194,9 @@ func TestCollect_WarnsOnExpiringKey(t *testing.T) {
 	if r.Attrs["tailscale.key.description"] != "ci runner" {
 		t.Fatalf("log key.description = %q, want 'ci runner'", r.Attrs["tailscale.key.description"])
 	}
+	if r.Attrs["tailscale.lifecycle.transition"] != "expiring_soon" {
+		t.Fatalf("log lifecycle.transition = %q, want expiring_soon", r.Attrs["tailscale.lifecycle.transition"])
+	}
 	gotSecs, err := strconv.Atoi(r.Attrs["tailscale.key.expires_in_seconds"])
 	if err != nil {
 		t.Fatalf("expires_in_seconds not an int: %q (%v)", r.Attrs["tailscale.key.expires_in_seconds"], err)
@@ -303,6 +306,89 @@ func keyExpiryLogCount(rec *telemetrytest.Recorder) int {
 		}
 	}
 	return n
+}
+
+func logsNamed(rec *telemetrytest.Recorder, name string) []telemetrytest.LogRecord {
+	var out []telemetrytest.LogRecord
+	for _, lr := range rec.LogRecords() {
+		if lr.EventName == name {
+			out = append(out, lr)
+		}
+	}
+	return out
+}
+
+// TestCollect_KeyLifecycleTransitions verifies that the key inventory's source
+// timestamps drive one created and one revoked lifecycle record each, while the
+// existing expiring warning remains the only expiry record. In particular, a
+// lifecycle implementation must not add a second expiring-soon event alongside
+// the TSO-0051 cadence state.
+func TestCollect_KeyLifecycleTransitions(t *testing.T) {
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	api := &fakeLister{keys: []tsapi.Key{{
+		ID:          "k-lifecycle",
+		Type:        "auth",
+		Description: "automation",
+		Created:     now.Add(-24 * time.Hour),
+		Expires:     now.Add(2 * time.Hour),
+	}}}
+	c := keys.New(api, 0, 24*time.Hour, func() time.Time { return now })
+
+	collect := func() *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	first := collect()
+	created := logsNamed(first, keys.EventKeyCreated)
+	if len(created) != 1 {
+		t.Fatalf("created lifecycle logs = %d, want 1 (%+v)", len(created), first.LogRecords())
+	}
+	if !created[0].Timestamp.Equal(api.keys[0].Created) {
+		t.Errorf("created timestamp = %v, want source timestamp %v", created[0].Timestamp, api.keys[0].Created)
+	}
+	if created[0].Attrs["tailscale.lifecycle.transition"] != "created" {
+		t.Errorf("created transition = %q, want created", created[0].Attrs["tailscale.lifecycle.transition"])
+	}
+	if got := keyExpiryLogCount(first); got != 1 {
+		t.Fatalf("first expiry logs = %d, want 1", got)
+	}
+	if got := len(logsNamed(first, "tailscale.key.expiring_soon")); got != 0 {
+		t.Fatalf("separate expiring-soon lifecycle logs = %d, want 0", got)
+	}
+
+	now = now.Add(time.Minute)
+	second := collect()
+	if got := len(logsNamed(second, keys.EventKeyCreated)); got != 0 {
+		t.Errorf("repeated created lifecycle logs = %d, want 0", got)
+	}
+	if got := keyExpiryLogCount(second); got != 0 {
+		t.Errorf("repeated expiry logs = %d, want 0", got)
+	}
+
+	revokedAt := now.Add(time.Minute)
+	api.keys[0].Revoked = revokedAt
+	now = revokedAt
+	third := collect()
+	revoked := logsNamed(third, keys.EventKeyRevoked)
+	if len(revoked) != 1 {
+		t.Fatalf("revoked lifecycle logs = %d, want 1 (%+v)", len(revoked), third.LogRecords())
+	}
+	if !revoked[0].Timestamp.Equal(revokedAt) {
+		t.Errorf("revoked timestamp = %v, want source timestamp %v", revoked[0].Timestamp, revokedAt)
+	}
+	if revoked[0].Attrs["tailscale.lifecycle.transition"] != "revoked" {
+		t.Errorf("revoked transition = %q, want revoked", revoked[0].Attrs["tailscale.lifecycle.transition"])
+	}
+
+	fourth := collect()
+	if got := len(logsNamed(fourth, keys.EventKeyRevoked)); got != 0 {
+		t.Errorf("repeated revoked lifecycle logs = %d, want 0", got)
+	}
 }
 
 func TestCollect_ExpiryLogModeDaily(t *testing.T) {

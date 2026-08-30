@@ -2,10 +2,13 @@ package k8saudit
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
@@ -139,6 +142,41 @@ func TestProcess_UnknownTypeCountsSchemaDrift(t *testing.T) {
 	NewProcessor().Process(obj, rec.Emitter())
 	if len(rec.MetricPoints("tailscale.k8s.schema_drift")) == 0 {
 		t.Fatal("unknown event type must record schema drift")
+	}
+}
+
+func TestProcess_SchemaDriftWarningWindowResetsAfterCap(t *testing.T) {
+	var logs bytes.Buffer
+	now := time.Date(2026, 8, 30, 12, 0, 0, 0, time.UTC)
+	p := NewProcessor(
+		WithLogger(slog.New(slog.NewTextHandler(&logs, nil))),
+		WithClock(func() time.Time { return now }),
+	)
+	rec := telemetrytest.New()
+
+	for i := range 128 {
+		obj := execObject()
+		obj.Event.Type = fmt.Sprintf("future-event-%d", i)
+		p.Process(obj, rec.Emitter())
+	}
+	// The cap still suppresses a new distinct value during the active window.
+	obj := execObject()
+	obj.Event.Type = "future-event-0"
+	p.Process(obj, rec.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 128 {
+		t.Fatalf("schema-drift warnings before TTL = %d, want 128", got)
+	}
+
+	// After one daily window the same value is actionable again.
+	now = now.Add(24 * time.Hour)
+	p.Process(obj, rec.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 129 {
+		t.Fatalf("schema-drift warnings after TTL = %d, want 129", got)
+	}
+	// Resetting the window must not disable de-duplication within it.
+	p.Process(obj, rec.Emitter())
+	if got := strings.Count(logs.String(), "msg="); got != 129 {
+		t.Fatalf("repeated schema-drift warning after TTL = %d, want 129", got)
 	}
 }
 

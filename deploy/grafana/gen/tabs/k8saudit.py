@@ -71,8 +71,9 @@ def tab_k8saudit(scope):
                [prom_t("sum(rate(%s[%s]))" % (K8S_REQUESTS, RI))],
                unit="cps", custom=ts_custom(), options=ts_opts(),
                desc="Kubernetes API requests proxied through Tailscale, per second. Counts "
-                    "attempts only — the source record carries no response status, so this "
-                    "is request volume, not success or failure rate."), 12, 7),
+                    "attempts only: tsrecorder emits the record while forwarding the request, "
+                    "before any response exists, so response status and latency structurally "
+                    "cannot appear in this feed. This is request volume, not an outcome rate."), 12, 7),
         (panel("Requests by verb", "timeseries",
                [prom_t("sum by (tailscale_k8s_verb) (rate(%s[%s]))" % (K8S_REQUESTS, RI),
                        legend="{{tailscale_k8s_verb}}")],

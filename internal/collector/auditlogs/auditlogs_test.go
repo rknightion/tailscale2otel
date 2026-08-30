@@ -2,6 +2,7 @@ package auditlogs_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -101,6 +102,120 @@ func TestCollectWindow_SuccessEmitsAndReturnsTo(t *testing.T) {
 	if got := logs[0].Attrs["tailscale.audit.action"]; got != "CREATE" {
 		t.Fatalf("audit action attr = %q, want %q", got, "CREATE")
 	}
+}
+
+// TestCollectWindow_NewAuditFamiliesArePreserved exercises the response
+// decoder and the real poll path with selector-shaped family values from the
+// published audit vocabulary. The response type is intentionally treated as
+// open: PAM and Aperture can add family markers before this collector knows
+// their semantics. They must remain visible in the log, while metric labels
+// retain the bounded action/origin/actor admit-sets.
+func TestCollectWindow_NewAuditFamiliesArePreserved(t *testing.T) {
+	const body = `{
+  "version": "1.1",
+  "tailnet": "synthetic-tailnet",
+  "logs": [
+    {
+      "eventTime": "2026-08-30T12:00:00Z",
+      "type": "PAM_CONNECTOR.CREATE",
+      "eventGroupID": "synthetic-pam-connector",
+      "origin": "BORDER0_API",
+      "actor": {"id":"synthetic-actor-connector","type":"PAM_CONNECTOR"},
+      "target": {"id":"synthetic-target-connector","type":"TAILNET","property":"ACL"},
+      "action": "CREATE"
+    },
+    {
+      "eventTime": "2026-08-30T12:00:01Z",
+      "type": "PAM_SERVICE_ACCOUNT.CREATE.ACCESS_TOKEN",
+      "eventGroupID": "synthetic-pam-service-account",
+      "origin": "BORDER0_API",
+      "actor": {"id":"synthetic-actor-service-account","type":"PAM_SERVICE_ACCOUNT"},
+      "target": {"id":"synthetic-target-service-account","type":"TAILNET","property":"SECRET"},
+      "action": "CREATE"
+    },
+    {
+      "eventTime": "2026-08-30T12:00:02Z",
+      "type": "APERTURE_POLICY_UPDATE",
+      "eventGroupID": "synthetic-aperture",
+      "origin": "BORDER0_API",
+      "actor": {"id":"synthetic-actor-aperture","type":"USER"},
+      "target": {"id":"synthetic-target-aperture","type":"TAILNET","property":"AUTH_PROVIDER"},
+      "action": "UPDATE"
+    },
+    {
+      "eventTime": "2026-08-30T12:00:03Z",
+      "type": "FUTURE_AUDIT_FAMILY.NEW",
+      "eventGroupID": "synthetic-future",
+      "origin": "FUTURE_ORIGIN",
+      "actor": {"id":"synthetic-actor-future","type":"FUTURE_ACTOR"},
+      "target": {"id":"synthetic-target-future","type":"TAILNET","property":"ACL"},
+      "action": "CREATE"
+    }
+  ]
+}`
+
+	var response audit.ConfigurationResponse
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatalf("decode synthetic audit response: %v", err)
+	}
+	rec := telemetrytest.New()
+	c := auditlogs.New(&fakeAPI{resp: response}, audit.NewProcessor(), 0, 0, nil)
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow: %v", err)
+	}
+
+	logs := rec.LogRecords()
+	if len(logs) != 4 {
+		t.Fatalf("log records = %d, want 4 (one per new/future family)", len(logs))
+	}
+	wantLogs := map[string]struct {
+		origin string
+		actor  string
+	}{
+		"PAM_CONNECTOR.CREATE":                    {origin: "BORDER0_API", actor: "PAM_CONNECTOR"},
+		"PAM_SERVICE_ACCOUNT.CREATE.ACCESS_TOKEN": {origin: "BORDER0_API", actor: "PAM_SERVICE_ACCOUNT"},
+		"APERTURE_POLICY_UPDATE":                  {origin: "BORDER0_API", actor: "USER"},
+		"FUTURE_AUDIT_FAMILY.NEW":                 {origin: "FUTURE_ORIGIN", actor: "FUTURE_ACTOR"},
+	}
+	for _, log := range logs {
+		family := log.Attrs["tailscale.audit.type"]
+		want, ok := wantLogs[family]
+		if !ok {
+			t.Errorf("unexpected family marker %q in log attrs: %#v", family, log.Attrs)
+			continue
+		}
+		if got := log.Attrs["tailscale.audit.origin"]; got != want.origin {
+			t.Errorf("%s log origin = %q, want raw %q", family, got, want.origin)
+		}
+		if got := log.Attrs["tailscale.actor.type"]; got != want.actor {
+			t.Errorf("%s log actor type = %q, want raw %q", family, got, want.actor)
+		}
+	}
+
+	seenOrigins := map[string]bool{}
+	for _, point := range rec.MetricPoints(audit.MetricAuditEvents) {
+		seenOrigins[point.Attrs["tailscale.audit.origin"]] = true
+	}
+	if want := map[string]bool{"BORDER0_API": true, "other": true}; !slices.Equal(sortedKeys(seenOrigins), sortedKeys(want)) {
+		t.Errorf("normalized event origins = %v, want %v", sortedKeys(seenOrigins), sortedKeys(want))
+	}
+
+	seenActors := map[string]bool{}
+	for _, point := range rec.MetricPoints(audit.MetricAuditChanges) {
+		seenActors[point.Attrs["tailscale.actor.type"]] = true
+	}
+	if want := map[string]bool{"PAM_CONNECTOR": true, "PAM_SERVICE_ACCOUNT": true, "USER": true, "other": true}; !slices.Equal(sortedKeys(seenActors), sortedKeys(want)) {
+		t.Errorf("normalized change actor types = %v, want %v", sortedKeys(seenActors), sortedKeys(want))
+	}
+}
+
+func sortedKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
 }
 
 // TestCollectWindow_ThreadsTraceContextOntoAuditLog is the #367 acceptance

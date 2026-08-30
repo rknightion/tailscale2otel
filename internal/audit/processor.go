@@ -102,9 +102,11 @@ type Processor struct {
 	store             *eventstore.Memory
 	changeCheckpoints collector.CheckpointStore
 
-	mu                  sync.Mutex
-	checkpointMu        sync.Mutex
-	unknownSchemaValues map[string]struct{}
+	mu                     sync.Mutex
+	checkpointMu           sync.Mutex
+	unknownSchemaValues    map[string]struct{}
+	unknownSchemaWindow    time.Time
+	unknownSchemaWindowSet bool
 }
 
 // Option configures a Processor at construction time.
@@ -131,7 +133,8 @@ func WithCrossDedup(set *dedup.Set) Option {
 }
 
 // WithClock overrides the acceptance-time source used for audit-delay
-// histograms. It is intended for deterministic tests; nil retains time.Now.
+// histograms and schema-drift warning windows. It is intended for deterministic
+// tests; nil retains time.Now.
 func WithClock(now func() time.Time) Option {
 	return func(p *Processor) {
 		if now != nil {
@@ -410,7 +413,10 @@ func auditDiff(ev Event) string {
 	}
 }
 
-const schemaDriftWarningLimit = 128
+const (
+	schemaDriftWarningLimit  = 128
+	schemaDriftWarningWindow = 24 * time.Hour
+)
 
 func (p *Processor) observeSchemaDrift(ev Event, e telemetry.Emitter) {
 	p.observeSchemaValue("action", ev.Action, knownActions, e)
@@ -438,7 +444,17 @@ func (p *Processor) warnUnknownSchemaValue(field, value string) {
 		return
 	}
 	key := field + "\x00" + value
+	now := p.now()
 	p.mu.Lock()
+	if !p.unknownSchemaWindowSet {
+		p.unknownSchemaWindow = now
+		p.unknownSchemaWindowSet = true
+	} else if !now.Before(p.unknownSchemaWindow.Add(schemaDriftWarningWindow)) {
+		// Start a fresh bounded warning window so a long-lived process can
+		// report a newly observed value again without reopening the flood path.
+		clear(p.unknownSchemaValues)
+		p.unknownSchemaWindow = now
+	}
 	if len(p.unknownSchemaValues) >= schemaDriftWarningLimit {
 		p.mu.Unlock()
 		return

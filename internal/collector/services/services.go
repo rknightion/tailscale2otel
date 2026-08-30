@@ -8,11 +8,14 @@ package services
 import (
 	"context"
 	"net/netip"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
 )
@@ -26,15 +29,26 @@ var (
 const defaultInterval = 600 * time.Second
 
 const (
-	metricCount = "tailscale.services.count"
-	metricPorts = "tailscale.service.ports"
-	metricHosts = "tailscale.service.hosts"
+	metricCount    = "tailscale.services.count"
+	metricByTag    = "tailscale.services.by_tag"
+	metricPorts    = "tailscale.service.ports"
+	metricHosts    = "tailscale.service.hosts"
+	metricHostInfo = "tailscale.service.host.info"
 )
 
 const (
-	attrName       = "tailscale.service.name"
-	attrApproval   = "tailscale.service.approval"
-	attrConfigured = "tailscale.service.configured"
+	attrName        = "tailscale.service.name"
+	attrDisplayName = "tailscale.service.display_name"
+	attrTag         = "tailscale.tag"
+	attrNodeID      = semconv.AttrNodeID
+	attrApproval    = "tailscale.service.approval"
+	attrConfigured  = "tailscale.service.configured"
+)
+
+const (
+	// tagOther is the bounded overflow value shared with the devices tag rollup.
+	tagOther              = "__other__"
+	defaultTagRollupLimit = 50
 )
 
 // opListServices is the upstream OpenAPI operationId (spec/tailscale-api.json)
@@ -69,6 +83,8 @@ type Collector struct {
 	interval     time.Duration
 	perEntity    bool
 	collectHosts bool
+	collectTags  bool
+	tagLimit     int
 	cache        *enrich.DeviceCache
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
@@ -88,6 +104,17 @@ func WithPerEntity(enabled bool) Option { return func(c *Collector) { c.perEntit
 // WithCollectHosts enables per-service backing-host detail, which makes one
 // extra API call per service (N+1). Off by default.
 func WithCollectHosts(enabled bool) Option { return func(c *Collector) { c.collectHosts = enabled } }
+
+// WithTagRollup controls the tailscale.services.by_tag distribution gauge.
+// enabled gates the rollup; limit caps the distinct tag series (the busiest
+// services keep their own series and the rest fold into tagOther). A limit <= 0
+// means unlimited, matching the devices collector's tag_rollup_limit behavior.
+func WithTagRollup(enabled bool, limit int) Option {
+	return func(c *Collector) {
+		c.collectTags = enabled
+		c.tagLimit = limit
+	}
+}
 
 // WithEnrichCache supplies the shared enrich.DeviceCache so flow-log peers
 // destined for a Service VIP resolve to the service name instead of falling
@@ -114,7 +141,14 @@ func WithClock(now func() time.Time) Option {
 
 // New returns a services collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: a, interval: interval, perEntity: true, now: time.Now}
+	c := &Collector{
+		api:         a,
+		interval:    interval,
+		perEntity:   true,
+		collectTags: true,
+		tagLimit:    defaultTagRollupLimit,
+		now:         time.Now,
+	}
 	for _, o := range opts {
 		o(c)
 	}
@@ -158,6 +192,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	apistate.Observe(e, c.tracker, c.Name(), opListServices, servicesDisposition, addrsErr, c.now())
 
 	e.Gauge(docCount.Name, docCount.Unit, docCount.Description, float64(len(svcs)), nil)
+	c.emitTagRollup(e, svcs)
 
 	if !c.perEntity {
 		return nil
@@ -174,12 +209,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	for i := range svcs {
 		s := &svcs[i]
 		e.Gauge(docPorts.Name, docPorts.Unit, docPorts.Description,
-			float64(len(s.Ports)), telemetry.Attrs{attrName: s.Name})
+			float64(len(s.Ports)), serviceAttrs(*s))
 		if c.collectHosts {
 			hostsAttempted = true
 			// First-error-wins: these failures are systemic (a scope or
 			// credential problem), not worth ranking against each other.
-			if hErr := c.emitHosts(ctx, e, s.Name); hErr != nil && hostsErr == nil {
+			if hErr := c.emitHosts(ctx, e, *s); hErr != nil && hostsErr == nil {
 				hostsErr = hErr
 			}
 		}
@@ -224,8 +259,8 @@ func (c *Collector) populateEnrichCache(ctx context.Context) error {
 // (the service's host series is skipped; collection continues); the error is
 // returned so Collect can aggregate it into the single listServiceHosts
 // availability observation for the tick.
-func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, name string) error {
-	hosts, err := c.api.ServiceHosts(ctx, name)
+func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service tsapi.VIPService) error {
+	hosts, err := c.api.ServiceHosts(ctx, service.Name)
 	if err != nil {
 		return err
 	}
@@ -235,11 +270,118 @@ func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, name str
 		counts[bucket{h.ApprovalLevel, h.Configured}]++
 	}
 	for b, n := range counts {
-		e.Gauge(docHosts.Name, docHosts.Unit, docHosts.Description, float64(n), telemetry.Attrs{
-			attrName:       name,
-			attrApproval:   b.approval,
-			attrConfigured: b.configured,
-		})
+		attrs := serviceAttrs(service)
+		attrs[attrApproval] = b.approval
+		attrs[attrConfigured] = b.configured
+		e.Gauge(docHosts.Name, docHosts.Unit, docHosts.Description, float64(n), attrs)
+	}
+	for _, h := range hosts {
+		c.emitHostInfo(e, service, h)
 	}
 	return nil
+}
+
+// emitTagRollup emits one bounded series per service tag. A service carrying
+// multiple tags contributes once to each tag, just as a tagged device does in
+// the devices rollup. The overflow bucket preserves the total number of
+// service/tag memberships without allowing operator-authored tags to grow
+// metric cardinality without bound.
+func (c *Collector) emitTagRollup(e telemetry.Emitter, svcs []tsapi.VIPService) {
+	if !c.collectTags {
+		return
+	}
+	byTag := make(map[string]int)
+	for i := range svcs {
+		for _, tag := range svcs[i].Tags {
+			if tag == "" {
+				continue
+			}
+			byTag[tag]++
+		}
+	}
+	if len(byTag) == 0 {
+		return
+	}
+	emit := func(tag string, n int) {
+		e.Gauge(docByTag.Name, docByTag.Unit, docByTag.Description, float64(n), telemetry.Attrs{attrTag: tag})
+	}
+	if c.tagLimit <= 0 || len(byTag) <= c.tagLimit {
+		for tag, n := range byTag {
+			emit(tag, n)
+		}
+		return
+	}
+	type tagCount struct {
+		tag string
+		n   int
+	}
+	tags := make([]tagCount, 0, len(byTag))
+	for tag, n := range byTag {
+		tags = append(tags, tagCount{tag: tag, n: n})
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].n != tags[j].n {
+			return tags[i].n > tags[j].n
+		}
+		return tags[i].tag < tags[j].tag
+	})
+	other := 0
+	for i, tc := range tags {
+		if i < c.tagLimit {
+			emit(tc.tag, tc.n)
+		} else {
+			other += tc.n
+		}
+	}
+	if other > 0 {
+		emit(tagOther, other)
+	}
+}
+
+// emitHostInfo emits one identity point per service host. The raw NodeID is
+// retained as the join key, and the shared authoritative device cache supplies
+// the human/device dimensions when the devices collector has refreshed it.
+// Missing cache entries are not errors: the service-host API remains useful and
+// the node ID still identifies the host for a later join.
+func (c *Collector) emitHostInfo(e telemetry.Emitter, service tsapi.VIPService, h tsapi.ServiceHost) {
+	attrs := serviceAttrs(service)
+	attrs[attrApproval] = h.ApprovalLevel
+	attrs[attrConfigured] = h.Configured
+	if h.NodeID != "" {
+		attrs[attrNodeID] = h.NodeID
+	}
+	if c.cache != nil && h.NodeID != "" {
+		if d, ok := c.cache.LookupNode(h.NodeID); ok {
+			if d.Hostname != "" {
+				attrs[semconv.HostName] = d.Hostname
+			}
+			if d.ID != "" {
+				attrs[semconv.HostID] = d.ID
+			}
+			if d.OS != "" {
+				attrs[semconv.OSType] = d.OS
+			}
+			if d.OSVersion != "" {
+				attrs[semconv.OSVersion] = d.OSVersion
+			}
+			if d.User != "" {
+				attrs[semconv.AttrUser] = d.User
+			}
+			if len(d.Tags) > 0 {
+				attrs[semconv.AttrTags] = strings.Join(d.Tags, ",")
+			}
+		}
+	}
+	e.Gauge(docHostInfo.Name, docHostInfo.Unit, docHostInfo.Description, 1, attrs)
+}
+
+// serviceAttrs returns the bounded identity carried by a per-service signal.
+// displayName is optional in the API and is omitted when absent; the stable
+// service name remains the series identity in either case.
+func serviceAttrs(s tsapi.VIPService) telemetry.Attrs {
+	attrs := telemetry.Attrs{attrName: s.Name}
+	if s.DisplayName != "" {
+		attrs[attrDisplayName] = s.DisplayName
+	}
+	return attrs
 }

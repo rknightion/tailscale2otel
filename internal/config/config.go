@@ -1399,11 +1399,15 @@ type KeysCollector struct {
 
 // ServicesCollector configures the Tailscale Services (VIP) collector.
 // CollectHosts adds per-service backing-host detail — one extra API call per
-// service (N+1). Off by default.
+// service (N+1). Off by default. CollectTagRollup emits a bounded per-ACL-tag
+// service count, with TagRollupLimit matching the devices collector's busiest-N
+// plus __other__ behavior.
 type ServicesCollector struct {
-	Enabled      bool     `yaml:"enabled" reload:"restart"`
-	Interval     Duration `yaml:"interval" reload:"restart"`
-	CollectHosts bool     `yaml:"collect_hosts" reload:"restart"`
+	Enabled          bool     `yaml:"enabled" reload:"restart"`
+	Interval         Duration `yaml:"interval" reload:"restart"`
+	CollectHosts     bool     `yaml:"collect_hosts" reload:"restart"`
+	CollectTagRollup bool     `yaml:"collect_tag_rollup" reload:"restart"`
+	TagRollupLimit   int      `yaml:"tag_rollup_limit" reload:"restart"`
 }
 
 // NodeMetricsConfig configures the optional node-local metrics scraper, which

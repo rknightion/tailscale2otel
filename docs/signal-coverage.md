@@ -80,30 +80,41 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 220 | 219 | 57 | 11 | 44 |
-| self_obs | 92 | 92 | 29 | 9 | 10 |
+| operational | 233 | 232 | 57 | 11 | 44 |
+| self_obs | 96 | 96 | 33 | 9 | 10 |
 
 ## Operational signals
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
+| `tailscale.acl.policy_diff` | log_event | `event_name="tailscale.acl.policy_diff"` | visualized |  |
+| `tailscale.acl.policy_snapshot` | log_event | `event_name="tailscale.acl.policy_snapshot"` | visualized |  |
 | `tailscale.acl.risky_rule` | log_event | `event_name="tailscale.acl.risky_rule"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Risk & ACL. |
 | `tailscale.acl.validation_issue` | log_event | `event_name="tailscale.acl.validation_issue"` | visualized |  |
 | `tailscale.config.audit` | log_event | `event_name="tailscale.config.audit"` | visualized, alertable, drives_a_variable |  |
 | `tailscale.device.attribute.expiring` | log_event | `event_name="tailscale.device.attribute.expiring"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance. |
+| `tailscale.device.change` | log_event | `event_name="tailscale.device.change"` | visualized |  |
 | `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys. |
 | `tailscale.device.posture` | log_event | `event_name="tailscale.device.posture"` | visualized, drives_a_variable |  |
 | `tailscale.device.tailnet_lock_error` | log_event | `event_name="tailscale.device.tailnet_lock_error"` | visualized |  |
 | `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
+| `tailscale.dns.snapshot` | log_event | `event_name="tailscale.dns.snapshot"` | visualized |  |
 | `tailscale.k8s.api_request` | log_event | `event_name="tailscale.k8s.api_request"` | visualized | The per-request record carrying the high-cardinality detail kept off the metrics (object name, query-free path, selectors, pod/container, and the raw exec command line under pii_filter.command_text). Read in Loki by event_name; this is the SIEM surface for the feed. |
 | `tailscale.k8s.session` | log_event | `event_name="tailscale.k8s.session"` | visualized | Per-session record from the .cast header: namespace, pod, container, session type, command and the recorder that holds the recording. Read in Loki by event_name. |
+| `tailscale.key.created` | log_event | `event_name="tailscale.key.created"` | visualized |  |
 | `tailscale.key.expiring` | log_event | `event_name="tailscale.key.expiring"` | visualized, drives_a_variable |  |
+| `tailscale.key.revoked` | log_event | `event_name="tailscale.key.revoked"` | visualized |  |
 | `tailscale.key.scopes` | log_event | `event_name="tailscale.key.scopes"` | visualized |  |
 | `tailscale.logstream.error` | log_event | `event_name="tailscale.logstream.error"` | visualized |  |
 | `tailscale.network.flow` | log_event | `event_name="tailscale.network.flow"` | visualized, drives_a_variable |  |
 | `tailscale.oauth_app.info` | log_event | `event_name="tailscale.oauth_app.info"` | visualized |  |
+| `tailscale.posture_integrations.snapshot` | log_event | `event_name="tailscale.posture_integrations.snapshot"` | visualized |  |
+| `tailscale.settings.snapshot` | log_event | `event_name="tailscale.settings.snapshot"` | visualized |  |
+| `tailscale.user_invite.no_longer_open` | log_event | `event_name="tailscale.user_invite.no_longer_open"` | visualized |  |
+| `tailscale.user_invite.observed` | log_event | `event_name="tailscale.user_invite.observed"` | visualized |  |
 | `tailscale.webhook.<type>` | log_event | `event_name="tailscale.webhook.<type>"` | **UNASSIGNED** | The event name is templated per webhook category, so no literal selector can name it. The dashboard's log-event picker does reach it, with the glob tailscale.webhook.*, which a literal-name gate cannot see. |
 | `tailscale.webhook_endpoints.event_mismatch` | log_event | `event_name="tailscale.webhook_endpoints.event_mismatch"` | visualized |  |
+| `tailscale.webhooks.snapshot` | log_event | `event_name="tailscale.webhooks.snapshot"` | visualized |  |
 | `tailscale.acl.autoapprovers` | metric | `tailscale_acl_autoapprovers_ratio` | visualized, alertable |  |
 | `tailscale.acl.last_audit_change` | metric | `tailscale_acl_last_audit_change_seconds` | visualized |  |
 | `tailscale.acl.last_changed` | metric | `tailscale_acl_last_changed_seconds` | visualized |  |
@@ -251,8 +262,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.rdns.cache.overflows` | metric | `tailscale_rdns_cache_overflows_total` | visualized, alertable |  |
 | `tailscale.rdns.queries` | metric | `tailscale_rdns_queries_total` | visualized |  |
 | `tailscale.rdns.refreshes` | metric | `tailscale_rdns_refreshes_total` | visualized |  |
+| `tailscale.service.host.info` | metric | `tailscale_service_host_info_ratio` | visualized |  |
 | `tailscale.service.hosts` | metric | `tailscale_service_hosts_ratio` | visualized, alertable |  |
 | `tailscale.service.ports` | metric | `tailscale_service_ports` | visualized, drives_a_variable |  |
+| `tailscale.services.by_tag` | metric | `tailscale_services_by_tag_ratio` | visualized |  |
 | `tailscale.services.count` | metric | `tailscale_services_count_ratio` | visualized, drives_a_variable |  |
 | `tailscale.setting.devices_key_duration` | metric | `tailscale_setting_devices_key_duration_days` | visualized |  |
 | `tailscale.setting.enabled` | metric | `tailscale_setting_enabled_ratio` | visualized, alertable |  |
@@ -335,7 +348,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.config.warnings` | metric | `tailscale2otel_config_warnings_ratio` | visualized, alertable |  |
 | `tailscale2otel.dedup.evictions` | metric | `tailscale2otel_dedup_evictions_total` | visualized, alertable |  |
 | `tailscale2otel.dedup.hits` | metric | `tailscale2otel_dedup_hits_total` | visualized |  |
+| `tailscale2otel.dedup.overlap_horizon` | metric | `tailscale2otel_dedup_overlap_horizon_seconds` | visualized, alertable |  |
 | `tailscale2otel.dedup.size` | metric | `tailscale2otel_dedup_size_ratio` | visualized |  |
+| `tailscale2otel.dedup.youngest_eviction_age` | metric | `tailscale2otel_dedup_youngest_eviction_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.enrich.cache_age` | metric | `tailscale2otel_enrich_cache_age_seconds` | visualized, alertable |  |
 | `tailscale2otel.enrich.cache_size` | metric | `tailscale2otel_enrich_cache_size_ratio` | visualized |  |
 | `tailscale2otel.export.datapoints` | metric | `tailscale2otel_export_datapoints_total` | visualized, alertable |  |
@@ -354,7 +369,9 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingress_wal.orphan.size` | metric | `tailscale2otel_ingress_wal_orphan_size_bytes` | visualized |  |
 | `tailscale2otel.ingress_wal.orphan.stages` | metric | `tailscale2otel_ingress_wal_orphan_stages_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.entries` | metric | `tailscale2otel_ingress_wal_pending_entries_ratio` | visualized |  |
+| `tailscale2otel.ingress_wal.pending.entries.fill` | metric | `tailscale2otel_ingress_wal_pending_entries_fill_ratio` | visualized, alertable |  |
 | `tailscale2otel.ingress_wal.pending.size` | metric | `tailscale2otel_ingress_wal_pending_size_bytes` | visualized |  |
+| `tailscale2otel.ingress_wal.pending.size.fill` | metric | `tailscale2otel_ingress_wal_pending_size_fill_ratio` | visualized, alertable |  |
 | `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
 | `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
 | `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |

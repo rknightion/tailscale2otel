@@ -21,9 +21,9 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 
 | | |
 |---|---|
-| **295** metrics + **17** log-event types | across **16** collectors |
+| **301** metrics + **28** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **123** shipped rules | **100** alert + **23** recording, Grafana-managed |
+| **125** shipped rules | **102** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
@@ -186,10 +186,10 @@ receiver auth, object-gap handling, and `auto_configure` are in
   nothing, and 11.5 rejects it with the misleading `Dashboard title cannot be empty`. This
   repository publishes them through GitSync; other deployments can import or provision the two JSON
   resources. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **100 alert
+- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **102 alert
   rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
-  `runbook_url`, and 96 of 100 link a canonical dashboard panel. See
+  `runbook_url`, and 98 of 102 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and
   [Runbooks](https://m7kni.io/tailscale2otel/runbooks/).
 - **Admin status page** — on by default at `127.0.0.1:9091`. Liveness/readiness probes at `/healthz` and
@@ -231,7 +231,7 @@ secret has a `*_file` variant for Docker/Kubernetes secrets.
 | [Getting started](https://m7kni.io/tailscale2otel/getting-started/) | Zero to first metrics in Grafana Cloud |
 | [Installation](https://m7kni.io/tailscale2otel/installation/) | Docker, Helm, compose, binaries |
 | [Configuration](https://m7kni.io/tailscale2otel/configuration/) | Every key, default and gotcha |
-| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 295 metrics and 17 log events |
+| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 301 metrics and 28 log events |
 | [Node metrics](https://m7kni.io/tailscale2otel/node-metrics/) | Central `tailscaled` scraping |
 | [Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/) | HEC receiver and webhooks |
 | [Architecture](https://m7kni.io/tailscale2otel/architecture/) | How it fits together |

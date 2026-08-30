@@ -32,6 +32,10 @@ type Options struct {
 	NegativeTTL time.Duration // failed-lookup cache TTL (default 5m)
 	MaxEntries  int           // cache size bound (default 4096)
 	Concurrency int           // max in-flight background lookups (default 8)
+	// SnapshotPath is an optional checkpoint-adjacent sidecar used to warm the
+	// cache after a restart. It is an internal composition seam, not a config
+	// key; an empty path keeps the cache memory-only.
+	SnapshotPath string
 
 	// StaleTTL is how long PAST a positive entry's TTL a resolved name may
 	// still be served — while exactly one background refresh runs — before it
@@ -112,8 +116,16 @@ type Cache struct {
 	max      int
 	now      func() time.Time
 
-	emitter     telemetry.Emitter
-	reportEvery time.Duration
+	emitter      telemetry.Emitter
+	reportEvery  time.Duration
+	snapshotPath string
+	snapshotMu   sync.Mutex
+	snapshotOff  bool // set after a persistence failure; state is best-effort
+	// snapshotDirty and snapshotGeneration are guarded by mu. The generation
+	// lets a completed write clear dirty only when no newer cache mutation raced
+	// it.
+	snapshotDirty      bool
+	snapshotGeneration uint64
 
 	mu       sync.Mutex
 	entries  map[netip.Addr]entry
@@ -158,29 +170,31 @@ func New(opts Options) *Cache {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c := &Cache{
-		lookup:      lookup,
-		ttl:         opts.TTL,
-		negTTL:      opts.NegativeTTL,
-		staleTTL:    opts.StaleTTL, // no invented default — see the Options.StaleTTL comment
-		timeout:     opts.Timeout,
-		max:         opts.MaxEntries,
-		now:         now,
-		emitter:     opts.Emitter,
-		reportEvery: opts.ReportInterval,
-		entries:     make(map[netip.Addr]entry),
-		inflight:    make(map[netip.Addr]struct{}),
-		sem:         make(chan struct{}, opts.Concurrency),
-		ctx:         ctx,
-		cancel:      cancel,
+		lookup:       lookup,
+		ttl:          opts.TTL,
+		negTTL:       opts.NegativeTTL,
+		staleTTL:     opts.StaleTTL, // no invented default — see the Options.StaleTTL comment
+		timeout:      opts.Timeout,
+		max:          opts.MaxEntries,
+		now:          now,
+		emitter:      opts.Emitter,
+		reportEvery:  opts.ReportInterval,
+		entries:      make(map[netip.Addr]entry),
+		inflight:     make(map[netip.Addr]struct{}),
+		sem:          make(chan struct{}, opts.Concurrency),
+		ctx:          ctx,
+		cancel:       cancel,
+		snapshotPath: strings.TrimSpace(opts.SnapshotPath),
 	}
+	c.loadSnapshot()
 	c.wg.Add(1)
 	go c.run()
 	return c
 }
 
-// run sweeps expired entries and flushes metrics on the report interval until
-// the cache is closed. It always sweeps; emission is a no-op when no Emitter is
-// configured.
+// run sweeps expired entries, flushes a dirty snapshot, and flushes metrics on
+// the report interval until the cache is closed. It always sweeps; persistence
+// and emission are no-ops when their optional sinks are not configured.
 func (c *Cache) run() {
 	defer c.wg.Done()
 	t := time.NewTicker(c.reportEvery)
@@ -191,6 +205,7 @@ func (c *Cache) run() {
 			return
 		case <-t.C:
 			c.sweep()
+			c.persistSnapshotIfDirty()
 			c.report()
 		}
 	}
@@ -319,7 +334,6 @@ func (c *Cache) resolve(addr netip.Addr) {
 	name := pickPTRName(names)
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	delete(c.inflight, addr)
 
 	// A positive entry present when this resolve lands can only have been
@@ -345,9 +359,12 @@ func (c *Cache) resolve(addr netip.Addr) {
 			// TTL over a single transient resolver blip. Leave it exactly as
 			// it was; it keeps serving stale until sweep() reclaims it at
 			// expires+StaleTTL, or a later refresh succeeds.
+			c.mu.Unlock()
 			return
 		}
 		c.entries[addr] = entry{expires: c.now().Add(c.negTTL)}
+		c.markSnapshotDirtyLocked()
+		c.mu.Unlock()
 		return
 	}
 	c.stats.querySuccess++
@@ -355,6 +372,8 @@ func (c *Cache) resolve(addr netip.Addr) {
 		c.stats.refreshSuccess++
 	}
 	c.entries[addr] = entry{name: name, expires: c.now().Add(c.ttl)}
+	c.markSnapshotDirtyLocked()
+	c.mu.Unlock()
 }
 
 // pickPTRName returns a deterministic PTR name for an address: the lexicographic
@@ -386,19 +405,24 @@ func pickPTRName(names []string) string {
 // keep counting evictExpired at plain expiry.
 func (c *Cache) sweep() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	now := c.now()
+	changed := false
 	for a, e := range c.entries {
 		if now.Before(e.expires) || c.servableLocked(e, now) {
 			continue
 		}
 		delete(c.entries, a)
+		changed = true
 		if e.name != "" && c.staleTTL > 0 {
 			c.stats.evictStaleExpired++
 		} else {
 			c.stats.evictExpired++
 		}
 	}
+	if changed {
+		c.markSnapshotDirtyLocked()
+	}
+	c.mu.Unlock()
 }
 
 // servableLocked reports whether an entry may still be handed to the hot path
@@ -417,11 +441,13 @@ func (c *Cache) servableLocked(e entry, now time.Time) bool {
 // are left to complete and repopulate naturally.
 func (c *Cache) Purge() int {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	n := len(c.entries)
 	c.entries = make(map[netip.Addr]entry)
 	c.stats.evictPurged += int64(n)
 	c.stats.lastPurge = c.now()
+	c.markSnapshotDirtyLocked()
+	c.mu.Unlock()
+	c.persistSnapshot()
 	return n
 }
 
@@ -502,6 +528,7 @@ func (c *Cache) Close() {
 	c.mu.Unlock()
 	c.cancel()
 	c.wg.Wait()
+	c.persistSnapshot()
 }
 
 // resolverLookup returns a lookup func bound to the given DNS server (empty =

@@ -115,6 +115,12 @@ def _provider():
                      'label_values({__name__=~"tailscale.+", tailscale2otel_provider!=""}, tailscale2otel_provider)')
 
 
+def _deployment_filters():
+    """One ad-hoc control for multi-install stacks."""
+    return adhoc_var("deployment_filters", "Instance / environment",
+                     [("service_name", "=", "tailscale2otel")])
+
+
 def _collector():
     return query_var("collector", "Collector",
                      "label_values(tailscale2otel_scrape_success_ratio, tailscale_collector)")
@@ -178,13 +184,14 @@ def _log_filter():
 DASHBOARD_CONTROLS = {
     # Product: the five the whole tailnet view is read through, plus the log
     # filter, which every per-signal log stream on every domain tab honours.
-    "tailscale2otel-tailnet": (_ds_prometheus, _ds_loki, _topn, _tailnet, _provider, _log_filter),
+    "tailscale2otel-tailnet": (_ds_prometheus, _ds_loki, _topn, _tailnet, _provider,
+                                _deployment_filters, _log_filter),
     # Health: the three datasources its panels query plus the two dimensions
     # they split by. ds_tempo and collector left the product dashboard entirely
     # — they were only ever read by the old Exporter Diagnostics tab, which is
     # what this dashboard replaced.
     "tailscale2otel-health": (_ds_prometheus, _ds_loki, _ds_tempo, _ds_pyroscope,
-                               _collector, _tailnet),
+                               _collector, _tailnet, _deployment_filters),
 }
 
 # Leaf tab title -> the controls scoped to it. A title appearing here must be a

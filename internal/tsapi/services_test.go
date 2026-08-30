@@ -10,13 +10,13 @@ import (
 // servicesFixture mirrors a real /services response, including the
 // addrs/comment/annotations the collector must NOT surface.
 const servicesFixture = `{"vipServices":[
-  {"name":"svc:argocd","addrs":["100.124.43.64","fd7a:115c:a1e0::7501:2b54"],
+  {"name":"svc:argocd","displayName":"Argo CD","addrs":["100.124.43.64","fd7a:115c:a1e0::7501:2b54"],
    "comment":"managed by the operator","annotations":{"tailscale.com/owner-references":"{...}"},
    "ports":["tcp:443"],"tags":["tag:k8s"]},
   {"name":"svc:grpc","addrs":["100.69.161.118"],"ports":["tcp:443","tcp:80"],"tags":["tag:k8s"]}
 ]}`
 
-func TestServices_DecodesNamePortsTags(t *testing.T) {
+func TestServices_DecodesNameDisplayNamePortsTags(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/tailnet/example.com/services" {
 			http.Error(w, "bad path: "+r.URL.Path, http.StatusNotFound)
@@ -35,6 +35,9 @@ func TestServices_DecodesNamePortsTags(t *testing.T) {
 	}
 	if svcs[0].Name != "svc:argocd" {
 		t.Errorf("name = %q", svcs[0].Name)
+	}
+	if svcs[0].DisplayName != "Argo CD" {
+		t.Errorf("display name = %q, want Argo CD", svcs[0].DisplayName)
 	}
 	if len(svcs[0].Ports) != 1 || svcs[0].Ports[0] != "tcp:443" {
 		t.Errorf("ports = %v", svcs[0].Ports)

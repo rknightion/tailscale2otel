@@ -46,7 +46,9 @@ func TestRunDedupReporter_EmitsSizeAndEvictionDeltas(t *testing.T) {
 		audit.Add("x") // size 1, evictions 0
 
 		sets := map[string]*dedup.Set{"flow": flow, "audit": audit, "webhook_cross": nil}
-		go runDedupReporter(ctx, rec.Emitter(), time.Minute, sets)
+		go runDedupReporter(ctx, rec.Emitter(), time.Minute, sets, map[string]time.Duration{
+			"flow": 2 * time.Minute, "audit": time.Minute,
+		})
 
 		// First tick (immediate): sizes and the seeded eviction counters.
 		synctest.Wait()
@@ -55,6 +57,9 @@ func TestRunDedupReporter_EmitsSizeAndEvictionDeltas(t *testing.T) {
 		}
 		if v := pointForSet(t, rec, "tailscale2otel.dedup.size", "audit"); v != 1 {
 			t.Errorf("audit size = %v, want 1", v)
+		}
+		if v := pointForSet(t, rec, "tailscale2otel.dedup.overlap_horizon", "flow"); v != 120 {
+			t.Errorf("flow overlap horizon = %v, want 120 seconds", v)
 		}
 		if v := pointForSet(t, rec, "tailscale2otel.dedup.evictions", "flow"); v != 2 {
 			t.Errorf("flow evictions = %v, want 2 (seed)", v)
@@ -77,4 +82,23 @@ func TestRunDedupReporter_EmitsSizeAndEvictionDeltas(t *testing.T) {
 			t.Errorf("flow size = %v, want 2 (bounded)", v)
 		}
 	})
+}
+
+func TestEmitDedupReportsYoungestEvictionAgeOnlyAfterEviction(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	set := dedup.New(1, dedup.WithClock(func() time.Time { return now }))
+	set.Add("first")
+	rec := telemetrytest.New()
+	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": set}, map[string]time.Duration{"flow": 5 * time.Minute}, map[string]uint64{}, map[string]uint64{})
+	if hasPointForSet(rec, "tailscale2otel.dedup.youngest_eviction_age", "flow") {
+		t.Fatal("youngest eviction age emitted before any eviction")
+	}
+
+	now = now.Add(90 * time.Second)
+	set.Add("second")
+	rec = telemetrytest.New()
+	emitDedup(rec.Emitter(), map[string]*dedup.Set{"flow": set}, map[string]time.Duration{"flow": 5 * time.Minute}, map[string]uint64{}, map[string]uint64{})
+	if got := pointForSet(t, rec, "tailscale2otel.dedup.youngest_eviction_age", "flow"); got != 90 {
+		t.Fatalf("youngest eviction age = %v, want 90 seconds", got)
+	}
 }
