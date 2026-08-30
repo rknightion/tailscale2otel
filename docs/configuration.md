@@ -1334,10 +1334,13 @@ successful receiver ACK means the accepted payload was fsynced into the local WA
 authenticated webhook body or the fully validated decompressed streaming body. It means **durable
 local acceptance only**: it does not mean OTLP export completed or the backend acknowledged the data.
 
-Replay is at-least-once. A crash after export but before the local completion commit can replay the
-same body and create duplicates. There is no TTL, age-based cleanup, or eviction. An exhausted byte
-or entry limit refuses new receiver requests, and a file/directory fsync failure or corrupt state
-fails closed rather than acknowledging data whose durability is uncertain.
+Replay is at-least-once. A crash after applying an envelope and before the local completion commit
+can replay the whole body on restart, so exported data and the metrics and log records derived from
+it can be emitted twice. The in-memory apply progress and cross-source deduplication sets are rebuilt
+empty at startup and do not suppress this; the WAL deliberately does not persist an applied marker.
+There is no TTL, age-based cleanup, or eviction. An exhausted byte or entry limit refuses new receiver
+requests, and a file/directory fsync failure or corrupt state fails closed rather than acknowledging
+data whose durability is uncertain.
 
 | Key | Default | Description |
 |-----|---------|-------------|

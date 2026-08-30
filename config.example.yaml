@@ -523,7 +523,10 @@ checkpoint:
 # Disabled is fully stateless. When enabled, a successful receiver ACK means the
 # accepted payload is durable on this filesystem: the raw authenticated webhook
 # body or fully validated decompressed streaming body. It does NOT mean OTLP/backend
-# acknowledgement. Replay is at-least-once, so a crash can duplicate exported data.
+# acknowledgement. Replay is at-least-once: a crash between applying an envelope and committing it
+# re-applies the whole envelope on restart, so exported data AND the metrics/log records derived
+# from it can be counted twice. The in-memory cross-source dedup sets are rebuilt empty at startup
+# and do not suppress this.
 ingress_wal:
   enabled: false                        # opt in to durable local acceptance and oldest-first replay for receiver payloads
   directory: /var/lib/tailscale2otel/ingress-wal   # absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters

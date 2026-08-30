@@ -302,6 +302,14 @@ func (c *ingressWALCoordinator) observeCommit(id string) {
 	c.progressMu.Unlock()
 }
 
+// applyEnvelope applies one durable receiver body before the WAL writes its
+// completion marker. c.progress is deliberately an in-memory ledger: it
+// suppresses re-application across retries handled by this coordinator, but it
+// is rebuilt empty after a process restart. A persisted applied marker was
+// considered and rejected because route.apply is not atomic with a marker
+// write (and a crash partway through apply could still replay the whole body).
+// TestIngressWALCoordinator_ReappliesAfterCrashBetweenApplyAndCommit pins this
+// accepted at-least-once behavior, including duplicate emitted telemetry.
 func (c *ingressWALCoordinator) applyEnvelope(
 	ctx context.Context,
 	envelope ingresswal.Envelope,

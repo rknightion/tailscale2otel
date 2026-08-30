@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/ingresswal"
+	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v4/internal/webhook"
 )
 
 type coordinatorWAL struct {
@@ -319,6 +322,104 @@ func TestIngressWALCoordinator_ReplayAppliesDrainsThenFlushes(t *testing.T) {
 	}
 	if !coordinator.Ready() {
 		t.Errorf("coordinator state = %q, want ready", coordinator.Health().State)
+	}
+}
+
+func TestIngressWALCoordinator_ReappliesAfterCrashBetweenApplyAndCommit(t *testing.T) {
+	const tailnet = "example.com"
+	body := []byte(`[{"timestamp":"2026-08-30T09:00:00Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"node created"}]`)
+	accepted := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	dir := filepath.Join(t.TempDir(), "ingress-wal")
+	opts := ingresswal.Options{Directory: dir, MaxBytes: 1 << 20, MaxEntries: 10}
+	store, err := ingresswal.New(opts)
+	if err != nil {
+		t.Fatalf("ingresswal.New: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	id, err := ingresswal.NewID(tailnet, ingressWALSourceWebhook, ingressWALSignalWebhook, body)
+	if err != nil {
+		t.Fatalf("ingresswal.NewID: %v", err)
+	}
+	if err := store.Append(context.Background(), ingresswal.Envelope{
+		ID: id, Tailnet: tailnet, Source: ingressWALSourceWebhook, Signal: ingressWALSignalWebhook,
+		Accepted: accepted, Body: body,
+	}); err != nil {
+		t.Fatalf("store.Append: %v", err)
+	}
+
+	rec := telemetrytest.New()
+	firstReceiver := webhook.New(webhook.Options{}, rec.Emitter(), nil)
+	firstCoordinator, err := newIngressWALCoordinator(store, []ingressWALRoute{{
+		tailnet: tailnet,
+		source:  ingressWALSourceWebhook,
+		signal:  ingressWALSignalWebhook,
+		apply: func(ctx context.Context, body []byte, accepted time.Time) (bool, error) {
+			return false, firstReceiver.ApplyDurable(ctx, body, accepted)
+		},
+		flush: func(context.Context) error {
+			return errors.New("simulated crash before WAL commit")
+		},
+	}})
+	if err != nil {
+		t.Fatalf("first newIngressWALCoordinator: %v", err)
+	}
+	if err := firstCoordinator.Replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+		t.Fatalf("first Replay error = %v, want bounded flush error", err)
+	}
+	if got := store.Health().PendingEntries; got != 1 {
+		t.Fatalf("pending entries after apply-before-commit failure = %d, want 1", got)
+	}
+
+	// A process crash discards the coordinator's in-memory progress ledger. Close
+	// and reopen the real WAL so the second coordinator also reads the durable
+	// pending envelope from the same directory.
+	if err := store.Close(); err != nil {
+		t.Fatalf("close first WAL: %v", err)
+	}
+	firstCoordinator = nil
+	reopened, err := ingresswal.New(opts)
+	if err != nil {
+		t.Fatalf("reopen ingress WAL: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	secondReceiver := webhook.New(webhook.Options{}, rec.Emitter(), nil)
+	secondCoordinator, err := newIngressWALCoordinator(reopened, []ingressWALRoute{{
+		tailnet: tailnet,
+		source:  ingressWALSourceWebhook,
+		signal:  ingressWALSignalWebhook,
+		apply: func(ctx context.Context, body []byte, accepted time.Time) (bool, error) {
+			return false, secondReceiver.ApplyDurable(ctx, body, accepted)
+		},
+		flush: func(context.Context) error { return nil },
+	}})
+	if err != nil {
+		t.Fatalf("second newIngressWALCoordinator: %v", err)
+	}
+	if err := secondCoordinator.Replay(context.Background()); err != nil {
+		t.Fatalf("second Replay: %v", err)
+	}
+	if got := reopened.Health().PendingEntries; got != 0 {
+		t.Fatalf("pending entries after healthy replay = %d, want 0", got)
+	}
+
+	logs := rec.LogRecords()
+	if got := len(logs); got != 2 {
+		t.Fatalf("webhook log records = %d, want 2", got)
+	}
+	for i, log := range logs {
+		if log.EventName != "tailscale.webhook.nodeCreated" || log.Body != "node created" {
+			t.Errorf("webhook log %d = (%q, %q), want nodeCreated/node created", i, log.EventName, log.Body)
+		}
+	}
+	points := rec.MetricPoints(webhook.MetricEvents)
+	if len(points) != 1 {
+		t.Fatalf("webhook event metric points = %d, want 1: %+v", len(points), points)
+	}
+	if got := points[0].Attrs["tailscale.webhook.type"]; got != "nodeCreated" {
+		t.Fatalf("webhook event metric type = %q, want nodeCreated", got)
+	}
+	if got := points[0].Value; got != 2 {
+		t.Fatalf("webhook event metric value = %v, want 2", got)
 	}
 }
 
