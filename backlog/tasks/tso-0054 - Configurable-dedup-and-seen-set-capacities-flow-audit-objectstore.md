@@ -4,7 +4,9 @@ title: 'Configurable dedup and seen-set capacities (flow, audit, objectstore)'
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:30'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-1
 dependencies: []
 priority: medium
 ordinal: 57000

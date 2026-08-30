@@ -4,8 +4,9 @@ title: Policy diff log records on revision change
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:27'
-updated_date: '2026-08-30 09:28'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-2
 dependencies:
   - TSO-0044
 priority: medium

@@ -4,7 +4,9 @@ title: Grants-aware policy parsing and acls-vs-grants adoption metric
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:10'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-3
 dependencies: []
 priority: medium
 ordinal: 46000

@@ -4,7 +4,9 @@ title: Act on device-cache staleness during control-plane outages
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:31'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-4
 dependencies: []
 priority: medium
 ordinal: 66000

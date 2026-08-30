@@ -4,8 +4,11 @@ title: Headscale and multi-tailnet starter configs in examples/config
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:36'
+updated_date: '2026-08-30 09:48'
 labels: []
-dependencies: []
+milestone: m-7
+dependencies:
+  - TSO-0077
 priority: medium
 ordinal: 86000
 ---

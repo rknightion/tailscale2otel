@@ -4,7 +4,9 @@ title: WAL replay can double-emit metrics/logs after a crash between apply and c
 status: To Do
 assignee: []
 created_date: '2026-08-30 08:45'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-1
 dependencies: []
 priority: medium
 type: bug

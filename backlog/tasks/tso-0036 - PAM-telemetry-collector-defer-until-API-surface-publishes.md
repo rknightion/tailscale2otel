@@ -4,7 +4,9 @@ title: PAM telemetry collector (defer until API surface publishes)
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:09'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-8
 dependencies: []
 priority: low
 ordinal: 39000

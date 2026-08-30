@@ -4,8 +4,9 @@ title: Design and ship an HA / multi-replica deployment story
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:02'
-updated_date: '2026-08-30 09:27'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-8
 dependencies: []
 priority: medium
 ordinal: 36000

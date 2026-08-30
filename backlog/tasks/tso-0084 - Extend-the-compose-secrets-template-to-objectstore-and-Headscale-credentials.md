@@ -4,7 +4,9 @@ title: Extend the compose secrets template to objectstore and Headscale credenti
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:36'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-7
 dependencies: []
 priority: low
 ordinal: 87000

@@ -4,8 +4,11 @@ title: Adjudicate the 14 unhandled API response fields in the contract ledger
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:10'
+updated_date: '2026-08-30 09:48'
 labels: []
-dependencies: []
+milestone: m-3
+dependencies:
+  - TSO-0037
 priority: low
 ordinal: 45000
 ---

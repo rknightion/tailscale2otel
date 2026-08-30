@@ -4,7 +4,9 @@ title: Classify nodemetrics scrape failures beyond transient_failure
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:30'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-4
 dependencies: []
 priority: medium
 ordinal: 58000

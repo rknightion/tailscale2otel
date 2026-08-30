@@ -4,7 +4,9 @@ title: Document restart-required vs hot-reloadable config keys
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:35'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-1
 dependencies: []
 priority: medium
 ordinal: 81000

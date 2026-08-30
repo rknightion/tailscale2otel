@@ -4,7 +4,9 @@ title: Include a bounded recent-log tail in the support bundle
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:34'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-5
 dependencies: []
 priority: medium
 ordinal: 77000

@@ -4,8 +4,11 @@ title: Youngest-eviction-age gauge on dedup sets
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:31'
+updated_date: '2026-08-30 09:48'
 labels: []
-dependencies: []
+milestone: m-4
+dependencies:
+  - TSO-0054
 priority: low
 ordinal: 68000
 ---

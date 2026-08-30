@@ -4,7 +4,9 @@ title: 'Headscale HTTP retry/rate-limit config: implement or reject'
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:35'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-1
 dependencies: []
 priority: high
 ordinal: 80000

@@ -4,7 +4,9 @@ title: Escalate zero-traffic receiver misconfiguration from warning to error
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:35'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-6
 dependencies: []
 priority: medium
 ordinal: 83000

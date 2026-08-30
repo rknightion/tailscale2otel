@@ -4,7 +4,9 @@ title: Warn on gRPC exporter with CA rotation but no reconnection period
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:34'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-5
 dependencies: []
 priority: low
 ordinal: 73000

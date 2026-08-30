@@ -4,8 +4,11 @@ title: 'Posture attribute values: compliance gauges with cardinality caps'
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:10'
+updated_date: '2026-08-30 09:48'
 labels: []
-dependencies: []
+milestone: m-3
+dependencies:
+  - TSO-0053
 priority: medium
 ordinal: 42000
 ---

@@ -4,8 +4,11 @@ title: Key and user-invite lifecycle timeline events
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:27'
+updated_date: '2026-08-30 09:48'
 labels: []
-dependencies: []
+milestone: m-2
+dependencies:
+  - TSO-0051
 priority: low
 ordinal: 53000
 ---

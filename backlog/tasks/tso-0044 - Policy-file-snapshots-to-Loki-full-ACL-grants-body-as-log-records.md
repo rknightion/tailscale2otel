@@ -4,7 +4,9 @@ title: Policy file snapshots to Loki (full ACL/grants body as log records)
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:27'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-2
 dependencies: []
 priority: medium
 ordinal: 47000

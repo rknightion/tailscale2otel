@@ -4,7 +4,9 @@ title: Bound the N+1 per-device subrequests in the devices/services collectors
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:30'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-4
 dependencies: []
 priority: high
 ordinal: 55000

@@ -4,7 +4,9 @@ title: 'Quiet key-expiry warnings: on-change + daily mode as default'
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:30'
+updated_date: '2026-08-30 09:47'
 labels: []
+milestone: m-1
 dependencies: []
 priority: high
 ordinal: 54000

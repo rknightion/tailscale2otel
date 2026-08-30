@@ -4,7 +4,9 @@ title: WAL fill-percentage gauge and shipped alert
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:31'
+updated_date: '2026-08-30 09:48'
 labels: []
+milestone: m-4
 dependencies: []
 priority: medium
 ordinal: 63000
