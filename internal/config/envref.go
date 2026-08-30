@@ -8,11 +8,12 @@ import (
 )
 
 // The environment-variable reference (docs/env-vars.md) is generated from
-// config.example.yaml: every leaf key, its default value as written, and its
-// inline comment become one table row. config.example.yaml is itself locked to
-// Default() by TestExampleConfigMatchesDefaults / TestExampleConfigCoversEveryKey,
-// so the example is a faithful, single source for the reference. The generated
-// table lives between these markers; prose outside them is hand-written.
+// config.example.yaml: every leaf key, its default value as written, inline
+// comment, and reload classification become one table row. config.example.yaml
+// is itself locked to Default() by TestExampleConfigMatchesDefaults /
+// TestExampleConfigCoversEveryKey, so the example is a faithful, single source
+// for the reference. The generated table lives between these markers; prose
+// outside them is hand-written.
 const (
 	envDocBegin = "<!-- BEGIN GENERATED: env-vars -->"
 	envDocEnd   = "<!-- END GENERATED: env-vars -->"
@@ -20,12 +21,13 @@ const (
 
 // envRow is one row of the environment-variable reference.
 type envRow struct {
-	Key      string // dotted config key
-	EnvVar   string // TS2OTEL_* variable name ("" when file-only)
-	Default  string // default value as written in config.example.yaml
-	Desc     string // the field's inline comment
-	FileOnly bool   // structured value (map / list of structs) — no flat env var
-	List     bool   // []string field — the env value is comma-separated
+	Key      string      // dotted config key
+	EnvVar   string      // TS2OTEL_* variable name ("" when file-only)
+	Default  string      // default value as written in config.example.yaml
+	Desc     string      // the field's inline comment
+	Reload   ReloadClass // restart or file_content
+	FileOnly bool        // structured value (map / list of structs) — no flat env var
+	List     bool        // []string field — the env value is comma-separated
 }
 
 // envVarName derives the environment variable for a dotted config key: prepend
@@ -68,6 +70,19 @@ func envReferenceRows(exampleYAML []byte) ([]envRow, error) {
 		}
 	}
 	walk("", "", doc.Content[0])
+
+	classifications := ReloadClassifications()
+	classificationByKey := make(map[string]ReloadClass, len(classifications))
+	for _, classification := range classifications {
+		classificationByKey[classification.Key] = classification.Class
+	}
+	for i := range rows {
+		classification, ok := classificationByKey[rows[i].Key]
+		if !ok {
+			return nil, fmt.Errorf("reload classification missing for config key %q", rows[i].Key)
+		}
+		rows[i].Reload = classification
+	}
 	return rows, nil
 }
 
@@ -131,27 +146,27 @@ func renderEnvReference(exampleYAML []byte) (string, error) {
 		return "", err
 	}
 	var b strings.Builder
-	b.WriteString("| Environment variable | Default | Description |\n")
-	b.WriteString("| --- | --- | --- |\n")
-	var fileOnly []string
+	b.WriteString("| Environment variable | Default | Reload | Description |\n")
+	b.WriteString("| --- | --- | --- | --- |\n")
+	var fileOnly []envRow
 	for _, r := range rows {
 		if r.FileOnly {
-			fileOnly = append(fileOnly, r.Key)
+			fileOnly = append(fileOnly, r)
 			continue
 		}
 		desc := escapePipes(r.Desc)
 		if r.List {
 			desc += " _(comma-separated list)_"
 		}
-		fmt.Fprintf(&b, "| `%s` | `%s` | %s |\n", r.EnvVar, escapePipes(r.Default), desc)
+		fmt.Fprintf(&b, "| `%s` | `%s` | `%s` | %s |\n", r.EnvVar, escapePipes(r.Default), r.Reload, desc)
 	}
 	if len(fileOnly) > 0 {
 		b.WriteString("\n**File-only** — these take structured values (a map or a list of objects) and must be set in the YAML config, not via an environment variable: ")
-		for i, k := range fileOnly {
+		for i, r := range fileOnly {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			fmt.Fprintf(&b, "`%s`", k)
+			fmt.Fprintf(&b, "`%s` (`%s`)", r.Key, r.Reload)
 		}
 		b.WriteString(".\n")
 	}

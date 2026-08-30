@@ -24,48 +24,48 @@ import (
 type GrafanaAnnotationsConfig struct {
 	// URL is the Grafana base URL, e.g. https://mystack.grafana.net. Setting it
 	// enables the feature.
-	URL string `yaml:"url"`
+	URL string `yaml:"url" reload:"restart"`
 	// Token is a Grafana service-account token. It needs exactly one action —
 	// `annotations:create` on scope `annotations:type:organization` — and
 	// tailscale2otel uses no other Grafana permission.
-	Token Secret `yaml:"token"`
+	Token Secret `yaml:"token" reload:"restart"`
 	// TokenFile reads Token from a file at Load (Docker-secrets style). Value
 	// XOR file: setting both is a Validate error.
-	TokenFile string `yaml:"token_file"`
+	TokenFile string `yaml:"token_file" reload:"restart"`
 	// DashboardUID confines annotations to one dashboard. Empty (the default)
 	// publishes ORGANIZATION annotations, visible to any dashboard whose
 	// annotation layer queries the tag — which is the point of pushing them
 	// rather than deriving them on one board.
-	DashboardUID string `yaml:"dashboard_uid"`
+	DashboardUID string `yaml:"dashboard_uid" reload:"restart"`
 	// Timeout bounds each POST /api/annotations request.
-	Timeout Duration `yaml:"timeout"`
+	Timeout Duration `yaml:"timeout" reload:"restart"`
 	// MaxPerMinute is a token-bucket CEILING on annotations written per
 	// process. Overage is dropped and counted, never delayed: a marker that
 	// arrives after the moment it explains is worse than absent.
-	MaxPerMinute int `yaml:"max_per_minute"`
+	MaxPerMinute int `yaml:"max_per_minute" reload:"restart"`
 	// QueueSize bounds the hand-off buffer between the collector goroutines and
 	// the single publisher. A full queue drops and counts rather than blocking
 	// collection.
-	QueueSize int `yaml:"queue_size"`
+	QueueSize int `yaml:"queue_size" reload:"restart"`
 	// RollupInterval is the bucket width for rolled-up categories: one region
 	// annotation per interval per category per tailnet, instead of one marker
 	// per event.
-	RollupInterval Duration `yaml:"rollup_interval"`
+	RollupInterval Duration `yaml:"rollup_interval" reload:"restart"`
 	// DedupeRetention is how long a published annotation's dedupe key is
 	// remembered, so a restart cannot republish it. It must comfortably exceed
 	// the longest source overlap window; too short and a still-current
 	// condition is republished, too long and the state file grows.
-	DedupeRetention Duration `yaml:"dedupe_retention"`
+	DedupeRetention Duration `yaml:"dedupe_retention" reload:"restart"`
 	// StateFile is where the dedupe set persists. Empty defaults to
 	// "annotations.json" beside checkpoint.file_path — deliberately NOT inside
 	// the checkpoint file, which the window pollers rewrite every tick and
 	// whose keys the startup migration walks.
-	StateFile string `yaml:"state_file"`
+	StateFile string `yaml:"state_file" reload:"restart"`
 	// ExtraTags are added to every annotation, for deployments separating
 	// environments or overlaying these on an existing tag scheme. Every
 	// annotation already carries `tailscale2otel`, `category:<c>` and
 	// `rule:<id>`.
-	ExtraTags []string `yaml:"extra_tags"`
+	ExtraTags []string `yaml:"extra_tags" reload:"restart"`
 	// Categories gates each curated category.
 	Categories AnnotationCategories `yaml:"categories"`
 }
@@ -84,10 +84,10 @@ type AnnotationCategories struct {
 
 // AnnotationCategoryConfig is one category's gate.
 type AnnotationCategoryConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" reload:"restart"`
 	// Rollup replaces the per-event markers with one region annotation per
 	// rollup_interval, summarizing what happened in it.
-	Rollup bool `yaml:"rollup"`
+	Rollup bool `yaml:"rollup" reload:"restart"`
 }
 
 // Enabled reports whether the annotation writer is configured at all.

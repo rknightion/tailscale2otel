@@ -55,8 +55,18 @@ func TestEnvReferenceRowsClassification(t *testing.T) {
 	if tn.EnvVar != "TS2OTEL_TAILSCALE__TAILNET" || tn.Default != "-" {
 		t.Errorf("tailscale.tailnet env/default = %q/%q", tn.EnvVar, tn.Default)
 	}
+	if tn.Reload != ReloadRestart {
+		t.Errorf("tailscale.tailnet reload = %q, want %q", tn.Reload, ReloadRestart)
+	}
 	if tn.Desc == "" {
 		t.Error("tailscale.tailnet description not carried from the example comment")
+	}
+	geo, ok := byKey["enrichment.geoip.country_database"]
+	if !ok {
+		t.Fatal("enrichment.geoip.country_database row missing")
+	}
+	if geo.Reload != ReloadFileContent {
+		t.Errorf("enrichment.geoip.country_database reload = %q, want %q", geo.Reload, ReloadFileContent)
 	}
 
 	// A []string field: env-settable and flagged as a comma-separated list.

@@ -83,6 +83,20 @@ These fields cannot be set via flat env vars because they are maps or lists of s
 - `collectors.node_metrics.discovery.port_overrides` — a tag→port-list map; set it in the YAML file.
 - `profiling.pyroscope.tags` — a string→string map; set via YAML.
 
+### Reload classifications
+
+Configuration values are read at startup unless the generated reference marks them
+`file_content`. The two classifications are:
+
+- `restart` — changing the value takes effect only after a process restart. A
+  configured filesystem path remains restart-required if the path itself changes.
+- `file_content` — the value is a fixed filesystem path whose contents are
+  re-read while the process runs. Replacing that file can take effect live; changing
+  the configured path still requires a restart.
+
+The complete [environment-variable reference](env-vars.md) includes the generated
+`Reload` column for every configuration key.
+
 ### Unknown-variable advisory
 
 A `TS2OTEL_*` env var that does not match any known config key is logged at startup as a **WARN** —
