@@ -252,8 +252,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	perTN := make([]telemetry.PerTailnetOptions, len(resolved))
 	for i := range resolved {
 		perTN[i] = telemetry.PerTailnetOptions{
-			Name:       labels[i],
-			InstanceID: instanceFor(base.InstanceID, labels[i], multi, cfg.PIIFilter.TailnetName),
+			Name:             labels[i],
+			InstanceID:       instanceFor(base.InstanceID, labels[i], multi, cfg.PIIFilter.TailnetName),
+			CardinalityLimit: resolved[i].CardinalityMetricLimit,
 		}
 	}
 	ps, err := telemetry.NewProviderSet(ctx, base, perTN)

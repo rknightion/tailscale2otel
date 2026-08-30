@@ -552,6 +552,12 @@ type ResolvedTailnet struct {
 	Name string
 	Auth TailscaleAuth
 	HTTP TailscaleHTTPConfig
+	// Cardinality* are the effective per-tailnet values after applying the
+	// file-only tailnets[].cardinality overrides. MetricLimit preserves a
+	// negative value as the explicit unlimited setting for this tailnet.
+	CardinalityMetricLimit       int
+	CardinalityWarningThreshold  int
+	CardinalityCriticalThreshold int
 	// MaxResponseBytes / MaxLogResponseBytes are the fleet-wide decode budgets
 	// from the top-level tailscale: block, copied onto every resolved tailnet so
 	// the app layer has one place to read them from (#474).
@@ -589,23 +595,50 @@ func (c *Config) ResolvedTailnets() []ResolvedTailnet {
 			if auth.Method == "oauth" && len(auth.OAuth.Scopes) == 0 {
 				auth.OAuth.Scopes = []string{"all:read"}
 			}
+			metricLimit, warning, critical := c.effectiveTailnetCardinality(t.Cardinality)
 			out[i] = ResolvedTailnet{
-				Name:                t.Name,
-				Auth:                auth,
-				HTTP:                mergeHTTPDefaults(t.HTTP, base),
-				MaxResponseBytes:    maxBytes,
-				MaxLogResponseBytes: maxLogBytes,
+				Name:                         t.Name,
+				Auth:                         auth,
+				HTTP:                         mergeHTTPDefaults(t.HTTP, base),
+				CardinalityMetricLimit:       metricLimit,
+				CardinalityWarningThreshold:  warning,
+				CardinalityCriticalThreshold: critical,
+				MaxResponseBytes:             maxBytes,
+				MaxLogResponseBytes:          maxLogBytes,
 			}
 		}
 		return out
 	}
 	return []ResolvedTailnet{{
-		Name:                c.Tailscale.Tailnet,
-		Auth:                c.Tailscale.Auth,
-		HTTP:                c.Tailscale.HTTP,
-		MaxResponseBytes:    maxBytes,
-		MaxLogResponseBytes: maxLogBytes,
+		Name:                         c.Tailscale.Tailnet,
+		Auth:                         c.Tailscale.Auth,
+		HTTP:                         c.Tailscale.HTTP,
+		CardinalityMetricLimit:       c.Cardinality.MetricLimit,
+		CardinalityWarningThreshold:  c.Cardinality.WarningThreshold,
+		CardinalityCriticalThreshold: c.Cardinality.CriticalThreshold,
+		MaxResponseBytes:             maxBytes,
+		MaxLogResponseBytes:          maxLogBytes,
 	}}
+}
+
+// effectiveTailnetCardinality resolves the file-only override block onto the
+// global cardinality settings. A zero value inherits independently; unlike the
+// global limit, a negative per-tailnet metric limit is retained as an explicit
+// unlimited value for that tailnet.
+func (c *Config) effectiveTailnetCardinality(override TailnetCardinality) (metricLimit, warning, critical int) {
+	metricLimit = override.MetricLimit
+	if metricLimit == 0 {
+		metricLimit = c.Cardinality.MetricLimit
+	}
+	warning = override.WarningThreshold
+	if warning == 0 {
+		warning = c.Cardinality.WarningThreshold
+	}
+	critical = override.CriticalThreshold
+	if critical == 0 {
+		critical = c.Cardinality.CriticalThreshold
+	}
+	return metricLimit, warning, critical
 }
 
 // decodeBudgets returns the effective fleet-wide response decode budgets,

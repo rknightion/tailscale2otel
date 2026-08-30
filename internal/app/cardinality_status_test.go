@@ -1,10 +1,13 @@
 package app
 
 import (
+	"context"
+	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -201,5 +204,39 @@ func TestRuntimeCardinalityInfo_UsesOnlyThatRuntimesTracker(t *testing.T) {
 	nilInfo := runtimeCardinalityInfo(rtNil, true, th, mbn)
 	if nilInfo.Available {
 		t.Error("nil tracker should report Available=false, not a fake empty snapshot")
+	}
+}
+
+// TestTailnetStatuses_CardinalityThresholdsArePerTailnet ensures the status
+// page renders the effective thresholds of each runtime rather than the global
+// values that only apply as the inheritance base.
+func TestTailnetStatuses_CardinalityThresholdsArePerTailnet(t *testing.T) {
+	cfg := config.Default()
+	cfg.OTLP.Protocol = "stdout"
+	cfg.SelfObservability.Enabled = true
+	cfg.Cardinality.WarningThreshold = 100
+	cfg.Cardinality.CriticalThreshold = 200
+	cfg.Tailnets = []config.TailnetConfig{
+		{Name: "alpha", Auth: config.TailscaleAuth{Method: "apikey", APIKey: "key"}, Cardinality: config.TailnetCardinality{WarningThreshold: 2, CriticalThreshold: 3}},
+		{Name: "beta", Auth: config.TailscaleAuth{Method: "apikey", APIKey: "key"}, Cardinality: config.TailnetCardinality{WarningThreshold: 4, CriticalThreshold: 5}},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("cfg.Validate: %v", err)
+	}
+	a, err := New(context.Background(), cfg, "v-test", slog.New(slog.NewTextHandler(discard{}, nil)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = a.shutdown(context.Background()) })
+
+	got := map[string]statusdata.CardinalityThresholds{}
+	for _, status := range a.tailnetStatuses(time.Now()) {
+		got[status.Name] = status.Cardinality.Thresholds
+	}
+	if got["alpha"] != (statusdata.CardinalityThresholds{Warning: 2, Critical: 3}) {
+		t.Errorf("alpha thresholds = %+v, want 2/3", got["alpha"])
+	}
+	if got["beta"] != (statusdata.CardinalityThresholds{Warning: 4, Critical: 5}) {
+		t.Errorf("beta thresholds = %+v, want 4/5", got["beta"])
 	}
 }

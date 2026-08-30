@@ -20,8 +20,9 @@ import (
 // above is about whatever other Resource attributes each per-tailnet target
 // carries, not about disambiguating tailnet in target_info.
 type PerTailnetOptions struct {
-	Name       string
-	InstanceID string // distinct service.instance.id for this tailnet (required)
+	Name             string
+	InstanceID       string // distinct service.instance.id for this tailnet (required)
+	CardinalityLimit int    // 0 inherits base; negative explicitly disables this tailnet's limit
 }
 
 // ProviderSet owns one process-level Provider (no tailscale.tailnet attribute;
@@ -50,6 +51,9 @@ func NewProviderSet(ctx context.Context, base Options, tailnets []PerTailnetOpti
 		o := base
 		o.TailnetName = tn.Name
 		o.InstanceID = tn.InstanceID // distinct per tailnet — see PerTailnetOptions
+		if tn.CardinalityLimit != 0 {
+			o.CardinalityLimit = tn.CardinalityLimit
+		}
 		p, err := NewProvider(ctx, o)
 		if err != nil {
 			_ = ps.Shutdown(ctx)

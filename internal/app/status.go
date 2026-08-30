@@ -434,10 +434,29 @@ func (a *App) cardCatalogInputs() (statusdata.CardinalityThresholds, map[string]
 	return th, byName
 }
 
+// cardinalityThresholdsFor returns the effective status-page thresholds for
+// one runtime. The aggregate page keeps the global inheritance base because it
+// combines unlike tailnet counts; each tailnet section must use its own values.
+func (a *App) cardinalityThresholdsFor(rt *tailnetRuntime) statusdata.CardinalityThresholds {
+	configuredName := a.runtimeConfiguredName(rt)
+	for _, resolved := range a.cfg.ResolvedTailnets() {
+		if resolved.Name == configuredName {
+			return statusdata.CardinalityThresholds{
+				Warning:  resolved.CardinalityWarningThreshold,
+				Critical: resolved.CardinalityCriticalThreshold,
+			}
+		}
+	}
+	return statusdata.CardinalityThresholds{
+		Warning:  a.cfg.Cardinality.WarningThreshold,
+		Critical: a.cfg.Cardinality.CriticalThreshold,
+	}
+}
+
 // tailnetStatuses builds the per-tailnet sections of the status page — the data
 // the admin page's tailnet selector (#325) filters onto.
 func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
-	th, metricByName := a.cardCatalogInputs()
+	_, metricByName := a.cardCatalogInputs()
 	out := make([]statusdata.TailnetStatus, 0, len(a.runtimes))
 	for _, rt := range a.runtimes {
 		name := a.runtimeName(rt)
@@ -459,7 +478,7 @@ func (a *App) tailnetStatuses(now time.Time) []statusdata.TailnetStatus {
 			Collectors:  cols,
 			Devices:     runtimeDeviceRows(rt),
 			API:         runtimeAPIInfo(rt),
-			Cardinality: runtimeCardinalityInfo(rt, a.cfg.SelfObservability.Enabled, th, metricByName),
+			Cardinality: runtimeCardinalityInfo(rt, a.cfg.SelfObservability.Enabled, a.cardinalityThresholdsFor(rt), metricByName),
 			Failing:     failing,
 		})
 	}

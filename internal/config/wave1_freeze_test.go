@@ -117,6 +117,46 @@ func TestValidatePerTailnetCardinalityUsesEffectiveValues(t *testing.T) {
 	}
 }
 
+// TestResolvedTailnets_CardinalityValuesAreEffective pins the three-way
+// per-tailnet limit semantics at the config/app boundary: zero inherits, a
+// negative limit is an explicit unlimited override, and thresholds inherit
+// independently.
+func TestResolvedTailnets_CardinalityValuesAreEffective(t *testing.T) {
+	cfg := config.Default()
+	cfg.Cardinality.MetricLimit = 100
+	cfg.Cardinality.WarningThreshold = 40
+	cfg.Cardinality.CriticalThreshold = 80
+	cfg.Tailnets = []config.TailnetConfig{
+		{Name: "inherited", Auth: cfg.Tailscale.Auth},
+		{Name: "unlimited", Auth: cfg.Tailscale.Auth, Cardinality: config.TailnetCardinality{
+			MetricLimit:       -1,
+			WarningThreshold:  20,
+			CriticalThreshold: 60,
+		}},
+		{Name: "mixed", Auth: cfg.Tailscale.Auth, Cardinality: config.TailnetCardinality{
+			MetricLimit:       50,
+			CriticalThreshold: 45,
+		}},
+	}
+
+	got := cfg.ResolvedTailnets()
+	if len(got) != 3 {
+		t.Fatalf("ResolvedTailnets len = %d, want 3", len(got))
+	}
+	want := []struct{ limit, warning, critical int }{
+		{100, 40, 80},
+		{-1, 20, 60},
+		{50, 40, 45},
+	}
+	for i, w := range want {
+		if got[i].CardinalityMetricLimit != w.limit || got[i].CardinalityWarningThreshold != w.warning || got[i].CardinalityCriticalThreshold != w.critical {
+			t.Errorf("ResolvedTailnets()[%d] cardinality = %d/%d/%d, want %d/%d/%d",
+				i, got[i].CardinalityMetricLimit, got[i].CardinalityWarningThreshold, got[i].CardinalityCriticalThreshold,
+				w.limit, w.warning, w.critical)
+		}
+	}
+}
+
 func validHeadscaleConfig() *config.Config {
 	cfg := config.Default()
 	cfg.Provider = "headscale"
