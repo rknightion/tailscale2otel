@@ -3,10 +3,10 @@ id: TSO-0032
 title: >-
   Per-runtime shutdown is sequential, contradicting the deliberate
   parallel-shutdown fix
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 08:45'
-updated_date: '2026-08-30 10:05'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -23,15 +23,15 @@ Flow-store closes and rollup flushes run sequentially per tailnet runtime (inter
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-runtime close/flush either runs in parallel under the shared shutdown budget or carries a comment justifying sequential order
-- [ ] #2 Multi-tailnet shutdown cannot lose one runtime flush because another runtime was slow, or the limitation is documented
+- [x] #1 Per-runtime close/flush either runs in parallel under the shared shutdown budget or carries a comment justifying sequential order
+- [x] #2 Multi-tailnet shutdown cannot lose one runtime flush because another runtime was slow, or the limitation is documented
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -63,4 +63,14 @@ Against that:
 **The real defect, CONFIRMED.** `sqlitestore.Store.Close()` (internal/flowstore/sqlitestore/schema.go:351) is `close(s.done); s.wg.Wait(); s.db.Close()`. `wg.Wait()` is UNBOUNDED — it blocks until every background worker (retention/vacuum) returns. N tailnet runtimes close sequentially, unbounded, entirely OUTSIDE the budget the deployment grace period is derived from. `worstCaseDrain()` does not know these closes exist, so the only thing covering them is `shutdownBudgetHeadroom` (15s), which exists for process teardown and container overhead, not for N unbounded SQLite closes.
 
 Consequence: on a multi-tailnet deployment with `flows.directory` set, the container can be SIGKILLed mid-close once N closes exceed the headroom — and the drift gate that exists precisely to stop the grace period being too short (`shutdownbudget_test.go`, #332) is blind to it. Data loss is bounded (SQLite WAL replays on next open) but the shutdown-budget contract is silently violated, which is the thing that test was written to prevent.
+
+Wave 1 Lane C3 started by root after C2 commit 175e3ce. Harness Codex; Appendix A route EXECUTION to Luna/max. Lane owns the frozen shutdown close-budget implementation; root retains integrated gate, review, commit, push, external effects, and tracker finalization.
+
+Negative guard evidence: omitting the fifth stage produced 30s rather than 40s; a sequential close scaffold starved the fast runtime; and the pre-regeneration chart guard caught minimum 45 rather than 55. All breaks were restored. Helm render reported 457 passed, 0 failed; just check and CI 33312668201 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 2d84e51: close per-tailnet flow stores concurrently under a shared 10-second stage, account for a 40-second drain, and raise deployment grace to 55 seconds. Verified by blocked-runtime race test, Helm renders, full gate, and CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TSO-0053
 title: Cardinality backstop for the posture attribute-namespace wildcard
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 10:07'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,15 +20,15 @@ WithAttributeNamespaces("*") (internal/collector/devices/devices.go:540-562) pro
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Wildcard namespace promotion is bounded with a documented overflow behaviour
-- [ ] #2 The cap interacts sanely with cardinality.metric_limit accounting
+- [x] #1 Wildcard namespace promotion is bounded with a documented overflow behaviour
+- [x] #2 The cap interacts sanely with cardinality.metric_limit accounting
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -108,4 +108,14 @@ So the overflow behaviour must be DROP-plus-observability, and that difference h
 ## Sequencing with TSO-0039 (m-3, depends on this)
 
 TSO-0039 adds posture compliance gauges and its AC#2 requires "any attribute-to-label promotion path has an enforced cardinality cap". Land the cap HERE as the shared mechanism; TSO-0039 then reuses it rather than inventing a second one.
+
+Wave 1 Lane C1 started by root after B1 completed. Harness Codex; Appendix A route JUDGMENT+EXECUTION to Terra/high. Lane owns the frozen posture-cap implementation and generated dashboard/catalog artifacts; root retains app wiring, integrated gate, review, commit, push, and tracker finalization.
+
+Negative guard evidence: deliberate breaks exercised TestCollect_AttributeCardinalityCaps, test_attribute_key_drops_have_a_visible_panel, signal-disposition coverage, and dashboard family and nested-domain counts; each went red and was restored. Generated metrics, dashboard, alert links, dispositions, and counts are in sync. just check and CI 33312668201 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 06e7fc7: deterministic posture attribute key and value caps, overflow visibility gauge, and a real dashboard panel upstream of the SDK cardinality limit. Verified by telemetry tests, deliberate-red guards, generated-artifact gates, and CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

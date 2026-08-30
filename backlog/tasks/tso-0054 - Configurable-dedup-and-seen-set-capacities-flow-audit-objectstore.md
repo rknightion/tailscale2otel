@@ -1,10 +1,10 @@
 ---
 id: TSO-0054
 title: 'Configurable dedup and seen-set capacities (flow, audit, objectstore)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 10:07'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,15 +20,15 @@ Three boundary-protection capacities are compile-time constants: flow dedup 1638
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All three capacities are config keys with validated bounds and current defaults
-- [ ] #2 Docs/schema/env reference regenerated
+- [x] #1 All three capacities are config keys with validated bounds and current defaults
+- [x] #2 Docs/schema/env reference regenerated
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -107,4 +107,14 @@ Note the webhook dedup at app.go:588/662 uses `auditDedupCapacity`: it deduplica
 ## Why the capacities matter (the failure this prevents)
 
 `internal/dedup.Set` is a FIFO: at capacity the OLDEST key is evicted, and an evicted key that reappears "counts as new" (dedup.go:5-6). A tailnet chatty enough to push more than `capacity` distinct keys through in less than the window overlap therefore evicts entries YOUNGER than the horizon the set exists to protect, and silently double-counts at every window boundary. `Set` already tracks `evictions` and `hits` counters (dedup.go:26-27) — check whether those are already exported as self-obs before adding anything new.
+
+Wave 1 Lane A4 started by root at 268fc93 after Config Freeze f54548a; all collector/object-store implementation sites are lane-owned and app wiring remains root-owned W1.
+
+TDD evidence: deliberate no-op breaks produced dedup capacity = 4096, want 1; log records = 2, want 3; and seen checkpoint keys after first cycle = 3, want 2. Restored implementation wires the configured values through all six sites. just check and CI 33312668201 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 1209ff3 with root wiring in 1de673f: configurable flow, audit, webhook, and object-store capacities reach all six constant sites. Verified by eviction and checkpoint race tests, full gate, and CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

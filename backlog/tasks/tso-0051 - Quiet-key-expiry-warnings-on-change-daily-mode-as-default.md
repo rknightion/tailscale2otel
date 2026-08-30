@@ -1,10 +1,10 @@
 ---
 id: TSO-0051
 title: 'Quiet key-expiry warnings: on-change + daily mode as default'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 10:06'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,16 +20,16 @@ The key-expiry WARN fires on every scrape per expiring device/key (internal/coll
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Expiring keys/devices produce a warning on state change plus at most one daily reminder by default
-- [ ] #2 The legacy every-scrape behaviour remains selectable via config
-- [ ] #3 Docs/env reference regenerated for the new mode key
+- [x] #1 Expiring keys/devices produce a warning on state change plus at most one daily reminder by default
+- [x] #2 The legacy every-scrape behaviour remains selectable via config
+- [x] #3 Docs/env reference regenerated for the new mode key
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -96,4 +96,14 @@ Volume check: at the 60s default devices interval a single device inside the 14-
 ## Config-shape seams
 
 Both new keys are plain enum strings, so the env loader needs no change (`TS2OTEL_COLLECTORS__DEVICES__EXPIRY_LOG_MODE` works automatically; NOT a `listEnvKeys` or `structSliceEnvKeys` case). But `TestExampleConfigCoversEveryKey` AND `TestHelmValuesCoverEveryKey` (internal/config/completeness_test.go:74 and the block after it) mean config.example.yaml and deploy/helm/tailscale2otel/values.yaml are both MANDATORY — the charts `config:` block carries `# @schema additionalProperties:false`, so a key missing from values.yaml is not merely undocumented, it is unusable by chart operators.
+
+Wave 1 Lane B1 started by root at 1de673f after W1; Config Freeze already landed both enum keys and all config artifacts.
+
+Validation: telemetry-driven device, posture-attribute, and key tests cover daily, always, and off modes, changed expiry timestamps, 24-hour reminders, pruning, and metrics retention. just check passed at cd3bfa0; exact-head CI run 33312668201 concluded success.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 72fb042: default expiry warnings to change plus daily reminders while retaining always and off modes for devices, posture attributes, and keys. Verified by race tests, full gate, and CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

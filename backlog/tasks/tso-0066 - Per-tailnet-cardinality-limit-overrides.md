@@ -1,10 +1,10 @@
 ---
 id: TSO-0066
 title: Per-tailnet cardinality limit overrides
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:31'
-updated_date: '2026-08-30 10:08'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,16 +20,16 @@ cardinality.metric_limit and the warning/critical thresholds are process-global;
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A tailnets: entry can carry its own metric limit and thresholds, defaulting to global
-- [ ] #2 Overflow behaviour and self-obs metrics are attributable per tailnet
-- [ ] #3 Config schema/docs regenerated
+- [x] #1 A tailnets: entry can carry its own metric limit and thresholds, defaulting to global
+- [x] #2 Overflow behaviour and self-obs metrics are attributable per tailnet
+- [x] #3 Config schema/docs regenerated
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -88,4 +88,14 @@ Traced all three global values to their consumers. They are NOT wired the same w
 **Env is already handled.** `tailnets` is in `structSliceEnvKeys` (internal/config/env.go:52), so any `TS2OTEL_TAILNETS__0__...` variable is already a hard Load error (#79). Nesting a new struct under a tailnets entry needs NO env-loader change and MUST NOT get one — the list is file-only by design.
 
 **Existing global validation to mirror per entry.** `CardinalityConfig` (internal/config/config.go:956) documents: `CriticalThreshold >= WarningThreshold`, and when `MetricLimit > 0` both must be `<= MetricLimit`. Defaults 2000 / 8000 / 10000. The per-entry rule must be checked on the EFFECTIVE (post-fallback) values, not the raw ones — an entry setting only `metric_limit: 1000` while inheriting the global 2000/8000 thresholds is invalid and would otherwise pass.
+
+Wave 1 Lane C2 started by root at 1de673f after W1; goal §6.1 negative metric_limit means per-tailnet unlimited and overrides the contradictory sentence in the task plan.
+
+Validation: two-tailnet tests prove independent limit resolution, overflow attribution, status thresholds, and a GaugeSnapshot that cannot mix tailnets. just check passed at cd3bfa0; exact-head CI run 33312668201 concluded success.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 175e3ce: per-tailnet metric limits and warning and critical thresholds resolve independently with attributable overflow and status. Verified by race tests, full gate, CodeRabbit correction, and CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

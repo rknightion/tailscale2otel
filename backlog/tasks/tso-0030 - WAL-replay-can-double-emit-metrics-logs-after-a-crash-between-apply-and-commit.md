@@ -1,10 +1,10 @@
 ---
 id: TSO-0030
 title: WAL replay can double-emit metrics/logs after a crash between apply and commit
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 08:45'
-updated_date: '2026-08-30 10:04'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -21,15 +21,15 @@ internal/app/ingresswal.go:305-363 tracks envelope phase (pending/applied/flushe
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The apply-to-commit crash window is either closed (persisted applied marker) or explicitly documented as an accepted at-least-once duplication of metrics as well as exports
-- [ ] #2 A test or written analysis demonstrates the chosen behaviour under crash-during-apply
+- [x] #1 The apply-to-commit crash window is either closed (persisted applied marker) or explicitly documented as an accepted at-least-once duplication of metrics as well as exports
+- [x] #2 A test or written analysis demonstrates the chosen behaviour under crash-during-apply
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -80,4 +80,14 @@ There is no atomic commit spanning "emitted to a remote backend" and "wrote a lo
 The existing wording already concedes half of it. `config.example.yaml:511` header: "Replay is at-least-once, so a crash can duplicate exported data." That is true of exports and silent about the metric/log double-count, which is the part an operator reading a counter would be surprised by.
 
 Existing coverage in `internal/app/ingresswal_test.go` proves the IN-PROCESS retry paths do not re-apply (`TestIngressWALCoordinator_FlushRetryDoesNotReapply:357`, `..._CommitRetryDoesNotReapplyOrReflush:441`, `..._ProgressClearsAfterSuccessfulReplay:512`). Nothing covers a NEW coordinator over the same WAL directory — the crash case — and the absence of that test is why the in-memory ledger reads as durable.
+
+Wave 1 Lane B2 started by root at 268fc93 after Lane 0; frozen decision is to document inherent at-least-once replay and not persist an applied marker.
+
+TDD evidence: the crash-window replay test first failed with webhook log records = 2, want 1, proving the old exactly-once assumption was wrong. Final race tests and just check passed; exact-head CI run 33312668201 concluded success.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed d1d0a2b: document and prove WAL replay is at-least-once for derived metrics and logs after a crash between apply and commit. Verified by reopen/replay test, full gate, and CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

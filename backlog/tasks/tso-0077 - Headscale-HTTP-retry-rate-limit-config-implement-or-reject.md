@@ -1,10 +1,10 @@
 ---
 id: TSO-0077
 title: 'Headscale HTTP retry/rate-limit config: implement or reject'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 10:08'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,15 +20,15 @@ headscale.http.retry and rate_limit are accepted "for parity" but explicitly NOT
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The keys are either honoured by hsapi (with tests) or rejected loudly at validation
-- [ ] #2 config.example.yaml comment and generated docs updated to match reality
+- [x] #1 The keys are either honoured by hsapi (with tests) or rejected loudly at validation
+- [x] #2 config.example.yaml comment and generated docs updated to match reality
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -98,4 +98,14 @@ The description left the fork open with a bias to implementing. Implementing win
 `internal/tsapi/transport.go` is 659 lines and is mostly NOT neutral: `endpointLabel` with its `collectionsWithVarSegment` elision (transport.go:565-625), OAuth `RetrieveError` classification (`classifyOAuthRetrieveError`, transport.go:505; `rfc6749ErrorCodes`, transport.go:419), and tsapi-specific logging. Only three small pure functions are neutral: `computeBackoff` (transport.go:627), `retryAfter` (transport.go:643), `retryableOutcome` (transport.go:331).
 
 **Do NOT attempt a full extraction of `retryTransport`.** It is the most security- and correctness-sensitive code in the repo (per-attempt timeout semantics, rate-limit wait excluded from that timeout, Retry-After clamped to maxDelay per #206, terminal-auth-costs-one-attempt per #489) and it is heavily tested. Refactoring it wholesale inside a bug-fix wave trades a large regression risk for no user-visible gain.
+
+Wave 1 Lane A2 started by root at 268fc93 after Config Freeze f54548a; composition-root wiring remains root-owned W1.
+
+Negative test evidence: temporarily removing HTTP 429 from RetryableOutcome made TestClientRetriesTooManyRequests fail with status 429; restored behavior passes. Rate-limit wait, Retry-After clamp, cancellation, attempts, and self-observability wiring passed just check and CI 33312668201.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 7292f5a with root wiring in 1de673f: Headscale now honors retry and rate-limit config using provider-neutral primitives while preserving tsapi structure. Verified by focused race tests, full gate, and CI.
+<!-- SECTION:FINAL_SUMMARY:END -->

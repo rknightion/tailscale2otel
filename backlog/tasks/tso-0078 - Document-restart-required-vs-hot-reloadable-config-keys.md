@@ -1,10 +1,10 @@
 ---
 id: TSO-0078
 title: Document restart-required vs hot-reloadable config keys
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 10:10'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -20,15 +20,15 @@ Substantial engineering avoids restarts (credential/TLS reload, checkpoint durab
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every config key carries a reload classification in generated docs
-- [ ] #2 A drift gate fails when a new key lacks a classification
+- [x] #1 Every config key carries a reload classification in generated docs
+- [x] #2 A drift gate fails when a new key lacks a classification
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -110,4 +110,14 @@ The task left the fork open. Take tags, for three reasons grounded in this repo:
 `docs/configuration.md` then gets a short HAND-WRITTEN section explaining the three values and pointing at the generated table — no generator, no drift gate needed for prose that names no counts.
 
 (Housekeeping the lane should flag rather than fix: AGENTS.md says eleven generated families and doc-0002 says eight. Both are stale against `just --list`. Not this tasks job, but worth a needs-triage note.)
+
+Wave 1 Lane D1 started by root after C2 and C3 completed. Harness Codex; Appendix A route EXECUTION to Luna/max. Lane owns all config leaf reload classification and env-reference/prose artifacts; root retains integrated gate, review, commit, push, discovered-task creation, and tracker finalization.
+
+Negative guard evidence captured verbatim: removing log_level reload tag made TestReloadClassificationCoversEveryKey fail naming log_level; changing it to file_content made TestFileContentReloadKeysArePathFields fail naming log_level. Both were restored and passed together. Generated env reference, just check, and CI 33312668201 passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed cd3bfa0: every config leaf has restart or file_content classification, with generated env-reference output and two negative-tested drift guards. Verified by race tests, full gate, and exact-head CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

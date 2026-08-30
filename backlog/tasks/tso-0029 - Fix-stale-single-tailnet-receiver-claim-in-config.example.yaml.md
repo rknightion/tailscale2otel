@@ -1,10 +1,10 @@
 ---
 id: TSO-0029
 title: Fix stale single-tailnet receiver claim in config.example.yaml
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 08:45'
-updated_date: '2026-08-30 10:03'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -21,15 +21,15 @@ config.example.yaml:98-99 states streaming/webhook receivers require single-tail
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The example config, docs/configuration.md and actual validation behaviour agree on multi-tailnet receiver support
-- [ ] #2 Generated docs regenerated if the example config comments change
+- [x] #1 The example config, docs/configuration.md and actual validation behaviour agree on multi-tailnet receiver support
+- [x] #2 Generated docs regenerated if the example config comments change
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -67,4 +67,12 @@ The two guards use DIFFERENT thresholds and this is load-bearing, not a typo to 
 A replacement comment saying only "receivers work in multi-tailnet mode" loses that. Write the rule, not a vibe.
 
 Also note the mutual-exclusion rules the comment could usefully carry: with routes set, `streaming.path` must stay at its default and `token`/`token_file`/`public_url`/`auto_configure` must be empty (validate.go:155-166); `webhook.path` must stay default and `secret`/`secret_file` empty (validate.go:207-213); webhook routes cannot mix tokenless and signed routes on one listener (line 236).
+
+Validation: the Config Freeze corrected the stale single-tailnet receiver comment and regenerated all affected config artifacts. just check passed at cd3bfa0; exact-head CI run 33312668201 concluded success.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed f54548a: corrected the receiver comment while freezing all Wave 1 config keys with behavior-preserving defaults. Verified by config completeness and generated-artifact gates plus exact-head CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

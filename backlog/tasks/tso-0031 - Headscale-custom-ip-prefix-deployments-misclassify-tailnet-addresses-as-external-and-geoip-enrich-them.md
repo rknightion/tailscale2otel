@@ -3,10 +3,10 @@ id: TSO-0031
 title: >-
   Headscale custom ip-prefix deployments misclassify tailnet addresses as
   external and geoip-enrich them
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 08:45'
-updated_date: '2026-08-30 10:05'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -23,16 +23,16 @@ enrich.IsTailscaleAddr hardcodes the Tailscale CGNAT/ULA ranges (internal/enrich
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 With a custom Headscale ip-prefix configured, tailnet addresses are classified as tailnet, not external
-- [ ] #2 Private/tailnet addresses are never geoip-enriched
-- [ ] #3 The address-range logic has one source of truth shared by enrich and geoip
+- [x] #1 With a custom Headscale ip-prefix configured, tailnet addresses are classified as tailnet, not external
+- [x] #2 Private/tailnet addresses are never geoip-enriched
+- [x] #3 The address-range logic has one source of truth shared by enrich and geoip
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -121,4 +121,14 @@ Making the prefix set operator-configurable therefore WIDENS an SSRF guard. That
 ## Headscale does not expose its prefixes — the task description is wrong on this
 
 The description proposes deriving the bounds from the control plane because "Headscale exposes its prefixes". It does not. `internal/hsapi/client.go` calls exactly five endpoints — `/api/v1/node`, `/user`, `/preauthkey`, `/apikey`, `/policy` (client.go:238-278, limit.go:20-21) — and Headscales v1 API has no configuration/prefixes resource. `hsapi.APIKey.Prefix` (types.go:68) is an API-key string prefix, unrelated. The prefix set must come from CONFIG.
+
+Wave 1 Lane A3 started by root at 268fc93 after Config Freeze f54548a; AC#2 is treated as refuted-as-written per goal §6.2 and W1 wiring remains root-owned.
+
+Validation: custom-prefix containment and cache classification passed; deliberate breaks of address-set containment, private-address rejection, and global-address handling failed the named focused assertions and were restored. Root wiring and SSRF rejection tests passed in just check; exact-head CI run 33312668201 concluded success.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed 1fbb579 with root wiring in 1de673f: validated configured Headscale private prefixes, shared address classification, and preserved node-discovery SSRF rejections. Verified by race tests, full gate, and CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->

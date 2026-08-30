@@ -1,10 +1,10 @@
 ---
 id: TSO-0028
 title: Fix stale hand-maintained alert-count prose in READMEs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 08:44'
-updated_date: '2026-08-30 10:03'
+updated_date: '2026-08-30 12:58'
 labels: []
 milestone: m-1
 dependencies: []
@@ -21,15 +21,15 @@ README.md:192 claims "77 of 78" alert rules link a canonical dashboard panel and
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both prose counts match the generated rule manifests
-- [ ] #2 The counts are produced by the generator or asserted by a drift/CI check so they cannot silently rot again
+- [x] #1 Both prose counts match the generated rule manifests
+- [x] #2 The counts are produced by the generator or asserted by a drift/CI check so they cannot silently rot again
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -67,4 +67,14 @@ runbook{yes: 100}           AlertRules carrying runbook_url
 ## Why it rotted, and the mechanism to reuse
 
 `scripts/check-capability-counts.py` already gates every other public count. Its `SUMMARY_PATTERNS` table (script lines 28-62) holds one regex per prose sentence with named groups keyed to `internal/catalog/capability_counts.json`; `check_summaries` requires EXACTLY ONE match per pattern and compares each named group to the source. The source itself is derived in Go by `deriveCapabilityCounts` (`internal/catalog/capability_counts_test.go:63`), which globs `deploy/alerts/grafana-managed/*.json` and counts by `kind`. Neither sentence was ever added to that table, which is the entire bug.
+
+Wave 1 Lane A1 started by root at 268fc93 after Lane 0 passed; lane owns only the §5.1 alert-count files.
+
+Validation: just check passed at cd3bfa0; exact-head CI run 33312668201 concluded success. Negative guard evidence: changing the root prose numerator to 95 failed panel_linked_alert_rules, and changing the alerts README denominator to 99 failed alert_rules; both deliberate breaks were restored.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed f9a9ad4: derive and gate the true 96 of 100 panel-linked alert count in both READMEs. Verified by deliberate-red count checks, full just check, and exact-head CI 33312668201.
+<!-- SECTION:FINAL_SUMMARY:END -->
