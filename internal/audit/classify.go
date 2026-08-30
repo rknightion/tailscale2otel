@@ -93,6 +93,7 @@ var knownOrigins = map[string]bool{
 	"ADMIN_CONSOLE": true, "CONFIG_API": true, "CONTROL": true,
 	"IDENTITY_PROVIDER": true, "NODE": true, "SUPPORT_REQUEST": true,
 	"STRIPE": true, "SECURITY_NOTIFICATION": true, "LEGAL_NOTIFICATION": true,
+	"BORDER0_API": true,
 }
 
 // normalizeOrigin returns the origin unchanged when it is a known API value,
@@ -140,6 +141,7 @@ var knownActorTypes = map[string]bool{
 	"USER": true, "NODE": true, "AUTOMATED_WORKER": true,
 	"OAUTH_CLIENT": true, "SCIM": true, "MULLVAD": true,
 	"LOGSTREAM": true, "SECRET_SCANNER": true,
+	"PAM_CONNECTOR": true, "PAM_SERVICE_ACCOUNT": true,
 }
 
 // normalizeAction returns the action unchanged when it is a known API value,
