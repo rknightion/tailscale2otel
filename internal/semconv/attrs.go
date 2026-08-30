@@ -137,6 +137,7 @@ const (
 	AttrProvider  = "tailscale2otel.provider"
 	AttrCollector = "tailscale.collector"
 	AttrFeature   = "tailscale.feature"
+	AttrACLETag   = "tailscale.acl.etag"
 
 	// AttrHealthType is the tailscaled health-warning class carried on the
 	// curated tailscale.node.health_messages gauge (from the scraped `type`
@@ -175,6 +176,19 @@ const (
 	// folded to a bounded admit-set (unrecognized -> DropReasonOther) since
 	// scraped labels come from semi-trusted tailnet-member nodes.
 	AttrDropReason = "tailscale.drop.reason"
+)
+
+// Stable attributes carried by every chunk emitted through the shared snapshot
+// contract. Collector-specific revision aliases (for example an ACL ETag) may
+// accompany these keys, but must not replace them.
+const (
+	AttrSnapshotKind       = "tailscale.snapshot.kind"
+	AttrSnapshotReason     = "tailscale.snapshot.reason"
+	AttrSnapshotRevision   = "tailscale.snapshot.revision"
+	AttrSnapshotEmissionID = "tailscale.snapshot.emission_id"
+	AttrSnapshotBytes      = "tailscale.snapshot.bytes"
+	AttrSnapshotSeq        = "tailscale.snapshot.seq"
+	AttrSnapshotTotal      = "tailscale.snapshot.total"
 )
 
 // tailscale.path values — the bounded, folded set of data-plane paths. The raw

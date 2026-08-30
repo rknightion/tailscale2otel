@@ -77,6 +77,48 @@ func TestMultiTailnetReceiversRouteToMatchingRuntime(t *testing.T) {
 	}
 }
 
+func TestMultiTailnetRunReportsWebhookCrossDedupPerRuntime(t *testing.T) {
+	cfg := config.Default()
+	cfg.Admin.Enabled = false
+	cfg.SelfObservability.Enabled = true
+	cfg.Collectors.Auditlogs.DedupCapacity = 1
+	cfg.Webhook.Enabled = true
+	cfg.Webhook.Listen = "127.0.0.1:0"
+	cfg.Webhook.DedupAuditEvents = true
+	cfg.Webhook.Routes = []config.WebhookRoute{
+		{Tailnet: "acme.example.com", Secret: "secret-a"},
+		{Tailnet: "beta.example.com", Secret: "secret-b"},
+	}
+
+	recA, recB := telemetrytest.New(), telemetrytest.New()
+	a := newMultiReceiverTestApp(t, cfg, recA, recB)
+	for _, set := range a.webhookDedups {
+		set.Add("first")
+		set.Add("second")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	if err := a.Run(ctx); err != nil {
+		t.Fatalf("Run() returned %v on graceful shutdown, want nil", err)
+	}
+
+	for tailnet, rec := range map[string]*telemetrytest.Recorder{
+		"acme.example.com": recA,
+		"beta.example.com": recB,
+	} {
+		for _, metric := range []string{
+			"tailscale2otel.dedup.size",
+			"tailscale2otel.dedup.overlap_horizon",
+			"tailscale2otel.dedup.youngest_eviction_age",
+		} {
+			if !hasPointForSet(rec, metric, "webhook_cross") {
+				t.Errorf("%s: %s{dedup.set=webhook_cross} not emitted", tailnet, metric)
+			}
+		}
+	}
+}
+
 func TestMultiTailnetReceiverRejectsWithoutFirstRuntimeFallback(t *testing.T) {
 	cfg := config.Default()
 	cfg.Streaming.Enabled = true

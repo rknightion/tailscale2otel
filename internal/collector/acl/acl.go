@@ -20,6 +20,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
@@ -250,7 +251,7 @@ func (c *Collector) emitPolicySnapshot(e telemetry.Emitter, revision, body strin
 	}
 
 	previous := c.priorPolicy
-	emitted := emitter.Observe(c.now(), revision, body, telemetry.Attrs{"tailscale.acl.etag": revision})
+	emitted := emitter.Observe(c.now(), revision, body, telemetry.Attrs{semconv.AttrACLETag: revision})
 	if !emitted {
 		return
 	}
@@ -263,7 +264,7 @@ func (c *Collector) emitPolicySnapshot(e telemetry.Emitter, revision, body strin
 			MaxBodyBytes: c.snapshotBodyBytes,
 		})
 		if err == nil {
-			diffEmitter.Observe(c.now(), revision, unifiedPolicyDiff(previous, body), telemetry.Attrs{"tailscale.acl.etag": revision})
+			diffEmitter.Observe(c.now(), revision, unifiedPolicyDiff(previous, body), telemetry.Attrs{semconv.AttrACLETag: revision})
 		}
 	}
 	c.snapshotBaseline = state

@@ -205,6 +205,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	var (
 		hostsAttempted bool
 		hostsErr       error
+		hostInfoPoints []telemetry.GaugePoint
 	)
 	for i := range svcs {
 		s := &svcs[i]
@@ -214,10 +215,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			hostsAttempted = true
 			// First-error-wins: these failures are systemic (a scope or
 			// credential problem), not worth ranking against each other.
-			if hErr := c.emitHosts(ctx, e, *s); hErr != nil && hostsErr == nil {
+			if hErr := c.emitHosts(ctx, e, *s, &hostInfoPoints); hErr != nil && hostsErr == nil {
 				hostsErr = hErr
 			}
 		}
+	}
+	if c.collectHosts && hostsErr == nil {
+		e.GaugeSnapshot(docHostInfo.Name, docHostInfo.Unit, docHostInfo.Description, hostInfoPoints)
 	}
 	if hostsAttempted {
 		apistate.Observe(e, c.tracker, c.Name(), opListServiceHosts, servicesDisposition, hostsErr, c.now())
@@ -259,7 +263,7 @@ func (c *Collector) populateEnrichCache(ctx context.Context) error {
 // (the service's host series is skipped; collection continues); the error is
 // returned so Collect can aggregate it into the single listServiceHosts
 // availability observation for the tick.
-func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service tsapi.VIPService) error {
+func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service tsapi.VIPService, hostInfoPoints *[]telemetry.GaugePoint) error {
 	hosts, err := c.api.ServiceHosts(ctx, service.Name)
 	if err != nil {
 		return err
@@ -276,7 +280,7 @@ func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service 
 		e.Gauge(docHosts.Name, docHosts.Unit, docHosts.Description, float64(n), attrs)
 	}
 	for _, h := range hosts {
-		c.emitHostInfo(e, service, h)
+		*hostInfoPoints = append(*hostInfoPoints, c.hostInfoPoint(service, h))
 	}
 	return nil
 }
@@ -343,7 +347,7 @@ func (c *Collector) emitTagRollup(e telemetry.Emitter, svcs []tsapi.VIPService) 
 // the human/device dimensions when the devices collector has refreshed it.
 // Missing cache entries are not errors: the service-host API remains useful and
 // the node ID still identifies the host for a later join.
-func (c *Collector) emitHostInfo(e telemetry.Emitter, service tsapi.VIPService, h tsapi.ServiceHost) {
+func (c *Collector) hostInfoPoint(service tsapi.VIPService, h tsapi.ServiceHost) telemetry.GaugePoint {
 	attrs := serviceAttrs(service)
 	attrs[attrApproval] = h.ApprovalLevel
 	attrs[attrConfigured] = h.Configured
@@ -372,7 +376,7 @@ func (c *Collector) emitHostInfo(e telemetry.Emitter, service tsapi.VIPService, 
 			}
 		}
 	}
-	e.Gauge(docHostInfo.Name, docHostInfo.Unit, docHostInfo.Description, 1, attrs)
+	return telemetry.GaugePoint{Value: 1, Attrs: attrs}
 }
 
 // serviceAttrs returns the bounded identity carried by a per-service signal.

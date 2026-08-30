@@ -187,7 +187,7 @@ receiver auth, object-gap handling, and `auto_configure` are in
   repository publishes them through GitSync; other deployments can import or provision the two JSON
   resources. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
 - **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **102 alert
-  rules and 23 recording rules** (123 total) as `rules.alerting.grafana.app` manifests, one JSON per
+  rules and 23 recording rules** (125 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
   `runbook_url`, and 98 of 102 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and

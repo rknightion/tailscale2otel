@@ -188,7 +188,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if err != nil {
 			return err
 		}
-		c.emitSnapshot(e, body)
+		if err := c.emitSnapshot(e, body); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -237,7 +239,7 @@ func marshalSnapshot(settings *tsapi.TailnetSettings) (string, error) {
 	return string(body), nil
 }
 
-func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) {
+func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) error {
 	if c.snapshotEmitter == nil {
 		emitter, err := snapshot.New(snapshot.Config{
 			Emitter:      e,
@@ -247,11 +249,12 @@ func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) {
 			MaxBodyBytes: c.snapshotBodyBytes,
 		})
 		if err != nil {
-			return
+			return err
 		}
 		c.snapshotEmitter = emitter
 	}
 	c.snapshotEmitter.Observe(c.now(), "", body, nil)
+	return nil
 }
 
 func boolValue(b bool) float64 {

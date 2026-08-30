@@ -83,3 +83,11 @@ func TestSnapshotDisabledByDefault(t *testing.T) {
 		t.Fatalf("snapshot logs = %d, want 0 when opt-in is absent", len(logs))
 	}
 }
+
+func TestSnapshotEmitterInitializationErrorIsReturned(t *testing.T) {
+	api := &fakeAPI{settings: &tsapi.TailnetSettings{}}
+	err := New(api, 0, WithSnapshot(true, 1)).Collect(context.Background(), telemetrytest.New().Emitter())
+	if err == nil {
+		t.Fatal("Collect returned nil with an invalid snapshot body limit")
+	}
+}

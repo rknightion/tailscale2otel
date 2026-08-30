@@ -60,6 +60,17 @@ const EventPolicySnapshot = "tailscale.acl.policy_snapshot"
 // policy body on a revision change.
 const EventPolicyDiff = "tailscale.acl.policy_diff"
 
+var policySnapshotAttrs = []string{
+	semconv.AttrACLETag,
+	semconv.AttrSnapshotKind,
+	semconv.AttrSnapshotReason,
+	semconv.AttrSnapshotRevision,
+	semconv.AttrSnapshotEmissionID,
+	semconv.AttrSnapshotBytes,
+	semconv.AttrSnapshotSeq,
+	semconv.AttrSnapshotTotal,
+}
+
 // EventValidationIssue is the OTLP log event name emitted once per non-zero
 // validation-issue kind found in the last policy validation. Unlike
 // EventRiskyRule, it carries NO free text at all (not even under a droppable
@@ -184,14 +195,14 @@ var (
 		Name:        EventPolicySnapshot,
 		Severity:    "INFO",
 		Description: "Raw ACL policy body, emitted only when collectors.acl.snapshot_enabled is set and the revision changes or its heartbeat is due. Large bodies are UTF-8-safe chunks that MUST be grouped by tailscale.snapshot.emission_id, verified to have one matching tailscale.snapshot.revision, then sorted by tailscale.snapshot.seq before reassembly.",
-		Attributes:  []string{"tailscale.acl.etag", "tailscale.snapshot.kind", "tailscale.snapshot.reason", "tailscale.snapshot.revision", "tailscale.snapshot.emission_id", "tailscale.snapshot.bytes", "tailscale.snapshot.seq", "tailscale.snapshot.total"},
+		Attributes:  policySnapshotAttrs,
 		Group:       groupACL,
 	}
 	docACLPolicyDiff = metricdoc.LogEvent{
 		Name:        EventPolicyDiff,
 		Severity:    "INFO",
 		Description: "Unified diff between the prior and current raw ACL policy bodies, emitted only with collectors.acl.snapshot_enabled on a changed policy revision. Large diffs use the same UTF-8-safe chunk contract as snapshots. The prior body is retained in the configured snapshot state store so the first post-restart revision still has a diff baseline.",
-		Attributes:  []string{"tailscale.acl.etag", "tailscale.snapshot.kind", "tailscale.snapshot.reason", "tailscale.snapshot.revision", "tailscale.snapshot.emission_id", "tailscale.snapshot.bytes", "tailscale.snapshot.seq", "tailscale.snapshot.total"},
+		Attributes:  policySnapshotAttrs,
 		Group:       groupACL,
 	}
 	docACLValidationIssue = metricdoc.LogEvent{

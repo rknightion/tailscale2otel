@@ -150,6 +150,31 @@ func TestCollectHostsBuckets(t *testing.T) {
 	}
 }
 
+func TestCollectHostInfoClearsRemovedSeries(t *testing.T) {
+	api := &fakeAPI{
+		svcs: []tsapi.VIPService{{Name: "svc:alpha"}},
+		hosts: map[string][]tsapi.ServiceHost{
+			"svc:alpha": {{NodeID: "node-1", ApprovalLevel: "approved:auto", Configured: "ready"}},
+		},
+	}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithCollectHosts(true))
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("first Collect: %v", err)
+	}
+	if got := len(rec.MetricPoints(metricHostInfo)); got != 1 {
+		t.Fatalf("first host-info points = %d, want 1", got)
+	}
+
+	api.hosts["svc:alpha"] = nil
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("second Collect: %v", err)
+	}
+	if got := len(rec.MetricPoints(metricHostInfo)); got != 0 {
+		t.Fatalf("host-info points after removal = %d, want 0", got)
+	}
+}
+
 func TestCollectServiceTagRollupCap(t *testing.T) {
 	api := &fakeAPI{svcs: []tsapi.VIPService{
 		{Name: "svc:alpha", Tags: []string{"tag:kept"}},

@@ -84,6 +84,47 @@ func TestCache_WarmStartsFromSnapshot(t *testing.T) {
 	})
 }
 
+func TestCache_DoesNotPersistNegativeLookupAcrossRestart(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "rdns.json")
+		ip := addr("203.0.113.8")
+		seed := New(Options{
+			NegativeTTL:    time.Hour,
+			SnapshotPath:   path,
+			ReportInterval: testNoTick,
+			Lookup: func(context.Context, netip.Addr) ([]string, error) {
+				return nil, context.DeadlineExceeded
+			},
+		})
+		seed.LookupName(ip)
+		synctest.Wait()
+		seed.Close()
+
+		var restartCalls atomic.Int32
+		restarted := New(Options{
+			NegativeTTL:    time.Hour,
+			SnapshotPath:   path,
+			ReportInterval: testNoTick,
+			Lookup: func(context.Context, netip.Addr) ([]string, error) {
+				restartCalls.Add(1)
+				return []string{"recovered.example.com."}, nil
+			},
+		})
+		defer restarted.Close()
+
+		if name, ok := restarted.LookupName(ip); ok || name != "" {
+			t.Fatalf("first restarted LookupName = (%q,%v), want cold miss", name, ok)
+		}
+		synctest.Wait()
+		if got := restartCalls.Load(); got != 1 {
+			t.Fatalf("restart lookup calls = %d, want 1; negative entries must stay memory-only", got)
+		}
+		if name, ok := restarted.LookupName(ip); !ok || name != "recovered.example.com" {
+			t.Fatalf("recovered LookupName = (%q,%v), want (recovered.example.com,true)", name, ok)
+		}
+	})
+}
+
 func TestCache_DoesNotRestoreExpiredSnapshotEntry(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "rdns.json")

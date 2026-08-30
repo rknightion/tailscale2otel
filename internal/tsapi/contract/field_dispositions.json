@@ -189,7 +189,8 @@
     {
       "op": "getPolicyFile",
       "path": "(whole response)",
-      "type": "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — an opaque string we never structurally decode; disposition is recorded at op level",
+      "type": "tsclient.RawACL",
+      "note": "Response is a raw HuJSON policy document held in RawACL.HuJSON; the opaque policy string is not structurally decoded and the disposition is recorded at operation level.",
       "disposition": "emitted"
     },
     {

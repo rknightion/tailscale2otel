@@ -833,8 +833,9 @@ func (a *App) Run(ctx context.Context) error {
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
 		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
 		go runIngressWALReporter(ctx, a.procEmitter, a.ingressWAL, interval)
-		// webhook cross-dedup is a process-global, single-tailnet-only set — report it
-		// on the process emitter. Each tailnet's own flow/audit dedup sets are
+		// webhook cross-dedup is process-global only in single-tailnet mode — report
+		// that set on the process emitter. Routed mode owns one set per runtime and
+		// reports it below on that runtime's emitter. Each tailnet's own flow/audit sets are
 		// reported on THAT runtime's emitter (stamping tailscale.tailnet), so in
 		// multi-tailnet mode every tailnet's dedup.size/evictions are visible, not
 		// just runtimes[0]'s (#60).
@@ -844,13 +845,21 @@ func (a *App) Run(ctx context.Context) error {
 			"webhook_cross": a.cfg.Collectors.Auditlogs.Interval.D(),
 		})
 		for _, rt := range a.runtimes {
-			go runDedupReporter(ctx, rt.emitter, interval, map[string]*dedup.Set{
+			sets := map[string]*dedup.Set{
 				"flow":  rt.flowDedup,
 				"audit": rt.auditDedup,
-			}, map[string]time.Duration{
+			}
+			horizons := map[string]time.Duration{
 				"flow":  maxDuration(a.cfg.Collectors.Flowlogs.Interval.D(), a.cfg.Collectors.Flowlogs.ReplayOverlap.D()),
 				"audit": a.cfg.Collectors.Auditlogs.Interval.D(),
-			})
+			}
+			if a.webhookDedups != nil {
+				if webhookDedup := a.webhookDedups[a.runtimeConfiguredName(rt)]; webhookDedup != nil {
+					sets["webhook_cross"] = webhookDedup
+					horizons["webhook_cross"] = a.cfg.Collectors.Auditlogs.Interval.D()
+				}
+			}
+			go runDedupReporter(ctx, rt.emitter, interval, sets, horizons)
 		}
 		go runCardinalityReporter(ctx, a.procEmitter, a.procCard, a.metricGroups, interval)
 		for _, q := range a.batchQueues {

@@ -81,10 +81,10 @@ var (
 			"be grouped by tailscale.snapshot.emission_id and sorted by " +
 			"tailscale.snapshot.seq before reassembly.",
 		Attributes: []string{
-			"tailscale.snapshot.kind", "tailscale.snapshot.reason",
-			"tailscale.snapshot.revision", "tailscale.snapshot.emission_id",
-			"tailscale.snapshot.bytes", "tailscale.snapshot.seq",
-			"tailscale.snapshot.total",
+			semconv.AttrSnapshotKind, semconv.AttrSnapshotReason,
+			semconv.AttrSnapshotRevision, semconv.AttrSnapshotEmissionID,
+			semconv.AttrSnapshotBytes, semconv.AttrSnapshotSeq,
+			semconv.AttrSnapshotTotal,
 		},
 		Group: groupDNS,
 	}

@@ -106,9 +106,12 @@ func (c *Cache) snapshotEntryLimit() int {
 }
 
 func validSnapshotName(name string) bool {
-	if name == "" || len(name) > maxSnapshotNameBytes ||
+	if name == "" {
+		return false
+	}
+	if len(name) > maxSnapshotNameBytes ||
 		strings.TrimSpace(name) != name || strings.HasSuffix(name, ".") {
-		return name == ""
+		return false
 	}
 	for _, r := range name {
 		if r < 0x20 || r == 0x7f {
