@@ -23,10 +23,6 @@ const (
 	// defaultLag is the fallback trailing safety margin when New is given a
 	// non-positive lag, so the scheduler never queries up to "now".
 	defaultLag = 60 * time.Second
-	// dedupCapacity bounds the boundary de-dup set. Events at a window boundary
-	// can appear in two adjacent ticks; remembering recent event keys lets us
-	// suppress the duplicate. The set is FIFO-bounded, so old keys age out.
-	dedupCapacity = 4096
 )
 
 // opListConfigurationAuditLogs is the upstream operationId of the window
@@ -71,6 +67,14 @@ func WithAcceptedObserver(observer ingest.AcceptedObserver) Option {
 	return func(c *Collector) { c.acceptedObserver = observer }
 }
 
+// WithDedupCapacity sets the maximum number of event identities retained by
+// the poll-boundary de-duplication set. A non-positive value uses the internal
+// dedup package's bounded fallback; configuration validation rejects such
+// values before the composition root constructs a collector.
+func WithDedupCapacity(capacity int) Option {
+	return func(c *Collector) { c.seen = dedup.New(capacity) }
+}
+
 // WithAPIState wires the shared per-operation availability tracker (#420).
 // Availability METRICS are emitted regardless; the tracker is the in-process
 // introspection copy the admin status page reads. A nil tracker is a no-op.
@@ -96,7 +100,7 @@ func New(a api, proc *audit.Processor, interval, lag time.Duration, onIngest fun
 		proc:     proc,
 		interval: interval,
 		lag:      lag,
-		seen:     dedup.New(dedupCapacity),
+		seen:     dedup.New(0),
 		onIngest: onIngest,
 		now:      time.Now,
 	}

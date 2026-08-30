@@ -522,6 +522,47 @@ func TestCollect_ReListingDoesNotReIngest(t *testing.T) {
 	}
 }
 
+// TestCollect_SeenKeysTrimToConfiguredCapacity proves the durable seen set
+// honors its configured bound. The oldest of three objects is trimmed at a
+// capacity of two and is consequently eligible for re-ingestion on the next
+// overlapping listing, which exercises the actual checkpoint path.
+func TestCollect_SeenKeysTrimToConfiguredCapacity(t *testing.T) {
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.MaxSeenKeys = 2
+		o.Lookback = time.Hour
+	})
+	for i := 1; i <= 3; i++ {
+		at := now.Add(-time.Duration(i) * time.Minute)
+		h.store.put(keyAt(at, ".ndjson"), []byte(record(fmt.Sprintf("n%d", i), at)+"\n"))
+	}
+
+	h.collect(t)
+	if got := len(seenCheckpointKeys(h.cp)); got != 2 {
+		t.Fatalf("seen checkpoint keys after first cycle = %d, want 2", got)
+	}
+	if got := h.flowRecords(); got != 3 {
+		t.Fatalf("flow records after first cycle = %d, want 3", got)
+	}
+
+	h.collect(t)
+	if got := len(seenCheckpointKeys(h.cp)); got != 2 {
+		t.Fatalf("seen checkpoint keys after second cycle = %d, want 2", got)
+	}
+	if got := h.flowRecords(); got != 4 {
+		t.Fatalf("flow records after second cycle = %d, want 4 (one trimmed object re-ingested)", got)
+	}
+}
+
+func seenCheckpointKeys(cp collector.CheckpointStore) []string {
+	var keys []string
+	for _, key := range cp.Keys() {
+		if strings.Contains(key, "/seen/") {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
 // Objects can appear out of order relative to their embedded timestamp. Without
 // the backwards overlap they land below the cursor and are never seen; with it,
 // and only with the seen set, they are ingested exactly once.

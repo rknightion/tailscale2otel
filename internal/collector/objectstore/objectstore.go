@@ -97,10 +97,6 @@ const (
 	// them with a bare "token too long", which reads as corruption rather than
 	// as a limit.
 	maxLineBytes = 16 << 20
-	// maxSeenKeys bounds the durable seen set regardless of what pruning by time
-	// would keep, so a pathological bucket cannot grow the checkpoint file
-	// without limit.
-	maxSeenKeys  = 5000
 	gapRetryBase = time.Minute
 	gapRetryMax  = time.Hour
 )
@@ -176,6 +172,10 @@ type Options struct {
 	Lookback        time.Duration
 	InitialLookback time.Duration
 	MaxObjects      int
+	// MaxSeenKeys bounds the durable seen-object identities regardless of what
+	// pruning by time would keep. It must be positive when supplied by config;
+	// direct package callers that leave it unset retain the historical bound.
+	MaxSeenKeys int
 	// MaxObjectWireBytes, MaxObjectDecompressedBytes, and MaxObjectRecords bound
 	// one object's fetched and staged input. Blank rows consume both byte
 	// budgets but not the record budget.
@@ -285,6 +285,11 @@ func New(
 	}
 	if opts.MaxObjects <= 0 {
 		opts.MaxObjects = defaultMaxObjects
+	}
+	if opts.MaxSeenKeys <= 0 {
+		// The application normally supplies config's validated value. Keep the
+		// pre-config API safe and behavior-compatible for direct package callers.
+		opts.MaxSeenKeys = 5000
 	}
 	if opts.MaxObjectDecompressedBytes <= 0 {
 		opts.MaxObjectDecompressedBytes = defaultMaxObjectDecompressedBytes
@@ -1261,9 +1266,9 @@ func (c *Collector) stagePruneSeen(batch *checkpointBatch, cursor time.Time) {
 	// A hard cap underneath the time-based pruning, so a bucket writing objects
 	// faster than the window assumes cannot grow the checkpoint file without
 	// limit. Oldest go first.
-	if len(kept) > maxSeenKeys {
+	if len(kept) > c.opts.MaxSeenKeys {
 		sortEntriesByTime(kept)
-		for _, ent := range kept[:len(kept)-maxSeenKeys] {
+		for _, ent := range kept[:len(kept)-c.opts.MaxSeenKeys] {
 			batch.delete(ent.key)
 		}
 	}

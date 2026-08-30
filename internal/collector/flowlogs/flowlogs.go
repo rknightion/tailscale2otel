@@ -36,10 +36,6 @@ const (
 	// defaultLag is the trailing safety margin used when none is configured.
 	// Flow logs can arrive late, so the scheduler queries up to now-Lag.
 	defaultLag = 120 * time.Second
-	// dedupCapacity bounds how many recently-seen connections are remembered for
-	// boundary de-duplication. A window holds at most a couple of ticks' worth of
-	// connections, so a few thousand keys covers the overlap with margin.
-	dedupCapacity = 16384
 	// replayKeyPrefix is the private checkpoint namespace used for durable replay
 	// identities. Keys contain only a SHA-256 digest, never a raw flow identity.
 	replayKeyPrefix = "flowlogs/replay/seen/"
@@ -125,6 +121,14 @@ func WithAcceptedObserver(observer ingest.AcceptedObserver) Option {
 	return func(c *Collector) { c.acceptedObserver = observer }
 }
 
+// WithDedupCapacity sets the maximum number of connection identities retained
+// by the poll-boundary de-duplication set. A non-positive value uses the
+// internal dedup package's bounded fallback; configuration validation rejects
+// such values before the composition root constructs a collector.
+func WithDedupCapacity(capacity int) Option {
+	return func(c *Collector) { c.seen = dedup.New(capacity) }
+}
+
 // WithReplay enables durable replay suppression for a bounded scheduler
 // overlap. The supplied store must already be namespaced for this tailnet.
 // Invalid settings deliberately disable the feature, preserving the legacy
@@ -164,7 +168,7 @@ func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureChe
 		proc:         proc,
 		interval:     interval,
 		lag:          lag,
-		seen:         dedup.New(dedupCapacity),
+		seen:         dedup.New(0),
 		featureCheck: featureCheck,
 		onIngest:     onIngest,
 		now:          time.Now,

@@ -32,16 +32,20 @@ var (
 // fakeAPI is a canned ConfigAuditLogs implementation standing in for
 // *tsapi.Client. It records the window it was called with.
 type fakeAPI struct {
-	resp  audit.ConfigurationResponse
-	err   error
-	calls int
-	start time.Time
-	end   time.Time
+	resp      audit.ConfigurationResponse
+	responses []audit.ConfigurationResponse
+	err       error
+	calls     int
+	start     time.Time
+	end       time.Time
 }
 
 func (f *fakeAPI) ConfigAuditLogs(_ context.Context, start, end time.Time) (audit.ConfigurationResponse, error) {
 	f.calls++
 	f.start, f.end = start, end
+	if f.calls <= len(f.responses) {
+		return f.responses[f.calls-1], f.err
+	}
 	return f.resp, f.err
 }
 
@@ -198,6 +202,44 @@ func TestCollectWindow_BoundaryEventDedupedAcrossWindows(t *testing.T) {
 	}
 	if logs := rec.LogRecords(); len(logs) != 1 {
 		t.Fatalf("LogRecords = %d, want 1 (boundary event emitted once)", len(logs))
+	}
+}
+
+// TestCollectWindow_ConfiguredDedupCapacityEvictsOldest proves the poll
+// collector uses the configured capacity for its real boundary set. With one
+// slot, the second distinct event evicts the first, so the first is accepted
+// again when it appears in the next window.
+func TestCollectWindow_ConfiguredDedupCapacityEvictsOldest(t *testing.T) {
+	a := audit.Event{
+		EventTime:    from.Add(30 * time.Second),
+		EventGroupID: "capacity-a",
+		Type:         "CONFIG",
+		Origin:       "admin-console",
+		Actor:        audit.Actor{ID: "u1", LoginName: "alice@example.com"},
+		Target:       audit.Target{ID: "n1", Name: "node-a.ts.net", Type: "NODE"},
+		Action:       "CREATE",
+	}
+	b := a
+	b.EventGroupID = "capacity-b"
+	b.Target.ID = "n2"
+	b.Target.Name = "node-b.ts.net"
+	api := &fakeAPI{responses: []audit.ConfigurationResponse{
+		{Version: "v1", Tailnet: "example.com", Logs: []audit.Event{a, b}},
+		{Version: "v1", Tailnet: "example.com", Logs: []audit.Event{a}},
+	}}
+	rec := telemetrytest.New()
+	c := auditlogs.New(api, audit.NewProcessor(), 0, 0, nil,
+		auditlogs.WithDedupCapacity(1))
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() first window: %v", err)
+	}
+	if _, err := c.CollectWindow(context.Background(), to, to.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() second window: %v", err)
+	}
+
+	if got := len(rec.LogRecords()); got != 3 {
+		t.Fatalf("log records = %d, want 3 (the evicted first event is re-admitted)", got)
 	}
 }
 

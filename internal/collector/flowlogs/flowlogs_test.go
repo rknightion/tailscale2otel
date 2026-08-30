@@ -161,6 +161,40 @@ func TestNameLagAndDefaultInterval(t *testing.T) {
 	}
 }
 
+// TestCollectWindow_ConfiguredDedupCapacityEvictsOldest proves the poll
+// collector uses the configured capacity for its real boundary set. With one
+// slot, the second distinct connection evicts the first, so the first is
+// accepted again when it appears in the next window.
+func TestCollectWindow_ConfiguredDedupCapacityEvictsOldest(t *testing.T) {
+
+	first := oneTCPResponse()
+	first.Logs[0].VirtualTraffic = append(first.Logs[0].VirtualTraffic,
+		flowlog.ConnectionCounts{
+			Proto: 6, Src: "100.64.0.1:23456", Dst: "100.64.0.2:443",
+			TxPkts: 5, TxBytes: 500, RxPkts: 4, RxBytes: 400,
+		})
+	oldestOnly := oneTCPResponse()
+	a := &fakeAPI{responses: []flowlog.NetworkResponse{first, oldestOnly}}
+	c := New(a, newProcessor(), 0, 0, nil, nil, WithDedupCapacity(1))
+	rec := telemetrytest.New()
+	from := time.Date(2026, 6, 2, 12, 0, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() first window: %v", err)
+	}
+	if _, err := c.CollectWindow(context.Background(), to, to.Add(time.Minute), rec.Emitter()); err != nil {
+		t.Fatalf("CollectWindow() second window: %v", err)
+	}
+
+	if got := c.seen.Cap(); got != 1 {
+		t.Fatalf("dedup capacity = %d, want 1", got)
+	}
+	if got := len(rec.LogRecords()); got != 3 {
+		t.Fatalf("log records = %d, want 3 (the evicted first connection is re-admitted)", got)
+	}
+}
+
 // sumIO totals every recorded value on the io bytes counter.
 func sumIO(rec *telemetrytest.Recorder) float64 {
 	var total float64
