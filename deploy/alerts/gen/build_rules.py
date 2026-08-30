@@ -754,7 +754,15 @@ def groups():
               "than that set's exported configured overlap horizon. Boundary duplicates can therefore be "
               "re-admitted and counted twice. Raise that collector's dedup_capacity or reduce its "
               "configured overlap. The age gauge is absent "
-              "until the set has evicted at least one key.",
+              "until the set has evicted at least one key. READ THIS BEFORE TUNING: the age gauge is a "
+              "LATCHED all-time low-water mark that never decays, so a single oversized batch — a "
+              "max_window catch-up after a restart, or the first fill — pins it for the life of the "
+              "process and this rule then cannot resolve until a restart. Confirm the set is genuinely "
+              "under pressure NOW (evictions within one poll interval approaching dedup_capacity) before "
+              "changing any capacity; a flat gauge with a low per-interval eviction rate is the latched "
+              "transient, not an undersized set. The horizon is a POLL-path quantity and is not exported "
+              "at all for a stream- or objectstore-fed collector, so on those paths this rule has no "
+              "denominator and never fires.",
               domain="observability", paused=False,
               policy="optional", runbook="exporter-internal-errors",
               panel="Dedup set fill & eviction age"),

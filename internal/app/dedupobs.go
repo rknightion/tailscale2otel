@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
@@ -15,6 +16,37 @@ func maxDuration(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+// dedupHorizons returns the poll-boundary overlap horizon for each de-duplication
+// set, omitting any set whose collector does not run the poller.
+//
+// ReplayOverlap and Interval are POLL-path settings (see the "poll only" note on
+// config.FlowlogsCollector.ReplayOverlap). A stream- or objectstore-fed collector
+// has no poll boundary, so there is no window for the overlap to describe.
+// Publishing one anyway gives tailscale2otel.dedup.overlap_horizon a value that
+// applies to nothing, and the shipped youngest-eviction alert then divides a
+// LATCHED all-time-minimum eviction age by that inapplicable denominator: the set
+// evicts within seconds the first time it fills, the low-water mark never decays
+// (dedup.Set.YoungestEvictionAge keeps it deliberately), and the alert fires for
+// the life of the process with no way to resolve. Omitting the gauge is what makes
+// the alert correct on a streaming deployment, because runDedupReporter skips a
+// non-positive horizon and the alert's ratio then has no denominator series.
+//
+// webhook_cross takes the audit poll interval because that is the boundary it
+// dedups across — the webhook receiver against the audit poller. With no audit
+// poller running there is again no boundary.
+func dedupHorizons(cfg *config.Config) map[string]time.Duration {
+	h := make(map[string]time.Duration, 3)
+	if pollSource(cfg.Collectors.Flowlogs.Source) {
+		h["flow"] = maxDuration(cfg.Collectors.Flowlogs.Interval.D(), cfg.Collectors.Flowlogs.ReplayOverlap.D())
+	}
+	if pollSource(cfg.Collectors.Auditlogs.Source) {
+		auditInterval := cfg.Collectors.Auditlogs.Interval.D()
+		h["audit"] = auditInterval
+		h["webhook_cross"] = auditInterval
+	}
+	return h
 }
 
 // runDedupReporter reports the cross-source de-duplication sets' fill level
