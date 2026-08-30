@@ -4,6 +4,7 @@ title: Retire the 35-panel ceiling and re-group the whole dashboard tab structur
 status: To Do
 assignee: []
 created_date: '2026-08-30 18:32'
+updated_date: '2026-08-30 22:43'
 labels:
   - needs-triage
 milestone: m-7
@@ -39,3 +40,17 @@ The regroup is a whole-structure pass across both dashboards, not a per-tab twea
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+WAVE 3 SEQUENCING: this task is freeze pass F2 and runs FIRST, before any other lane produces a panel.
+
+Deliverable is TWO things, not one:
+1. The whole-structure regroup, landed as its own commit.
+2. A MODULE OWNERSHIP MAP published in these notes — which lane owns which deploy/grafana/gen/tabs/*.py file for the rest of the wave, covering every lane that will add a signal.
+
+After that commit, each lane edits its own assigned tab modules directly. builder.py, dashboards.py, maps.py and the layout stay with this task for the whole wave; a lane needing a new sentinel, helper or layout node returns that one request rather than editing shared files.
+
+This deliberately avoids routing every panel back through the root agent. In an unattended overnight run a per-panel round trip serialises eleven lanes behind one and lands the entire signal-coverage gate at the end of the night with nobody awake to fix it.
+<!-- SECTION:NOTES:END -->

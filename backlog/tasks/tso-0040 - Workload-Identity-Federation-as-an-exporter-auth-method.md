@@ -4,7 +4,7 @@ title: Workload Identity Federation as an exporter auth method
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 18:32'
+updated_date: '2026-08-30 22:43'
 labels: []
 milestone: m-3
 dependencies: []
@@ -45,4 +45,31 @@ PRE-WAVE-3 LIVE PROBE, 2026-08-30 — the endpoint EXISTS but is UNDOCUMENTED IN
 REQUEST SHAPE (Tailscale WIF docs, not the spec): Content-Type application/x-www-form-urlencoded, body client_id=<CLIENT_ID>&jwt=<SIGNED_OIDC_JWT>. client_id is generated when a federated identity is configured in the admin console. 200 returns a short-lived API token; 401 returns {"message":"Unauthorized. Visit <admin console link> for details"}. The endpoint returns an opaque 400 for any malformed request, so it cannot be reverse-engineered by probing — build against the documented shape.
 
 Note the docs also state native WIF support exists in the Tailscale GitHub Action, the Terraform provider and tailscale-client-go-v2, so check whether the pinned client already exposes an exchange helper before hand-rolling one (confirm with go doc per the repo rule).
+
+LANE MAPPING, live-verified 2026-08-30 against the current API — do not re-derive.
+
+THE FEDERATED IDENTITY IS CREATABLE BY API. There is no separate WIF management endpoint, which is why grepping the 60 spec paths for "workload" or "federated" finds nothing: it is created through the SAME endpoint as auth keys and OAuth clients.
+
+  POST /api/v2/tailnet/{tailnet}/keys      OAuth scope required: federated_keys
+  {
+    "keyType": "federated",              // enum: auth | client | federated
+    "description": "<= 50 alnum chars, hyphens and spaces allowed",
+    "scopes": ["all:read"],              // >= 1 REQUIRED for federated
+    "issuer": "https://...",             // REQUIRED
+    "subject": "pattern-with-*",         // REQUIRED, * wildcards, matched against the sub claim
+    "audience": "optional",              // OMIT — Tailscale generates a secure audience by default
+    "customClaimRules": {"claim": "pattern*"}
+  }
+
+Listing needs federated_keys:read, and GET /keys returns federated identities only when the calling token is itself derived from one.
+
+THE CONSTRAINT THAT DECIDES THE LANE: the spec states issuer "must be a valid and publicly reachable https:// URL". A fake local OIDC issuer therefore CANNOT be used to create the identity — only to unit-test the exchange client. The only real issuer available to this repo is GitHub Actions OIDC (https://token.actions.githubusercontent.com), mintable by any workflow with permissions: id-token: write.
+
+So the task splits, with different acceptance bars:
+- OFFLINE HALF, must complete: implement auth.method: workload_identity against the documented exchange shape (form-encoded client_id + jwt; 200 returns a short-lived token; 401 returns a message field). Cover refresh, issuer-unreachable and exchange-4xx against a fake issuer and fake exchange server. Check go doc on the pinned tailscale-client-go-v2 FIRST — Tailscale docs say native WIF support exists in that client, the GitHub Action and the Terraform provider, so an exchange helper may already exist.
+- LIVE HALF: creating the identity is one authorised API call. Proving the exchange end-to-end needs a real signed OIDC JWT, so it can only run from a GitHub Actions job with id-token: write — add it as an advisory, non-PR-gating workflow shaped like live-contract.yml.
+
+If the live half cannot finish in one run, the offline half plus a created identity plus the workflow is a complete honest delivery: check AC#1 against the integration test and say plainly that live end-to-end is pending the first scheduled run. Do not park the whole task for it.
+
+Never record the created identity secret on the task — description and scopes only.
 <!-- SECTION:NOTES:END -->
