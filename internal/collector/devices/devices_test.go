@@ -1742,6 +1742,149 @@ func TestCollect_AttributeWildcard(t *testing.T) {
 	}
 }
 
+func TestCollect_AttributeCardinalityCaps(t *testing.T) {
+	devs := []tsapi.RichDevice{
+		{ID: "a", Hostname: "a"},
+		{ID: "b", Hostname: "b"},
+		{ID: "c", Hostname: "c"},
+	}
+	attrs := map[string]map[string]any{
+		"a": {"intune:alpha": true, "intune:bravo": "a"},
+		"b": {"intune:alpha": "b", "intune:bravo": true},
+		"c": {},
+	}
+	expiries := map[string]map[string]time.Time{
+		"a": {"intune:alpha": now.Add(24 * time.Hour), "intune:bravo": now.Add(24 * time.Hour)},
+		"b": {"intune:alpha": now.Add(24 * time.Hour), "intune:bravo": now.Add(24 * time.Hour)},
+	}
+
+	newCollector := func(t *testing.T, namespaces []string, keyLimit, valueLimit int) (*devices.Collector, *fakeAPI) {
+		t.Helper()
+		api := &fakeAPI{devices: devs, posture: attrs, postureExpiries: expiries}
+		cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+		return devices.New(api, cache, 0, false, true,
+			devices.WithAttributeNamespaces(namespaces),
+			devices.WithAttributeLimits(keyLimit, valueLimit),
+			devices.WithClock(func() time.Time { return now })), api
+	}
+	collect := func(t *testing.T, c *devices.Collector) *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+	hasKey := func(pts []telemetrytest.MetricPoint, key string) bool {
+		for _, p := range pts {
+			if p.Attrs["attribute"] == key {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, tc := range []struct {
+		name       string
+		namespaces []string
+	}{
+		{name: "explicit namespace", namespaces: []string{"intune"}},
+		{name: "wildcard namespace", namespaces: []string{"*"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newCollector(t, tc.namespaces, 1, 50)
+			rec := collect(t, c)
+			// alpha and bravo are tied at two devices; lexical ordering retains alpha.
+			for _, metric := range []string{
+				"tailscale.device.attribute",
+				"tailscale.device.attribute.info",
+				"tailscale.device.attribute.expiry",
+			} {
+				pts := rec.MetricPoints(metric)
+				if !hasKey(pts, "intune:alpha") {
+					t.Errorf("%s is missing selected lexical-tie winner alpha: %+v", metric, pts)
+				}
+				if hasKey(pts, "intune:bravo") {
+					t.Errorf("%s includes an over-cap key: %+v", metric, pts)
+				}
+			}
+			pts := rec.MetricPoints("tailscale.device.attributes.dropped")
+			if len(pts) != 1 || pts[0].Value != 1 {
+				t.Fatalf("dropped-key gauge = %+v, want one point with value 1", pts)
+			}
+			if pts[0].Unit != semconv.UnitDimensionless || pts[0].Kind != "gauge" {
+				t.Errorf("dropped-key gauge kind/unit = %q/%q, want gauge/%q", pts[0].Kind, pts[0].Unit, semconv.UnitDimensionless)
+			}
+
+			// A second, identical tick proves the selection has no map-order flap.
+			rec2 := collect(t, c)
+			for _, metric := range []string{"tailscale.device.attribute", "tailscale.device.attribute.info", "tailscale.device.attribute.expiry"} {
+				if hasKey(rec2.MetricPoints(metric), "intune:bravo") {
+					t.Errorf("second %s tick selected an over-cap key", metric)
+				}
+			}
+		})
+	}
+
+	t.Run("device count beats lexical key order", func(t *testing.T) {
+		c, api := newCollector(t, []string{"intune"}, 1, 50)
+		api.posture = map[string]map[string]any{
+			"a": {"intune:alpha": "a", "intune:charlie": "a"},
+			"b": {"intune:alpha": "b", "intune:charlie": "b"},
+			"c": {"intune:charlie": "c"},
+		}
+		api.postureExpiries = map[string]map[string]time.Time{
+			"a": {"intune:alpha": now.Add(24 * time.Hour), "intune:charlie": now.Add(24 * time.Hour)},
+			"b": {"intune:alpha": now.Add(24 * time.Hour), "intune:charlie": now.Add(24 * time.Hour)},
+			"c": {"intune:charlie": now.Add(24 * time.Hour)},
+		}
+		rec := collect(t, c)
+		for _, metric := range []string{"tailscale.device.attribute.info", "tailscale.device.attribute.expiry"} {
+			if !hasKey(rec.MetricPoints(metric), "intune:charlie") || hasKey(rec.MetricPoints(metric), "intune:alpha") {
+				t.Errorf("%s did not retain the busiest key: %+v", metric, rec.MetricPoints(metric))
+			}
+		}
+	})
+
+	t.Run("values fold to other and preserve device count", func(t *testing.T) {
+		c, api := newCollector(t, []string{"intune"}, 10, 1)
+		api.posture = map[string]map[string]any{
+			"a": {"intune:state": "a"},
+			"b": {"intune:state": "b"},
+			"c": {"intune:state": "c"},
+		}
+		api.postureExpiries = nil
+		rec := collect(t, c)
+		values := map[string]int{}
+		for _, p := range rec.MetricPoints("tailscale.device.attribute.info") {
+			if p.Attrs["attribute"] == "intune:state" {
+				values[p.Attrs["value"]]++
+			}
+		}
+		if values["a"] != 1 || values["__other__"] != 2 || len(values) != 2 {
+			t.Fatalf("state value points = %#v, want a=1 and __other__=2", values)
+		}
+		if pts := rec.MetricPoints("tailscale.device.attributes.dropped"); len(pts) != 1 || pts[0].Value != 0 {
+			t.Fatalf("dropped-key gauge without key overflow = %+v, want 0", pts)
+		}
+	})
+
+	for _, limit := range []int{0, -1} {
+		t.Run("nonpositive limits are unlimited", func(t *testing.T) {
+			c, _ := newCollector(t, []string{"intune"}, limit, limit)
+			rec := collect(t, c)
+			for _, metric := range []string{"tailscale.device.attribute", "tailscale.device.attribute.info", "tailscale.device.attribute.expiry"} {
+				if !hasKey(rec.MetricPoints(metric), "intune:alpha") || !hasKey(rec.MetricPoints(metric), "intune:bravo") {
+					t.Errorf("%s lost an attribute under unlimited cap: %+v", metric, rec.MetricPoints(metric))
+				}
+			}
+			if pts := rec.MetricPoints("tailscale.device.attributes.dropped"); len(pts) != 1 || pts[0].Value != 0 {
+				t.Fatalf("dropped-key gauge under unlimited cap = %+v, want 0", pts)
+			}
+		})
+	}
+}
+
 func TestCollect_AttributeDisabledWithoutAllowList(t *testing.T) {
 	// No WithAttributeNamespaces => no attribute metrics, but the posture info
 	// gauge and posture log are unaffected.

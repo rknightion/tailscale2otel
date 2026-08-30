@@ -325,6 +325,13 @@ var (
 		Group:       groupDevices,
 		TimeSource:  metricdoc.TimestampSource,
 	}
+	docAttributesDropped = metricdoc.Metric{
+		Name:        metricAttributesDropped,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of distinct posture attribute keys suppressed by `attribute_key_limit` on this collection tick. Emitted as zero when no keys are suppressed; `attribute_value_limit` folds excess string values into `__other__` instead.",
+		Group:       groupDevices,
+	}
 )
 
 // Tailnet-lock + per-DERP-region rollup descriptors (devices extension). The
@@ -537,7 +544,7 @@ func Catalog() []metricdoc.Metric {
 		docDevicesByDistro, docDeviceDistro, docDevicesAge,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
-		docAttribute, docAttributeInfo, docAttributeExpiry,
+		docAttribute, docAttributeInfo, docAttributeExpiry, docAttributesDropped,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docDevicesByCountry,
 		docConnHardNAT, docConnEndpoints, docConnDirectCapable, docConnUDP, docConnIPv6,

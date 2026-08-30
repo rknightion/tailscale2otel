@@ -225,8 +225,8 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
         # entirely. The union is the invariant the split had to preserve.
         total = sum(len(dashboard.build(s)["spec"]["elements"])
                     for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 459)
-        self.assertEqual(len(self.elements), 299, "tailnet dashboard")
+        self.assertEqual(total, 460)
+        self.assertEqual(len(self.elements), 300, "tailnet dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
         # The other half of the count above: #526 moved these two leaves rather than

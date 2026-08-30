@@ -115,6 +115,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithExpiryLogMode(c.Devices.ExpiryLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
+			devices.WithAttributeLimits(c.Devices.AttributeKeyLimit, c.Devices.AttributeValueLimit),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(cfg.Cardinality.DerpRegionRollup),
 			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),

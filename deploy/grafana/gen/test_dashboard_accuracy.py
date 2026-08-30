@@ -183,6 +183,12 @@ class PostureSemanticsTest(unittest.TestCase):
                 self.assertIn(anchor, expr)
                 self.assertNotIn("vector(0)", expr)
 
+    def test_attribute_key_drops_have_a_visible_panel(self):
+        p = panel(self.doc, "Posture attribute keys dropped")
+        expr = " ".join(queries(p))
+        self.assertIn("tailscale_device_attributes_dropped_ratio", expr)
+        self.assertIn("attribute_key_limit", p["description"])
+
 
 class TraceSpanCoverageTest(unittest.TestCase):
     SPAN_SOURCES = {

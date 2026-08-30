@@ -431,6 +431,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.device.attributes.dropped",
+      "prom_name": "tailscale_device_attributes_dropped_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.device.blocks_incoming_connections",
       "prom_name": "tailscale_device_blocks_incoming_connections_ratio",
       "surface": "operational",

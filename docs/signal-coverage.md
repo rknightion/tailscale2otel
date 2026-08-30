@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 219 | 218 | 57 | 11 | 44 |
+| operational | 220 | 219 | 57 | 11 | 44 |
 | self_obs | 92 | 92 | 29 | 9 | 10 |
 
 ## Operational signals
@@ -129,6 +129,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.attribute` | metric | `tailscale_device_attribute_ratio` | visualized, drives_a_variable |  |
 | `tailscale.device.attribute.expiry` | metric | `tailscale_device_attribute_expiry_seconds` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Posture & Compliance - ALERTABLE-ONLY today. |
 | `tailscale.device.attribute.info` | metric | `tailscale_device_attribute_info_ratio` | visualized |  |
+| `tailscale.device.attributes.dropped` | metric | `tailscale_device_attributes_dropped_ratio` | visualized |  |
 | `tailscale.device.blocks_incoming_connections` | metric | `tailscale_device_blocks_incoming_connections_ratio` | visualized, drives_a_variable | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.connectivity.direct_capable` | metric | `tailscale_device_connectivity_direct_capable_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |
 | `tailscale.device.connectivity.endpoints` | metric | `tailscale_device_connectivity_endpoints_ratio` | visualized | One series per device, describing that device's NAT/transport situation; deliberately query-only for drill-down onto a host that is stuck on DERP. |

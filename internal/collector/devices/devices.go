@@ -57,6 +57,7 @@ const (
 	metricAttribute                 = "tailscale.device.attribute"
 	metricAttributeInfo             = "tailscale.device.attribute.info"
 	metricAttributeExpiry           = "tailscale.device.attribute.expiry"
+	metricAttributesDropped         = "tailscale.device.attributes.dropped"
 
 	metricDevicesUntagged  = "tailscale.devices.untagged"
 	metricDevicesEphemeral = "tailscale.devices.ephemeral"
@@ -330,6 +331,11 @@ type attributeExpiryKey struct {
 	attribute string
 }
 
+type postureResult struct {
+	device     *tsapi.RichDevice
+	attributes tsapi.DeviceAttributes
+}
+
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
 type api interface {
@@ -362,6 +368,11 @@ type Collector struct {
 	// non-wildcard disables the attribute metrics. Built by WithAttributeNamespaces.
 	attrNamespaces        map[string]bool
 	attrNamespaceWildcard bool
+	// attributeKeyLimit caps the selected posture keys across the fleet and
+	// attributeValueLimit caps distinct string values per selected key. Both
+	// are unlimited when non-positive. Set by WithAttributeLimits.
+	attributeKeyLimit   int
+	attributeValueLimit int
 
 	// lastPosture remembers each device's last-emitted posture signature
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
@@ -631,6 +642,18 @@ func WithAttributeNamespaces(ns []string) Option {
 	}
 }
 
+// WithAttributeLimits bounds the posture attributes promoted by
+// WithAttributeNamespaces. The busiest keys (and, for .info, values per key)
+// are retained; ties are lexical. Keys beyond keyLimit are dropped from all
+// three attribute metric families, while values beyond valueLimit fold into
+// value="__other__". A non-positive limit is unlimited.
+func WithAttributeLimits(keyLimit, valueLimit int) Option {
+	return func(c *Collector) {
+		c.attributeKeyLimit = keyLimit
+		c.attributeValueLimit = valueLimit
+	}
+}
+
 // WithUpdateAvailableData controls whether the per-device
 // tailscale.device.update_available gauge is emitted. The default is true
 // (Tailscale reports this field natively); pass false when the control-plane
@@ -859,6 +882,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	routersByCIDR := map[string]int{}
 	currentDeviceKeyExpiries := make(map[string]struct{})
 	currentAttributeExpiries := make(map[attributeExpiryKey]struct{})
+	postureResults := make([]postureResult, 0, len(devs))
 
 	for i := range devs {
 		d := &devs[i]
@@ -995,8 +1019,12 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		if c.collectPosture {
 			postureAttempted = true
-			if perr := c.emitPosture(ctx, e, d, nowT, currentAttributeExpiries); perr != nil && postureFirstErr == nil {
-				postureFirstErr = perr
+			if da, perr := c.emitPosture(ctx, e, d); perr != nil {
+				if postureFirstErr == nil {
+					postureFirstErr = perr
+				}
+			} else {
+				postureResults = append(postureResults, postureResult{device: d, attributes: da})
 			}
 		}
 
@@ -1172,6 +1200,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			}
 		}
 	}
+
+	// Attribute key ranking is fleet-wide, so it intentionally follows the
+	// per-device posture fetches rather than emitting opportunistically in that
+	// loop. That gives every successful fetch this tick an equal vote and keeps
+	// .attribute, .attribute.info and .attribute.expiry on the same key set.
+	droppedAttributeKeys := c.emitAttributes(e, postureResults, nowT, currentAttributeExpiries)
+	e.Gauge(docAttributesDropped.Name, docAttributesDropped.Unit, docAttributesDropped.Description,
+		float64(droppedAttributeKeys), nil)
 
 	// #61: prune lastPosture to the current tick's fleet so it does not retain
 	// entries for devices that have left the tailnet (it grows unbounded
@@ -1672,15 +1708,16 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 // Per-device errors are non-fatal — the device is skipped and collection
 // continues — but they are recorded on the shared Coverage tally first (#421),
 // so a posture fetch that fails on every device shows up as degraded coverage
-// instead of an empty posture surface on a green scrape. The returned error
-// (nil on success) lets Collect aggregate this tick's per-device outcomes into
-// a single apistate.Observe call after the loop (#524); it is never used to
-// fail the enclosing Collect.
-func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, nowT time.Time, currentAttributeExpiries map[attributeExpiryKey]struct{}) error {
+// instead of an empty posture surface on a green scrape. On success the
+// returned attributes are held until every device has been fetched, so the
+// later attribute-metric pass can rank keys fleet-wide; the returned error lets
+// Collect aggregate this tick's per-device outcomes into one apistate.Observe
+// call after the loop (#524) without failing the enclosing Collect.
+func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice) (tsapi.DeviceAttributes, error) {
 	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestPostureAttributes, apistate.Classify(err, apistate.Disposition{}))
 	if err != nil {
-		return err
+		return tsapi.DeviceAttributes{}, err
 	}
 	attrs := da.Attributes
 
@@ -1696,15 +1733,6 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		}
 	}
 	c.gsb.Add(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
-
-	// Promote the allow-listed posture attributes to queryable metrics (hybrid
-	// model), reusing the already-fetched attribute map — no extra API call.
-	// Attribute expiries (present only for attributes explicitly set with one)
-	// share the same namespace allow-list fence.
-	if c.attrNamespaceWildcard || len(c.attrNamespaces) > 0 {
-		c.emitAttributes(d, attrs)
-		c.emitAttributeExpiries(e, d, da.Expiries, nowT, currentAttributeExpiries)
-	}
 
 	// Decide whether to emit the LOG. The signature is computed over the FULL
 	// posture map so any posture change (not just curated keys) fires the log.
@@ -1722,7 +1750,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	c.lastPosture[d.ID] = sig
 
 	if !emitLog {
-		return nil
+		return da, nil
 	}
 
 	evAttrs := telemetry.Attrs{
@@ -1745,87 +1773,140 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		Body:     fmt.Sprintf("device has %d posture attribute(s)", len(attrs)),
 		Attrs:    evAttrs,
 	})
-	return nil
+	return da, nil
 }
 
-// emitAttributes promotes the allow-listed posture attributes to metrics
-// (hybrid model): boolean and numeric values become the tailscale.device.attribute
-// gauge (where the value carries meaning — 0/1 for booleans, the number itself
-// otherwise); string/enum values become the tailscale.device.attribute.info gauge
-// (constant 1, the string carried as the `value` label). Attributes whose
-// namespace (the part before ":") is not allow-listed are skipped, as are
-// non-scalar values (posture values are documented as string|number|bool).
-func (c *Collector) emitAttributes(d *tsapi.RichDevice, attrs map[string]any) {
-	for key, v := range attrs {
-		ns, _, ok := strings.Cut(key, ":")
-		if !ok {
-			continue // Tailscale posture keys are always namespaced.
+// emitAttributes selects the bounded fleet-wide attribute key/value vocabulary,
+// then emits every promoted attribute family from that single selection. This
+// prevents an expiry or info metric from leaking a key the numeric attribute
+// metric dropped.
+func (c *Collector) emitAttributes(e telemetry.Emitter, results []postureResult, nowT time.Time, current map[attributeExpiryKey]struct{}) int {
+	if !c.attrNamespaceWildcard && len(c.attrNamespaces) == 0 {
+		return 0
+	}
+
+	keyCounts := map[string]int{}
+	for _, result := range results {
+		seen := map[string]struct{}{}
+		for key, value := range result.attributes.Attributes {
+			if c.attributeAllowed(key) && attributeScalar(value) {
+				seen[key] = struct{}{}
+			}
 		}
-		if !c.attrNamespaceWildcard && !c.attrNamespaces[ns] {
-			continue
+		for key := range result.attributes.Expiries {
+			if c.attributeAllowed(key) {
+				seen[key] = struct{}{}
+			}
 		}
-		labels := telemetry.Attrs{
-			semconv.HostName: d.Hostname,
-			semconv.HostID:   d.ID,
-			attrAttribute:    key,
+		for key := range seen {
+			keyCounts[key]++
 		}
-		switch val := v.(type) {
-		case bool:
-			c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(val), labels)
-		case float64:
-			c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, val, labels)
-		case string:
-			labels[attrAttributeValue] = val
-			c.gsb.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
-		default:
-			// Skip anything that isn't a scalar string/number/bool.
+	}
+	selectedKeys := rankedAttributeNames(keyCounts, c.attributeKeyLimit)
+	selected := make(map[string]bool, len(selectedKeys))
+	for _, key := range selectedKeys {
+		selected[key] = true
+	}
+
+	valueCounts := map[string]map[string]int{}
+	for _, result := range results {
+		for key, value := range result.attributes.Attributes {
+			if !selected[key] {
+				continue
+			}
+			if value, ok := value.(string); ok {
+				if valueCounts[key] == nil {
+					valueCounts[key] = map[string]int{}
+				}
+				valueCounts[key][value]++
+			}
 		}
+	}
+	selectedValues := make(map[string]map[string]bool, len(valueCounts))
+	for key, counts := range valueCounts {
+		values := rankedAttributeNames(counts, c.attributeValueLimit)
+		selectedValues[key] = make(map[string]bool, len(values))
+		for _, value := range values {
+			selectedValues[key][value] = true
+		}
+	}
+
+	for _, result := range results {
+		d := result.device
+		for key, value := range result.attributes.Attributes {
+			if !selected[key] {
+				continue
+			}
+			labels := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID, attrAttribute: key}
+			switch value := value.(type) {
+			case bool:
+				c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(value), labels)
+			case float64:
+				c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, value, labels)
+			case string:
+				if !selectedValues[key][value] {
+					value = tagOther
+				}
+				labels[attrAttributeValue] = value
+				c.gsb.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
+			}
+		}
+		c.emitAttributeExpiries(e, d, result.attributes.Expiries, selected, nowT, current)
+	}
+	return len(keyCounts) - len(selected)
+}
+
+func (c *Collector) attributeAllowed(key string) bool {
+	namespace, _, ok := strings.Cut(key, ":")
+	return ok && (c.attrNamespaceWildcard || c.attrNamespaces[namespace])
+}
+
+func attributeScalar(value any) bool {
+	switch value.(type) {
+	case bool, float64, string:
+		return true
+	default:
+		return false
 	}
 }
 
-// emitAttributeExpiries promotes attribute expiries (present only for
-// attributes explicitly set with one, e.g. a custom: namespace attribute set
-// via the API with an expiry) to the tailscale.device.attribute.expiry gauge,
-// and — for anything falling within the fixed 14-day warn window (the same
-// keyExpiryWarnDays lead used by the node-key expiry log) — the
-// tailscale.device.attribute.expiring WARN log. This is the attribute analog
-// of the docKeyExpiry gauge / eventDeviceKeyExpiry log pair. Gated by the same
-// attribute_namespaces allow-list as emitAttributes: a namespace not
-// allow-listed is skipped even if its attribute carries an expiry, so the two
-// signals never disagree about which attributes are "in scope".
-func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, nowT time.Time, current map[attributeExpiryKey]struct{}) {
-	for key, expiry := range expiries {
-		ns, _, ok := strings.Cut(key, ":")
-		if !ok {
-			continue // Tailscale posture keys are always namespaced.
+// rankedAttributeNames returns every name when limit is non-positive and the
+// busiest limit names otherwise. Lexical tie-breaking makes the selection
+// stable across Go map iteration orders.
+func rankedAttributeNames(counts map[string]int, limit int) []string {
+	names := make([]string, 0, len(counts))
+	for name := range counts {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		if counts[names[i]] != counts[names[j]] {
+			return counts[names[i]] > counts[names[j]]
 		}
-		if !c.attrNamespaceWildcard && !c.attrNamespaces[ns] {
+		return names[i] < names[j]
+	})
+	if limit > 0 && len(names) > limit {
+		return names[:limit]
+	}
+	return names
+}
+
+func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, selected map[string]bool, nowT time.Time, current map[attributeExpiryKey]struct{}) {
+	for key, expiry := range expiries {
+		if !selected[key] {
 			continue
 		}
-		labels := telemetry.Attrs{
-			semconv.HostName: d.Hostname,
-			semconv.HostID:   d.ID,
-			attrAttribute:    key,
-		}
-		c.gsb.Add(docAttributeExpiry.Name, docAttributeExpiry.Unit, docAttributeExpiry.Description,
-			float64(expiry.Unix()), labels)
-
+		labels := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID, attrAttribute: key}
+		c.gsb.Add(docAttributeExpiry.Name, docAttributeExpiry.Unit, docAttributeExpiry.Description, float64(expiry.Unix()), labels)
 		days := expiry.Sub(nowT).Hours() / 24
 		if days > 0 && days <= keyExpiryWarnDays {
 			stateKey := attributeExpiryKey{deviceID: d.ID, attribute: key}
 			current[stateKey] = struct{}{}
 			if expiryLogDue(c.expiryLogMode, c.attributeExpiryState, stateKey, expiry, nowT) {
-				e.LogEvent(telemetry.Event{
-					Name:     docDeviceAttributeExpiringLog.Name,
-					Severity: telemetry.SeverityWarn,
-					Body:     "device posture attribute expiring soon",
-					Attrs: telemetry.Attrs{
-						semconv.HostName:                 d.Hostname,
-						semconv.HostID:                   d.ID,
-						attrAttribute:                    key,
+				e.LogEvent(telemetry.Event{Name: docDeviceAttributeExpiringLog.Name, Severity: telemetry.SeverityWarn,
+					Body: "device posture attribute expiring soon", Attrs: telemetry.Attrs{
+						semconv.HostName: d.Hostname, semconv.HostID: d.ID, attrAttribute: key,
 						attrDeviceAttributeExpiresInDays: fmt.Sprintf("%.2f", days),
-					},
-				})
+					}})
 			}
 		}
 	}

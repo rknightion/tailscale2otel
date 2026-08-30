@@ -104,6 +104,13 @@ def tab_devices_posture(scope):
               options=stat_opts(color="background"), novalue=NO_PER_DEVICE,
               desc="Devices exempted from posture-identity collection, so posture-gated ACL rules "
                    "cannot evaluate them."),
+        panel("Posture attribute keys dropped", "stat",
+              [prom_t("max(%s)" % lot("tailscale_device_attributes_dropped_ratio", WIN_SLOW))],
+              unit="short", thresholds=thr([(None, "green"), (1, "red")]),
+              options=stat_opts(color="background"),
+              desc="Distinct posture attribute keys suppressed by attribute_key_limit on the latest "
+                   "collection tick. Zero means every promoted key fits; adjust the cap only after "
+                   "checking why the additional vendor-defined attributes are needed."),
     ]
 
     # C. Key-expiry distribution row (gate present="has_key_expiry_hist")
