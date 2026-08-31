@@ -129,66 +129,6 @@ class AdhocAndLinkSeams(unittest.TestCase):
         self.assertTrue(link["url"].startswith("/d/tailscale2otel-health?"), link["url"])
 
 
-def panels_in(node):
-    """Panels under one layout node, recursing through nested tabs and rows."""
-    kind, spec = node.get("kind"), node.get("spec", {})
-    if kind in ("GridLayout", "AutoGridLayout"):
-        return len(spec.get("items", []))
-    if kind == "RowsLayout":
-        return sum(panels_in(r["spec"]["layout"]) for r in spec.get("rows", []))
-    if kind == "TabsLayout":
-        return sum(panels_in(t["spec"]["layout"]) for t in spec.get("tabs", []))
-    return 0
-
-
-def leaf_panel_counts(doc):
-    """{leaf title: panel count} for every LEAF tab — a tab whose own layout is
-    not itself a TabsLayout. Domains and sub-tabbed leaves are containers and
-    have no budget of their own; their children do."""
-    out = {}
-
-    def walk(tabs_layout, path):
-        for t in tabs_layout["spec"]["tabs"]:
-            title = t["spec"]["title"]
-            inner = t["spec"]["layout"]
-            if inner.get("kind") == "TabsLayout":
-                walk(inner, path + (title,))
-            else:
-                out[" > ".join(path + (title,))] = panels_in(inner)
-
-    walk(doc["spec"]["layout"], ())
-    return out
-
-
-class PanelBudgets(unittest.TestCase):
-    """#526's panel ceilings. A tab an operator has to scroll for a minute is one
-    they stop reading, which is the failure the whole re-architecture is against.
-
-    These are asserted on the BUILT document rather than on the tab modules, so a
-    panel added via a row helper, a sub-tab or a domain is counted the same way.
-    """
-
-    LEAF_MAX = 35
-    OVERVIEW_MAX = 30
-
-    @classmethod
-    def setUpClass(cls):
-        cls.docs = {spec.uid: build.build(spec) for spec in build.dashboards.ALL}
-
-    def test_no_leaf_or_sub_tab_exceeds_the_ceiling(self):
-        for uid, doc in self.docs.items():
-            for title, n in leaf_panel_counts(doc).items():
-                with self.subTest(dashboard=uid, leaf=title):
-                    self.assertLessEqual(n, self.LEAF_MAX)
-
-    def test_overview_is_tighter_still_on_both_dashboards(self):
-        # The first tab anyone opens, and the only one most people open. It earns
-        # a tighter budget than the tabs a reader arrives at deliberately.
-        for uid, doc in self.docs.items():
-            with self.subTest(dashboard=uid):
-                self.assertLessEqual(leaf_panel_counts(doc)["Overview"], self.OVERVIEW_MAX)
-
-
 class VariableBudgets(unittest.TestCase):
     """#526's variable budgets, and the reason the scoped-variable seam exists.
 

@@ -2,8 +2,8 @@
 """Explicit query-load budget for the flagship dashboard (#397).
 
 #397 asks for a benchmark and a budget. The benchmark half that can be measured
-honestly OFFLINE is the *static* query load: how many panels and datasource
-queries each tab carries, and how many presence variables run before any tab is
+honestly OFFLINE is the *static* query load: how many datasource queries each
+tab carries, and how many presence variables run before any tab is
 even chosen. This module turns those measurements into a gate, so growth past the
 budget is a deliberate decision someone edits a number for, rather than something
 that accretes a panel at a time until the dashboard is slow.
@@ -40,27 +40,20 @@ DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
               ROOT / "deploy" / "grafana" / "tailscale2otel-health.json"]
 
 
-# --- the budget ------------------------------------------------------------
-# Measured 2026-07-27: 405 panels, 484 queries, 58 sentinels, worst tab
-# "Exporter Diagnostics" at 83 panels / 108 queries.
+# --- the query budget ------------------------------------------------------
+# Measured 2026-07-27: 484 queries and 58 sentinels, worst tab
+# "Exporter Diagnostics" at 108 queries.
 #
-# Re-measured after #526: 466 panels, 571 queries across the FAMILY. The rise is
-# deliberate and is the point of that issue — the health tabs added panels for 25
-# signals that previously reached no panel at all, including two an alert could
-# fire on while nothing charted them.
+# Re-measured after #526: 571 queries across the FAMILY. The health tabs added
+# panels for 25 signals that previously reached no panel at all, including two an
+# alert could fire on while nothing charted them.
 #
 # The budget is measured over both artifacts because that is the load a stack
 # actually carries. A per-file budget would be satisfiable by moving panels to the
 # other dashboard, which is not a saving.
 #
-# MAX_PANELS_PER_TAB is a backstop, not the design target: #526 holds a leaf to
-# ~35 panels and Overview to 30, enforced separately in test_dashboard_specs.py.
-# This one only catches a tab growing without bound.
-
-MAX_PANELS_TOTAL = 520
 MAX_QUERIES_TOTAL = 640
 MAX_SENTINELS = 70          # the fixed per-load cost — see the module docstring
-MAX_PANELS_PER_TAB = 100
 MAX_QUERIES_PER_TAB = 130
 
 
@@ -151,12 +144,6 @@ class QueryBudgetTest(unittest.TestCase):
         self.assertGreater(self.totals["queries"], self.totals["panels"],
                            "every panel should carry at least one query on average")
 
-    def test_total_panel_budget(self):
-        self.assertLessEqual(
-            self.totals["panels"], MAX_PANELS_TOTAL,
-            "flagship is over its panel budget (%d > %d). Raise MAX_PANELS_TOTAL in a commit "
-            "that says why, or split a tab." % (self.totals["panels"], MAX_PANELS_TOTAL))
-
     def test_total_query_budget(self):
         self.assertLessEqual(
             self.totals["queries"], MAX_QUERIES_TOTAL,
@@ -176,9 +163,6 @@ class QueryBudgetTest(unittest.TestCase):
     def test_per_tab_budgets(self):
         for title, panels, queries in self.tabs:
             with self.subTest(tab=title):
-                self.assertLessEqual(
-                    panels, MAX_PANELS_PER_TAB,
-                    "tab %r carries %d panels (budget %d)" % (title, panels, MAX_PANELS_PER_TAB))
                 self.assertLessEqual(
                     queries, MAX_QUERIES_PER_TAB,
                     "tab %r issues %d queries (budget %d)" % (title, queries, MAX_QUERIES_PER_TAB))

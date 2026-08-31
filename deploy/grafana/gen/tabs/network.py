@@ -381,9 +381,11 @@ def tab_network(scope):
         row("Top talkers — ROLLUP", rollup_talkers, present="has_rollup_flow", hide_when=["pii_node"]),
         # has_unique, not has_rollup_flow: both panels here need cardinality.flow.node_dims
         # on top of the rollup mode, and the unique_* gauges are the signal for that.
-        row("Peer & port topology — ROLLUP", rollup_topo, present="has_unique", hide_when=["pii_topology"]),
-        row("Throughput & talkers — RAW (full detail)", raw_agg, present="has_raw_flow"),
-        row("Top talkers — RAW", raw_talkers, present="has_raw_flow", hide_when=["pii_node"]),
-        row("Top node-pair talkers (flow logs)", fl_pairs, present="has_flows", hide_when=["pii_node"]),
-        row("Flow log stream", flowlogs, present="has_flows"),
+        # Collapsed: topology is a second-stage drill-down after rollup traffic.
+        row("Peer & port topology — ROLLUP", rollup_topo, present="has_unique", hide_when=["pii_topology"], collapse=True),
+        # Collapsed: raw views are intentionally expensive, full-detail investigations.
+        row("Throughput & talkers — RAW (full detail)", raw_agg, present="has_raw_flow", collapse=True),
+        row("Top talkers — RAW", raw_talkers, present="has_raw_flow", hide_when=["pii_node"], collapse=True),
+        row("Top node-pair talkers (flow logs)", fl_pairs, present="has_flows", hide_when=["pii_node"], collapse=True),
+        row("Flow log stream", flowlogs, present="has_flows", collapse=True),
     ]

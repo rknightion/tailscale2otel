@@ -132,7 +132,9 @@ def tab_security_audit_trail(scope):
                        legend="log events")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
                novalue="0",
-               desc="Metric change counters vs Loki log event rate — divergence indicates missing ingestion path."), 24, 8),
+               desc="Classified security- and lifecycle-relevant change counters vs the full Loki "
+                    "audit log event rate. The populations are not expected to match; use divergence "
+                    "from the established baseline to investigate a missing ingestion path."), 24, 8),
         (panel("Recent configuration changes", "logs",
                [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
                options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
@@ -160,7 +162,9 @@ def tab_security_audit_trail(scope):
     return [
         row("Audit changes", changes, present="has_audit_changes"),
         row("Configuration audit", audit, present="has_audit"),
+        # Collapsed: actor correlation is follow-up investigation after the audit change view.
         row("Configuration audit — actors & correlation", audit_actors,
-            present="has_audit", hide_when=["pii_actor"]),
-        row("Log explorer", logstream),
+            present="has_audit", hide_when=["pii_actor"], collapse=True),
+        # Collapsed: raw logs are evidence, not first-open status.
+        row("Log explorer", logstream, collapse=True),
     ]

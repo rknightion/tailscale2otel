@@ -10,8 +10,7 @@ deployment with a healthy exporter sees an uninterrupted always-on stack.
 
 Assembled from the pre-split `tabs/overview.py` (7 rows / 34 panels) plus two tabs
 that #526 dissolved into it — `tabs/tailnets.py` (decision 5) and the event-rate
-summary from `tabs/events.py` (decision 9) — under a hard <=30-panel budget. What
-changed, and why:
+summary from `tabs/events.py` (decision 9). What changed, and why:
 
 * **"Service health (golden signals)" is GONE** (5 panels). Those were the
   EXPORTER's golden signals on a tab that answers a question about the TAILNET,

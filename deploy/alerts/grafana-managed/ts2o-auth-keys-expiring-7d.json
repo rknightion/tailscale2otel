@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "233",
+      "__panelId__": "201",
       "description": "One or more auth/API keys expire within 7 days (and are not already expired) \u2014 rotate them before automation/devices using them lose access. Computed from the per-key expiry gauge (expiry - now within (0, 7d]), so it clears after a key is rotated. Warning tier below ts2o-auth-key-expiring-critical (48h) \u2014 the Grafana-managed equivalent of the datasource-managed AuthKeyExpiringSoon rule.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry",
       "summary": "Auth/API keys are expiring within 7 days"

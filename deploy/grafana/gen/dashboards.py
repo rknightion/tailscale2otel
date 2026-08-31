@@ -46,14 +46,10 @@ from tabs.cardinality import tab_cardinality
 
 # --- the layout vocabulary --------------------------------------------------
 #
-# Three node kinds, nested at most four deep (domain -> leaf -> sub-tab -> row).
-# Grafana's docs state a maximum of THREE grouping levels; four render correctly
-# both live and in the static renderer, so that limit is enforced by the
-# dashboard editor rather than by the API or the renderer. These artifacts are
-# generated and never hand-edited, so relying on the fourth level is acceptable —
-# but it is beyond documented support, so spend it only where a leaf genuinely
-# exceeds the ~35-panel ceiling. Collapsing a SubTabbedDef back to sibling
-# TabDefs is a mechanical change if a Grafana upgrade ever starts enforcing it.
+# Two node kinds: an optional operational domain containing direct leaf tabs.
+# Rows, including selectively collapsed diagnostic rows, carry dense detail without
+# adding a fourth navigation level between an operator and the question they need
+# to answer.
 
 # A leaf tab. `build` has the frozen signature build(scope) -> list[row dict].
 # `present` is a DASHBOARD-LEVEL sentinel gating the whole tab, or None: a tab
@@ -64,16 +60,13 @@ TabDef = collections.namedtuple("TabDef", ["title", "build", "present"])
 # A top-level domain whose content is a nested TabsLayout of TabDefs.
 DomainDef = collections.namedtuple("DomainDef", ["title", "children"])
 
-# A leaf that is itself split into a nested TabsLayout — the fourth level.
-SubTabbedDef = collections.namedtuple("SubTabbedDef", ["title", "present", "children"])
-
 DashboardSpec = collections.namedtuple("DashboardSpec", [
     "uid",           # str  — metadata.name; also the GitSync filename stem
     "title",         # str
     "description",   # str  — spec.description
     "tags",          # tuple[str, ...]
     "out",           # str  — repo-relative artifact path
-    "layout",        # tuple[TabDef | DomainDef | SubTabbedDef, ...], rendered order
+    "layout",        # tuple[TabDef | DomainDef, ...], rendered order
     "sibling",       # str  — uid of the other dashboard (cross-link target)
     "sibling_title", # str  — cross-link text
     "link_vars",     # tuple[str, ...] — variables propagated through the link
@@ -91,51 +84,33 @@ TAILNET = DashboardSpec(
                 "deploy/grafana/gen/build.py.",
     tags=("tailscale", "tailscale2otel"),
     out="deploy/grafana/tailscale2otel-tailnet.json",
-    # Three leaves exceeded the ~35-panel ceiling badly enough to earn the fourth
-    # grouping level (#526 decision 5): Devices was 59 panels over 18 rows, Security &
-    # Audit 49, Policy & Config 47. A sub-tab costs ~100px of stacked tab chrome, so it
-    # is spent only where a leaf is genuinely oversized — Network & Flows, Node Metrics
-    # and Kubernetes Audit all fit in one leaf and stay there.
-    #
-    # Two tabs are deliberately ABSENT rather than moved:
-    #   Tailnets (3 panels)      — decision 5 folds it into the Overview's MSP row; a
-    #                              three-panel tab is a tab an operator opens once.
-    #   Events & Logs (43)       — decision 9 splits it. Most of it was exporter pipeline
-    #                              health sitting on a tab an operator opens to read what
-    #                              happened on their TAILNET, so it went to -health; the
-    #                              genuine tailnet-event panels went to the domain tab
-    #                              that owns the signal (flow stream -> Network & Flows,
-    #                              posture -> Posture & Compliance, log explorer ->
-    #                              Audit Trail, event rates -> Overview).
+    # Domains name an operational question. Their leaves remain direct, keeping
+    # device, network, security and policy investigations reachable in one tab
+    # transition. Dense secondary diagnosis belongs in collapsed rows, not nested
+    # sub-tabs.
     layout=(
         TabDef("Overview", tab_tailnet_overview, None),
-        DomainDef("Fleet & Network", (
-            SubTabbedDef("Devices", None, (
-                TabDef("Inventory & Hygiene", tab_devices_inventory, None),
-                TabDef("Posture & Security", tab_devices_posture, None),
-                TabDef("Connectivity & Routing", tab_devices_connectivity, None),
-            )),
+        DomainDef("Fleet operations", (
+            TabDef("Inventory & Hygiene", tab_devices_inventory, None),
+            TabDef("Posture & Security", tab_devices_posture, None),
+            TabDef("Connectivity & Routing", tab_devices_connectivity, None),
+        )),
+        DomainDef("Network & service telemetry", (
             TabDef("Network & Flows", tab_network, None),
             TabDef("Node Metrics", tab_nodemetrics, "has_nodemetrics"),
+        )),
+        DomainDef("Security, identity & governance", (
+            TabDef("Audit Trail", tab_security_audit_trail, None),
+            TabDef("Risk & ACL", tab_security_risk, None),
+            TabDef("Posture & Compliance", tab_security_compliance, None),
+            TabDef("Identity & Keys", tab_security_identity, None),
             TabDef("Kubernetes Audit", tab_k8saudit, "has_k8s_audit"),
         )),
-        DomainDef("Security & Policy", (
-            # Decision 10 splits the key/identity overlap by QUESTION, not by deletion:
-            # Security & Audit owns the risk view (what is expiring, what is over-scoped),
-            # Policy & Config the configuration view (what exists, and with what scopes).
-            # The same signal legitimately appears under both.
-            SubTabbedDef("Security & Audit", None, (
-                TabDef("Audit Trail", tab_security_audit_trail, None),
-                TabDef("Risk & ACL", tab_security_risk, None),
-                TabDef("Posture & Compliance", tab_security_compliance, None),
-                TabDef("Identity & Keys", tab_security_identity, None),
-            )),
-            SubTabbedDef("Policy & Config", None, (
-                TabDef("Access & ACL", tab_policy_access, None),
-                TabDef("DNS & Settings", tab_policy_dns, None),
-                TabDef("Identity & Credentials", tab_policy_identity, None),
-                TabDef("Integrations", tab_policy_integrations, None),
-            )),
+        DomainDef("Policy & configuration", (
+            TabDef("Access & ACL", tab_policy_access, None),
+            TabDef("DNS & Settings", tab_policy_dns, None),
+            TabDef("Identity & Credentials", tab_policy_identity, None),
+            TabDef("Integrations", tab_policy_integrations, None),
         )),
     ),
     sibling="tailscale2otel-health",
@@ -155,17 +130,21 @@ HEALTH = DashboardSpec(
                 "Generated by deploy/grafana/gen/build.py.",
     tags=("tailscale", "tailscale2otel", "self-observability"),
     out="deploy/grafana/tailscale2otel-health.json",
-    # Organised by PIPELINE STAGE — where a failure actually occurs in this exporter
-    # — rather than by which subsystem emitted the metric (#526 decision 8). The old
-    # single "Exporter Diagnostics" tab put all 83 panels in one list, so a reader
-    # could tell that something was wrong but not which stage was wrong.
+    # The two domains separate the question of whether data is moving through the
+    # pipeline from whether the exporter itself is sustainable. Each contains several
+    # direct leaves, so the grouping adds a useful decision boundary rather than a
+    # single-child wrapper.
     layout=(
         TabDef("Overview", tab_health_overview, None),
-        TabDef("Collection", tab_health_collection, None),
-        TabDef("Ingestion", tab_health_ingestion, None),
-        TabDef("Delivery", tab_health_delivery, None),
-        TabDef("Runtime", tab_health_runtime, None),
-        TabDef("Cost & Cardinality", tab_cardinality, None),
+        DomainDef("Data pipeline", (
+            TabDef("Collection", tab_health_collection, None),
+            TabDef("Ingestion", tab_health_ingestion, None),
+            TabDef("Delivery", tab_health_delivery, None),
+        )),
+        DomainDef("Runtime & capacity", (
+            TabDef("Runtime", tab_health_runtime, None),
+            TabDef("Cost & Cardinality", tab_cardinality, None),
+        )),
     ),
     sibling="tailscale2otel-tailnet",
     sibling_title="← Tailnet",
@@ -179,20 +158,11 @@ BY_KEY = {"tailnet": TAILNET, "health": HEALTH}
 
 def leaves(spec):
     """Every leaf TabDef in `spec`, in rendered order, flattened across domains
-    and sub-tab groups. The unit a --tab preview and a panel budget apply to."""
+    and direct leaves. The unit a --tab preview applies to."""
     out = []
     for node in spec.layout:
         if isinstance(node, TabDef):
             out.append(node)
         elif isinstance(node, DomainDef):
-            for child in node.children:
-                out.extend(leaves(_as_spec(child)) if not isinstance(child, TabDef) else [child])
-        elif isinstance(node, SubTabbedDef):
             out.extend(node.children)
     return out
-
-
-def _as_spec(node):
-    """Adapt a nested node so leaves() can recurse through it uniformly."""
-    return DashboardSpec(uid="", title="", description="", tags=(), out="",
-                         layout=(node,), sibling="", sibling_title="", link_vars=())

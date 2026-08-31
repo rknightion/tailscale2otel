@@ -92,5 +92,33 @@ class IngestFreshnessArtifactsTest(unittest.TestCase):
             self.assertIn(metric, rules.rule_expr(rule))
 
 
+class CapacityPanelSeparationTest(unittest.TestCase):
+    """Budget-driven merges must not hide distinct operator decisions."""
+
+    @staticmethod
+    def assert_separate(titles):
+        expected = {
+            "Ingress WAL byte capacity fill",
+            "Ingress WAL entry capacity fill",
+            "Dedup set fill",
+            "Youngest dedup eviction age & overlap horizon",
+        }
+        missing = expected - titles
+        if missing:
+            raise AssertionError("missing separate capacity diagnostics: %s" % sorted(missing))
+        retired = {"Ingress WAL capacity fill", "Dedup set fill & eviction age"}
+        overlap = titles & retired
+        if overlap:
+            raise AssertionError("retired merged capacity diagnostics remain: %s" % sorted(overlap))
+
+    def test_wal_and_dedup_capacity_questions_have_distinct_panels(self):
+        doc = dashboard.build(dashboard.dashboards.HEALTH)
+        self.assert_separate({p["spec"]["title"] for p in doc["spec"]["elements"].values()})
+
+    def test_negative_merged_capacity_panels_are_rejected(self):
+        with self.assertRaisesRegex(AssertionError, "missing separate capacity diagnostics"):
+            self.assert_separate({"Ingress WAL capacity fill", "Dedup set fill & eviction age"})
+
+
 if __name__ == "__main__":
     unittest.main()

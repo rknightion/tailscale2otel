@@ -731,7 +731,10 @@ def groups():
               "configured ingress_wal limit must be raised before new payloads are refused. This rule "
               "is inert when ingress WAL is disabled because both fill gauges are absent.",
               domain="observability", paused=False,
-              policy="optional", runbook="ingest-receivers", panel="Ingress WAL capacity fill"),
+              # The rule retains one UID because the limit label already identifies
+              # byte vs entry pressure. Link to the first capacity drill-down; the
+              # adjacent entry panel carries the other limit-specific view.
+              policy="optional", runbook="ingest-receivers", panel="Ingress WAL byte capacity fill"),
         alert("ts2o-dedup-set-saturated", "Dedup set saturated",
               "sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))",
               "gt", 0, "15m", "warning",
@@ -744,7 +747,7 @@ def groups():
               "out before the next poll dedups against them → boundary double-counting); only enable this "
               "with a threshold tuned to your poll interval and set size.",
               domain="observability", paused=True,
-              policy="advisory", runbook="exporter-internal-errors", panel="Dedup set fill & eviction age"),
+              policy="advisory", runbook="exporter-internal-errors", panel="Dedup hits & evictions/s"),
         alert("ts2o-dedup-youngest-eviction", "Dedup eviction younger than overlap horizon",
               "max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds) / "
               "on (dedup_set) max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)",
@@ -765,7 +768,7 @@ def groups():
               "denominator and never fires.",
               domain="observability", paused=False,
               policy="optional", runbook="exporter-internal-errors",
-              panel="Dedup set fill & eviction age"),
+              panel="Youngest dedup eviction age & overlap horizon"),
         alert("ts2o-enrich-cache-stale", "Enrichment cache stale",
               "max(tailscale2otel_enrich_cache_age_seconds)", "gt", 3600, "15m", "warning",
               "Device-enrichment cache is stale",

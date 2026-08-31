@@ -280,13 +280,16 @@ def tab_devices_connectivity(scope):
 
     return [
         row("Connectivity", connectivity, present="has_connectivity"),
+        # Collapsed: per-device tables are drill-down detail after the fleet summary.
         autogrid_row("Connectivity detail (per device)", connectivity_detail,
-                     present="has_connectivity", hide_when=["pii_perdevice"]),
+                     present="has_connectivity", hide_when=["pii_perdevice"], collapse=True),
         autogrid_row("Exit nodes", exitsubnet, present="has_exit"),
+        # Collapsed: inventory and route details follow the exit-node summary.
         row("Exit-node inventory", exitinv,
-            present="has_exit", hide_when=["pii_perdevice"]),
+            present="has_exit", hide_when=["pii_perdevice"], collapse=True),
         row("Subnet routes", routes,
-            present="has_routes", hide_when=["pii_perdevice", "pii_topology"]),
+            present="has_routes", hide_when=["pii_perdevice", "pii_topology"], collapse=True),
+        # Collapsed: relay-region investigation follows a connectivity symptom.
         row("Connectivity / DERP", derp,
-            present="has_derp", hide_when=["pii_perdevice"]),
+            present="has_derp", hide_when=["pii_perdevice"], collapse=True),
     ]

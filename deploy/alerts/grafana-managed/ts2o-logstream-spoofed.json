@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "110",
+      "__panelId__": "112",
       "description": "Tailscale is rejecting log entries as spoofed \u2014 investigate the source of the spoofed log traffic to the streaming endpoint.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#log-streaming",
       "summary": "Log stream {{ $labels.tailscale_logstream_type }} rejecting spoofed entries"

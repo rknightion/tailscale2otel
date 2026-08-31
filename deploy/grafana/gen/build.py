@@ -39,7 +39,7 @@ import os
 import builder
 import dashboards
 from builder import tab, tab_group
-from dashboards import DomainDef, SubTabbedDef, TabDef
+from dashboards import DomainDef, TabDef
 from variables import build_variables, tab_controls
 
 
@@ -122,7 +122,7 @@ def _build_leaf(node, flat_rows=None):
 
 
 def _build_node(node, flat_rows=None, only=None):
-    """Build one layout node — leaf, domain, or sub-tabbed leaf — recursively.
+    """Build one layout node — a leaf or operational domain — recursively.
 
     Returns a TabsLayoutTab dict, or None when building flat or when `only`
     filtered every leaf underneath it out.
@@ -136,9 +136,6 @@ def _build_node(node, flat_rows=None, only=None):
     built = [b for b in built if b is not None]
     if flat_rows is not None or not built:
         return None
-    if isinstance(node, SubTabbedDef):
-        # The fourth grouping level: a leaf that is itself a TabsLayout.
-        return tab_group(node.title, built, node.present)
     return tab_group(node.title, built)
 
 

@@ -47,8 +47,10 @@ docstring note below: this tab now declares its OWN tab-scoped copy, same reason
    so nothing was added. This tab's own "Cross-source dedup" row (tailscale2otel_dedup_hits_
    total / _evictions_total / _size_ratio) is unchanged by this pass.
 
-Consolidation (#526 decision 7, second pass) to hold this tab at or under the 35-panel
-ceiling after the audit-row addition:
+Earlier consolidations merged near-duplicate panels where one operational question
+remained. Capacity limits are different: byte exhaustion and entry exhaustion need
+different remedies, and a dedup set's fill and eviction residency answer different
+questions. Those panels stay separate.
   - "Audit events by ingestion path" (from the incoming state row) is DROPPED as a standalone
     panel — its data (records by source, filtered to signal="audit") is a strict subset of
     the existing "Ingest records/s & rejections/s by source" panel below, which already
@@ -80,6 +82,8 @@ _OBJ_EMPTY = ("No object-store ingestion series. Requires collectors.flowlogs.ob
               "and self_observability.enabled.")
 _WAL_EMPTY = ("No ingress-WAL series. Requires ingress_wal.enabled together with a receiver "
               "that accepts payloads (streaming or webhook), and self_observability.enabled.")
+_DEDUP_FILL_EMPTY = ("No dedup set-size series. Requires self_observability.enabled and at "
+                     "least one active dedup set.")
 _DEDUP_AGE_EMPTY = ("No dedup eviction-age series. Requires self_observability.enabled and "
                     "at least one dedup set eviction.")
 _SUBREQ_EMPTY = ("No per-entity subrequest series. Requires a collector that fans out per entity "
@@ -234,9 +238,15 @@ def tab_health_ingestion(scope):
                unit="bytes", custom=ts_custom(stack="normal"), options=ts_opts(), novalue=_WAL_EMPTY,
                desc="Encoded bytes on the WAL filesystem. There is no TTL or eviction, so this "
                     "is bounded only by ingress_wal.max_bytes."), 12, 6),
-        (panel("Ingress WAL capacity fill", "timeseries",
+        (panel("Ingress WAL byte capacity fill", "timeseries",
+               [prom_t("max(tailscale2otel_ingress_wal_pending_size_fill_ratio)", legend="bytes fill")],
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(), novalue=_WAL_EMPTY,
+               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
+               desc="Pending durable bytes as a fraction of ingress_wal.max_bytes. The warning "
+                    "threshold is 80%, before byte exhaustion fails new requests closed with HTTP "
+                    "503. Read raw on-disk bytes beside it to size the limit."), 12, 6),
+        (panel("Ingress WAL entry capacity fill", "timeseries",
                [prom_t("max(tailscale2otel_ingress_wal_pending_entries_fill_ratio)", legend="entries fill"),
-                prom_t("max(tailscale2otel_ingress_wal_pending_size_fill_ratio)", legend="bytes fill", refid="B"),
                 prom_t("max(tailscale2otel_ingress_wal_pending_entries_ratio)", legend="pending entries", refid="C"),
                 prom_t("max(tailscale2otel_ingress_wal_orphan_stages_ratio)", legend="retained staging files", refid="D"),
                 prom_t("max(tailscale2otel_ingress_wal_completion_markers_ratio)", legend="completion markers", refid="E")],
@@ -245,10 +255,10 @@ def tab_health_ingestion(scope):
                            "properties": [{"id": "unit", "value": "short"},
                                           {"id": "custom.axisPlacement", "value": "right"}]}],
                thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
-               desc="Durable pending entries and bytes as fractions of their configured ingress-WAL "
-                    "limits (left axis), with raw pending entries, retained staging files and "
-                    "completion markers on the right axis. The warning threshold is 80%, before "
-                    "either limit fails new requests closed with HTTP 503."), 12, 6),
+               desc="Pending durable entries as a fraction of ingress_wal.max_entries (left "
+                    "axis), with raw pending entries, retained staging files and completion "
+                    "markers on the right axis. The warning threshold is 80%, before entry "
+                    "exhaustion fails new requests closed with HTTP 503."), 12, 6),
     ]
     # --- per-entity subrequest fan-out, moved from tabs/diagnostics.py #386.
     subreq = [
@@ -432,20 +442,21 @@ def tab_health_ingestion(scope):
                     "dedup keys are effectively unique, so a full set evicts one key per insert "
                     "forever even when healthy — only evictions approaching a set's capacity "
                     "within one poll interval indicate real overlap loss."), 12, 7),
-        (panel("Dedup set fill & eviction age", "timeseries",
-               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="size {{dedup_set}}"),
-                prom_t("max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds)",
+        (panel("Dedup set fill", "timeseries",
+               [prom_t("max by (dedup_set) (tailscale2otel_dedup_size_ratio)", legend="size {{dedup_set}}")],
+               unit="short", custom=ts_custom(), options=ts_opts(), novalue=_DEDUP_FILL_EMPTY,
+               desc="Keys currently held in each bounded dedup set. The metric has a _ratio "
+                    "suffix for historical reasons but is a count; sustained growth toward the "
+                    "configured capacity is the context for eviction activity."), 12, 7),
+        (panel("Youngest dedup eviction age & overlap horizon", "timeseries",
+               [prom_t("max by (dedup_set) (tailscale2otel_dedup_youngest_eviction_age_seconds)",
                        legend="youngest eviction {{dedup_set}}", refid="B"),
                 prom_t("max by (dedup_set) (tailscale2otel_dedup_overlap_horizon_seconds)",
                        legend="overlap horizon {{dedup_set}}", refid="C")],
-               unit="short", custom=ts_custom(), options=ts_opts(),
-               overrides=[{"matcher": {"id": "byRegexp", "options": "(youngest eviction|overlap horizon) .+"},
-                           "properties": [{"id": "unit", "value": "s"},
-                                          {"id": "custom.axisPlacement", "value": "right"}]}],
+               unit="s", custom=ts_custom(), options=ts_opts(),
                novalue=_DEDUP_AGE_EMPTY,
-               desc="Keys currently held in each bounded dedup set (left axis, a count despite "
-                    "the metric's _ratio suffix), plus the smallest residency age observed at "
-                    "capacity eviction and the configured overlap horizon (right axis, seconds). "
+               desc="The smallest residency age observed at capacity eviction and the configured "
+                    "overlap horizon, both in seconds. "
                     "An age below its horizon means the set is too small; age is absent until an eviction."), 12, 7),
     ]
     # --- NEW: processor queue (batch processor between accept and OTLP export
@@ -581,19 +592,25 @@ def tab_health_ingestion(scope):
 
     return [
         row("Object-store ingestion status", objstore_status),
-        row("Object-store ingestion throughput & faults", objstore_throughput),
+        # Collapsed: only needed after the status row says object-store ingestion is unhealthy.
+        row("Object-store ingestion throughput & faults", objstore_throughput, collapse=True),
         row("Ingress WAL", wal),
-        row("Per-entity subrequest fan-out", subreq),
+        # Collapsed: N+1 diagnosis is follow-up detail, not first-open pipeline state.
+        row("Per-entity subrequest fan-out", subreq, collapse=True),
         row("Stream ingestion", stream, present="has_stream"),
         row("Webhook ingestion", webhook, present="has_webhook"),
         row("Receiver health", receiver, present="has_recv_dur"),
-        row("Receiver loss detail", recvloss),
+        # Collapsed: opened once receiver health or volume points at loss.
+        row("Receiver loss detail", recvloss, collapse=True),
         row("Ingestion volume", ingestvol, present="has_ingest"),
         row("Accepted-data freshness", ingestfresh, present="has_ingest"),
-        row("Cross-source dedup", dedup, present="has_selfobs"),
+        # Collapsed: dedup is a failsafe diagnostic, not a routine pipeline control.
+        row("Cross-source dedup", dedup, present="has_selfobs", collapse=True),
         row("Processor queue", queue),
-        row("Log truncation", truncation),
+        # Collapsed: detail for an already-visible ingestion degradation symptom.
+        row("Log truncation", truncation, collapse=True),
         row("Audit pipeline state", auditstate),
-        row("Audit pipeline latency", auditlatency, present="has_audit"),
-        row("Audit schema drift", auditdrift, present="has_audit"),
+        # Collapsed: both are investigation detail after the audit state row.
+        row("Audit pipeline latency", auditlatency, present="has_audit", collapse=True),
+        row("Audit schema drift", auditdrift, present="has_audit", collapse=True),
     ]

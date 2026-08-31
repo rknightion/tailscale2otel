@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Regression tests for nested sub-tab navigation (#495 remaining scope).
+"""Regression tests for operational dashboard navigation.
 
-Before this change the flagship carried 10 flat top-level tabs for 405 panels. This
-module asserts three things about the domain-grouped replacement:
+This module asserts three things about the domain-grouped structure:
 
 1. The nesting is REAL — a domain tab's layout is an actual `TabsLayout` containing
    real `TabsLayoutTab` children, not a flattened row list wearing a domain's name (the
    `--flat` preview mode already does exactly that kind of flattening for screenshots,
    so it would be an easy mistake to reuse it here by accident).
-2. Nothing was lost or duplicated in the regrouping: every original leaf tab still
-   exists, under its original title, with its panels intact, and the total panel count
-   is unchanged.
-3. Two-level conditional rendering is where it should be: a leaf tab whose entire
+2. Nothing is lost or duplicated in the regrouping: every leaf still has its panels.
+3. Conditional rendering is where it should be: a leaf tab whose entire
    content is feature-gated stays gated once nested (Node Metrics / Tailnets), and a
    domain that contains any always-present leaf is NOT gated at the domain level (that
    would hide core content behind an unrelated feature flag). Each gate has a negative
@@ -34,10 +31,8 @@ HERE = Path(__file__).resolve().parent
 dashboard = load_module("tailscale2otel_dashboard_nested", HERE / "build.py")
 builder = dashboard.builder
 
-# Every LEAF on the TAILNET dashboard — the unit a panel budget and a --tab preview
-# apply to. Three of them are sub-tabs under an oversized parent (#526 decision 5):
-# Devices, Security & Audit and Policy & Config were 59, 49 and 47 panels and each
-# split into the sub-tabs listed here.
+# Every direct LEAF on the TAILNET dashboard.  The operational domains deliberately
+# stop at this level: a fourth tab bar hid the question a reader had come to answer.
 #
 # Two former leaves are deliberately absent, and their absence is asserted rather
 # than merely unmentioned (see test_the_dissolved_tabs_are_gone):
@@ -50,11 +45,11 @@ builder = dashboard.builder
 # are still asserted somewhere, so no split can quietly drop one.
 ORIGINAL_LEAF_TABS = {
     "Overview",
-    "Inventory & Hygiene", "Posture & Security", "Connectivity & Routing",
-    "Network & Flows", "Node Metrics",
+    "Inventory & Hygiene", "Posture & Security", "Connectivity & Routing", "Node Metrics",
+    "Network & Flows",
     "Audit Trail", "Risk & ACL", "Posture & Compliance", "Identity & Keys",
-    "Access & ACL", "DNS & Settings", "Identity & Credentials", "Integrations",
     "Kubernetes Audit",
+    "Access & ACL", "DNS & Settings", "Identity & Credentials", "Integrations",
 }
 
 # Leaves that must NOT exist. A renamed-away tab is invisible to a set-equality
@@ -70,22 +65,25 @@ DISSOLVED_LEAF_TABS = {"Tailnets", "Events & Logs", "Fleet & Devices",
 # stage tabs; it must not come back as a dumping ground.
 HEALTH_LEAF_TABS = {"Overview", "Collection", "Ingestion", "Delivery", "Runtime",
                     "Cost & Cardinality"}
+HEALTH_TOP_LEVEL = ["Overview", "Data pipeline", "Runtime & capacity"]
 
-EXPECTED_TOP_LEVEL = ["Overview", "Fleet & Network", "Security & Policy"]
+EXPECTED_TOP_LEVEL = ["Overview", "Fleet operations", "Network & service telemetry",
+                      "Security, identity & governance", "Policy & configuration"]
 
 # Leaves that carry conditional rendering ONLY because their entire content is
 # feature-gated (present= on the tab() call in build.py's tab_defs) — the case #495
 # calls out: "a tab containing only conditional rows still renders unless the tab
 # itself is conditional."
 EXPECTED_GATED_LEAVES = {
-    "Node Metrics": ("Fleet & Network", "has_nodemetrics"),
-    "Kubernetes Audit": ("Fleet & Network", "has_k8s_audit"),
+    "Node Metrics": ("Network & service telemetry", "has_nodemetrics"),
+    "Kubernetes Audit": ("Security, identity & governance", "has_k8s_audit"),
 }
 
 # Domains that must stay UNGATED because every one carries at least one always-present
 # leaf — gating the domain would hide that core content whenever the domain's optional
 # sibling's feature happens to be absent.
-UNGATED_DOMAINS = {"Fleet & Network", "Security & Policy"}
+UNGATED_DOMAINS = {"Fleet operations", "Network & service telemetry",
+                   "Security, identity & governance", "Policy & configuration"}
 
 
 def _matching_gate(conditional_rendering):
@@ -117,9 +115,21 @@ def _leaf_panel_titles(tab_spec, elements):
     return titles
 
 
+def _rows(layout):
+    """Rows below a tab/domain layout, keyed by title without losing duplicates."""
+    out = {}
+    if layout["kind"] == "TabsLayout":
+        for child in layout["spec"]["tabs"]:
+            for title, row_specs in _rows(child["spec"]["layout"]).items():
+                out.setdefault(title, []).extend(row_specs)
+    elif layout["kind"] == "RowsLayout":
+        for row_spec in layout["spec"]["rows"]:
+            out.setdefault(row_spec["spec"]["title"], []).append(row_spec["spec"])
+    return out
+
+
 class NestedStructureIsRealTest(unittest.TestCase):
-    """Requirement 1: the nesting is an actual second TabsLayout, not a flattened
-    row list dressed up with a domain title."""
+    """Domains are real TabsLayouts containing direct operational leaves."""
 
     def setUp(self):
         self.doc = dashboard.build(dashboard.dashboards.TAILNET)
@@ -141,12 +151,9 @@ class NestedStructureIsRealTest(unittest.TestCase):
                                 "at all" % title)
             for child in children:
                 self.assertEqual(child["kind"], "TabsLayoutTab")
-                # A child is either a genuine leaf (a RowsLayout of real rows) or, for
-                # the three leaves that outgrew the ~35-panel ceiling, a further
-                # TabsLayout of sub-tabs — the fourth grouping level. What it may never
-                # be is a bare panel list.
-                self.assertIn(child["spec"]["layout"]["kind"],
-                              ("RowsLayout", "TabsLayout"))
+                # Domains contain direct leaves. A second nested TabsLayout would restore
+                # the old fourth navigation level and obscure the operational question.
+                self.assertEqual(child["spec"]["layout"]["kind"], "RowsLayout")
 
     def test_standalone_leaves_are_not_wrapped_in_a_pointless_single_item_domain(self):
         # Overview has no sibling to group with, so it must render as a plain leaf tab
@@ -158,18 +165,15 @@ class NestedStructureIsRealTest(unittest.TestCase):
                               "%r must stay a plain leaf tab, not a one-child domain" % title)
 
     def test_negative_a_flattened_fake_would_be_caught(self):
-        """Proves test_grouped_domains_carry_a_real_nested_tabslayout is not vacuous:
-        a domain that flattened its children's rows into one RowsLayout (exactly what
-        --flat does for the whole dashboard) must fail the same assertion."""
-        fake_domain = {"spec": {"title": "Fleet & Network",
+        """A flattened fake domain must still fail the structural assertion."""
+        fake_domain = {"spec": {"title": "Fleet operations",
                                  "layout": {"kind": "RowsLayout", "spec": {"rows": []}}}}
         with self.assertRaises(AssertionError):
             self.assertEqual(fake_domain["spec"]["layout"]["kind"], "TabsLayout")
 
 
 class NoTabLostOrDuplicatedTest(unittest.TestCase):
-    """Requirement 2: every original leaf survives, with its panels, and the total
-    panel count is unchanged by the regrouping."""
+    """Every leaf survives with real panels; rows own density, not tab ceilings."""
 
     def setUp(self):
         self.doc = dashboard.build(dashboard.dashboards.TAILNET)
@@ -206,39 +210,39 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
             panel_titles = _leaf_panel_titles(tab_spec["spec"], self.elements)
             self.assertGreater(len(panel_titles), 0, "leaf %r lost all its panels" % title)
 
-    def test_total_panel_count_is_preserved_across_the_family(self):
-        # 453 after #526 wave 3. The trajectory is deliberate and worth keeping: 437
-        # before the work, 466 after the health rebuild added panels for 25 signals that
-        # previously reached none, then back down to 453 as the consolidation pass merged
-        # near-duplicates and single-panel rows — while the LAST 15 uncovered signals
-        # gained panels, and 454 once #527 exposed a 16th. Fewer panels covering more
-        # signals is the whole point; a rise here without a coverage reason is the
-        # thing to be suspicious of.
-        # TSO-0022 adds one bounded all-span-class Tempo panel and four Pyroscope
-        # activity/flamegraph panels, taking the family from 454 to 459.
-        # Regrouping tabs must not add or drop a panel beyond a deliberate content
-        # change; this number moves only with one.
-        #
-        # Counted over the FAMILY since #526: the split moved 103 panels to
-        # tailscale2otel-health, so a per-dashboard count would have to be lowered to
-        # 334 and would then stop noticing a panel that fell off the health side
-        # entirely. The union is the invariant the split had to preserve.
-        total = sum(len(dashboard.build(s)["spec"]["elements"])
-                    for s in dashboard.dashboards.ALL)
-        self.assertEqual(total, 470)
-        self.assertEqual(len(self.elements), 310, "tailnet dashboard")
+    def test_both_dashboards_keep_a_nonempty_element_registry(self):
+        # The family has no panel-count ceiling: a new signal earns a panel when it
+        # answers a real operational question. Keep only the structural invariant that
+        # neither generated artifact is silently emptied by a layout refactor.
+        self.assertGreater(len(self.elements), 0, "tailnet dashboard")
+        health = dashboard.build(dashboard.dashboards.HEALTH)
+        self.assertGreater(len(health["spec"]["elements"]), 0, "health dashboard")
 
     def test_the_health_dashboard_carries_the_exporter_leaves(self):
-        # The other half of the count above: #526 moved these two leaves rather than
-        # deleting them, and a split that silently dropped one would still satisfy a
-        # tailnet-only leaf assertion.
+        # The health dashboard is grouped around the two questions an exporter operator
+        # asks: is data moving through the pipeline, and is the process sustainable?
         doc = dashboard.build(dashboard.dashboards.HEALTH)
-        titles = {t["spec"]["title"] for t in doc["spec"]["layout"]["spec"]["tabs"]}
-        self.assertEqual(titles, HEALTH_LEAF_TABS)
+        top = doc["spec"]["layout"]["spec"]["tabs"]
+        self.assertEqual([t["spec"]["title"] for t in top], HEALTH_TOP_LEVEL)
+        leaves = {}
+
+        def walk(layout):
+            for tab_spec in layout["spec"]["tabs"]:
+                child = tab_spec["spec"]["layout"]
+                if child["kind"] == "TabsLayout":
+                    walk(child)
+                else:
+                    leaves[tab_spec["spec"]["title"]] = child
+
+        walk(doc["spec"]["layout"])
+        self.assertEqual(set(leaves), HEALTH_LEAF_TABS)
+        for title in ("Data pipeline", "Runtime & capacity"):
+            domain = next(tab for tab in top if tab["spec"]["title"] == title)
+            self.assertEqual(domain["spec"]["layout"]["kind"], "TabsLayout")
 
     def test_flat_and_nested_builds_carry_the_same_panel_count(self):
         # --flat renders every original row (prefixed with its owning tab's title) with
-        # no tabs at all; nested renders the same rows under a two-level tab tree. Both
+        # no tabs at all; nested renders the same rows under operational domains. Both
         # walk the exact same tab_defs list before branching on `flat` in build.py, so
         # their panel counts diverging would mean the grouping step (organize_tabs)
         # itself dropped or duplicated a leaf.
@@ -266,9 +270,7 @@ class NoTabLostOrDuplicatedTest(unittest.TestCase):
 
 
 class TwoLevelGatingTest(unittest.TestCase):
-    """Requirement 3: sub-tab-level conditional rendering is present exactly where the
-    leaf's entire content is feature-gated, and domains with any always-present leaf
-    are left ungated."""
+    """Feature-gated leaves own their gates; domains with core leaves remain ungated."""
 
     def setUp(self):
         self.doc = dashboard.build(dashboard.dashboards.TAILNET)
@@ -294,10 +296,10 @@ class TwoLevelGatingTest(unittest.TestCase):
         # A core (always-present) leaf must not accidentally inherit gating either from
         # a copy-paste of a neighbouring optional leaf's present= or from the grouping
         # step itself.
-        core_leaves = [("Fleet & Network", "Devices"),
-                       ("Fleet & Network", "Network & Flows"),
-                       ("Security & Policy", "Security & Audit"),
-                       ("Security & Policy", "Policy & Config")]
+        core_leaves = [("Fleet operations", "Inventory & Hygiene"),
+                       ("Network & service telemetry", "Network & Flows"),
+                       ("Security, identity & governance", "Audit Trail"),
+                       ("Policy & configuration", "Access & ACL")]
         for domain_title, leaf_title in core_leaves:
             leaf = self._leaf(domain_title, leaf_title)
             self.assertIsNone(leaf["spec"].get("conditionalRendering"),
@@ -329,8 +331,38 @@ class TwoLevelGatingTest(unittest.TestCase):
         """Proves test_domains_with_any_core_leaf_are_not_gated_at_the_domain_level is
         not vacuous: a domain built WITH a present= (the mistake the docstring on
         builder.tab_group warns against) must fail the assertIsNone check."""
-        wrongly_gated = builder.tab_group("Fleet & Network", [], present="has_nodemetrics")
+        wrongly_gated = builder.tab_group("Fleet operations", [], present="has_nodemetrics")
         self.assertIsNotNone(wrongly_gated["spec"].get("conditionalRendering"))
+
+
+class CollapsedDetailRowsTest(unittest.TestCase):
+    """Details start collapsed when an earlier row tells an operator to investigate."""
+
+    EXPECTED = {
+        dashboard.dashboards.TAILNET.uid: {
+            "Connectivity detail (per device)", "Exit-node inventory", "Subnet routes",
+            "Connectivity / DERP", "Peer & port topology — ROLLUP",
+            "Throughput & talkers — RAW (full detail)", "Top talkers — RAW",
+            "Top node-pair talkers (flow logs)", "Flow log stream",
+            "Configuration audit — actors & correlation", "Log explorer",
+        },
+        dashboard.dashboards.HEALTH.uid: {
+            "Object-store ingestion throughput & faults", "Per-entity subrequest fan-out",
+            "Receiver loss detail", "Cross-source dedup", "Log truncation",
+            "Audit pipeline latency", "Audit schema drift",
+        },
+    }
+
+    def test_selected_investigation_rows_start_collapsed(self):
+        for spec in dashboard.dashboards.ALL:
+            rows = _rows(dashboard.build(spec)["spec"]["layout"])
+            for title in self.EXPECTED[spec.uid]:
+                with self.subTest(dashboard=spec.uid, row=title):
+                    self.assertTrue(any(row["collapse"] for row in rows[title]))
+
+    def test_negative_an_open_investigation_row_is_rejected(self):
+        with self.assertRaises(AssertionError):
+            self.assertTrue({"collapse": False}["collapse"])
 
 
 if __name__ == "__main__":

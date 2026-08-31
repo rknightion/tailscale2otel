@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "79",
+      "__panelId__": "80",
       "description": "The receiver or poller may still be running, but the newest accepted event timestamp is over one hour old. This rule ships paused because quiet tailnets and sparse webhook/audit sources are legitimately idle; enable it only for source/signal pairs expected to deliver continuously, and add label filters or tune the threshold for that workload.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Accepted {{ $labels.source }}/{{ $labels.signal }} events are over 1h stale"
