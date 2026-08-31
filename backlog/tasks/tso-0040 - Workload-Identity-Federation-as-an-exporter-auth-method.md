@@ -1,10 +1,10 @@
 ---
 id: TSO-0040
 title: Workload Identity Federation as an exporter auth method
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-31 03:32'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-3
 dependencies: []
@@ -20,16 +20,16 @@ Tailscale Workload Identity Federation (GA ~2026-02) exchanges an external OIDC 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Exporter authenticates end-to-end using an externally issued OIDC token with automatic exchange/refresh
-- [ ] #2 Failure modes (issuer unreachable, exchange 4xx) degrade with clear diagnostics, not silent auth loss
-- [ ] #3 Config schema, docs and env-var reference regenerated; adversarial review performed
+- [x] #1 Exporter authenticates end-to-end using an externally issued OIDC token with automatic exchange/refresh
+- [x] #2 Failure modes (issuer unreachable, exchange 4xx) degrade with clear diagnostics, not silent auth loss
+- [x] #3 Config schema, docs and env-var reference regenerated; adversarial review performed
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -87,3 +87,9 @@ CodeRabbit requested narrowing the live credential authority. Root declined that
 
 Root live verification created one federated identity described as tailscale2otel live contract with scopes all:read, GitHub Actions issuer, and repository-main subject; no identifier or credential value is recorded here. Existing advisory live-contract workflow run 33353811115 completed success at d3af40f, proving wrong-audience rejection, successful OIDC exchange, and read-scope API access. Required CodeRabbit review was attempted after integrated just check passed, but the service failed before analysis with recoverable WebSocket closed and no complete status line. Root treated it as failed and performed a manual adversarial review of the wire contract, response bounds, credential redaction, error classification, and cache/refresh behavior; no blocking issue was found.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the exact two-field WIF exchange contract, token caching and refresh, bounded responses, clear issuer and 4xx diagnostics, and JWT-safe errors. Created one scoped federated identity and proved the real GitHub OIDC exchange in advisory run 33353811115. Implementation SHA 5b55617. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

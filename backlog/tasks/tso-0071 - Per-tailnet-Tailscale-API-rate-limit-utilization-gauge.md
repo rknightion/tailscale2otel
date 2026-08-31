@@ -1,10 +1,10 @@
 ---
 id: TSO-0071
 title: Per-tailnet Tailscale API rate-limit utilization gauge
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-31 00:29'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-5
 dependencies: []
@@ -20,15 +20,15 @@ WaitDuration exists per request in internal/tsapi/transport.go but no utilizatio
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A per-tailnet gauge/histogram exposes rate-limit pressure before saturation
-- [ ] #2 Catalogued and visualized on the health dashboard
+- [x] #1 A per-tailnet gauge/histogram exposes rate-limit pressure before saturation
+- [x] #2 Catalogued and visualized on the health dashboard
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -36,3 +36,9 @@ WaitDuration exists per request in internal/tsapi/transport.go but no utilizatio
 <!-- SECTION:PLAN:BEGIN -->
 Lane D implements per-tailnet API rate-limit utilization from transport response state, with cardinality-bounded telemetry and an assigned-tab panel.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added the per-tailnet API rate-limit utilization gauge, catalog and semantic attribute coverage, and a health-dashboard panel for pressure before saturation. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TSO-0039
 title: 'Posture attribute values: compliance gauges with cardinality caps'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-31 02:54'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-3
 dependencies:
@@ -21,15 +21,15 @@ GET /device/{id}/attributes is already consumed and the posture surface keeps gr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Operators can express at least one posture compliance check that yields a countable gauge
-- [ ] #2 Any attribute-to-label promotion path has an enforced cardinality cap with an __other__/overflow behaviour consistent with existing levers
+- [x] #1 Operators can express at least one posture compliance check that yields a countable gauge
+- [x] #2 Any attribute-to-label promotion path has an enforced cardinality cap with an __other__/overflow behaviour consistent with existing levers
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -47,3 +47,9 @@ Integrated the frozen exact-match checks into collector construction. The bounde
 
 Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added bounded exact-match posture compliance checks for scalar attributes, emitted the countable compliance gauge, preserved existing key and value cardinality overflow behavior, and visualized failures. Implementation SHA 882b4cf. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

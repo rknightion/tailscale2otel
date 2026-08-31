@@ -1,10 +1,10 @@
 ---
 id: TSO-0081
 title: Version-check fail-open visibility and Headscale default
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-31 02:54'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-5
 dependencies: []
@@ -20,15 +20,15 @@ version_checks.* silently emit nothing when the upstream fetch is blocked (inter
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Blocked version checks are observable as such, not silent
-- [ ] #2 Headscale provider defaults the device version-skew check off (still overridable)
+- [x] #1 Blocked version checks are observable as such, not silent
+- [x] #2 Headscale provider defaults the device version-skew check off (still overridable)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -46,3 +46,9 @@ Lane J chose the narrow status-only route: device_version_check exposes disabled
 
 Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Made device version-check readiness, checking state and failure class visible on status surfaces, and defaulted the check off for Headscale while preserving explicit overrides. Implementation SHA 882b4cf. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

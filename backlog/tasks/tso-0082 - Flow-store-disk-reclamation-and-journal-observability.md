@@ -1,10 +1,10 @@
 ---
 id: TSO-0082
 title: Flow store disk reclamation and journal observability
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-31 01:41'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-6
 dependencies: []
@@ -20,15 +20,15 @@ sweep() deletes rows (internal/flowstore/sqlitestore/writer.go:202-226) but no a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Lowering retention eventually reduces on-disk size without manual intervention
-- [ ] #2 Journal size and last-checkpoint time are exported and visible
+- [x] #1 Lowering retention eventually reduces on-disk size without manual intervention
+- [x] #2 Journal size and last-checkpoint time are exported and visible
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -58,3 +58,9 @@ Second CodeRabbit review found passive checkpoint completion was inferred from b
 
 Third CodeRabbit pass completed with no critical or major findings. Its one minor was accepted: the reclamation test now requires a passive WAL checkpoint with busy=0 and equal log/checkpointed frame counts before taking the database-file size baseline.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added automatic flow-store disk reclamation when retention falls, plus journal size and last-checkpoint observability surfaced in telemetry and the status UI. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,10 +1,10 @@
 ---
 id: TSO-0052
 title: Bound the N+1 per-device subrequests in the devices/services collectors
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-31 02:13'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-4
 dependencies: []
@@ -20,16 +20,16 @@ collect_device_invites defaults ON (internal/config/defaults.go:183) and issues 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-device subrequests run under a bounded concurrency pool and/or their own interval
-- [ ] #2 A tick can no longer overrun its interval solely because of sequential subrequests (test or measured evidence)
-- [ ] #3 Default posture for large fleets is decided and documented
+- [x] #1 Per-device subrequests run under a bounded concurrency pool and/or their own interval
+- [x] #2 A tick can no longer overrun its interval solely because of sequential subrequests (test or measured evidence)
+- [x] #3 Default posture for large fleets is decided and documented
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -43,3 +43,9 @@ Root F1 freezes bounded per-device subrequest concurrency with current sequentia
 <!-- SECTION:NOTES:BEGIN -->
 Lane C implemented bounded device posture/invite and service host subrequest pools. Default concurrency remains 1 to preserve current sequential behavior; operators opt into bounded parallelism after considering API rate limits. Race tests cover concurrency caps and show parallel work no longer scales linearly with device count.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added configurable bounded concurrency to per-device and per-service subrequests, concurrent timing coverage preventing sequential interval overruns, and behavior-preserving documented defaults. Implementation SHA 6d9c23c. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

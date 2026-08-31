@@ -1,10 +1,10 @@
 ---
 id: TSO-0076
 title: Debounce checkpoint writes across collectors
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-31 02:13'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-6
 dependencies: []
@@ -20,15 +20,15 @@ Every checkpoint Set re-marshals and double-fsyncs the entire shared JSON file (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Concurrent Sets within the debounce window produce one persisted write
-- [ ] #2 Shutdown still flushes synchronously; crash-window loss is bounded and documented
+- [x] #1 Concurrent Sets within the debounce window produce one persisted write
+- [x] #2 Shutdown still flushes synchronously; crash-window loss is bounded and documented
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -42,3 +42,9 @@ Root F1 freezes checkpoint write debounce with zero preserving synchronous write
 <!-- SECTION:NOTES:BEGIN -->
 Lane C added file-store write debounce/coalescing with zero preserving synchronous behavior, retained the option after corrupt-file recovery, and wired synchronous cursor/evidence Flush into Run and Close shutdown paths. Concurrent-set and root shutdown-persistence tests passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Debounced concurrent checkpoint writes into one persisted update, retained synchronous shutdown flushes, and bounded and documented the crash-loss window. Implementation SHA 6d9c23c. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

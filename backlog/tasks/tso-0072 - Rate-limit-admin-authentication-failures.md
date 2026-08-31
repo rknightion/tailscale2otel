@@ -1,10 +1,10 @@
 ---
 id: TSO-0072
 title: Rate-limit admin authentication failures
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-31 02:27'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-5
 dependencies: []
@@ -20,16 +20,16 @@ requireAdminAuth (internal/app/admin.go:226-256) counts rejections but never thr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Repeated failures from one source are throttled with bounded memory
-- [ ] #2 Legitimate auth after backoff expiry works; behaviour tested
-- [ ] #3 Lockout/throttle events observable
+- [x] #1 Repeated failures from one source are throttled with bounded memory
+- [x] #2 Legitimate auth after backoff expiry works; behaviour tested
+- [x] #3 Lockout/throttle events observable
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -49,3 +49,9 @@ CodeRabbit review completed with three major findings. Verified and fixed the ov
 
 Second CodeRabbit review completed with no critical or major findings. One valid minor found that the existing success-reset test first let allow() prune expired state, so it did not actually prove success() cleared live failure history. Fixed the sequence to add one post-expiry failure before success; targeted race test passes. No findings were left unresolved.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added bounded per-source admin authentication throttling with overflow protection, backoff recovery for legitimate clients, 429 Retry-After behavior, and existing rejection telemetry. Implementation SHA 6d9c23c. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

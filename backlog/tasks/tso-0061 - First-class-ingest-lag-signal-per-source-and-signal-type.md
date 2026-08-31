@@ -1,10 +1,10 @@
 ---
 id: TSO-0061
 title: First-class ingest-lag signal per source and signal type
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:31'
-updated_date: '2026-08-31 00:37'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-4
 dependencies: []
@@ -20,15 +20,15 @@ internal/ingest.AcceptedEvent carries EventTime/AcceptedAt - the raw material fo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Verified whether the signal already exists; result recorded
-- [ ] #2 An ingest-lag histogram per source is exported and visualized
+- [x] #1 Verified whether the signal already exists; result recorded
+- [x] #2 An ingest-lag histogram per source is exported and visualized
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,3 +57,9 @@ Load-bearing observation while measuring: p95 of ingest_event_age for signal=flo
 
 Evidence close: the existing tailscale2otel.ingest.event.age histogram is labelled by source and signal, its capture-delay companion exists, and both are already visualized together on the Health/Ingestion freshness panel. No duplicate signal or panel will be added. The previously measured high stream-flow p95 was not re-queried in this lane; TSO-0093 now tracks a fresh causal investigation.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Closed on evidence: the existing event-age histogram already reports by source and signal and is visualized with capture delay. Filed TSO-0093 for the separately observed high stream-flow lag. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,10 +3,10 @@ id: TSO-0090
 title: >-
   just verify-deploy reports unreachable when any unrelated gcx context is
   broken
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 18:31'
-updated_date: '2026-08-31 03:12'
+updated_date: '2026-08-31 03:39'
 labels:
   - needs-triage
 milestone: m-5
@@ -23,15 +23,15 @@ scripts/verify_deployment.py runs `gcx config check`, which reports on EVERY con
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 verify-deploy's reachability check considers only the context it is verifying against, not every configured gcx context
-- [ ] #2 A broken sibling context is proven not to change the exit code (negative test: break a sibling, confirm exit stays 0 on a healthy target)
+- [x] #1 verify-deploy's reachability check considers only the context it is verifying against, not every configured gcx context
+- [x] #2 A broken sibling context is proven not to change the exit code (negative test: break a sibling, confirm exit stays 0 on a healthy target)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -49,3 +49,9 @@ Required CodeRabbit pre-commit review attempted on the integrated staged diff af
 
 Correction to the preceding note: the exact recoverable error was WebSocket closed, and the review emitted no complete status line.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Scoped verify-deploy reachability to the selected gcx context and added the negative broken-sibling test; a live read-only target-context check reported online. Implementation SHA d3af40f. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

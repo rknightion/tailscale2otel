@@ -1,10 +1,10 @@
 ---
 id: TSO-0088
 title: Clarify App.Close flow-store ownership outside Run shutdown
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 12:59'
-updated_date: '2026-08-31 00:29'
+updated_date: '2026-08-31 03:39'
 labels:
   - needs-triage
 dependencies: []
@@ -21,15 +21,15 @@ Wave 1 review found that the normal Run shutdown closes per-tailnet flow stores,
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Every supported App lifecycle entry point closes or explicitly transfers ownership of all per-tailnet flow stores
-- [ ] #2 A focused test or contract guard prevents the non-Run shutdown path from silently leaking flow-store resources
+- [x] #1 Every supported App lifecycle entry point closes or explicitly transfers ownership of all per-tailnet flow stores
+- [x] #2 A focused test or contract guard prevents the non-Run shutdown path from silently leaking flow-store resources
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -37,3 +37,9 @@ Wave 1 review found that the normal Run shutdown closes per-tailnet flow stores,
 <!-- SECTION:PLAN:BEGIN -->
 Lane I fixes App.Close flow-store ownership outside Run shutdown with a failing lifecycle test first and no public API break.
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Made all supported App lifecycle exits close or transfer every per-tailnet flow store and added a focused guard for the non-Run shutdown path. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

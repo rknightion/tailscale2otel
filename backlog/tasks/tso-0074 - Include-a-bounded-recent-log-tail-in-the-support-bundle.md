@@ -1,10 +1,10 @@
 ---
 id: TSO-0074
 title: Include a bounded recent-log tail in the support bundle
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-31 02:22'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-5
 dependencies: []
@@ -20,15 +20,15 @@ internal/app/admin_bundle.go collects config/diagnostics/state but not the last 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The bundle contains a bounded, redaction-safe tail of recent process logs
-- [ ] #2 Ring size bounded and configurable; no PII leakage beyond existing log policy
+- [x] #1 The bundle contains a bounded, redaction-safe tail of recent process logs
+- [x] #2 Ring size bounded and configurable; no PII leakage beyond existing log policy
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -46,3 +46,9 @@ Lane G added a configurable record-bounded, concurrency-safe, redaction-preservi
 
 CodeRabbit's major bounded-memory finding was verified: the ring bounded record count but one slog record could still be arbitrarily large. Fixed capture to cap each JSONL entry at otlp.limits.log_body_bytes and replace oversized entries with a valid JSON truncation marker carrying original_bytes; live logging remains untouched. The new guard was negative-tested by removing the bound, observing a 1,091-byte record exceed the 128-byte test ceiling, then restoring and passing.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added a configurable process-wide bounded JSON log-tail ring to support bundles, preserving slog redaction and archive ordering while advancing the bundle format. Implementation SHA 6d9c23c. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

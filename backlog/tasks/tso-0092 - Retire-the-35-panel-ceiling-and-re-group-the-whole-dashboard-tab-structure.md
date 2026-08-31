@@ -1,10 +1,10 @@
 ---
 id: TSO-0092
 title: Retire the 35-panel ceiling and re-group the whole dashboard tab structure
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 18:32'
-updated_date: '2026-08-31 01:45'
+updated_date: '2026-08-31 03:39'
 labels:
   - needs-triage
 milestone: m-7
@@ -27,18 +27,18 @@ The regroup is a whole-structure pass across both dashboards, not a per-tab twea
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The ~35-panel ceiling is removed from dashboards.py comments and from any doc or task text that cites it as a constraint
-- [ ] #2 Both dashboards' tab and domain structure is re-grouped so each tab is a coherent operational question, with the rationale recorded on this task
-- [ ] #3 Rows are used for density, with collapsed-by-default rows for detail that is not needed on first open, and the collapse decision stated per row
-- [ ] #4 The two Wave 2 consolidations (TSO-0060 WAL panels, TSO-0065 eviction age) are re-examined and either split back out or kept with a stated reason
-- [ ] #5 Every signal the wave adds lands on a real panel, and internal/catalog signal-coverage stays green with no empty dispositions
+- [x] #1 The ~35-panel ceiling is removed from dashboards.py comments and from any doc or task text that cites it as a constraint
+- [x] #2 Both dashboards' tab and domain structure is re-grouped so each tab is a coherent operational question, with the rationale recorded on this task
+- [x] #3 Rows are used for density, with collapsed-by-default rows for detail that is not needed on first open, and the collapse decision stated per row
+- [x] #4 The two Wave 2 consolidations (TSO-0060 WAL panels, TSO-0065 eviction age) are re-examined and either split back out or kept with a stated reason
+- [x] #5 Every signal the wave adds lands on a real panel, and internal/catalog signal-coverage stays green with no empty dispositions
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -104,3 +104,9 @@ Final ownership completion: Lane D also owns security_audit_trail.py, security_r
 
 Remaining-wave handoff after the resilience group landed: security_identity.py transfers from completed lane D to lane G for the admin-auth throttle signal and panel. Lane D retains the other security modules. No concurrent owner remains.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Removed the retired panel ceiling, regrouped both dashboards around operational questions, introduced collapsed detail rows, recorded the tab ownership map, re-examined the Wave 2 consolidations, and kept signal coverage complete through later Wave 3 panels. Implementation SHA 1ea4b8b. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -3,10 +3,10 @@ id: TSO-0091
 title: >-
   Dedup youngest-eviction-age gauge latches for the process lifetime with no
   reset path
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 18:32'
-updated_date: '2026-08-31 00:37'
+updated_date: '2026-08-31 03:39'
 labels:
   - needs-triage
 milestone: m-4
@@ -23,16 +23,16 @@ dedup.Set.YoungestEvictionAge (internal/dedup/dedup.go:162-172, set in evictLock
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A polling deployment that recovers from a catch-up burst sees the alert resolve without a process restart
-- [ ] #2 The chosen mechanism is proven by a test that latches the gauge, clears the pressure, and asserts the alerting condition goes false
-- [ ] #3 The dashboard/status-page consumer of the latched value is unchanged or explicitly re-sited
+- [x] #1 A polling deployment that recovers from a catch-up burst sees the alert resolve without a process restart
+- [x] #2 The chosen mechanism is proven by a test that latches the gauge, clears the pressure, and asserts the alerting condition goes false
+- [x] #3 The dashboard/status-page consumer of the latched value is unchanged or explicitly re-sited
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -46,3 +46,9 @@ Lane F chooses the narrowest reset mechanism among the three task options, imple
 <!-- SECTION:NOTES:BEGIN -->
 Open question resolved by root: use the narrowest reversible windowed-reset mechanism. Keep the existing metric name, type, labels, panel, and alert; atomically consume the minimum capacity-eviction residency age since the previous self-observability interval, clear the gauge series during intervals with no eviction, and retain the lifetime accessor only as an internal compatibility diagnostic. This lets the existing noDataState Ok rule resolve without restart.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Changed youngest eviction age to a reporting-window low-water mark while retaining the lifetime diagnostic, so catch-up pressure clears and the existing alert and panel resolve without restart. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->

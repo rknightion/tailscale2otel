@@ -1,10 +1,10 @@
 ---
 id: TSO-0080
 title: Surface zero-traffic receiver misconfiguration without breaking startup
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-31 00:29'
+updated_date: '2026-08-31 03:39'
 labels: []
 milestone: m-6
 dependencies: []
@@ -20,15 +20,15 @@ A non-loopback receiver bind with no token or secret starts successfully but ref
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The non-loopback receiver-without-credential condition remains non-breaking but emits an actionable warning, a per-receiver self-observability metric, and a status-page row
-- [ ] #2 The deferred hard-fail is tracked for a future major release
+- [x] #1 The non-loopback receiver-without-credential condition remains non-breaking but emits an actionable warning, a per-receiver self-observability metric, and a status-page row
+- [x] #2 The deferred hard-fail is tracked for a future major release
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -63,3 +63,9 @@ Review clarification: the title and description now match the owner's frozen non
 
 CodeRabbit's panel-routing clarification was accepted. The metric-temporality implementation finding belongs to TSO-0068's post-F2 lane; F1 intentionally freezes behavior-preserving config before wiring.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Kept receiver startup non-breaking while adding an actionable warning, per-receiver self-observability metric and status-page row. Filed TSO-0094 for the future-major hard fail. Implementation SHA f35b6ab. Final integrated just check passed at 5b55617; exact-head CI run 33354208183 completed success.
+<!-- SECTION:FINAL_SUMMARY:END -->
