@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>codexlb2otel — live</title>
+<style>
+  /* Light unconditionally, NOT via prefers-color-scheme - that hands the decision to
+     the viewer's OS, which is what makes a page open dark on a dark-mode machine no
+     matter what it intended. Dark is reachable, but only by asking. Every colour is
+     defined here; the dark block only re-points them. */
+  :root {
+    --bg: #fbfbfd; --panel: #ffffff; --line: #e2e5ea; --fg: #1c1f26;
+    --dim: #5f6774; --faint: #949bab;
+    --accent: #2c5fd0; --run: #1c7a3f; --err: #bc2f47; --sub: #6b3fa0; --fork: #a35b12;
+    --rule: #e2e5ea; --hover: #f3f5f9; --shadow: 0 1px 2px rgba(16,20,30,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #12141a; --panel: #171a22; --line: #2a2f3d; --fg: #e6e8ee;
+    --dim: #98a0b3; --faint: #6b7386;
+    --accent: #7aa2f7; --run: #9ece6a; --err: #f7768e; --sub: #bb9af7; --fork: #e0af68;
+    --rule: #262b37; --hover: #1d212b; --shadow: none;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  header {
+    display: flex; align-items: center; gap: .9rem; flex-wrap: wrap;
+    padding: .55rem .9rem; border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0; background: var(--bg); z-index: 5;
+  }
+  h1 { font-size: 13px; margin: 0; font-weight: 700; letter-spacing: .01em; }
+  .meta { color: var(--dim); font-size: 11px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+         background: var(--err); margin-right: .45rem; vertical-align: middle; }
+  .dot.up { background: var(--run); }
+  #theme { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--dim);
+           font: inherit; font-size: 11px; padding: .1rem .5rem; border-radius: 4px; cursor: pointer; }
+  #theme:hover { color: var(--fg); }
+
+  /* ONE grid for the whole tree, not one per row. Per-row grids size their columns
+     independently, so the status and figures land at a different x on every line and the
+     eye has nothing to run down. A single grid makes them true columns at any depth. */
+  main {
+    padding: .35rem 0 3rem;
+    display: grid; grid-template-columns: 1fr auto auto; column-gap: 1.4rem; align-items: baseline;
+  }
+  .row { display: contents; cursor: pointer; }
+  .cell { padding: .2rem 0; }
+  .cell:first-child { padding-left: .9rem; }
+  .cell:last-child { padding-right: .9rem; }
+  .row:hover > .cell { background: var(--hover); }
+  .row.open > .cell { background: var(--hover); }
+  /* Full-width block under a row: the message, the ask, the expanded detail. */
+  .under { grid-column: 1 / -1; }
+  .lead { display: flex; align-items: baseline; gap: .45rem; min-width: 0; }
+  .tree { color: var(--faint); white-space: pre; flex: none; }
+  .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nm.sub { color: var(--sub); }
+  .nm.forked { color: var(--fork); }
+  .tag {
+    font-size: 10px; padding: 0 .3rem; border-radius: 3px; flex: none;
+    border: 1px solid currentColor; opacity: .85;
+  }
+  .tag.fork { color: var(--fork); }
+  .tag.err { color: var(--err); }
+  .tag.stall { color: var(--err); border-width: 2px; font-weight: 700; }
+  /* Collapse control. A fixed-width box so names stay aligned whether or not a row has
+     children - a caret that only sometimes takes space shifts every sibling. */
+  .caret { color: var(--faint); width: 1.1ch; flex: none; text-align: center; }
+  .caret.has { cursor: pointer; }
+  .caret.has:hover { color: var(--fg); }
+  .row.target > .cell { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  .status.stalled { color: var(--err); }
+  /* Capped and clipped: a tool call's arguments are unbounded, and without this the
+     longest one on screen pushes the figures column off the right edge for every row. */
+  .status {
+    color: var(--dim); white-space: nowrap; font-size: 12px;
+    display: inline-block; max-width: 42ch; overflow: hidden; text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+  .status.live { color: var(--run); }
+  .figs { color: var(--faint); white-space: nowrap; font-size: 11px; }
+
+  /* The agent's own newest message: the primary content, indented under its row. */
+  .say {
+    padding: 0 .9rem .3rem 0; color: var(--fg); opacity: .92;
+    max-width: 110ch; overflow-wrap: anywhere;
+  }
+  .say .q { color: var(--faint); }
+  .ask { color: var(--dim); font-size: 11.5px; padding: 0 .9rem .1rem 0; max-width: 105ch; overflow-wrap: anywhere; }
+  .ask b { color: var(--faint); font-weight: 400; }
+  .spawned { color: var(--faint); font-size: 11px; padding: 0 .9rem .1rem 0; }
+
+  /* Expanded detail */
+  .detail { margin: .1rem .9rem .5rem; border-left: 2px solid var(--line); padding: .3rem 0 .3rem .7rem; }
+  .turn { display: grid; grid-template-columns: 5.5rem 1fr; gap: .6rem; padding: .12rem 0; align-items: baseline; }
+  .turn .when { color: var(--faint); font-size: 11px; white-space: nowrap; }
+  .turn .what { overflow-wrap: anywhere; }
+  .turn .what .k { color: var(--accent); }
+  .turn .what .tool { color: var(--sub); }
+  .turn .what .e { color: var(--err); }
+  .loading, .empty { color: var(--faint); padding: .4rem .9rem; }
+  .warn { color: var(--err); }
+  .pulse { animation: p 2s ease-in-out infinite; }
+  @keyframes p { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none } }
+</style>
+</head>
+<body>
+<header>
+  <h1><span id="dot" class="dot"></span>codexlb2otel live</h1>
+  <span class="meta" id="status">connecting…</span>
+  <span class="meta" id="counts"></span>
+  <span class="meta" id="lag"></span>
+  <button id="theme" type="button">dark</button>
+</header>
+<main id="root"><div class="under empty">waiting for the first snapshot…</div></main>
+
+<script>
+(function () {
+  var root = document.getElementById("root");
+  var statusEl = document.getElementById("status");
+  var countsEl = document.getElementById("counts");
+  var lagEl = document.getElementById("lag");
+  var dot = document.getElementById("dot");
+  var pollMs = 0;
+  var stallMs = 0;
+  var latest = null;
+  // Which threads are expanded, and their fetched detail. Kept outside the render so a
+  // 5s snapshot does not collapse a panel the user just opened.
+  var open = {};
+  var detail = {};
+  // Collapsed subtrees, and the thread named by the URL fragment. Both survive a
+  // 5s snapshot, which would otherwise undo whatever the user just did.
+  var closed = {};
+  var targetId = (location.hash.match(/^#thread=(.+)$/) || [])[1] || null;
+  var quiet = {};
+
+  function descendants(t) {
+    var n = 0;
+    (function walk(x) { (x.children || []).forEach(function (c) { n++; walk(c); }); })(t);
+    return n + (n === 1 ? " agent" : " agents");
+  }
+
+  function quietOf(id) {
+    var ms = quiet[id];
+    return ms == null ? "a while" : (ms < 60000 ? Math.round(ms / 1000) + "s" : Math.round(ms / 60000) + "m");
+  }
+
+  var token = new URLSearchParams(location.search).get("token");
+  var qs = token ? "?token=" + encodeURIComponent(token) : "";
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    // textContent, never innerHTML: every string below is text a model wrote, and this
+    // page exists to display exactly that untrusted content.
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function ago(iso) {
+    var d = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (!isFinite(d)) return "";
+    if (d < 60) return Math.max(0, Math.round(d)) + "s";
+    if (d < 3600) return Math.round(d / 60) + "m";
+    return Math.round(d / 3600) + "h";
+  }
+
+  function num(n) {
+    n = n || 0;
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return Math.round(n / 1e3) + "k";
+    return String(n);
+  }
+
+  function clock(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return "";
+    return String(d.getHours()).padStart(2, "0") + ":" +
+           String(d.getMinutes()).padStart(2, "0") + ":" +
+           String(d.getSeconds()).padStart(2, "0");
+  }
+
+  // Box-drawing prefix, so depth is readable at a glance without indentation alone
+  // carrying it. `last` tracks, per ancestor level, whether that ancestor was the final
+  // child - which is what decides between a continuation bar and a corner.
+  function prefix(last) {
+    var s = "";
+    for (var i = 0; i < last.length - 1; i++) s += last[i] ? "  " : "│ ";
+    if (last.length) s += last[last.length - 1] ? "└ " : "├ ";
+    return s;
+  }
+
+  function renderTurns(box, turns) {
+    if (!turns || !turns.length) {
+      box.appendChild(el("div", "empty", "no retained turns"));
+      return;
+    }
+    // Newest first: the reason to expand is almost always "what just happened".
+    turns.slice().reverse().slice(0, 40).forEach(function (t) {
+      var row = el("div", "turn");
+      row.appendChild(el("div", "when", clock(t.last_ts)));
+      var what = el("div", "what");
+
+      (t.messages || []).forEach(function (m) {
+        var k = el("span", "k", "say ");
+        what.appendChild(k);
+        what.appendChild(document.createTextNode(m.text || "(" + m.chars + " chars)"));
+        what.appendChild(el("br"));
+      });
+      (t.tool_calls || []).forEach(function (c) {
+        what.appendChild(el("span", "tool", c.name + " "));
+        what.appendChild(document.createTextNode(c.input || "(" + c.input_chars + " chars)"));
+        what.appendChild(el("br"));
+      });
+      if (t.status === "error") {
+        what.appendChild(el("span", "e", "error " + (t.error_type || "") + " " + (t.error_code || "")));
+        what.appendChild(el("br"));
+      }
+      if (!what.childNodes.length) {
+        what.appendChild(el("span", "k", (t.status || "turn") + " · " + num(t.total_tokens) + " tok"));
+      }
+      row.appendChild(what);
+      box.appendChild(row);
+    });
+  }
+
+  function loadDetail(id, box) {
+    box.replaceChildren(el("div", "loading", "loading…"));
+    fetch("/api/threads/" + encodeURIComponent(id) + qs)
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (d) { detail[id] = d.turns; box.replaceChildren(); renderTurns(box, d.turns); })
+      .catch(function (e) { box.replaceChildren(el("div", "empty warn", "could not load turns: " + e)); });
+  }
+
+  function renderThread(frag, t, last, content) {
+    var isOpen = !!open[t.thread_id];
+
+    var row = el("div", "row" + (isOpen ? " open" : "") + (isTarget ? " target" : ""));
+    var kids = t.children || [];
+    var collapsed = !!closed[t.thread_id];
+    var isTarget = t.thread_id === targetId;
+
+    var leadCell = el("div", "cell");
+    var lead = el("div", "lead");
+    lead.appendChild(el("span", "tree", prefix(last)));
+    var caret = el("span", "caret" + (kids.length ? " has" : ""), kids.length ? (collapsed ? "▸" : "▾") : " ");
+    if (kids.length) {
+      caret.addEventListener("click", function (ev) {
+        // Collapsing a subtree and expanding a row's turns are different intents on the
+        // same row, so the caret must not also toggle the detail panel.
+        ev.stopPropagation();
+        if (closed[t.thread_id]) delete closed[t.thread_id]; else closed[t.thread_id] = true;
+        render(latest);
+      });
+    }
+    lead.appendChild(caret);
+
+    var nm = el("span", "nm" + (t.forked_from_thread_id ? " forked" : (t.is_subagent ? " sub" : "")), t.name);
+    lead.appendChild(nm);
+    // A fork inherits its parent's entire history, so anything it says about its own
+    // past is really the parent's. Worth a badge rather than a footnote.
+    if (t.forked_from_thread_id) lead.appendChild(el("span", "tag fork", "fork"));
+    if (t.stalled > 0) lead.appendChild(el("span", "tag stall", "stalled"));
+    if (t.errors > 0) lead.appendChild(el("span", "tag err", t.errors + " err"));
+    leadCell.appendChild(lead);
+    row.appendChild(leadCell);
+
+    var stCell = el("div", "cell");
+    var st;
+    if (t.stalled > 0) {
+      // Quiet for longer than the threshold while still open. Reads identically to a
+      // busy agent otherwise, because both sit on "thinking" indefinitely.
+      st = el("span", "status stalled", "◼ no frames for " + quietOf(t.thread_id));
+      // Say what the badge MEANS rather than just asserting it - the threshold is
+      // configurable, so "stalled" is a claim about a setting the reader cannot see.
+      st.title = "still open, but silent for longer than the " +
+        (stallMs ? Math.round(stallMs / 60000) + "m" : "configured") +
+        " stall threshold (measured on the archive's clock, not wall clock)";
+    } else if (t.running > 0) {
+      st = el("span", "status live", "● " + (t.activity || "running"));
+      st.classList.add("pulse");
+    } else {
+      st = el("span", "status", (t.activity || "idle") + " " + ago(t.last_seen));
+    }
+    stCell.appendChild(st);
+    row.appendChild(stCell);
+
+    var figCell = el("div", "cell");
+    figCell.appendChild(el("span", "figs", t.turns + "t " + num(t.total_tokens)));
+    row.appendChild(figCell);
+
+    frag.appendChild(row);
+
+    // Line the message up just past the row's own tree glyph, so it reads as belonging
+    // to that row rather than floating between two.
+    var pad = "calc(.9rem + " + (last.length * 2 + 2) + "ch)";
+
+    if (t.latest_message) {
+      var say = el("div", "under say");
+      say.style.paddingLeft = pad;
+      say.appendChild(el("span", "q", "“"));
+      say.appendChild(document.createTextNode(t.latest_message));
+      say.appendChild(el("span", "q", "”"));
+      frag.appendChild(say);
+    } else if (!content) {
+      var w = el("div", "under say warn", "(content disabled)");
+      w.style.paddingLeft = pad;
+      frag.appendChild(w);
+    }
+
+    // Skip the ask line when the name already IS the ask - true for a root thread,
+    // which has no task path to be named by.
+    if (t.ask && t.ask !== t.name) {
+      var ask = el("div", "under ask");
+      ask.style.paddingLeft = pad;
+      ask.appendChild(el("b", null, "asked: "));
+      ask.appendChild(document.createTextNode(t.ask));
+      frag.appendChild(ask);
+    }
+
+    if (t.spawned && t.spawned.length) {
+      var sp = el("div", "under spawned", "spawned: " + t.spawned.join(", "));
+      sp.style.paddingLeft = pad;
+      frag.appendChild(sp);
+    }
+
+    var box = el("div", "under detail");
+    box.style.marginLeft = pad;
+    if (isOpen) {
+      frag.appendChild(box);
+      if (detail[t.thread_id]) renderTurns(box, detail[t.thread_id]);
+      else loadDetail(t.thread_id, box);
+    }
+
+    row.addEventListener("click", function () {
+      if (open[t.thread_id]) {
+        delete open[t.thread_id];
+        delete detail[t.thread_id];
+        if (targetId === t.thread_id) { targetId = null; history.replaceState(null, "", location.pathname + location.search); }
+      } else {
+        open[t.thread_id] = true;
+        targetId = t.thread_id;
+        // replaceState, not a hash assignment: setting location.hash pushes a history
+        // entry per click, so Back walks the expand history instead of leaving the page.
+        history.replaceState(null, "", location.pathname + location.search + "#thread=" + encodeURIComponent(t.thread_id));
+      }
+      render(latest);
+    });
+
+    if (collapsed) {
+      if (kids.length) {
+        var hid = el("div", "under spawned", "… " + descendants(t) + " hidden");
+        hid.style.paddingLeft = pad;
+        frag.appendChild(hid);
+      }
+      return;
+    }
+    kids.forEach(function (c, i) {
+      renderThread(frag, c, last.concat([i === kids.length - 1]), content);
+    });
+  }
+
+  function render(snap) {
+    if (!snap) return;
+    latest = snap;
+    // A link arriving with #thread= should land with that row already open.
+    if (targetId && !open[targetId]) open[targetId] = true;
+    if (snap.poll_interval_ms) pollMs = snap.poll_interval_ms;
+    if (snap.stall_after_ms) stallMs = snap.stall_after_ms;
+
+    var roots = snap.roots || [];
+    quiet = {};
+    (snap.running || []).forEach(function (r) {
+      if (r.stalled && (quiet[r.thread_id] == null || r.quiet_ms > quiet[r.thread_id])) {
+        quiet[r.thread_id] = r.quiet_ms;
+      }
+    });
+    var running = (snap.running || []).length;
+    var total = 0;
+    (function count(list) { list.forEach(function (t) { total++; count(t.children || []); }); })(roots);
+    var stalled = (snap.running || []).filter(function (r) { return r.stalled; }).length;
+    countsEl.textContent = total + (total === 1 ? " thread · " : " threads · ") + running + " running" +
+      (stalled ? " · " + stalled + " stalled" : "");
+    countsEl.className = stalled ? "meta warn" : "meta";
+    lagEl.textContent = pollMs ? "refresh " + Math.round(pollMs / 1000) + "s" : "";
+
+    root.replaceChildren();
+    if (!roots.length) {
+      root.appendChild(el("div", "under empty", "no activity in the retention window."));
+      return;
+    }
+    var frag = document.createDocumentFragment();
+    roots.forEach(function (t, i) {
+      renderThread(frag, t, [], snap.content);
+    });
+    root.appendChild(frag);
+  }
+
+  var themeBtn = document.getElementById("theme");
+  function applyTheme(t) {
+    if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+    else document.documentElement.removeAttribute("data-theme");
+    themeBtn.textContent = t === "dark" ? "light" : "dark";
+  }
+  var stored = null;
+  // localStorage throws outright in some privacy modes; a theme toggle is not worth
+  // taking the page down for.
+  try { stored = localStorage.getItem("codexlb2otel-theme"); } catch (e) { /* ignore */ }
+  applyTheme(stored);
+  themeBtn.addEventListener("click", function () {
+    var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem("codexlb2otel-theme", next); } catch (e) { /* ignore */ }
+  });
+
+  function connect() {
+    var es = new EventSource("/api/stream" + qs);
+    es.addEventListener("open", function () {
+      dot.className = "dot up";
+      statusEl.textContent = "live";
+    });
+    es.addEventListener("snapshot", function (e) { render(JSON.parse(e.data)); });
+    es.addEventListener("error", function () {
+      dot.className = "dot";
+      statusEl.textContent = "reconnecting…";
+      // EventSource retries on its own; closing here would defeat that.
+    });
+  }
+
+  // poll_interval_ms rides on the REST route only, so fetch once for it then live on
+  // the stream.
+  fetch("/api/threads" + qs)
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(render)
+    .catch(function (e) { statusEl.textContent = "error: " + e; })
+    .finally(connect);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles/fonts.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles.css">
+<script src="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/_ds_bundle.js"></script>
+<style>
+  body{margin:0;background:#0e1417;font-family:"Hanken Grotesk",system-ui,sans-serif}
+  a{color:var(--color-bg-accent);text-decoration:none}
+  a:hover{color:var(--color-accent-hover);text-decoration:underline}
+  @keyframes t2oPulse{0%,100%{opacity:1}50%{opacity:.45}}
+  @keyframes t2oArrive{from{opacity:0;transform:translateY(-2px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    .t2o-pulse{animation:none!important}
+    .t2o-arrive{animation:none!important}
+  }
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:64px;padding:48px">
+
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#66aecb;font-weight:600">codexlb2otel · 2otel family v2</div>
+    <h1 style="margin:0;font-size:24px;font-weight:600;color:#eef3f5">codexlb2otel live monitor</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.6;color:#9db0b8;text-wrap:pretty">The family outlier brought onto the family token block. One page, one live thread tree, the same SSE-driven updates, the same one grid for the whole tree so status and figures stay true columns at any depth. The page's own light-first stance survives the move: it is now the family default rather than a local exception. Each screen is a light / dark pair.</p>
+  </div>
+
+  <div id="4a" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">4a</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">The page</h2>
+      <span style="font-size:12.5px;color:#7e9299">Header on the family chrome, then the tree. Machine text is mono; what a model actually said is prose.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div style="flex:none;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#7e9299;font-weight:600">{{ t.label }}</div>
+          <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong)">
+
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default);position:sticky;top:0">
+              <span style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600">
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true" style="color:var(--color-status-ok)"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>codexlb2otel live
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">connected</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">18 threads · 4 running · 1 stalled</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">refresh 5s</span>
+              <span style="flex:1"></span>
+              <button style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;background:transparent;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-soft);font-family:inherit;font-size:12px;cursor:pointer">
+                <svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"></path></svg>{{ t.toggleLabel }}
+              </button>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr auto auto;column-gap:22px;align-items:baseline;padding:6px 0 20px">
+              <sc-for list="{{ rows }}" as="r" hint-placeholder-count="9">
+                <div style="display:contents">
+                  <div style="padding:3px 0 3px 16px;box-shadow:{{ r.marker }}">
+                    <span style="display:flex;align-items:baseline;gap:6px;min-width:0">
+                      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted);white-space:pre;flex:none">{{ r.tree }}</span>
+                      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted);width:1.2ch;text-align:center;flex:none;cursor:pointer">{{ r.caret }}</span>
+                      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-weight:600;color:{{ r.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</span>
+                      <sc-if value="{{ r.isSub }}" hint-placeholder-val="{{ true }}">
+                        <span style="display:inline-flex;align-items:center;gap:4px;padding:0 5px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-fg-muted);flex:none">sub</span>
+                      </sc-if>
+                      <sc-if value="{{ r.isFork }}" hint-placeholder-val="{{ true }}">
+                        <span style="display:inline-flex;align-items:center;gap:4px;padding:0 5px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-fg-soft);flex:none" title="A fork inherits its parent's entire history, so anything it says about its own past is really the parent's.">
+                          <svg viewBox="0 0 256 256" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M224,64a32,32,0,1,0-40,31v17a8,8,0,0,1-8,8H80a8,8,0,0,1-8-8V95a32,32,0,1,0-16,0v17a24,24,0,0,0,24,24h40v25a32,32,0,1,0,16,0V136h40a24,24,0,0,0,24-24V95A32.06,32.06,0,0,0,224,64ZM48,64A16,16,0,1,1,64,80,16,16,0,0,1,48,64Zm96,128a16,16,0,1,1-16-16A16,16,0,0,1,144,192ZM192,80a16,16,0,1,1,16-16A16,16,0,0,1,192,80Z"></path></svg>fork
+                        </span>
+                      </sc-if>
+                      <sc-if value="{{ r.isStalled }}" hint-placeholder-val="{{ true }}">
+                        <span style="display:inline-flex;align-items:center;gap:4px;padding:0 5px;border:2px solid var(--color-status-fail);border-radius:3px;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--color-status-fail);flex:none">
+                          <svg viewBox="0 0 16 16" width="8" height="8" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>stalled
+                        </span>
+                      </sc-if>
+                      <sc-if value="{{ r.hasErrors }}" hint-placeholder-val="{{ true }}">
+                        <span style="display:inline-flex;align-items:center;gap:4px;padding:0 5px;border:1px solid var(--color-status-fail);border-radius:3px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;color:var(--color-status-fail);flex:none">
+                          <svg viewBox="0 0 256 256" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>{{ r.errors }}
+                        </span>
+                      </sc-if>
+                    </span>
+                  </div>
+                  <div style="padding:3px 0">{{ r.status }}</div>
+                  <div style="padding:3px 16px 3px 0;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted);white-space:nowrap;font-variant-numeric:tabular-nums">{{ r.figs }}</div>
+
+                  <sc-if value="{{ r.say }}" hint-placeholder-val="{{ true }}">
+                    <div style="grid-column:1 / -1;padding:0 16px 4px 0;padding-left:{{ r.pad }};font-size:12.5px;line-height:1.55;color:var(--color-fg-default);max-width:105ch;overflow-wrap:anywhere">
+                      <span style="color:var(--color-fg-faint)">&ldquo;</span>{{ r.say }}<span style="color:var(--color-fg-faint)">&rdquo;</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ r.ask }}" hint-placeholder-val="{{ true }}">
+                    <div style="grid-column:1 / -1;padding:0 16px 3px 0;padding-left:{{ r.pad }};font-size:12px;line-height:1.55;color:var(--color-fg-soft);max-width:100ch;overflow-wrap:anywhere">
+                      <span style="color:var(--color-fg-muted)">asked: </span>{{ r.ask }}
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ r.spawned }}" hint-placeholder-val="{{ true }}">
+                    <div style="grid-column:1 / -1;padding:0 16px 3px 0;padding-left:{{ r.pad }};font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ r.spawned }}</div>
+                  </sc-if>
+                  <sc-if value="{{ r.open }}" hint-placeholder-val="{{ true }}">
+                    <div style="grid-column:1 / -1;margin:2px 16px 8px;margin-left:{{ r.pad }};border-left:2px solid var(--color-bg-accent);padding:4px 0 4px 10px;background:var(--color-bg-surface)">
+                      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                        <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Retained turns, newest first</span>
+                        <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;color:var(--color-fg-muted)">4 of 40 shown</span>
+                      </div>
+                      <sc-for list="{{ turns }}" as="tn" hint-placeholder-count="4">
+                        <div style="display:grid;grid-template-columns:5.5rem 1fr;gap:10px;padding:2px 0;align-items:baseline">
+                          <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted);white-space:nowrap;font-variant-numeric:tabular-nums">{{ tn.when }}</span>
+                          <span style="font-size:12px;line-height:1.5;overflow-wrap:anywhere"><span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:{{ tn.kindFg }}">{{ tn.kind }}</span> <span style="color:{{ tn.textFg }}">{{ tn.text }}</span></span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="4b" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">4b</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Request states, and the live-row treatment</h2>
+      <span style="font-size:12.5px;color:#7e9299">Every state carries a glyph and a word. Stalled says what the badge means, because the threshold is a setting the reader cannot see.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:18px;display:flex;flex-direction:column;gap:14px">
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Status column, one row per state</div>
+            <sc-for list="{{ states }}" as="s" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:150px 250px 1fr;gap:14px;padding:9px 12px;border-bottom:1px solid var(--color-border-default);align-items:baseline">
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--color-fg-muted)">{{ s.name }}</span>
+                <span>{{ s.render }}</span>
+                <span style="font-size:12.5px;line-height:1.55;color:var(--color-fg-soft);text-wrap:pretty">{{ s.note }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">A row arriving over SSE</div>
+            <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:grid;grid-template-columns:1fr auto auto;column-gap:22px;align-items:baseline;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">
+                <span style="padding:3px 0 3px 10px;box-shadow:inset 2px 0 0 var(--color-border-default);color:var(--color-fg-muted)">├ <span style="color:var(--color-fg-default);font-weight:600">refactor/collector-registry</span></span>
+                <span style="color:var(--color-fg-muted);font-size:12px">idle 4m</span>
+                <span style="color:var(--color-fg-muted);font-size:11px">18t 42k</span>
+                <span class="t2o-arrive" style="padding:3px 0 3px 10px;box-shadow:inset 2px 0 0 var(--color-bg-accent);animation:t2oArrive 240ms ease-out;color:var(--color-fg-muted)">├ <span style="color:var(--color-fg-default);font-weight:600">refactor/webui-tokens</span></span>
+                <span class="t2o-pulse" style="color:var(--color-status-ok);font-size:12px;animation:t2oPulse 2s ease-in-out infinite">&#9679; reading page.html.tmpl</span>
+                <span style="color:var(--color-fg-muted);font-size:11px">1t 2k</span>
+              </div>
+              <div style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);max-width:860px;text-wrap:pretty">A new row fades in over 240ms with a 2px accent marker on its left edge, which is the only thing that distinguishes it from a row that was already there. The marker is dropped on the next snapshot, so it says just-arrived rather than important. A running row's leading dot pulses at 2s; both animations stop under prefers-reduced-motion, and neither carries information on its own.</div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="4c" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">4c</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Before any traffic arrives</h2>
+      <span style="font-size:12.5px;color:#7e9299">Three different nothings: not connected yet, connected with nothing retained, and lost the connection.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);display:flex;flex-direction:column">
+          <sc-for list="{{ emptyStates }}" as="e" hint-placeholder-count="3">
+            <div style="border-bottom:1px solid var(--color-border-default)">
+              <div style="display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+                <span style="display:inline-flex;align-items:center;gap:7px;font-size:14px;font-weight:600">{{ e.dot }}codexlb2otel live</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;padding:1px 7px;border:1px solid {{ e.tagFg }};border-radius:3px;color:{{ e.tagFg }};font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">{{ e.tag }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:{{ e.metaFg }}">{{ e.meta }}</span>
+                <span style="flex:1"></span>
+                <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-soft);font-size:12px">
+                  <svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"></path></svg>{{ t.toggleLabel }}
+                </span>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:10px;padding:18px 16px">
+                <span style="flex:none;margin-top:1px">{{ e.icon }}</span>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <span style="font-size:13.5px;font-weight:600">{{ e.title }}</span>
+                  <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);max-width:820px;text-wrap:pretty">{{ e.body }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ e.mono }}</span>
+                </div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:2500,&quot;height&quot;:1200}}">
+class Component extends DCLogic {
+  icon(name, color, size) {
+    const paths = {
+      warnCircle: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z",
+      info: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z",
+      plugs: "M149.66,138.34a8,8,0,0,0-11.32,0L120,156.69,99.31,136l18.35-18.34a8,8,0,0,0-11.32-11.32L88,124.69,69.66,106.34a8,8,0,0,0-11.32,11.32L64.69,124,41.37,147.31a32,32,0,0,0,0,45.26l5.38,5.37-28.41,28.4a8,8,0,0,0,11.32,11.32l28.4-28.41,5.37,5.38a32,32,0,0,0,45.26,0L132,191.31l6.34,6.35a8,8,0,0,0,11.32-11.32L131.31,168l18.35-18.34A8,8,0,0,0,149.66,138.34Zm-52.29,65a16,16,0,0,1-22.62,0L52.69,181.25a16,16,0,0,1,0-22.62L76,135.31,120.69,180Zm140.29-185a8,8,0,0,0-11.32,0l-28.4,28.41-5.37-5.38a32.05,32.05,0,0,0-45.26,0L124,64.69l-6.34-6.35a8,8,0,0,0-11.32,11.32l80,80a8,8,0,0,0,11.32-11.32L191.31,132l23.32-23.31a32,32,0,0,0,0-45.26l-5.38-5.37,28.41-28.4A8,8,0,0,0,237.66,18.34Zm-34.35,79L180,120.69,135.31,76l23.32-23.31a16,16,0,0,1,22.62,0l22.06,22A16,16,0,0,1,203.31,97.37Z",
+      spinner: "M232,128a104,104,0,0,1-208,0c0-41,23.81-78.36,60.66-95.27a8,8,0,0,1,6.68,14.54C60.15,61.59,40,93.27,40,128a88,88,0,0,0,176,0c0-34.73-20.15-66.41-51.34-80.73a8,8,0,0,1,6.68-14.54C208.19,49.64,232,87,232,128Z",
+    };
+    return React.createElement("svg", {
+      viewBox: "0 0 256 256", width: size || 14, height: size || 14,
+      fill: color || "currentColor", "aria-hidden": "true",
+      style: { flex: "none", verticalAlign: "-2px" },
+    }, React.createElement("path", { d: paths[name] }));
+  }
+  shape(kind, color, size) {
+    const s = size || 9;
+    const inner = kind === "dot"
+      ? React.createElement("circle", { cx: 8, cy: 8, r: 7, fill: "currentColor" })
+      : kind === "diamond"
+      ? React.createElement("path", { d: "M8 0.5 15.5 8 8 15.5 0.5 8Z", fill: "currentColor" })
+      : kind === "square"
+      ? React.createElement("rect", { x: 1.5, y: 1.5, width: 13, height: 13, fill: "currentColor" })
+      : React.createElement("circle", { cx: 8, cy: 8, r: 6, fill: "none", stroke: "currentColor", strokeWidth: 2 });
+    return React.createElement("svg", {
+      viewBox: "0 0 16 16", width: s, height: s, "aria-hidden": "true",
+      style: { color: color, flex: "none" },
+    }, inner);
+  }
+  statusCell(kind, text, title) {
+    const map = {
+      running: ["var(--color-status-ok)", "dot", true],
+      stalled: ["var(--color-status-fail)", "square", false],
+      failed: ["var(--color-status-fail)", "diamond", false],
+      idle: ["var(--color-fg-muted)", "ring", false],
+    };
+    const [color, shape, pulse] = map[kind];
+    return React.createElement("span", {
+      className: pulse ? "t2o-pulse" : undefined,
+      title: title || undefined,
+      style: {
+        display: "inline-flex", alignItems: "center", gap: "6px",
+        fontFamily: "'JetBrains Mono',ui-monospace,monospace", fontSize: "12px",
+        color, whiteSpace: "nowrap", maxWidth: "42ch",
+        overflow: "hidden", textOverflow: "ellipsis",
+        animation: pulse ? "t2oPulse 2s ease-in-out infinite" : undefined,
+      },
+    }, this.shape(shape, color, 9), text);
+  }
+  renderVals() {
+    const ok = "var(--color-status-ok)";
+    const fail = "var(--color-status-fail)";
+    const warn = "var(--color-status-warn)";
+    const muted = "var(--color-fg-muted)";
+    const soft = "var(--color-fg-soft)";
+    const def = "var(--color-fg-default)";
+    const accent = "var(--color-bg-accent)";
+    const line = "var(--color-border-default)";
+
+    const row = (o) => {
+      const depth = o.depth || 0;
+      let tree = "";
+      for (let i = 0; i < depth - 1; i++) tree += (o.bars && o.bars[i]) ? "  " : "\u2502 ";
+      if (depth) tree += o.last ? "\u2514 " : "\u251c ";
+      return {
+        tree,
+        caret: o.kids ? (o.collapsed ? "\u25b8" : "\u25be") : " ",
+        name: o.name,
+        nameFg: def,
+        isSub: !!o.sub,
+        isFork: !!o.fork,
+        isStalled: o.state === "stalled",
+        hasErrors: !!o.errors,
+        errors: o.errors ? o.errors + " err" : "",
+        status: this.statusCell(o.state, o.activity, o.title),
+        figs: o.turns + "t " + o.tokens,
+        say: o.say || false,
+        ask: o.ask || false,
+        spawned: o.spawned || false,
+        open: !!o.open,
+        marker: o.arrived ? "inset 2px 0 0 " + accent : o.target ? "inset 2px 0 0 " + accent : "none",
+        pad: "calc(16px + " + (depth * 2 + 2) + "ch)",
+      };
+    };
+
+    return {
+      themes: [
+        { theme: "light", label: "Light, the page's own stance, now the family default", toggleLabel: "dark" },
+        { theme: "dark", label: "Dark, reachable by asking", toggleLabel: "light" },
+      ],
+      rows: [
+        row({
+          depth: 0, kids: true, name: "codexlb2otel/main", turns: 412, tokens: "1.8M",
+          state: "running", activity: "apply_patch internal/live/ui/index.html",
+          say: "Moving the console onto the family token block. The tree grid stays exactly as it is; only the paint changes.",
+          spawned: "spawned: restyle-header, restyle-tree, restyle-empty",
+        }),
+        row({
+          depth: 1, bars: [false], name: "restyle-header", sub: true, turns: 24, tokens: "96k",
+          state: "running", activity: "read tokens.css",
+          ask: "put the header on the family chrome without moving anything",
+        }),
+        row({
+          depth: 1, bars: [false], name: "restyle-tree", sub: true, kids: true, turns: 68, tokens: "312k",
+          state: "running", activity: "write index.html", open: true,
+          say: "One grid for the whole tree, not one per row. Per-row grids size their columns independently, so the figures land at a different x on every line.",
+          ask: "keep the single grid; restyle the cells only",
+        }),
+        row({
+          depth: 2, bars: [false, false], name: "restyle-tree/turns-panel", sub: true, turns: 12, tokens: "48k",
+          state: "idle", activity: "idle 2m",
+        }),
+        row({
+          depth: 2, bars: [false, false], last: true, name: "restyle-tree/live-rows", sub: true, fork: true,
+          turns: 31, tokens: "142k", state: "running", activity: "bash just check", arrived: true,
+          say: "Forked to try the arrival marker as a fade rather than a flash.",
+        }),
+        row({
+          depth: 1, bars: [false], name: "restyle-empty", sub: true, turns: 8, tokens: "22k",
+          state: "stalled", activity: "no frames for 14m", errors: 0,
+          title: "Still open, but silent for longer than the 10m stall threshold, measured on the archive's clock rather than wall clock.",
+        }),
+        row({
+          depth: 1, bars: [false], last: true, name: "restyle-spec", sub: true, turns: 44, tokens: "204k",
+          state: "idle", activity: "idle 6m", errors: 3,
+          say: "Spec draft covers the token block, the tree, and the three empty states. AA table still to measure.",
+        }),
+        row({
+          depth: 0, kids: true, collapsed: true, name: "codexlb2otel/nightly-archive-replay",
+          turns: 96, tokens: "412k", state: "idle", activity: "idle 41m",
+          spawned: "\u2026 6 agents hidden",
+        }),
+      ],
+      turns: [
+        { when: "11:41:58", kind: "say", kindFg: accent, text: "Grid columns confirmed at 1fr auto auto. Column gap goes from 1.4rem to 22px so it lands on the family spacing scale.", textFg: def },
+        { when: "11:41:22", kind: "write", kindFg: soft, text: "internal/live/ui/index.html", textFg: soft },
+        { when: "11:40:04", kind: "error", kindFg: fail, text: "invalid_request · 429 rate_limited", textFg: fail },
+        { when: "11:38:47", kind: "read", kindFg: soft, text: "_ds/tokens/tokens.css", textFg: soft },
+      ],
+      states: [
+        {
+          name: "running", render: this.statusCell("running", "apply_patch index.html"),
+          note: "Filled dot, ok green, and the tool call it is inside. Pulses at 2s; the dot alone never carries the state.",
+        },
+        {
+          name: "idle", render: this.statusCell("idle", "idle 4m"),
+          note: "Hollow ring, neutral, and how long since the last frame. Closed and quiet is not a fault.",
+        },
+        {
+          name: "stalled", render: this.statusCell("stalled", "no frames for 14m", "Still open, but silent for longer than the 10m stall threshold."),
+          note: "Filled square, fail, and the measured quiet time rather than the word stalled on its own. The tooltip states the threshold, because the reader cannot see the setting.",
+        },
+        {
+          name: "failed", render: this.statusCell("failed", "3 err \u00b7 last 429 rate_limited"),
+          note: "Diamond, fail, the count and the newest code. The row keeps its figures; a failed thread is still a thread that used tokens.",
+        },
+        {
+          name: "content disabled", render: this.statusCell("idle", "content withheld"),
+          note: "Neutral, and stated in the row rather than left as a blank message line. The operator switched it off; nothing is broken.",
+        },
+      ],
+      emptyStates: [
+        {
+          dot: this.shape("ring", muted, 9), tag: "connecting", tagFg: muted, metaFg: muted,
+          meta: "no snapshot yet",
+          icon: this.icon("spinner", muted, 16),
+          title: "Waiting for the first snapshot",
+          body: "The REST route is fetched once for the poll interval, then the page lives on the stream. Nothing has arrived yet, so there is nothing to show and nothing is wrong.",
+          mono: "GET /api/threads \u00b7 then /api/stream",
+        },
+        {
+          dot: this.shape("dot", ok, 9), tag: "connected", tagFg: ok, metaFg: muted,
+          meta: "0 threads \u00b7 refresh 5s",
+          icon: this.icon("info", muted, 16),
+          title: "No activity in the retention window",
+          body: "The stream is live and the archive is readable; no conversation has been recorded inside the window. Rows appear on their own as traffic arrives, with no reload.",
+          mono: "retention 24h \u00b7 stall threshold 10m",
+        },
+        {
+          dot: this.shape("diamond", fail, 9), tag: "reconnecting", tagFg: fail, metaFg: warn,
+          meta: "18 threads \u00b7 last frame 46s ago",
+          icon: this.icon("plugs", fail, 16),
+          title: "Lost the stream",
+          body: "The tree below is the last snapshot received and is no longer being updated. EventSource retries on its own, so there is no action to take and no button to press; the header returns to connected when a frame lands.",
+          mono: "EventSource error \u00b7 retrying",
+        },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

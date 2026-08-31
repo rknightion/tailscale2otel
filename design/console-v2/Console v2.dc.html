@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles/fonts.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles.css">
+<script src="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/_ds_bundle.js"></script>
+<style>
+  body{margin:0;background:#0e1417;font-family:"Hanken Grotesk",system-ui,sans-serif}
+  a{color:var(--color-bg-accent);text-decoration:none}
+  a:hover{color:var(--color-accent-hover);text-decoration:underline}
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:64px;padding:48px">
+
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#66aecb;font-weight:600">tailscale2otel · m7kni design system v2</div>
+    <h1 style="margin:0;font-size:24px;font-weight:600;color:#eef3f5">Embedded console restyle, and the 2otel family visual layer</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.6;color:#9db0b8;text-wrap:pretty">Seven screens, each as a light / dark pair. Light is the new default; dark stays first-class and keeps the existing <code style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">data-theme</code> toggle and its localStorage key. Information architecture, tab set, ARIA roles and terminology are unchanged. The token block behind these screens is the one all four consoles share byte-identically - it is reproduced in the implementation spec.</p>
+  </div>
+
+  <div id="1a" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1a</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Status console shell and tab bar</h2>
+      <span style="font-size:12.5px;color:#7e9299">Header, health treatment, underline tabs. Healthy above, degraded below.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div style="flex:none;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#7e9299;font-weight:600">{{ t.label }}</div>
+          <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;font-size:13.5px;border:1px solid var(--color-border-strong)">
+
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">tailscale2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v4.18.2 · go1.25.0</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">m7kni.io</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>healthy
+              </span>
+              <span style="flex:1"></span>
+              <a href="#1e" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-default);font-size:12.5px;text-decoration:none">Flows<svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"></path></svg></a>
+              <a href="#1f" style="display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid transparent;border-radius:3px;color:var(--color-fg-soft);font-size:12.5px;text-decoration:none">Events<svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"></path></svg></a>
+              <button title="Toggle light or dark theme" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-soft);cursor:pointer">
+                <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"></path></svg>
+              </button>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <button role="tab" aria-selected="true" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Overview</button>
+              <sc-for list="{{ tabs }}" as="tab" hint-placeholder-count="6">
+                <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">{{ tab }}</button>
+              </sc-for>
+            </nav>
+            <div style="padding:14px 20px;font-size:12.5px;color:var(--color-fg-muted)">Tab panels render below. Healthy state shows no banner.</div>
+
+            <div style="height:1px;background:var(--color-border-default)"></div>
+
+            <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">tailscale2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v4.18.2 · go1.25.0</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-fail);border-radius:3px;color:var(--color-status-fail);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>degraded
+              </span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px dashed var(--color-border-strong);border-radius:3px;color:var(--color-fg-muted);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">
+                <svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle></svg>starting
+              </span>
+              <span style="flex:1"></span>
+              <span style="font-size:12.5px;color:var(--color-fg-muted)">shape carries the state, not colour alone</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 20px;background:var(--color-bg-accent-soft);border-bottom:1px solid var(--color-border-default);color:var(--color-fg-default)">
+              <svg viewBox="0 0 256 256" width="15" height="15" fill="var(--color-status-fail)" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.6;color:var(--color-fg-soft)">collector oauth_apps failing for 4 consecutive runs · otlp logs exporter retrying</span>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Overview</button>
+              <button role="tab" aria-selected="true" style="display:inline-flex;align-items:center;gap:6px;padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Collectors<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;font-weight:400;color:var(--color-status-fail)"><svg viewBox="0 0 16 16" width="7" height="7" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>1</span></button>
+              <sc-for list="{{ tabsRest }}" as="tab" hint-placeholder-count="5">
+                <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">{{ tab }}</button>
+              </sc-for>
+            </nav>
+            <div style="padding:14px 20px;font-size:12.5px;color:var(--color-fg-muted)">A failing tab carries a count in the tab itself, so the fault is findable without reading every panel.</div>
+
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1b" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1b</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Overview: posture summary and stats</h2>
+      <span style="font-size:12.5px;color:#7e9299">Posture strip, stat cells, runtime trend.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:20px">
+            <sc-for list="{{ posture }}" as="p" hint-placeholder-count="6">
+              <div style="padding:12px 14px;border-right:1px solid var(--color-border-default);display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ p.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-weight:500;font-variant-numeric:tabular-nums;color:{{ p.fg }}">{{ p.v }}</span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">{{ p.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Process</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+            <sc-for list="{{ statCards }}" as="c" hint-placeholder-count="8">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums">{{ c.v }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted);overflow-wrap:anywhere">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Runtime trend, last 10 minutes</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+            <sc-for list="{{ trends }}" as="tr" hint-placeholder-count="3">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ tr.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ tr.v }}</span>
+                </div>
+                <svg viewBox="0 0 320 72" preserveAspectRatio="none" style="width:100%;height:72px;display:block">
+                  <line x1="0" x2="320" y1="24" y2="24" stroke="var(--color-border-default)" stroke-width="1"></line>
+                  <line x1="0" x2="320" y1="48" y2="48" stroke="var(--color-border-default)" stroke-width="1"></line>
+                  <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="{{ tr.pts }}"></polyline>
+                </svg>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1c" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1c</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Cardinality: the family table standard</h2>
+      <span style="font-size:12.5px;color:#7e9299">Hairline rules, sticky header, right-aligned mono numerics, hover row.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:flex;gap:12px;margin-bottom:16px">
+            <div style="flex:1;border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+              <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Total active series</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-variant-numeric:tabular-nums">18,204</span>
+              <span style="font-size:11px;color:var(--color-fg-muted)">across 308 metrics</span>
+            </div>
+            <div style="flex:1;border:1px solid var(--color-status-warn);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+              <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Threshold alerts</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-variant-numeric:tabular-nums;color:var(--color-status-warn)">
+                <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"></path></svg>2
+              </span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">warn ≥ 5000 · crit ≥ 20000</span>
+            </div>
+            <div style="flex:2;border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+              <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Series trend, last 10 minutes</span>
+              <svg viewBox="0 0 460 48" preserveAspectRatio="none" style="width:100%;height:48px;display:block;margin-top:6px">
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="0,40 60,37 120,35 180,31 240,27 300,23 360,17 420,12 460,9"></polyline>
+              </svg>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Top metrics by series</span>
+            <span style="flex:1"></span>
+            <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;width:240px">
+              <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+              <span style="font-size:12.5px;color:var(--color-fg-faint)">Filter metrics</span>
+            </span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">9 of 308</span>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Metric</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Prometheus name</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Level</th>
+                  <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Series</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ series }}" as="s" hint-placeholder-count="9">
+                  <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;height:36px">{{ s.metric }}</td>
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted)">{{ s.prom }}</td>
+                    <td style="padding:8px 12px">
+                      <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ s.levelFg }}">{{ s.levelIcon }}{{ s.level }}</span>
+                    </td>
+                    <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ s.count }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">/api/cardinality.json</span>
+            <span style="flex:1"></span>
+            <a href="#1g" style="display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-default);font-size:12.5px;text-decoration:none">
+              <svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>Export JSON
+            </a>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1d" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1d</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Config: read-only, mono dominant</h2>
+      <span style="font-size:12.5px;color:#7e9299">Key / value rows, durable-state table, support bundle.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+              <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Effective configuration</div>
+              <sc-for list="{{ configRows }}" as="r" hint-placeholder-count="8">
+                <div style="display:grid;grid-template-columns:220px 1fr;gap:12px;padding:6px 12px;border-bottom:1px solid var(--color-border-default)">
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted);overflow-wrap:anywhere">{{ r.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;overflow-wrap:anywhere">{{ r.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+                <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Durable state</div>
+                <table style="width:100%;border-collapse:collapse">
+                  <thead>
+                    <tr>
+                      <th style="text-align:left;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">State class</th>
+                      <th style="text-align:left;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">State</th>
+                      <th style="text-align:left;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Effective mode</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ durable }}" as="d" hint-placeholder-count="3">
+                      <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                        <td style="padding:7px 12px;font-size:12.5px">{{ d.name }}</td>
+                        <td style="padding:7px 12px"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ d.fg }}">{{ d.icon }}{{ d.state }}</span></td>
+                        <td style="padding:7px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft)">{{ d.mode }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+                <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Diagnostics</div>
+                <div style="padding:12px;display:flex;flex-direction:column;gap:10px">
+                  <p style="margin:0;font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);text-wrap:pretty">The support bundle is a zip of the redacted status snapshot, effective config, collector health and the tail of the in-memory log ring. It contains no credentials and no tailnet addresses beyond what this page already shows.</p>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                    <a href="#1g" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--color-bg-accent);border:1px solid var(--color-bg-accent);border-radius:3px;color:var(--color-fg-on-accent);font-size:12.5px;font-weight:600;text-decoration:none">
+                      <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>Support bundle
+                    </a>
+                    <a href="#1g" style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-default);font-size:12.5px;text-decoration:none">Redacted config JSON</a>
+                    <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">/api/support-bundle.zip</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <div style="padding:8px 12px;border-bottom:1px solid var(--color-border-default);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Configuration advisories</div>
+            <sc-for list="{{ advisories }}" as="a" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:280px 1fr;gap:12px;padding:8px 12px;border-bottom:1px solid var(--color-border-default);align-items:start">
+                <span style="display:inline-flex;align-items:flex-start;gap:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-status-warn)">
+                  <svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"></path></svg>{{ a.k }}
+                </span>
+                <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft)">{{ a.msg }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1e" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1e</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Flow Explorer: tx / rx table and filters</h2>
+      <span style="font-size:12.5px;color:#7e9299">tx is the petrol accent, rx is neutral ink: separated by lightness, labelled at every use.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong)">
+          <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+            <span style="font-size:15px;font-weight:600">tailscale2otel <span style="color:var(--color-fg-muted);font-weight:400">flows</span></span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">retention 24h</span>
+            <span style="flex:1"></span>
+            <a href="#1a" style="font-size:12.5px;color:var(--color-fg-soft);text-decoration:none">Status</a>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:14px">
+              <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Window</span>
+              <span style="display:inline-flex;border:1px solid var(--color-border-strong);border-radius:3px;overflow:hidden">
+                <sc-for list="{{ windows }}" as="w" hint-placeholder-count="4">
+                  <span style="padding:3px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;background:{{ w.bg }};color:{{ w.fg }};border-right:1px solid var(--color-border-strong)">{{ w.label }}</span>
+                </sc-for>
+              </span>
+              <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Top</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">20<svg viewBox="0 0 256 256" width="11" height="11" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M213.66,101.66l-80,80a8,8,0,0,1-11.32,0l-80-80A8,8,0,0,1,53.66,90.34L128,164.69l74.34-74.35a8,8,0,0,1,11.32,11.32Z"></path></svg></span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border:1px solid var(--color-bg-accent);border-radius:3px;color:var(--color-bg-accent);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 16 16" width="8" height="8" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>live</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">covering 09:42 → 10:42</span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+                <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:4px">Traffic</div>
+                <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums">184.2 GiB</div>
+                <div style="display:flex;gap:12px;margin-top:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px">
+                  <span style="display:inline-flex;align-items:center;gap:5px;color:var(--color-fg-soft)"><i style="width:9px;height:9px;background:var(--color-bg-accent);display:inline-block"></i>tx 96.4 GiB</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;color:var(--color-fg-soft)"><i style="width:9px;height:9px;border:1.5px solid var(--color-fg-default);display:inline-block"></i>rx 87.8 GiB</span>
+                </div>
+              </div>
+              <sc-for list="{{ flowCards }}" as="c" hint-placeholder-count="3">
+                <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+                  <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:4px">{{ c.k }}</div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums">{{ c.v }}</div>
+                  <div style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted);margin-top:6px">{{ c.sub }}</div>
+                </div>
+              </sc-for>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;margin-bottom:14px">
+              <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:6px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Traffic over time</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:2px;background:var(--color-bg-accent);display:inline-block"></i>tx</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:0;border-top:2px dotted var(--color-fg-default);display:inline-block"></i>rx</span>
+                <span style="flex:1"></span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">drag to zoom into a span, double-click to reset</span>
+              </div>
+              <svg viewBox="0 0 1100 140" preserveAspectRatio="none" style="width:100%;height:140px;display:block">
+                <line x1="0" x2="1100" y1="35" y2="35" stroke="var(--color-border-default)"></line>
+                <line x1="0" x2="1100" y1="70" y2="70" stroke="var(--color-border-default)"></line>
+                <line x1="0" x2="1100" y1="105" y2="105" stroke="var(--color-border-default)"></line>
+                <polyline fill="none" stroke="var(--color-fg-default)" stroke-width="1.6" stroke-dasharray="2 3" points="0,124 110,112 220,104 330,92 440,100 550,72 660,86 770,58 880,76 990,50 1100,64"></polyline>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.8" points="0,128 110,118 220,92 330,104 440,80 550,88 660,58 770,72 880,46 990,62 1100,40"></polyline>
+                <line x1="0" x2="1100" y1="132" y2="132" stroke="var(--color-border-strong)"></line>
+              </svg>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:10px">
+              <sc-for list="{{ flowFilters }}" as="f" hint-placeholder-count="7">
+                <span style="display:inline-flex;align-items:center;gap:6px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ f.label }}</span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:{{ f.fg }};min-width:{{ f.w }}">{{ f.value }}</span>
+                </span>
+              </sc-for>
+              <span style="flex:1"></span>
+              <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-soft)">Clear filters</span>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+              <table style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr>
+                    <sc-for list="{{ flowCols }}" as="h" hint-placeholder-count="9">
+                      <th style="text-align:{{ h.align }};padding:7px 10px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">{{ h.label }}</th>
+                    </sc-for>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ flows }}" as="f" hint-placeholder-count="7">
+                    <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft);white-space:nowrap">{{ f.time }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ f.src }}<span style="display:block;font-size:11px;color:var(--color-fg-muted);margin-top:1px">{{ f.srcId }}</span></td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ f.dst }}<span style="display:block;font-size:11px;color:var(--color-fg-muted);margin-top:1px">{{ f.dstId }}</span></td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted)">{{ f.reporter }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ f.service }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)">{{ f.type }}</td>
+                      <td style="padding:7px 10px"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:{{ f.verdictFg }}">{{ f.verdictIcon }}{{ f.verdict }}</span></td>
+                      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap"><i style="width:7px;height:7px;background:var(--color-bg-accent);display:inline-block;margin-right:6px"></i>{{ f.tx }}</td>
+                      <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap"><i style="width:7px;height:7px;border:1.5px solid var(--color-fg-default);display:inline-block;margin-right:6px"></i>{{ f.rx }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px">
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">1,204 matched · 200 shown · 2.4M retained</span>
+              <span style="flex:1"></span>
+              <span style="padding:5px 11px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default)">Load more</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default)"><svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>CSV</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default)"><svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>JSON</span>
+            </div>
+            <p style="margin:8px 0 0;font-size:11px;line-height:1.6;color:var(--color-fg-muted);max-width:820px;text-wrap:pretty">Export applies the same window and filters as the table above, drawn from the same bounded recent-connection ring. Each file states its own window, filters and matched / returned / retained counts.</p>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1f" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1f</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Events Explorer: the event stream</h2>
+      <span style="font-size:12.5px;color:#7e9299">Severity as word plus icon, source as a mono chip, details in faint mono.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong)">
+          <div style="display:flex;align-items:center;gap:14px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+            <span style="font-size:15px;font-weight:600">tailscale2otel <span style="color:var(--color-fg-muted);font-weight:400">events</span></span>
+            <span style="flex:1"></span>
+            <a href="#1a" style="font-size:12.5px;color:var(--color-fg-soft);text-decoration:none">Status</a>
+          </div>
+          <div style="padding:16px 20px">
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:12px">
+              <sc-for list="{{ eventStats }}" as="s" hint-placeholder-count="5">
+                <div style="padding:10px 12px;border-right:1px solid var(--color-border-default);display:flex;flex-direction:column;gap:3px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ s.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums;color:{{ s.fg }}">{{ s.v }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:10px">
+              <sc-for list="{{ eventFilters }}" as="f" hint-placeholder-count="6">
+                <span style="display:inline-flex;align-items:center;gap:6px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ f.label }}</span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:{{ f.fg }};min-width:{{ f.w }}">{{ f.value }}</span>
+                </span>
+              </sc-for>
+              <span style="flex:1"></span>
+              <span style="padding:3px 9px;border:1px solid var(--color-bg-accent);border-radius:3px;font-size:12.5px;color:var(--color-bg-accent);font-weight:600">Apply</span>
+              <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-soft)">Clear</span>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+              <table style="width:100%;border-collapse:collapse">
+                <thead>
+                  <tr>
+                    <sc-for list="{{ eventCols }}" as="h" hint-placeholder-count="7">
+                      <th style="text-align:left;padding:7px 10px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">{{ h }}</th>
+                    </sc-for>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ events }}" as="e" hint-placeholder-count="7">
+                    <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft);white-space:nowrap">{{ e.time }}</td>
+                      <td style="padding:7px 10px"><span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;border:1px solid var(--color-border-strong);border-radius:3px;padding:1px 6px;color:var(--color-fg-soft)">{{ e.source }}</span></td>
+                      <td style="padding:7px 10px"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ e.sevFg }}">{{ e.sevIcon }}{{ e.sev }}</span></td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ e.action }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft)">{{ e.actor }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft)">{{ e.target }}</td>
+                      <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted);max-width:360px;overflow-wrap:anywhere">{{ e.details }}</td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="1g" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">1g</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Empty and error states, and the action treatment</h2>
+      <span style="font-size:12.5px;color:#7e9299">Nothing yet, switched off, and failing are three different things and read differently.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px;display:flex;flex-direction:column;gap:14px">
+          <sc-for list="{{ states }}" as="s" hint-placeholder-count="3">
+            <div style="border:1px solid {{ s.border }};background:var(--color-bg-surface);padding:14px 16px;display:flex;gap:12px;align-items:flex-start">
+              <span style="flex:none;margin-top:1px;color:{{ s.fg }}">{{ s.icon }}</span>
+              <div style="display:flex;flex-direction:column;gap:5px">
+                <span style="display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600">{{ s.title }}<span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ s.fg }}">{{ s.tag }}</span></span>
+                <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);max-width:760px">{{ s.body }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ s.mono }}</span>
+              </div>
+            </div>
+          </sc-for>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+            <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Action treatment</span>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--color-bg-accent);border:1px solid var(--color-bg-accent);border-radius:3px;color:var(--color-fg-on-accent);font-size:12.5px;font-weight:600"><svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>Support bundle</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-default);font-size:12.5px"><svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"></path></svg>Export CSV</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:1px solid var(--color-border-default);border-radius:3px;color:var(--color-fg-faint);font-size:12.5px">Export CSV, nothing to export</span>
+              <span style="padding:6px 12px;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-default);font-size:12.5px">Purge cache</span>
+              <span style="padding:6px 12px;border:1px solid var(--color-status-fail);border-radius:3px;color:var(--color-status-fail);font-size:12.5px;font-weight:600">Purge cache, failed</span>
+            </div>
+            <span style="font-size:11px;color:var(--color-fg-muted);max-width:760px;line-height:1.6">One primary per page, and it is the support bundle on Config. Everything else is a secondary outline button. A disabled action says why in its own label rather than going silent.</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:2500,&quot;height&quot;:1400}}">
+class Component extends DCLogic {
+  icon(name, color, size) {
+    const paths = {
+      warnTri: "M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z",
+      warnCircle: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z",
+      info: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z",
+    };
+    return React.createElement("svg", {
+      viewBox: "0 0 256 256", width: size || 13, height: size || 13,
+      fill: color || "currentColor", "aria-hidden": "true",
+      style: { flex: "none", verticalAlign: "-1px" },
+    }, React.createElement("path", { d: paths[name] }));
+  }
+  shape(kind, color, size) {
+    const s = size || 8;
+    const inner = kind === "dot"
+      ? React.createElement("circle", { cx: 8, cy: 8, r: 7, fill: "currentColor" })
+      : kind === "diamond"
+      ? React.createElement("path", { d: "M8 0.5 15.5 8 8 15.5 0.5 8Z", fill: "currentColor" })
+      : React.createElement("circle", { cx: 8, cy: 8, r: 6, fill: "none", stroke: "currentColor", strokeWidth: 2 });
+    return React.createElement("svg", {
+      viewBox: "0 0 16 16", width: s, height: s, "aria-hidden": "true",
+      style: { color: color, flex: "none" },
+    }, inner);
+  }
+  renderVals() {
+    const ok = "var(--color-status-ok)";
+    const warn = "var(--color-status-warn)";
+    const fail = "var(--color-status-fail)";
+    const muted = "var(--color-fg-muted)";
+    const soft = "var(--color-fg-soft)";
+    const def = "var(--color-fg-default)";
+    const accent = "var(--color-bg-accent)";
+
+    const flow = (time, src, srcId, dst, dstId, reporter, service, type, verdict, tx, rx) => {
+      const vf = verdict === "permitted" ? ok : verdict === "no rule" ? warn : muted;
+      const vi = verdict === "permitted"
+        ? this.shape("dot", vf, 8)
+        : verdict === "no rule"
+        ? this.icon("warnTri", vf, 11)
+        : this.shape("ring", vf, 8);
+      return { time, src, srcId, dst, dstId, reporter, service, type, verdict, tx, rx, verdictFg: vf, verdictIcon: vi };
+    };
+
+    return {
+      themes: [
+        { theme: "light", label: "Light, the new default" },
+        { theme: "dark", label: "Dark, honoured from prefers-color-scheme and the toggle" },
+      ],
+      tabs: ["Collectors", "API", "Capabilities", "Cardinality", "Inventory & Catalog", "Config"],
+      tabsRest: ["API", "Capabilities", "Cardinality", "Inventory & Catalog", "Config"],
+      posture: [
+        { k: "Health", v: "healthy", sub: "no open findings", fg: ok },
+        { k: "Collectors ok", v: "15", sub: "of 16 enabled", fg: def },
+        { k: "Failing", v: "1", sub: "oauth_apps", fg: fail },
+        { k: "Stale", v: "0", sub: "all within interval", fg: def },
+        { k: "Last export", v: "4s", sub: "otlp grpc", fg: def },
+        { k: "Active series", v: "18,204", sub: "308 metrics", fg: def },
+      ],
+      statCards: [
+        { k: "Uptime", v: "6d 4h 12m", sub: "since 2026-08-25T06:30:11Z" },
+        { k: "OTLP export", v: "grpc", sub: "otlp-gateway-prod-eu-west-2 · 60s" },
+        { k: "Devices cached", v: "142", sub: "age 41s" },
+        { k: "Metric points/sec", v: "312.6", sub: "8,194,204 emitted" },
+        { k: "Log records/sec", v: "48.2", sub: "1,284,004 emitted" },
+        { k: "Heap in use", v: "48 MiB", sub: "gc cycles 1,204" },
+        { k: "Goroutines", v: "68", sub: "gomaxprocs 8" },
+        { k: "Mean run duration", v: "412 ms", sub: "across all collectors" },
+      ],
+      trends: [
+        { k: "Goroutines", v: "68", pts: "0,44 40,40 80,46 120,34 160,38 200,28 240,32 280,24 320,26" },
+        { k: "Heap in use", v: "48 MiB", pts: "0,52 40,44 80,56 120,38 160,48 200,30 240,40 280,24 320,32" },
+        { k: "Metric points/sec", v: "312.6", pts: "0,58 40,48 80,50 120,36 160,42 200,30 240,34 280,22 320,28" },
+      ],
+      series: (() => {
+        const rows = [
+          ["tailscale.network.io", "tailscale_network_io_bytes_total", "crit", "6,204"],
+          ["tailscale.network.packets", "tailscale_network_packets_total", "warn", "6,204"],
+          ["tailscale.network.flows", "tailscale_network_flows_total", "", "3,102"],
+          ["tailscale.device.last_seen", "tailscale_device_last_seen_seconds", "", "142"],
+          ["tailscale.device.derp.latency", "tailscale_device_derp_latency_seconds", "", "134"],
+          ["tailscale.node.tx", "tailscale_node_tx_bytes_total", "", "128"],
+          ["tailscale.key.expires_in", "tailscale_key_expires_in_seconds", "", "62"],
+          ["tailscale.acl.risk_score", "tailscale_acl_risk_score_ratio", "", "12"],
+          ["tailscale.dns.nameservers", "tailscale_dns_nameservers", "", "4"],
+        ];
+        return rows.map(([metric, prom, level, count]) => ({
+          metric, prom, count,
+          level: level || "ok",
+          levelFg: level === "crit" ? fail : level === "warn" ? warn : muted,
+          levelIcon: level === "crit"
+            ? this.icon("warnCircle", fail, 12)
+            : level === "warn"
+            ? this.icon("warnTri", warn, 12)
+            : this.shape("dot", muted, 7),
+        }));
+      })(),
+      configRows: [
+        { k: "log_level", v: "info" },
+        { k: "tailscale.auth.method", v: "oauth · all:read" },
+        { k: "delivery.mode", v: "otlp" },
+        { k: "otlp.endpoint", v: "otlp-gateway-prod-eu-west-2.grafana.net:443" },
+        { k: "otlp.protocol", v: "grpc" },
+        { k: "collectors.enabled", v: "devices flowlogs auditlogs users keys acl dns settings" },
+        { k: "collectors.flowlogs.source", v: "objectstore" },
+        { k: "cardinality.flow.top_n", v: "500" },
+        { k: "enrichment.reverse_dns.enabled", v: "true" },
+        { k: "pii_filter.categories", v: "13 of 13 active" },
+        { k: "secrets", v: "oauth_secret grafana_cloud_token" },
+      ],
+      durable: (() => {
+        const rows = [
+          ["Poll checkpoints", "durable", "file", ok, "dot"],
+          ["Semantic evidence", "degraded", "memory", fail, "diamond"],
+          ["Object-store cursor", "durable", "file", ok, "dot"],
+        ];
+        return rows.map(([name, state, mode, fg, shape]) => ({
+          name, state, mode, fg, icon: this.shape(shape, fg, 8),
+        }));
+      })(),
+      advisories: [
+        { k: "collectors.flowlogs.initial_lookback", msg: "Exceeds the 14 day partition ceiling; older days are skipped with no gap and no error." },
+        { k: "admin.auth.token", msg: "Not set. The admin server is bound to loopback, so it fails closed on any non-loopback bind." },
+      ],
+      windows: [
+        { label: "15m", bg: "var(--color-bg-raised)", fg: soft },
+        { label: "1h", bg: "var(--color-bg-accent)", fg: "var(--color-fg-on-accent)" },
+        { label: "6h", bg: "var(--color-bg-raised)", fg: soft },
+        { label: "24h", bg: "var(--color-bg-raised)", fg: soft },
+      ],
+      flowCards: [
+        { k: "Packets", v: "412M", sub: "tx 214M · rx 198M" },
+        { k: "Connections", v: "1,204", sub: "318 conversations" },
+        { k: "Devices seen", v: "142", sub: "top 20 shown" },
+      ],
+      flowFilters: [
+        { label: "Device", value: "nas-01", fg: def, w: "110px" },
+        { label: "Address", value: "ip or port", fg: "var(--color-fg-faint)", w: "100px" },
+        { label: "Service", value: "https", fg: def, w: "80px" },
+        { label: "Identity", value: "user or tag", fg: "var(--color-fg-faint)", w: "100px" },
+        { label: "Type", value: "any", fg: soft, w: "70px" },
+        { label: "Verdict", value: "any", fg: soft, w: "70px" },
+        { label: "Path", value: "any", fg: soft, w: "70px" },
+      ],
+      flowCols: [
+        { label: "Time", align: "left" }, { label: "Source", align: "left" },
+        { label: "Destination", align: "left" }, { label: "Verified reporter", align: "left" },
+        { label: "Service", align: "left" }, { label: "Type", align: "left" },
+        { label: "Policy", align: "left" }, { label: "Tx", align: "right" }, { label: "Rx", align: "right" },
+      ],
+      flows: [
+        flow("10:42:04", "macbook-rob", "rob@m7kni.io", "nas-01", "tag:storage", "nBk3xQ2CNTRL", "https", "virtual", "permitted", "1.42 MiB", "18.6 MiB"),
+        flow("10:42:01", "gw-lon-1", "tag:router", "10.14.2.9:5432", "subnet 10.14.2.0/24", "nLm9pR7CNTRL", "postgresql", "subnet", "permitted", "884 KiB", "2.10 MiB"),
+        flow("10:41:58", "ci-runner-04", "tag:ci", "ghcr.io", "external · AS36459", "nQr4tS1CNTRL", "https", "exit", "no rule", "312 KiB", "148.4 MiB"),
+        flow("10:41:52", "iphone-rob", "rob@m7kni.io", "hass-01", "tag:home", "nBk3xQ2CNTRL", "https", "virtual", "permitted", "96 KiB", "412 KiB"),
+        flow("10:41:44", "nas-01", "tag:storage", "backup-eu", "tag:storage", "nZa8yU5CNTRL", "ssh", "virtual", "permitted", "3.20 GiB", "1.84 MiB"),
+        flow("10:41:31", "k8s-node-3", "tag:k8s", "10.20.0.14:9100", "subnet 10.20.0.0/16", "nWc2vT8CNTRL", "-", "physical", "undetermined", "12 KiB", "184 KiB"),
+        flow("10:41:20", "other (truncated)", "folded key", "other (truncated)", "folded key", "-", "-", "virtual", "undetermined", "18.4 MiB", "24.1 MiB"),
+      ],
+      eventStats: [
+        { k: "Retained", v: "2,000", fg: def },
+        { k: "Capacity", v: "2,000", fg: def },
+        { k: "Recorded", v: "48,204", fg: def },
+        { k: "Evicted", v: "46,204", fg: warn },
+        { k: "Matched", v: "312", fg: def },
+      ],
+      eventFilters: [
+        { label: "Source", value: "any", fg: soft, w: "80px" },
+        { label: "Severity", value: "any", fg: soft, w: "80px" },
+        { label: "Actor", value: "substring", fg: "var(--color-fg-faint)", w: "100px" },
+        { label: "Action", value: "acl.write", fg: def, w: "100px" },
+        { label: "Target", value: "substring", fg: "var(--color-fg-faint)", w: "100px" },
+        { label: "Errors only", value: "off", fg: soft, w: "50px" },
+      ],
+      eventCols: ["Time", "Source", "Severity", "Action / type", "Actor", "Target", "Details"],
+      events: (() => {
+        const rows = [
+          ["2026-08-31 10:41:58.204", "audit", "info", "UPDATE / acl.write", "rob@m7kni.io", "tailnet policy file", "4 rules added, 1 removed"],
+          ["2026-08-31 10:38:12.881", "webhook", "warn", "nodeKeyExpiringSoon", "system", "ci-runner-04", "key expires in 22h"],
+          ["2026-08-31 10:31:04.117", "audit", "info", "CREATE / device.authorize", "rob@m7kni.io", "k8s-node-3", "device authorized"],
+          ["2026-08-31 10:22:47.502", "webhook", "info", "userRoleUpdated", "rob@m7kni.io", "sam@m7kni.io", "role member to admin"],
+          ["2026-08-31 10:14:03.960", "audit", "warn", "DELETE / key.revoke", "svc-terraform", "authkey kX9…", "auth key revoked"],
+          ["2026-08-31 09:58:21.334", "webhook", "warn", "subnetIPForwardingNotEnabled", "system", "gw-lon-1", "advertised routes not forwarded · delivery retried 2 times"],
+          ["2026-08-31 09:44:10.008", "audit", "info", "UPDATE / dns.settings", "rob@m7kni.io", "magicdns", "magicdns enabled"],
+        ];
+        return rows.map(([time, source, sev, action, actor, target, details]) => ({
+          time, source, sev, action, actor, target, details,
+          sevFg: sev === "warn" ? warn : muted,
+          sevIcon: sev === "warn" ? this.icon("warnTri", warn, 11) : this.shape("dot", muted, 7),
+        }));
+      })(),
+      states: [
+        {
+          border: "var(--color-border-default)", fg: muted, icon: this.icon("info", muted, 16),
+          title: "No data yet", tag: "waiting",
+          body: "The node_metrics collector has not completed its first run. Nothing is wrong; the table appears once a run lands.",
+          mono: "next run in 42s · interval 60s",
+        },
+        {
+          border: "var(--color-border-default)", fg: muted, icon: this.shape("ring", muted, 15),
+          title: "Switched off", tag: "disabled",
+          body: "GeoIP enrichment is disabled, so external flow addresses carry no country, continent or autonomous-system attributes. Tailnet addresses are never geolocated in any case.",
+          mono: "enrichment.geoip.enabled=false",
+        },
+        {
+          border: "var(--color-status-fail)", fg: fail, icon: this.icon("warnCircle", fail, 16),
+          title: "Collector failing", tag: "4 consecutive failures",
+          body: "The credential cannot read this surface. The rest of the pipeline is unaffected and the collector keeps retrying on its normal interval.",
+          mono: "GET /oauth-apps: 403 forbidden · last success 4m 55s ago",
+        },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

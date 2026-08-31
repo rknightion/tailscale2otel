@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Service.Name}} — status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  /* Light theme: applied when the OS prefers light and the user hasn't chosen,
+     or when the manual toggle stamps data-theme="light". The explicit
+     data-theme overrides always win over the media query. */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+      --grid:#e6eaef;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+    --grid:#e6eaef;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);
+    padding:1px 5px;border-radius:4px}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+  section{margin:0 0 26px}
+  section>h2,.sub-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sub-h{margin:26px 0 12px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:4px;font-family:var(--mono);
+    overflow-wrap:anywhere}
+  .card.crit{border-color:var(--err)} .card.warn2{border-color:var(--warn)}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;
+    font-weight:600;line-height:1.6}
+  .badge.ok{background:rgba(63,185,80,.16);color:var(--ok)}
+  .badge.err,.badge.critical,.badge.degraded{background:rgba(248,81,73,.16);color:var(--err)}
+  .badge.warn,.badge.warning{background:rgba(210,153,34,.16);color:var(--warn)}
+  .badge.pending,.badge.stale,.badge.none{background:rgba(110,118,129,.18);color:var(--muted)}
+  /* .badge.info: a deliberate, healthy, non-default state worth calling out
+     without reading as a fault (err/warn) or as the ambiguous "still waiting"
+     pending badge — e.g. a collector that is intentionally not polling
+     because its data streams in instead. */
+  .badge.info{background:rgba(68,147,248,.16);color:var(--accent)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);
+    font-variant-numeric:tabular-nums;vertical-align:top}
+  th{color:var(--muted);font-size:12px;font-weight:600;position:sticky;top:0;
+    background:var(--panel2)}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono)}
+  tr.bad>td{background:rgba(248,81,73,.07)}
+  .mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+  details{background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  details>summary{cursor:pointer;padding:12px 16px;font-weight:600;user-select:none}
+  details[open]>summary{border-bottom:1px solid var(--line)}
+  details table{border:0;border-radius:0}
+  .filter{width:100%;max-width:340px;margin-bottom:10px;padding:7px 11px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:8px;
+    color:var(--fg);font-size:13px}
+  .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  /* .scroll.tall: for a table with a fixed, small, known-in-advance row count
+     (the capability matrix — one row per configurable capability, ~18 on a
+     real deployment) where the shared 460px cap hides half the rows. Do NOT
+     apply this to the shared .scroll default — that would squeeze every
+     other (variable-length, filterable) scrollable table along with it. */
+  .scroll.tall{max-height:75vh}
+  .scroll table{border:0;border-radius:0}
+  .muted{color:var(--muted)}
+  .note{color:var(--muted);font-size:12px;margin-top:2px}
+  .note.err{color:var(--err)}
+  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
+  /* Tabs */
+  nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:4px;flex-wrap:wrap;
+    padding:8px 24px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .tab-btn{background:transparent;color:var(--muted);border:1px solid transparent;
+    border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;
+    font-weight:600;cursor:pointer;font-family:inherit}
+  .tab-btn:hover{color:var(--fg)}
+  .tab-btn.active{color:var(--fg);background:var(--panel);border-color:var(--line)}
+  section[data-tab]{display:none}
+  section[data-tab].active{display:block}
+  .rollup{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:12px 16px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:18px}
+  .rollup .rc{display:flex;flex-direction:column}
+  .rollup .rc .rv{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rollup .rc .rk{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);
+    border-bottom:1px solid var(--line)}
+  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);
+    color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+  #staleBanner.show{display:block}
+  svg.spark{width:80px;height:22px;vertical-align:middle;display:inline-block}
+  /* Full charts */
+  .chart{width:100%;height:150px;display:block}
+  svg.spark.card{width:100%;height:36px;display:block;margin-top:8px}
+  .chart-wrap{position:relative}
+  .chart-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:6px}
+  .chart-legend .lg{display:inline-flex;align-items:center;gap:5px}
+  .chart-legend .sw{width:10px;height:3px;border-radius:2px;display:inline-block}
+  .chart-tip{position:absolute;display:none;pointer-events:none;background:var(--panel2);
+    border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:11px;
+    font-family:var(--mono);white-space:nowrap;z-index:6;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .outcome{display:inline-flex;gap:2px;align-items:center}
+  .outcome i{width:5px;height:14px;border-radius:1px;background:var(--ok);display:inline-block}
+  .outcome i.f{background:var(--err)}
+  .controls{display:inline-flex;gap:10px;align-items:center}
+  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
+    border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.ctl:hover{border-color:var(--accent)}
+  /* .cta: the header's one prominent call-to-action (the /flows link — the
+     most useful view on this page). A solid accent button, deliberately
+     heavier than the plain-text .ver/header links beside it, incl. /events,
+     which stays a plain link on purpose. */
+  a.cta{background:var(--accent);color:#fff;border:1px solid var(--accent);
+    border-radius:7px;padding:6px 14px;font-size:13px;font-weight:600}
+  a.cta:hover{text-decoration:none;filter:brightness(1.08)}
+  a.cta:focus-visible{outline-offset:2px}
+  /* Per-collector info affordance (see collectorInfo in JS). */
+  .collector-info{position:relative;display:inline-block;margin-left:6px;
+    color:var(--muted);font-size:12px;line-height:1;cursor:help;user-select:none}
+  .collector-info:hover,.collector-info:focus{color:var(--accent)}
+  /* Focus-visible: keyboard focus always gets a visible ring; a mouse click
+     alone does not (browsers already suppress :focus-visible for pointer
+     interaction on non-form elements), so this never adds a ring a mouse
+     user didn't ask for. */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .tab-btn:focus-visible{outline-offset:-2px}
+  .collector-info:focus-visible{outline:2px solid var(--accent);outline-offset:2px;color:var(--accent)}
+  @media (prefers-reduced-motion: reduce){
+    *{scroll-behavior:auto!important}
+  }
+  .cinfo-tip{position:fixed;left:0;top:0;z-index:50;display:none;width:360px;
+    max-height:340px;overflow:auto;background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.5);
+    font-weight:400;text-transform:none;letter-spacing:normal;white-space:normal;
+    text-align:left;cursor:auto}
+  .collector-info:hover .cinfo-tip,.collector-info:focus .cinfo-tip{display:block}
+  .cinfo-purpose{display:block;color:var(--fg);font-size:12px;line-height:1.5}
+  .cinfo-metrics{display:block;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)}
+  .cinfo-m{display:block;margin:7px 0}
+  .cinfo-m code{font-size:11px}
+  .cinfo-d{display:block;color:var(--muted);font-size:11px;line-height:1.45;margin-top:2px}
+  .ex{font-family:var(--mono);font-size:11px;color:var(--muted)}
+</style>
+<script>
+  // Apply the persisted theme BEFORE first paint to avoid a flash of the wrong
+  // theme. Falls back silently to the prefers-color-scheme media query.
+  (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<script>window.__refreshMs = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};</script>
+<script>var TAILNETS = [{{range $i,$t := .Tailnets}}{{if $i}},{{end}}"{{$t.Name}}"{{end}}];</script>
+<noscript><style>
+  /* Without JS the tabs can't switch — show every section stacked and hide the
+     tab bar, preserving the static snapshot. */
+  section[data-tab]{display:block!important;margin-bottom:34px}
+  nav.tabs{display:none}
+</style></noscript>
+</head>
+<body>
+<header>
+  <h1>{{.Service.Name}}</h1>
+  <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}</span>
+  <a class="badge warn" id="updateBadge" href="{{.Update.ReleaseURL}}" target="_blank" rel="noopener noreferrer" title="{{if eq .Update.State "available"}}current {{.Update.CurrentVersion}} · latest {{.Update.LatestVersion}}{{end}}"{{if ne .Update.State "available"}} style="display:none"{{end}}>update available{{if .Update.LatestVersion}}: {{.Update.LatestVersion}}{{end}}</a>
+  {{if .Service.Tailnet}}<span class="ver">tailnet {{.Service.Tailnet}}</span>{{end}}
+  <span class="spacer"></span>
+  {{if .Flows.Enabled}}<a class="cta" href="/flows" title="Explore this tailnet's traffic">Flow view &rarr;</a>{{end}}
+  {{if .Events.Enabled}}<a href="/events" title="Explore recent audit and webhook events">events &rarr;</a>{{end}}
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+  <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
+</header>
+<div class="reasons" id="healthReasons" role="status"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} · {{end}}</div>
+<div id="staleBanner" role="alert"></div>
+<nav class="tabs" id="tabs" role="tablist" aria-label="Status sections">
+  <button class="tab-btn" id="tab-overview" data-target="overview" role="tab" aria-controls="panel-overview" aria-selected="true" tabindex="0">Overview</button>
+  <button class="tab-btn" id="tab-collectors" data-target="collectors" role="tab" aria-controls="panel-collectors" aria-selected="false" tabindex="-1">Collectors</button>
+  <button class="tab-btn" id="tab-api" data-target="api" role="tab" aria-controls="panel-api" aria-selected="false" tabindex="-1">API</button>
+  <button class="tab-btn" id="tab-capabilities" data-target="capabilities" role="tab" aria-controls="panel-capabilities" aria-selected="false" tabindex="-1">Capabilities</button>
+  <button class="tab-btn" id="tab-cardinality" data-target="cardinality" role="tab" aria-controls="panel-cardinality" aria-selected="false" tabindex="-1">Cardinality</button>
+  <button class="tab-btn" id="tab-inventory" data-target="inventory" role="tab" aria-controls="panel-inventory" aria-selected="false" tabindex="-1">Inventory &amp; Catalog</button>
+  <button class="tab-btn" id="tab-config" data-target="config" role="tab" aria-controls="panel-config" aria-selected="false" tabindex="-1">Config</button>
+</nav>
+{{if gt (len .Tailnets) 1}}
+<div class="controls" id="tailnetSelectorWrap" style="padding:8px 24px 0;background:var(--bg)">
+  <label for="tnSel" class="muted" style="font-size:12px">Tailnet</label>
+  <select class="ctl" id="tnSel">
+    <option value="">All ({{len .Tailnets}})</option>
+    {{range .Tailnets}}<option value="{{.Name}}">{{.Name}}</option>{{end}}
+  </select>
+  <span class="muted" style="font-size:12px">Filters Collectors, API, Cardinality and the device inventory below. Runtime, OTLP delivery and other process-wide data always cover every tailnet.</span>
+</div>
+{{end}}
+<main>
+
+  <!-- ═══ OVERVIEW ═══ -->
+  <section data-tab="overview" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" tabindex="0">
+    <div class="rollup" id="rollup">
+      <div class="rc"><span class="rv" id="ruHealth">{{.Health}}</span><span class="rk">health</span></div>
+      <div class="rc"><span class="rv" id="ruCollectors">—</span><span class="rk">collectors ok</span></div>
+      <div class="rc"><span class="rv" id="ruFailing">—</span><span class="rk">failing</span></div>
+      <div class="rc"><span class="rv" id="ruStale">—</span><span class="rk">stale</span></div>
+      <div class="rc"><span class="rv" id="ruExport">—</span><span class="rk">last export</span></div>
+      <div class="rc"><span class="rv" id="ruSeries">{{if .Cardinality.Available}}{{.Cardinality.Total}}{{else}}—{{end}}</span><span class="rk">active series</span></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.StartedAt}}</div></div>
+      <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s · {{.Telemetry.MetricExportBatchSize}} points/request</div></div>
+      <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
+      <div class="card"><div class="k">Update check</div><div class="v" id="updateState">{{if eq .Update.State "available"}}update available{{else if eq .Update.State "current"}}up to date{{else if eq .Update.State "error"}}check failed{{else if eq .Update.State "disabled"}}disabled{{else if eq .Update.State "checking"}}checking&hellip;{{else}}unknown{{end}}</div><div class="sub" id="updateSub">{{if eq .Update.State "available"}}{{.Update.CurrentVersion}} &rarr; {{.Update.LatestVersion}}{{else if eq .Update.State "current"}}{{.Update.CurrentVersion}}{{else if eq .Update.State "error"}}last check failed: {{.Update.LastErrorClass}}{{else}}&nbsp;{{end}}</div></div>
+      <div class="card"><div class="k">Device version data</div><div class="v" id="deviceVersionState">{{if eq .DeviceVersionCheck.State "ready"}}ready{{else if eq .DeviceVersionCheck.State "error"}}check failed{{else if eq .DeviceVersionCheck.State "disabled"}}disabled{{else}}checking&hellip;{{end}}</div><div class="sub" id="deviceVersionSub">{{if eq .DeviceVersionCheck.State "ready"}}latest {{.DeviceVersionCheck.LatestVersion}}{{if .DeviceVersionCheck.LastErrorClass}}; last check failed: {{.DeviceVersionCheck.LastErrorClass}}{{end}}{{else if eq .DeviceVersionCheck.State "error"}}last check failed: {{.DeviceVersionCheck.LastErrorClass}}{{else}}&nbsp;{{end}}</div></div>
+      {{if .Provider}}<div class="card"><div class="k">Control plane</div><div class="v"><code>{{.Provider}}</code></div>{{if .Capabilities}}<div class="sub">{{range $i,$c := .Capabilities}}{{if $i}}, {{end}}{{$c}}{{end}}</div>{{end}}</div>{{end}}
+      <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div></div>
+    </div>
+
+    <div class="sub-h">Runtime trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
+    <div class="cards">
+      <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines" role="img" aria-label="Goroutines over the last 10 minutes" data-chart-name="Goroutines"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap" role="img" aria-label="Heap in use over the last 10 minutes" data-chart-name="Heap in use"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC" role="img" aria-label="GC rate over the last 10 minutes" data-chart-name="GC rate"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
+    <div class="sub-h">Throughput &amp; fleet trend (~10 min){{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:11px;text-transform:none;font-weight:400">— process-global, covers every tailnet</span>{{end}}</div>
+    <div class="cards">
+      <div class="card"><div class="k">Metric points/sec</div><div class="v" id="emitMetricRate">{{printf "%.1f" .Throughput.MetricPointsPerSec}}</div><div class="sub">{{.Throughput.MetricPoints}} emitted</div></div>
+      <div class="card"><div class="k">Log records/sec</div><div class="v" id="emitLogRate">{{printf "%.1f" .Throughput.LogRecordsPerSec}}</div><div class="sub">{{.Throughput.LogRecords}} emitted</div></div>
+      <div class="card"><div class="k">Collectors active</div><div class="v" id="fleetActive">{{.Fleet.Active}}</div><div class="sub">failing <span id="fleetFailing">{{.Fleet.Failing}}</span></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="v" id="fleetMeanDur">{{printf "%.0f" .Fleet.MeanDurationMs}}ms</div><div class="sub">across all collectors</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Emitted throughput</div><div class="chart-wrap"><svg class="chart" id="chEmit" role="img" aria-label="Emitted throughput over the last 10 minutes" data-chart-name="Emitted throughput"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="chart-wrap"><svg class="chart" id="chFailing" role="img" aria-label="Collectors failing over the last 10 minutes" data-chart-name="Collectors failing"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="chart-wrap"><svg class="chart" id="chDuration" role="img" aria-label="Mean run duration over the last 10 minutes" data-chart-name="Mean run duration"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
+    {{if gt (len .Tailnets) 1}}
+    <div id="tailnets">
+    <div class="sub-h">Tailnets ({{len .Tailnets}})</div>
+    <table>
+      <thead><tr><th>Tailnet</th><th>Auth</th><th class="num">Devices</th><th class="num">Collectors</th><th class="num">Failing</th></tr></thead>
+      <tbody>
+      {{range .Tailnets}}
+        <tr>
+          <td><code>{{.Name}}</code></td>
+          <td>{{.AuthMethod}}</td>
+          <td class="num">{{.Cache.Devices}}</td>
+          <td class="num">{{len .Collectors}}</td>
+          <td class="num">{{if gt .Failing 0}}<span class="badge degraded">{{.Failing}}</span>{{else}}—{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    <p class="note">Per-tailnet detail is in <a href="/api/status.json"><code>/api/status.json</code></a> under <code>tailnets[]</code>. Use the <strong>Tailnet</strong> selector above to filter the Collectors, API, Cardinality and Inventory tabs to a single tailnet, or pick "All" for the combined view shown here.</p>
+    </div>
+    {{end}}
+  </section>
+
+  <!-- ═══ COLLECTORS ═══ -->
+  <section data-tab="collectors" id="panel-collectors" role="tabpanel" aria-labelledby="tab-collectors" tabindex="0">
+    <table>
+      <thead><tr><th>Collector</th><th>Status</th><th class="num">Interval</th><th class="num">Success</th><th>Freshness</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Last error</th></tr></thead>
+      <tbody id="collBody">
+      {{range .Collectors}}
+        <tr{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
+          <td><code>{{.Name}}</code>{{if .Description}} <span class="collector-info" tabindex="0" title="{{.Description}}{{range .Metrics}}&#10;• {{.Name}} — {{.Description}}{{end}}">&#9432;</span>{{end}}{{with .Checkpoint}}<div class="note{{if .Stuck}} err{{end}}">checkpoint lag {{.Lag}}{{if .Stuck}} · stuck{{end}}</div>{{end}}</td>
+          <td>{{if not .HasRun}}<span class="badge pending">pending</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">fail</span>{{end}}</td>
+          <td class="num">{{.IntervalSec}}s</td>
+          <td class="num">{{if .HasRun}}{{printf "%.0f" .SuccessRatePct}}%{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if eq .FreshnessState "none"}}<span class="badge none">never</span>{{else}}<span class="badge {{.FreshnessState}}">{{.Freshness}}</span>{{end}}</td>
+          <td class="num">{{.Runs}}</td>
+          <td class="num">{{.Failures}}{{if gt .ConsecutiveFailures 0}} <span class="muted">({{.ConsecutiveFailures}}×)</span>{{end}}</td>
+          <td class="num">{{if .HasRun}}{{if le .NextRunInSec 0}}due{{else}}{{.NextRunIn}}{{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">{{if .HasRun}}{{.LastDurationMs}}ms{{else}}<span class="muted">—</span>{{end}}</td>
+          <td></td>
+          <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="11" class="muted">No collectors enabled.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+
+    <div class="sub-h">Node-metrics discovery</div>
+    {{if .NodeDiscovery.Enabled}}
+      <details>
+        <summary>{{.NodeDiscovery.Active}} active target(s) · {{.NodeDiscovery.Static}} static, {{minus .NodeDiscovery.Active .NodeDiscovery.Static}} discovered
+          {{if .NodeDiscovery.LastOK}}<span class="badge ok">last discovery ok</span>{{else}}<span class="badge err">last discovery failed</span>{{end}}
+          {{if .NodeDiscovery.LastDiscovery}}<span class="muted" style="font-weight:400"> at {{.NodeDiscovery.LastDiscovery}}</span>{{end}}
+        </summary>
+        <table>
+          <thead><tr><th>Instance</th><th>URL</th><th>Source</th></tr></thead>
+          <tbody>
+          {{range .NodeDiscovery.Targets}}
+            <tr><td>{{if .Instance}}<code>{{.Instance}}</code>{{else}}<span class="muted">—</span>{{end}}</td><td class="mono">{{.URL}}</td><td>{{if eq .Source "discovered"}}<span class="badge ok">discovered</span>{{else}}<span class="badge pending">static</span>{{end}}</td></tr>
+          {{else}}
+            <tr><td colspan="3" class="muted">No active targets.</td></tr>
+          {{end}}
+          </tbody>
+        </table>
+      </details>
+    {{else}}
+      <p class="muted">Dynamic discovery is disabled. {{if gt .NodeDiscovery.Static 0}}Scraping {{.NodeDiscovery.Static}} static target(s).{{end}}</p>
+    {{end}}
+    <p class="note warn2" id="nodeDiscoveryFailure"{{if not .NodeDiscovery.DominantFailureReason}} style="display:none"{{end}}>Dominant scrape failure: <code id="nodeDiscoveryFailureReason">{{.NodeDiscovery.DominantFailureReason}}</code> (<span id="nodeDiscoveryFailureCount">{{.NodeDiscovery.DominantFailureCount}}</span> attempts). Use the node-metrics failure panel to compare all bounded failure classes.</p>
+  </section>
+
+  <!-- ═══ API ═══ -->
+  <section data-tab="api" id="panel-api" role="tabpanel" aria-labelledby="tab-api" tabindex="0">
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px" id="apiAuthMethod">{{if .API.Auth.Method}}{{.API.Auth.Method}}{{else}}—{{end}}</div>{{if .API.Auth.Warning}}<div class="sub" style="color:var(--warn)" id="apiAuthWarn">{{.API.Auth.Warning}}</div>{{else}}<div class="sub" id="apiAuthWarn"></div>{{end}}</div>
+      <div class="card"><div class="k">Total API calls</div><div class="v" id="apiTotalCalls">{{.API.Auth.TotalCalls}}</div></div>
+      <div class="card"><div class="k">Throttle events (429)</div><div class="v" id="apiTotal429">{{.API.Auth.Total429}}</div></div>
+      <div class="card" id="rateLimitCard"{{if not .API.RateLimit}} style="display:none"{{end}}>
+        <div class="k">Last rate limit</div>
+        <div class="v" id="rlCount">{{with .API.RateLimit}}{{.Count}}{{end}}</div>
+        <div class="sub">last <span id="rlLast">{{with .API.RateLimit}}{{.LastSeen}}{{end}}</span></div>
+      </div>
+    </div>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Endpoint</th><th class="num">Requests</th><th class="num">Errors</th><th class="num">Retries</th><th class="num">429s</th><th class="num">Last status</th><th class="num">Latency</th><th>Last error</th></tr></thead>
+      <tbody id="apiBody">
+      {{range .API.Endpoints}}
+        <tr>
+          <td><code>{{.Endpoint}}</code></td>
+          <td class="num">{{.Requests}}</td>
+          <td class="num">{{.Errors}}</td>
+          <td class="num">{{.Retries}}</td>
+          <td class="num">{{.RateLimited}}</td>
+          <td class="num">{{.LastStatus}}</td>
+          <td class="num"><span class="muted">—</span></td>
+          <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="muted">No API requests recorded yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ═══ CAPABILITIES ═══ -->
+  <section data-tab="capabilities" id="panel-capabilities" role="tabpanel" aria-labelledby="tab-capabilities" tabindex="0">
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Active capabilities</div><div class="v">{{capCount .CapabilityMatrix "active"}}</div><div class="sub">of {{len .CapabilityMatrix}} configurable</div></div>
+      <div class="card{{if gt (capCount .CapabilityMatrix "actionable") 0}} warn2{{end}}"><div class="k">Needing attention</div><div class="v">{{capCount .CapabilityMatrix "actionable"}}</div><div class="sub">permission or transient failures</div></div>
+      <div class="card{{if gt (capCount .CapabilityMatrix "scope_gap") 0}} warn2{{end}}"><div class="k">Scope gaps</div><div class="v">{{capCount .CapabilityMatrix "scope_gap"}}</div><div class="sub">requested OAuth scopes vs. requirement</div></div>
+      <div class="card"><div class="k">Control plane</div><div class="v" style="font-size:16px">{{if .Provider}}{{.Provider}}{{else}}—{{end}}</div><div class="sub">{{len .Capabilities}} features supported</div></div>
+    </div>
+    <p class="note">Requirement vs. reality for every configurable capability. <strong>Scope</strong> is an advisory
+    preflight of the OAuth scopes <em>requested</em> in configuration — the server stays authoritative, so
+    <strong>State</strong> (from live API responses) is the column to trust. <code>disabled</code> means the tailnet
+    does not have the feature and is never a fault; <code>scope_denied</code> means the credential cannot see it.
+    <code>unknown</code> means the operation has not been probed yet — a collector that has not run its first tick,
+    a subrequest switched off, or node metrics with no targets — and is not a fault either. A collector that has
+    completed a successful run never reads <code>unknown</code>.</p>
+    <div class="scroll tall">
+    <table>
+      <thead><tr><th>Capability</th><th>Required scope</th><th>Status</th><th>Scope preflight</th><th>State</th><th>Last probe</th></tr></thead>
+      <tbody>
+      {{range .CapabilityMatrix}}
+        <tr>
+          <td class="mono">{{.Collector}}{{if .Subrequest}} <span class="muted">/ {{.Subrequest}}</span>{{end}}{{if .Source}} <span class="muted">({{.Source}})</span>{{end}}</td>
+          <td class="mono">{{if .RequiredScopes}}{{range .RequiredScopes}}<code>{{.}}</code> {{end}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .Active}}<span class="badge ok">active</span>{{else if capInformational .Reason .Source}}<span class="badge info">{{capStatusLabel .Source}}</span><div class="note">{{capStatusExplain .Source}}</div>{{else}}<span class="badge pending">{{capReason .Reason}}</span>{{end}}</td>
+          <td><span class="badge {{capScopeClass .ScopeStatus}}">{{.ScopeStatus}}</span>{{if .MissingScopes}}<div class="sub">missing {{range .MissingScopes}}<code>{{.}}</code> {{end}}</div>{{end}}</td>
+          <td><span class="badge {{capStateClass .State .Actionable}}">{{if .State}}{{.State}}{{else}}unknown{{end}}</span></td>
+          <td class="mono">{{if .LastProbe}}{{.LastProbe}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="6" class="muted">No capability matrix available yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    <p class="note" style="margin-top:12px">Machine-readable form: <code>capability_matrix</code> in <a href="/api/status.json"><code>/api/status.json</code></a>.</p>
+  </section>
+
+  <!-- ═══ CARDINALITY ═══ -->
+  <section data-tab="cardinality" id="panel-cardinality" role="tabpanel" aria-labelledby="tab-cardinality" tabindex="0">
+    {{if .Cardinality.Available}}
+      <div class="cards" style="margin-bottom:12px">
+        <div class="card"><div class="k">Total active series</div><div class="v" id="cardTotal">{{.Cardinality.Total}}</div><div class="sub">across {{.Cardinality.TotalMetrics}} metrics</div></div>
+        <div class="card{{if .Cardinality.Alerts}} warn2{{end}}"><div class="k">Threshold alerts</div><div class="v" id="cardAlertCount">{{len .Cardinality.Alerts}}</div><div class="sub">warn ≥ {{.Cardinality.Thresholds.Warning}} · crit ≥ {{.Cardinality.Thresholds.Critical}}</div></div>
+        <div class="card"><div class="k">Series trend (~10 min)</div><div class="chart-wrap"><svg class="chart" id="chCard" style="height:70px" role="img" aria-label="Active series over the last 10 minutes" data-chart-name="Active series"></svg><div class="chart-tip"></div></div></div>
+      </div>
+
+      {{if .Cardinality.Alerts}}
+      <div class="sub-h">Active alerts</div>
+      <table style="margin-bottom:8px"><tbody id="cardAlertsBody">
+        {{range .Cardinality.Alerts}}
+        <tr><td><span class="badge {{.Level}}">{{.Level}}</span></td><td><code>{{.Metric}}</code></td><td class="num">{{.Count}} series</td></tr>
+        {{end}}
+      </tbody></table>
+      {{end}}
+
+      <div class="sub-h">Top metrics by series</div>
+      <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'cardTable')">
+      <div class="scroll">
+      <table id="cardTable">
+        <thead><tr><th>Metric</th><th>Prometheus name</th><th class="num">Series</th></tr></thead>
+        <tbody id="cardSeriesBody">
+        {{range .Cardinality.Series}}
+          <tr{{if eq .Level "critical"}} class="bad"{{end}}><td><code>{{.Metric}}</code>{{if .Level}} <span class="badge {{.Level}}">{{.Level}}</span>{{end}}</td><td class="mono">{{.PromName}}</td><td class="num">{{.Count}}{{if .Capped}} <span class="badge warn" title="cap reached; true cardinality is at least this high">capped</span>{{end}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+
+      {{if .Cardinality.Labels}}
+      <div class="sub-h">High-cardinality labels</div>
+      <div class="scroll">
+      <table id="labelTable">
+        <thead><tr><th>Label</th><th class="num">Distinct values</th><th>Top metrics (example values)</th></tr></thead>
+        <tbody id="cardLabelsBody">
+        {{range .Cardinality.Labels}}
+          <tr>
+            <td><code>{{.Label}}</code>{{if .Capped}} <span class="badge warn">capped</span>{{end}}</td>
+            <td class="num">{{.TotalDistinct}}</td>
+            <td>{{range $i,$m := .Metrics}}{{if $i}}<br>{{end}}<code>{{$m.Metric}}</code> <span class="muted">{{$m.Distinct}}{{if $m.Capped}}+{{end}}</span>{{if $m.Examples}} <span class="ex">{{range $j,$e := $m.Examples}}{{if $j}}, {{end}}{{$e}}{{end}}</span>{{end}}{{end}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{end}}
+
+      {{if .Cardinality.Growth}}
+      <div class="sub-h">Growth (change over retained window)</div>
+      {{if gt (len .Tailnets) 1}}<p class="note">Combined across all tailnets (global) — the retained-history trend is not tracked per tailnet.</p>{{end}}
+      <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'growthTable')">
+      <div class="scroll">
+      <table id="growthTable">
+        <thead><tr><th>Metric</th><th class="num">Current</th><th class="num">Change</th></tr></thead>
+        <tbody>
+        {{range .Cardinality.Growth}}
+          <tr><td><code>{{.Metric}}</code></td><td class="num">{{.Current}}</td><td class="num">{{if gt .DeltaPct 0.0}}<span style="color:var(--warn)">+{{printf "%.0f" .DeltaPct}}%</span>{{else if lt .DeltaPct 0.0}}<span style="color:var(--ok)">{{printf "%.0f" .DeltaPct}}%</span>{{else}}<span class="muted">0%</span>{{end}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      </div>
+      {{end}}
+
+      <p class="note" style="margin-top:12px">Full export: <a href="/api/cardinality.json"><code>/api/cardinality.json</code></a></p>
+    {{else}}
+      <p class="muted">{{if .Service.SelfObs}}Awaiting the first export interval…{{else}}Enable <code>self_observability</code> to surface live active-series cardinality, high-cardinality labels, growth and threshold alerts.{{end}}</p>
+    {{end}}
+  </section>
+
+  <!-- ═══ INVENTORY & CATALOG ═══ -->
+  <section data-tab="inventory" id="panel-inventory" role="tabpanel" aria-labelledby="tab-inventory" tabindex="0">
+    {{if .Devices}}
+    <div class="sub-h">Devices (<span id="devCount">{{len .Devices}}</span>)</div>
+    <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')">
+    <div class="scroll">
+    <table id="devTable">
+      <thead><tr><th>Name</th><th>OS</th><th>User</th><th>Addresses</th><th>Tags</th><th>External</th></tr></thead>
+      <tbody id="devBody">
+      {{range .Devices}}
+        <tr>
+          <td><code>{{if .Name}}{{.Name}}{{else}}{{.Hostname}}{{end}}</code></td>
+          <td>{{.OS}}{{if .OSVersion}} {{.OSVersion}}{{end}}</td>
+          <td>{{.User}}</td>
+          <td class="mono">{{range .Addrs}}{{.}} {{end}}</td>
+          <td class="mono">{{range .Tags}}<code>{{.}}</code> {{end}}</td>
+          <td>{{if .External}}<span class="badge warn">external</span>{{else}}<span class="badge pending">internal</span>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+    {{end}}
+
+    <div class="sub-h">Flow view store</div>
+    {{if .Flows.Failures}}
+    <div class="card warn2" id="flowFailures" style="margin-bottom:12px">
+      <div class="k">Flow view disabled</div>
+      <div class="sub">A persistent flow store is configured but did not open, so flow history is unavailable. This is not the same as switching the flow view off.</div>
+      <table style="margin-top:8px">
+        <thead><tr><th>Tailnet</th><th>Why</th></tr></thead>
+        <tbody id="flowFailuresBody">
+          {{range .Flows.Failures}}
+          <tr><td class="mono"><code>{{.Tailnet}}</code></td><td>{{.Error}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+    {{if .Flows.Enabled}}
+    <div class="cards">
+      {{if .Flows.Backend.Persistent}}
+      <div class="card"><div class="k">Retained</div><div class="v" id="flowRows">{{.Flows.Backend.Rows}}</div><div class="sub">connections on disk, across every tailnet's database</div></div>
+      {{else}}
+      <div class="card"><div class="k">Retained</div><div class="v" id="flowBuckets">{{.Flows.Buckets}}</div><div class="sub">of {{.Flows.Capacity}} one-minute buckets per tailnet</div></div>
+      {{end}}
+      <div class="card"><div class="k">Coverage</div><div class="v" style="font-size:16px" id="flowCovered">{{if .Flows.Covered}}{{.Flows.Covered}}{{else}}nothing yet{{end}}</div><div class="sub">retention {{.Flows.Retention}}</div></div>
+      <div class="card"><div class="k">Observations</div><div class="v" id="flowObservations">{{.Flows.Observations}}</div><div class="sub">connections recorded since start</div></div>
+      <div class="card{{if .Flows.Truncated}} warn2{{end}}"><div class="k">Truncated</div><div class="v" id="flowTruncated">{{.Flows.Truncated}}</div><div class="sub">{{if .Flows.Backend.Persistent}}{{if .Flows.Truncated}}observations rejected as outside the retention window{{else}}aggregates are exact — this backend does not fold keys{{end}}{{else}}{{if .Flows.Truncated}}folded into __other__ — ranked lists are partial{{else}}every key fits within the per-minute caps{{end}}{{end}}</div></div>
+      {{if .Flows.Backend.Persistent}}
+      <div class="card{{if not .Flows.Backend.Healthy}} warn2{{end}}"><div class="k">Backend</div><div class="v" style="font-size:16px" id="flowBackend">{{.Flows.Backend.Kind}}</div><div class="sub">{{if .Flows.Backend.Healthy}}on-disk store, survives restarts — flows.store.directory{{else}}UNHEALTHY: {{range .Flows.Backend.Errors}}{{.}} {{end}}{{end}}</div></div>
+      <div class="card{{if .Flows.Backend.QueueDrops}} warn2{{end}}"><div class="k">Queue drops</div><div class="v" id="flowQueueDrops">{{.Flows.Backend.QueueDrops}}</div><div class="sub">{{if .Flows.Backend.QueueDrops}}the write-behind queue filled and these connections never reached disk — OTLP still carried them{{else}}no observation has been lost to a full write queue ({{.Flows.Backend.Queued}} waiting now){{end}}</div></div>
+      <div class="card"><div class="k">On disk</div><div class="v" style="font-size:16px" id="flowSize">{{.Flows.Backend.SizeBytes}} B</div><div class="sub">summed across every tailnet's database file, including indexes</div></div>
+      <div class="card"><div class="k">Journal</div><div class="v" style="font-size:16px" id="flowJournal">{{.Flows.Backend.JournalSizeBytes}} B</div><div class="sub">WAL sidecar; last checkpoint <span id="flowCheckpoint">{{if .Flows.Backend.LastCheckpointAt}}{{.Flows.Backend.LastCheckpointAt}}{{else}}never{{end}}</span></div></div>
+      {{else}}
+      <div class="card"><div class="k">Capacity profile</div><div class="v" style="font-size:16px" id="flowProfile">{{.Flows.CapacityProfile}}</div><div class="sub">flows.capacity_profile — scales every per-minute cap and the ring together; holds {{.Flows.MaxRecent}} recent connections</div></div>
+      <div class="card"><div class="k">Estimated memory</div><div class="v" style="font-size:16px" id="flowEstimate">{{.Flows.EstimatedBytes}} B</div><div class="sub">per tailnet, worst case — every dimension saturated at once, which a real tailnet does not reach. A planning bound, not a measurement.</div></div>
+      {{end}}
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <a class="ctl" href="/flows" style="display:inline-block">Open the flow view &rarr;</a>
+      <span class="muted">Topology, timeline, top talkers and recent connections — drawn from this store{{if not .Flows.Backend.Persistent}}, in memory only{{end}}.</span>
+    </div>
+    {{else}}
+    <p class="muted">The built-in flow view is disabled (<code>flows.enabled=false</code>, or the admin landing page is off). No traffic history is retained in memory; flow telemetry still exports over OTLP as usual.</p>
+    {{end}}
+
+    <div class="sub-h">Reverse DNS (PTR) cache</div>
+    {{if .RDNS.Enabled}}
+    <div class="cards">
+      <div class="card"><div class="k">Entries</div><div class="v" id="rdnsSize">{{.RDNS.Size}}</div><div class="sub">of {{.RDNS.Capacity}} max</div></div>
+      <div class="card"><div class="k">Hit rate</div><div class="v" id="rdnsHitRate">{{printf "%.1f" .RDNS.HitRatePct}}%</div><div class="sub">hit <span id="rdnsHits">{{.RDNS.Hits}}</span> · miss <span id="rdnsMisses">{{.RDNS.Misses}}</span> · neg <span id="rdnsNegatives">{{.RDNS.Negatives}}</span></div></div>
+      <div class="card"><div class="k">Resolver queries</div><div class="v" id="rdnsQueries">{{add64 .RDNS.QuerySuccess .RDNS.QueryFail}}</div><div class="sub">ok <span id="rdnsQuerySuccess">{{.RDNS.QuerySuccess}}</span> · fail <span id="rdnsQueryFail">{{.RDNS.QueryFail}}</span></div></div>
+      <div class="card"><div class="k">Overflows</div><div class="v" id="rdnsOverflows">{{.RDNS.Overflows}}</div><div class="sub">at-capacity drops{{if .RDNS.Overflows}} — raise max_entries{{end}}</div></div>
+      <div class="card"><div class="k">Evictions</div><div class="v" id="rdnsEvicted">{{add64 .RDNS.EvictedExpired .RDNS.EvictedPurged}}</div><div class="sub">expired <span id="rdnsEvictedExpired">{{.RDNS.EvictedExpired}}</span> · purged <span id="rdnsEvictedPurged">{{.RDNS.EvictedPurged}}</span></div></div>
+      <div class="card"><div class="k">TTL</div><div class="v" style="font-size:16px">{{.RDNS.TTL}}</div><div class="sub">negative {{.RDNS.NegativeTTL}}</div></div>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <button class="ctl" id="rdnsPurgeBtn">Purge cache</button>
+      <span class="muted" id="rdnsPurgeMsg">{{if .RDNS.LastPurge}}last purged {{.RDNS.LastPurge}}{{end}}</span>
+    </div>
+    {{else}}
+    <p class="muted">Reverse-DNS enrichment is disabled (<code>enrichment.reverse_dns.enabled=false</code>). External flow addresses stay bucketed as <code>external</code>; no PTR lookups are made.</p>
+    {{end}}
+
+    <div class="sub-h">GeoIP &amp; ASN enrichment</div>
+    {{if .GeoIP.Enabled}}
+    <div class="cards">
+      <div class="card"><div class="k">Country database</div><div class="v" style="font-size:16px">{{if .GeoIP.CountryType}}{{.GeoIP.CountryType}}{{else}}not loaded{{end}}</div><div class="sub">{{if .GeoIP.CountryBuildTime}}built {{.GeoIP.CountryAge}} ago ({{.GeoIP.CountryBuildTime}}){{else}}no database at {{if .GeoIP.CountryPath}}{{.GeoIP.CountryPath}}{{else}}any configured path{{end}}{{end}}</div></div>
+      <div class="card"><div class="k">ASN database</div><div class="v" style="font-size:16px">{{if .GeoIP.ASNType}}{{.GeoIP.ASNType}}{{else}}not loaded{{end}}</div><div class="sub">{{if .GeoIP.ASNBuildTime}}built {{.GeoIP.ASNAge}} ago ({{.GeoIP.ASNBuildTime}}){{else}}no database at {{if .GeoIP.ASNPath}}{{.GeoIP.ASNPath}}{{else}}any configured path{{end}}{{end}}</div></div>
+      <div class="card"><div class="k">Country lookups</div><div class="v">{{add64 .GeoIP.CountryHits .GeoIP.CountryMisses}}</div><div class="sub">hit {{.GeoIP.CountryHits}} · miss {{.GeoIP.CountryMisses}}</div></div>
+      <div class="card"><div class="k">ASN lookups</div><div class="v">{{add64 .GeoIP.ASNHits .GeoIP.ASNMisses}}</div><div class="sub">hit {{.GeoIP.ASNHits}} · miss {{.GeoIP.ASNMisses}}</div></div>
+      <div class="card"><div class="k">Skipped</div><div class="v">{{.GeoIP.Skipped}}</div><div class="sub">not globally routable — every tailnet address lands here</div></div>
+      <div class="card"><div class="k">Reloads</div><div class="v">{{.GeoIP.Reloads}}</div><div class="sub">{{if .GeoIP.ReloadFailures}}{{.GeoIP.ReloadFailures}} failed — see the logs{{else}}no failures{{end}}</div></div>
+    </div>
+    <p class="muted" style="margin-top:12px">
+      The build time above is MaxMind&rsquo;s, not the download time — an updater that runs on schedule and fails
+      every fetch still looks busy, and only the build date exposes it.
+      {{if .GeoIP.DownloadEnabled}}The built-in downloader is running.{{else}}The built-in downloader is off, so something else supplies these files.{{end}}
+      Flow logs carry country, continent, autonomous system and (with a City database) locality and coordinates;
+      flow metrics carry {{if .GeoIP.GeoDims}}country and continent as well (<code>cardinality.flow.geo_dims=true</code>){{else}}none of it (<code>cardinality.flow.geo_dims=false</code>){{end}}.
+    </p>
+    {{else}}
+    <p class="muted">GeoIP enrichment is disabled (<code>enrichment.geoip.enabled=false</code>). External flow addresses carry no country, continent or autonomous-system attributes. Tailnet addresses are never geolocated in any case.</p>
+    {{end}}
+
+    <div class="sub-h">Metrics catalog ({{len .Metrics}})</div>
+    <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'metricsTable')">
+    <div class="scroll">
+    <table id="metricsTable">
+      <thead><tr><th>Name</th><th>Prometheus name</th><th>Type</th><th>Unit</th><th>Group</th>{{if .Service.SelfObs}}<th class="num">Series</th>{{end}}<th>Attributes</th></tr></thead>
+      <tbody>
+      {{range .Metrics}}
+        <tr>
+          <td><code>{{.Name}}</code><div class="note" style="margin:2px 0 0">{{.Description}}</div></td>
+          <td class="mono">{{.PromName}}</td>
+          <td>{{.Instrument}}</td>
+          <td>{{if .Unit}}<code>{{.Unit}}</code>{{end}}</td>
+          <td>{{.Group}}</td>
+          {{if $.Service.SelfObs}}<td class="num">{{if gt .Series 0}}{{.Series}}{{else}}<span class="muted">—</span>{{end}}</td>{{end}}
+          <td class="mono">{{range .Attributes}}<code>{{.}}</code> {{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+
+    <div class="sub-h">Log events ({{len .LogEvents}})</div>
+    <input class="filter" type="text" placeholder="Filter log events…" oninput="filterTable(this,'logsTable')">
+    <div class="scroll">
+    <table id="logsTable">
+      <thead><tr><th>Event</th><th>Severity</th><th>Group</th><th>Attributes</th></tr></thead>
+      <tbody>
+      {{range .LogEvents}}
+        <tr>
+          <td><code>{{.Name}}</code><div class="note" style="margin:2px 0 0">{{.Description}}</div></td>
+          <td>{{.Severity}}</td>
+          <td>{{.Group}}</td>
+          <td class="mono">{{range .Attributes}}<code>{{.}}</code> {{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ═══ CONFIG ═══ -->
+  <section data-tab="config" id="panel-config" role="tabpanel" aria-labelledby="tab-config" tabindex="0">
+    <div class="cards">
+      <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
+      <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
+      <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
+      <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
+    </div>
+    <h3 id="durableState" style="margin-top:18px">Durable state</h3>
+    <div class="sub">The effective stores for poll cursors and restart-stable semantic evidence. A
+      configured file store running in memory is degraded and will lose that class of state on restart.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>State class</th><th>State</th><th>Configured mode</th><th>Effective mode</th><th>Path</th><th>Reason</th></tr></thead>
+      <tbody>
+        {{range .DurableState.Stores}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{if eq .State "durable"}}<span class="badge ok">durable</span>{{else if eq .State "degraded"}}<span class="badge err">degraded</span>{{else if eq .State "recovered"}}<span class="badge warn">recovered</span>{{else}}<span class="badge none">volatile</span>{{end}}</td>
+          <td class="mono"><code>{{.ConfiguredMode}}</code></td>
+          <td class="mono"><code>{{.Mode}}</code></td>
+          <td class="mono">{{if .Path}}{{.Path}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .Reason}}{{.Reason}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="muted">No durable-state stores reported.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+    <h3 style="margin-top:18px">Configuration advisories</h3>
+    <div class="sub">Non-fatal warnings from <code>Config.Warnings()</code> — the same set
+      <code>tailscale2otel_config_warnings_ratio</code> counts. They never block startup.
+      An empty list is the healthy state.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Setting</th><th>Advisory</th></tr></thead>
+      <tbody id="advisoriesBody">
+        {{range .Advisories}}
+        <tr>
+          <td class="mono">{{if .Key}}<code>{{.Key}}</code>{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{.Message}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="2" class="muted">No active configuration advisories.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:18px">OTLP delivery{{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:12px;font-weight:400">(global)</span>{{end}}</h3>
+    <div class="sub">What the exporters actually <em>shipped</em>, per signal — as opposed to what was
+      handed to them (see throughput). Sustained failure here drags overall health to
+      <em>degraded</em> but deliberately does not affect <code>/readyz</code>: a backend outage is
+      not a reason to pull every replica out of rotation.{{if gt (len .Tailnets) 1}} One process-wide
+      exporter per signal serves every tailnet, so this is never per-tailnet data.{{end}}</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Signal</th><th>State</th><th class="num">Exports</th><th class="num">Failures</th><th>Last success</th><th>Last failure</th><th class="num">Last duration</th><th>Error class</th></tr></thead>
+      <tbody id="deliveryBody">
+        {{range .Delivery}}
+        <tr>
+          <td class="mono"><code>{{.Signal}}</code></td>
+          <td>{{if .Failing}}<span class="badge err">failing</span>{{else if gt .ConsecutiveFailures 0}}<span class="badge warn">retrying</span>{{else if gt .Exports 0}}<span class="badge ok">ok</span>{{else}}<span class="badge pending">no exports yet</span>{{end}}</td>
+          <td class="num">{{.Exports}}</td>
+          <td class="num">{{.Failures}}</td>
+          <td>{{if .LastSuccessAt}}{{.LastSuccessAt}}{{else}}—{{end}}</td>
+          <td>{{if .LastFailureAt}}{{.LastFailureAt}}{{else}}—{{end}}</td>
+          <td class="num">{{.LastDurationMs}} ms</td>
+          <td class="mono">{{if .LastErrorClass}}{{.LastErrorClass}}{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h3 style="margin-top:18px">Components{{if gt (len .Tailnets) 1}} <span class="muted" style="font-size:12px;font-weight:400">(global)</span>{{end}}</h3>
+    <div class="sub">The long-running subsystems behind <code>/readyz</code>. A failure here is what
+      makes the health badge above say <em>degraded</em> and the readiness probe answer 503.{{if gt (len .Tailnets) 1}} These
+      are process-wide (admin/metrics listeners, receivers, the ingress WAL) and are never scoped to
+      one tailnet.{{end}}</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>Component</th><th>State</th><th>Reason</th></tr></thead>
+      <tbody id="componentsBody">
+        {{range .Components}}
+        <tr>
+          <td class="mono"><code>{{.Name}}</code></td>
+          <td>{{if .Failed}}<span class="badge err">failed</span>{{else if .Enabled}}<span class="badge ok">ok</span>{{else}}<span class="badge none">off</span>{{end}}</td>
+          <td class="mono">{{if .Reason}}{{.Reason}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <table style="margin-top:12px">
+      <tbody>
+        <tr><td>Enabled collectors</td><td class="mono">{{range .Config.EnabledCollectors}}<code>{{.}}</code> {{end}}</td></tr>
+        <tr><td>Secrets configured</td><td class="mono">
+          {{if .Config.APIKeySet}}<code>api_key</code> {{end}}
+          {{if .Config.OAuthSecretSet}}<code>oauth_secret</code> {{end}}
+          {{if .Config.GCloudTokenSet}}<code>grafana_cloud_token</code> {{end}}
+          {{if .Config.StreamTokenSet}}<code>stream_token</code> {{end}}
+          {{if .Config.WebhookSecretSet}}<code>webhook_secret</code> {{end}}
+          {{if .Config.PyroscopeAuthSet}}<code>pyroscope_auth</code> {{end}}
+        </td></tr>
+        {{if .Config.OTLPHeaderKeys}}<tr><td>OTLP header keys</td><td class="mono">{{range .Config.OTLPHeaderKeys}}<code>{{.}}</code> {{end}}</td></tr>{{end}}
+        {{if .Dedup}}<tr><td>Dedup sets</td><td class="mono">{{range .Dedup}}{{.Name}} {{.Len}}/{{.Capacity}} &nbsp;{{end}}</td></tr>{{end}}
+      </tbody>
+    </table>
+    <p class="note" style="margin-top:12px">Download the redacted effective config: <a href="/api/config.json"><code>/api/config.json</code></a></p>
+  </section>
+
+</main>
+<footer>
+  Generated at <span id="generatedAt">{{.GeneratedAt}}</span> ·
+  <a href="/api/status.json">JSON</a> ·
+  <span class="controls"><button class="ctl" id="pauseBtn">Pause</button> <a href="#" id="refreshNow">refresh now</a></span> ·
+  updated <span id="updatedAgo">just now</span> ·
+  <noscript>static snapshot (enable JavaScript for live updates &amp; charts)</noscript>
+</footer>
+<script>
+var SVGNS = 'http://www.w3.org/2000/svg';
+var lastOkMs = Date.now();
+var paused = false;
+var lastData = null;
+
+// ── Tailnet selector (#325) ─────────────────────────────────────────────────
+// state.tailnet === "" means "All" (the combined view); otherwise it names one
+// entry of TAILNETS. Persisted in the ?tailnet= query parameter (same
+// convention as the /flows view's own tailnet selector, #298) so a refresh or a
+// shared link reproduces the selection — never in the hash, which the tab bar
+// already owns.
+var state = {tailnet: ""};
+function readTailnetFromURL(){
+  var p = new URLSearchParams(location.search);
+  var tn = p.get("tailnet");
+  return (tn && TAILNETS.indexOf(tn) !== -1) ? tn : "";
+}
+function syncTailnetURL(){
+  var p = new URLSearchParams(location.search);
+  if(state.tailnet) p.set("tailnet", state.tailnet); else p.delete("tailnet");
+  var qs = p.toString();
+  var url = location.pathname + (qs ? "?"+qs : "") + location.hash;
+  history.replaceState(null, "", url);
+}
+// tailnetView narrows the full /api/status.json payload d down to the section
+// this.tailnet asks for. "All" (state.tailnet==="") returns the combined
+// top-level fields unchanged. An unknown/removed tailnet name (e.g. a link
+// shared before a tailnet was dropped from config) degrades to "All" rather
+// than rendering empty tables.
+function tailnetView(d){
+  if(!state.tailnet || !d || !d.tailnets) return d;
+  for (var i=0;i<d.tailnets.length;i++){
+    if(d.tailnets[i].name === state.tailnet) return d.tailnets[i];
+  }
+  return d;
+}
+function initTailnetSelector(){
+  var sel = document.getElementById("tnSel");
+  if(!sel) return; // single-tailnet mode: selector not rendered, nothing to wire
+  state.tailnet = readTailnetFromURL();
+  sel.value = state.tailnet;
+  sel.addEventListener("change", function(){
+    state.tailnet = sel.value;
+    syncTailnetURL();
+    statusPoller.kick();
+  });
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function showTab(id){
+  var secs = document.querySelectorAll('section[data-tab]');
+  var found = false;
+  for (var i=0;i<secs.length;i++){
+    var on = secs[i].getAttribute('data-tab')===id;
+    secs[i].classList.toggle('active', on);
+    if(on) found = true;
+  }
+  var btns = document.querySelectorAll('#tabs .tab-btn');
+  for (var j=0;j<btns.length;j++){
+    var b = btns[j];
+    var on2 = b.getAttribute('data-target')===id;
+    b.classList.toggle('active', on2);
+    // ARIA tabs pattern: the active tab is aria-selected + the only one in the
+    // Tab order (tabindex 0); the rest are reachable only via the arrow-key
+    // roving handler below, per the standard "automatic activation" tabs
+    // pattern (moving focus also switches the panel).
+    b.setAttribute('aria-selected', on2 ? 'true' : 'false');
+    b.tabIndex = on2 ? 0 : -1;
+  }
+  if(found && location.hash!=='#'+id){ history.replaceState(null,'','#'+id); }
+  redrawCharts(); // charts need a laid-out (visible) container to size against
+}
+// handleTabsKeydown implements the standard ARIA tabs roving-tabindex
+// keyboard pattern: Left/Right (and Up/Down, since the bar can wrap onto
+// multiple visual rows) move focus one tab over, Home/End jump to the first
+// or last tab, and moving focus also activates the panel (automatic
+// activation) so a screen-reader or keyboard user never has to press a
+// second key to see the result.
+function handleTabsKeydown(ev){
+  var list = Array.prototype.slice.call(document.querySelectorAll('#tabs .tab-btn'));
+  var idx = list.indexOf(document.activeElement);
+  if(idx===-1) return;
+  var next = -1;
+  if(ev.key==='ArrowRight'||ev.key==='ArrowDown'){ next=(idx+1)%list.length; }
+  else if(ev.key==='ArrowLeft'||ev.key==='ArrowUp'){ next=(idx-1+list.length)%list.length; }
+  else if(ev.key==='Home'){ next=0; }
+  else if(ev.key==='End'){ next=list.length-1; }
+  if(next>=0){
+    ev.preventDefault();
+    list[next].focus();
+    showTab(list[next].getAttribute('data-target'));
+  }
+}
+function initTabs(){
+  var btns = document.querySelectorAll('#tabs .tab-btn');
+  for (var i=0;i<btns.length;i++){
+    (function(b){ b.addEventListener('click', function(){ showTab(b.getAttribute('data-target')); }); })(btns[i]);
+  }
+  var tabs = document.getElementById('tabs');
+  if(tabs) tabs.addEventListener('keydown', handleTabsKeydown);
+  var initial = (location.hash||'').replace('#','');
+  var valid = document.querySelector('section[data-tab="'+initial+'"]');
+  showTab(valid ? initial : 'overview');
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────
+function currentTheme(){
+  var t = document.documentElement.getAttribute('data-theme');
+  if(t) return t;
+  return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+}
+function toggleTheme(){
+  var next = currentTheme()==='light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', next);
+  try{ localStorage.setItem('ts2otel-theme', next); }catch(e){}
+  redrawCharts();
+}
+
+// ── Small helpers ─────────────────────────────────────────────────────────
+function filterTable(input, tableId){
+  var q = input.value.toLowerCase();
+  var rows = document.querySelectorAll('#'+tableId+' tbody tr');
+  for (var i=0;i<rows.length;i++){
+    rows[i].style.display = rows[i].textContent.toLowerCase().indexOf(q) > -1 ? '' : 'none';
+  }
+}
+function setText(id, v){ var e=document.getElementById(id); if(e!=null&&v!=null) e.textContent=v; }
+function el(tag, attrs, text){
+  var e=document.createElement(tag);
+  if(attrs){ for(var k in attrs){ if(attrs.hasOwnProperty(k)) e.setAttribute(k, attrs[k]); } }
+  if(text!=null) e.textContent=text;
+  return e;
+}
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#4493f8'; }
+function relText(iso){ if(!iso) return ''; var t=Date.parse(iso); if(isNaN(t)) return iso; return relMs(t); }
+function relMs(ms){
+  var s = Math.round((Date.now()-ms)/1000); if(s<0) s=0;
+  if(s<60) return s+'s ago';
+  if(s<3600) return Math.floor(s/60)+'m ago';
+  if(s<86400) return Math.floor(s/3600)+'h ago';
+  return Math.floor(s/86400)+'d ago';
+}
+
+// ── Sparklines (dense tables) ─────────────────────────────────────────────
+function drawSpark(svg, arr, color){
+  if(!svg) return;
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  if(!arr || arr.length < 2) return;
+  var W=100, H=24, pad=2, n=arr.length, mn=arr[0], mx=arr[0], i;
+  for(i=1;i<n;i++){ if(arr[i]<mn) mn=arr[i]; if(arr[i]>mx) mx=arr[i]; }
+  var span=(mx-mn)||1, pts='';
+  for(i=0;i<n;i++){
+    var x=pad + i*(W-2*pad)/(n-1);
+    var y=H-pad - (arr[i]-mn)/span*(H-2*pad);
+    pts += (i?' ':'') + x.toFixed(1)+','+y.toFixed(1);
+  }
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('preserveAspectRatio','none');
+  var pl=document.createElementNS(SVGNS,'polyline');
+  pl.setAttribute('fill','none'); pl.setAttribute('stroke', color || cssVar('--accent'));
+  pl.setAttribute('stroke-width','1.5'); pl.setAttribute('vector-effect','non-scaling-stroke');
+  pl.setAttribute('points', pts);
+  svg.appendChild(pl);
+}
+function newSpark(){ var s=document.createElementNS(SVGNS,'svg'); s.setAttribute('class','spark'); return s; }
+
+// ── Full line chart (zero-dependency, axes + gridlines + hover) ───────────
+// Registry of chart configs so a theme change / tab show can redraw them all.
+var CHARTS = {};
+function registerChart(svgId, seriesFn, fmtFn){ CHARTS[svgId] = {seriesFn:seriesFn, fmt:fmtFn||function(v){return String(Math.round(v));}}; }
+function redrawCharts(){
+  for(var id in CHARTS){ if(CHARTS.hasOwnProperty(id)){
+    var c=CHARTS[id]; drawChart(id, c.seriesFn(lastData), c.fmt);
+  }}
+}
+// drawChart renders one or more series into the <svg id=svgId> with a value
+// axis, gridlines, an area under the first series, and a shared hover crosshair
+// whose tooltip reads out each series value at the cursor.
+function drawChart(svgId, series, fmt){
+  var svg=document.getElementById(svgId); if(!svg) return;
+  var wrap=svg.parentNode;
+  var tip=wrap ? wrap.querySelector('.chart-tip') : null;
+  var chartName=svg.getAttribute('data-chart-name')||'Chart';
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  series = (series||[]).filter(function(s){ return s.points && s.points.length; });
+  var rect=svg.getBoundingClientRect();
+  var W=Math.max(rect.width||300,120), H=Math.max(rect.height||150,50);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('preserveAspectRatio','none');
+  var maxLen=0, mn=Infinity, mx=-Infinity;
+  series.forEach(function(s){ maxLen=Math.max(maxLen,s.points.length);
+    s.points.forEach(function(v){ if(v<mn)mn=v; if(v>mx)mx=v; }); });
+  if(!series.length || maxLen<2){
+    var t=document.createElementNS(SVGNS,'text'); t.setAttribute('x',8); t.setAttribute('y',H/2);
+    t.setAttribute('fill',cssVar('--muted')); t.setAttribute('font-size','11'); t.textContent='collecting…';
+    svg.appendChild(t);
+    svg.setAttribute('aria-label', chartName+': not enough data yet to summarize.');
+    return;
+  }
+  if(mn===mx){ mx=mn+1; }
+  // A textual summary for assistive tech: this is the only accessible
+  // description of what the chart shows, since the SVG's own shapes carry no
+  // text. Built entirely from the series data already computed above.
+  var latest=series[0].points[series[0].points.length-1];
+  var summary=chartName+': latest '+fmt(latest)+', ranging from '+fmt(mn)+' to '+fmt(mx)
+    +' over '+maxLen+' samples.';
+  if(series.length>1){
+    summary+=' Also shown: '+series.slice(1).map(function(s){ return s.name; }).join(', ')+'.';
+  }
+  svg.setAttribute('aria-label', summary);
+  var padL=44, padR=8, padT=8, padB=16;
+  var plotW=W-padL-padR, plotH=H-padT-padB;
+  function xAt(i){ return padL + i*plotW/(maxLen-1); }
+  function yAt(v){ return padT + (1-(v-mn)/(mx-mn))*plotH; }
+  // gridlines + y labels (min, mid, max)
+  [0,0.5,1].forEach(function(f){
+    var val=mn+(mx-mn)*f, y=yAt(val);
+    var ln=document.createElementNS(SVGNS,'line');
+    ln.setAttribute('x1',padL); ln.setAttribute('x2',W-padR); ln.setAttribute('y1',y); ln.setAttribute('y2',y);
+    ln.setAttribute('stroke',cssVar('--grid')); ln.setAttribute('stroke-width','1'); svg.appendChild(ln);
+    var tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x',4); tx.setAttribute('y',y+3);
+    tx.setAttribute('fill',cssVar('--muted')); tx.setAttribute('font-size','9');
+    tx.setAttribute('font-family','monospace'); tx.textContent=fmt(val); svg.appendChild(tx);
+  });
+  var colors=[cssVar('--accent'), cssVar('--ok'), cssVar('--warn')];
+  series.forEach(function(s, si){
+    var col=s.color||colors[si%colors.length];
+    var pts=s.points.map(function(v,i){ return xAt(i)+','+yAt(v); }).join(' ');
+    if(si===0){
+      var area=document.createElementNS(SVGNS,'polygon');
+      area.setAttribute('points', xAt(0)+','+(padT+plotH)+' '+pts+' '+xAt(s.points.length-1)+','+(padT+plotH));
+      area.setAttribute('fill', col); area.setAttribute('opacity','0.10'); svg.appendChild(area);
+    }
+    var pl=document.createElementNS(SVGNS,'polyline');
+    pl.setAttribute('fill','none'); pl.setAttribute('stroke',col); pl.setAttribute('stroke-width','1.5');
+    pl.setAttribute('points',pts); svg.appendChild(pl);
+  });
+  // hover crosshair + tooltip
+  if(tip){
+    var cross=document.createElementNS(SVGNS,'line');
+    cross.setAttribute('stroke',cssVar('--muted')); cross.setAttribute('stroke-width','1');
+    cross.setAttribute('stroke-dasharray','2 2'); cross.setAttribute('y1',padT); cross.setAttribute('y2',padT+plotH);
+    cross.style.display='none'; svg.appendChild(cross);
+    var over=document.createElementNS(SVGNS,'rect');
+    over.setAttribute('x',padL); over.setAttribute('y',padT); over.setAttribute('width',plotW); over.setAttribute('height',plotH);
+    over.setAttribute('fill','transparent'); svg.appendChild(over);
+    over.addEventListener('mousemove', function(ev){
+      var b=svg.getBoundingClientRect();
+      var rel=(ev.clientX-b.left)*(W/b.width);
+      var idx=Math.round((rel-padL)/plotW*(maxLen-1)); if(idx<0)idx=0; if(idx>=maxLen)idx=maxLen-1;
+      cross.setAttribute('x1',xAt(idx)); cross.setAttribute('x2',xAt(idx)); cross.style.display='';
+      var lines=series.map(function(s){ var v=s.points[idx]; return s.name+' '+(v==null?'—':fmt(v)); });
+      tip.textContent=lines.join('  ·  '); tip.style.display='block';
+      tip.style.left=Math.min(Math.max(xAt(idx)*(b.width/W)-tip.offsetWidth/2,0), b.width-tip.offsetWidth)+'px';
+      tip.style.top='2px';
+    });
+    over.addEventListener('mouseleave', function(){ cross.style.display='none'; tip.style.display='none'; });
+  }
+}
+
+// ── Collectors table ──────────────────────────────────────────────────────
+function outcomeStrip(arr){
+  var span=el('span',{'class':'outcome'});
+  if(!arr) return span;
+  var start = arr.length>24 ? arr.length-24 : 0;
+  for(var i=start;i<arr.length;i++){ var dot=el('i'); if(!arr[i]) dot.className='f'; dot.title=arr[i]?'ok':'fail'; span.appendChild(dot); }
+  return span;
+}
+function statusBadge(c){
+  if(!c.has_run) return el('span',{'class':'badge pending'},'pending');
+  if(c.last_success) return el('span',{'class':'badge ok'},'ok');
+  return el('span',{'class':'badge err'},'fail');
+}
+function freshBadge(c){
+  var st=c.freshness_state||'none';
+  if(st==='none') return el('span',{'class':'badge none'},'never');
+  return el('span',{'class':'badge '+st}, c.freshness||'—');
+}
+function collectorInfo(c){
+  if(!c.description && !(c.metrics && c.metrics.length)) return null;
+  var wrap=el('span',{'class':'collector-info','tabindex':'0','aria-label':'About '+c.name});
+  wrap.appendChild(document.createTextNode('ⓘ'));
+  var tip=el('span',{'class':'cinfo-tip'});
+  if(c.description) tip.appendChild(el('span',{'class':'cinfo-purpose'}, c.description));
+  if(c.metrics && c.metrics.length){
+    var list=el('span',{'class':'cinfo-metrics'});
+    c.metrics.forEach(function(m){
+      var row=el('span',{'class':'cinfo-m'});
+      row.appendChild(el('code',null,m.name));
+      if(m.description) row.appendChild(el('span',{'class':'cinfo-d'}, m.description));
+      list.appendChild(row);
+    });
+    tip.appendChild(list);
+  }
+  wrap.appendChild(tip);
+  function place(){
+    var r=wrap.getBoundingClientRect(), w=360, left=r.left, top=r.bottom;
+    if(left+w > window.innerWidth-8) left=window.innerWidth-8-w;
+    if(left<8) left=8;
+    tip.style.left=Math.round(left)+'px'; tip.style.top=Math.round(top)+'px';
+  }
+  wrap.addEventListener('mouseenter', place); wrap.addEventListener('focus', place);
+  return wrap;
+}
+function rebuildCollectors(rows){
+  var tb=document.getElementById('collBody'); if(!tb) return;
+  tb.textContent='';
+  if(!rows || !rows.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'11','class':'muted'},'No collectors enabled.'));
+    tb.appendChild(tr0); return;
+  }
+  rows.forEach(function(c){
+    var tr=el('tr');
+    if((c.has_run && !c.last_success) || c.consecutive_failures>=3 || c.overdue || (c.checkpoint && c.checkpoint.stuck)) tr.className='bad';
+    var nameTd=el('td'); nameTd.appendChild(el('code',null,c.name));
+    var info=collectorInfo(c); if(info) nameTd.appendChild(info);
+    if(c.checkpoint){
+      var sub=el('div',{'class':'note'+(c.checkpoint.stuck?' err':'')});
+      sub.textContent='checkpoint lag '+c.checkpoint.lag+(c.checkpoint.stuck?' · stuck':''); nameTd.appendChild(sub);
+    }
+    tr.appendChild(nameTd);
+    var stTd=el('td'); stTd.appendChild(statusBadge(c)); tr.appendChild(stTd);
+    tr.appendChild(el('td',{'class':'num'}, c.interval_seconds+'s'));
+    tr.appendChild(el('td',{'class':'num'}, c.has_run ? Math.round(c.success_rate_pct)+'%' : '—'));
+    var frTd=el('td'); frTd.appendChild(freshBadge(c)); tr.appendChild(frTd);
+    tr.appendChild(el('td',{'class':'num'}, String(c.runs)));
+    tr.appendChild(el('td',{'class':'num'}, String(c.failures)+(c.consecutive_failures>0?' ('+c.consecutive_failures+'×)':'')));
+    tr.appendChild(el('td',{'class':'num'}, c.has_run ? (c.next_run_in_seconds<=0?'due':c.next_run_in) : '—'));
+    var durTd=el('td',{'class':'num'});
+    durTd.appendChild(document.createTextNode(c.has_run ? c.last_duration_ms+'ms ' : '— '));
+    if(c.duration_ms_series && c.duration_ms_series.length>1){ var sp=newSpark(); durTd.appendChild(sp); drawSpark(sp, c.duration_ms_series); }
+    tr.appendChild(durTd);
+    var recTd=el('td'); recTd.appendChild(outcomeStrip(c.outcome_series)); tr.appendChild(recTd);
+    var errTd=el('td',{'class':'mono'});
+    if(c.last_error){ errTd.textContent=c.last_error; } else { errTd.appendChild(el('span',{'class':'muted'},'—')); }
+    tr.appendChild(errTd);
+    tb.appendChild(tr);
+  });
+}
+
+// ── API table ─────────────────────────────────────────────────────────────
+function rebuildAdvisories(rows){
+  var tb=document.getElementById('advisoriesBody'); if(!tb) return;
+  tb.textContent='';
+  if(!rows || !rows.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'2','class':'muted'},'No active configuration advisories.'));
+    tb.appendChild(tr0); return;
+  }
+  rows.forEach(function(adv){
+    var tr=el('tr');
+    var keyTd=el('td',{'class':'mono'});
+    if(adv.key){ keyTd.appendChild(el('code',null,adv.key)); } else { keyTd.textContent='—'; }
+    tr.appendChild(keyTd);
+    // textContent, never innerHTML: an advisory can quote a configured value.
+    tr.appendChild(el('td', null, adv.message||''));
+    tb.appendChild(tr);
+  });
+}
+
+// The flow-failure block only exists in the DOM when the first render had
+// failures, so this can only refresh or empty it, not create it. A store that
+// starts failing after page load is picked up on the next full load — the
+// failure is a startup-time condition, so there is nothing to create mid-poll.
+function rebuildFlowFailures(rows){
+  var box=document.getElementById('flowFailures'); if(!box) return;
+  var tb=document.getElementById('flowFailuresBody'); if(!tb) return;
+  if(!rows || !rows.length){ box.style.display='none'; return; }
+  box.style.display='';
+  tb.textContent='';
+  rows.forEach(function(f){
+    var tr=el('tr');
+    var t=el('td',{'class':'mono'});
+    t.appendChild(el('code',null,f.tailnet||''));
+    tr.appendChild(t);
+    // textContent, never innerHTML: the error quotes a filesystem path.
+    tr.appendChild(el('td', null, f.error||''));
+    tb.appendChild(tr);
+  });
+}
+
+function updateFlowStore(info){
+  if(!info) return;
+  if(info.backend){
+    if(info.backend.persistent){
+      setText('flowRows', info.backend.rows || 0);
+      setText('flowQueueDrops', info.backend.queue_drops || 0);
+      setText('flowSize', (info.backend.size_bytes || 0)+' B');
+      setText('flowJournal', (info.backend.journal_size_bytes || 0)+' B');
+      setText('flowCheckpoint', info.backend.last_checkpoint_at ? relText(info.backend.last_checkpoint_at) : 'never');
+    } else {
+      setText('flowBuckets', info.buckets || 0);
+    }
+  }
+  setText('flowCovered', info.covered || 'nothing yet');
+  setText('flowObservations', info.observations || 0);
+  setText('flowTruncated', info.truncated || 0);
+}
+
+function updateNodeDiscovery(info){
+  var warning=document.getElementById('nodeDiscoveryFailure'); if(!warning) return;
+  if(!info || !info.dominant_failure_reason){ warning.style.display='none'; return; }
+  setText('nodeDiscoveryFailureReason', info.dominant_failure_reason);
+  setText('nodeDiscoveryFailureCount', info.dominant_failure_count || 0);
+  warning.style.display='';
+}
+
+function rebuildDelivery(rows){
+  var tb=document.getElementById('deliveryBody'); if(!tb) return;
+  tb.textContent='';
+  (rows||[]).forEach(function(sig){
+    var tr=el('tr');
+    var nameTd=el('td',{'class':'mono'}); nameTd.appendChild(el('code',null,sig.signal)); tr.appendChild(nameTd);
+    var stateTd=el('td');
+    if(sig.failing){ stateTd.appendChild(el('span',{'class':'badge err'},'failing')); }
+    else if(sig.consecutive_failures>0){ stateTd.appendChild(el('span',{'class':'badge warn'},'retrying')); }
+    else if(sig.exports>0){ stateTd.appendChild(el('span',{'class':'badge ok'},'ok')); }
+    else { stateTd.appendChild(el('span',{'class':'badge pending'},'no exports yet')); }
+    tr.appendChild(stateTd);
+    tr.appendChild(el('td',{'class':'num'}, String(sig.exports)));
+    tr.appendChild(el('td',{'class':'num'}, String(sig.failures)));
+    tr.appendChild(el('td', null, sig.last_success_at ? relText(sig.last_success_at) : '—'));
+    tr.appendChild(el('td', null, sig.last_failure_at ? relText(sig.last_failure_at) : '—'));
+    tr.appendChild(el('td',{'class':'num'}, String(sig.last_duration_ms)+' ms'));
+    // A closed class set, never the backend's response text.
+    tr.appendChild(el('td',{'class':'mono'}, sig.last_error_class || '—'));
+    tb.appendChild(tr);
+  });
+}
+
+function rebuildComponents(rows){
+  var tb=document.getElementById('componentsBody'); if(!tb) return;
+  tb.textContent='';
+  (rows||[]).forEach(function(c){
+    var tr=el('tr');
+    var nameTd=el('td',{'class':'mono'}); nameTd.appendChild(el('code',null,c.name)); tr.appendChild(nameTd);
+    var stateTd=el('td');
+    if(c.failed){ stateTd.appendChild(el('span',{'class':'badge err'},'failed')); }
+    else if(c.enabled){ stateTd.appendChild(el('span',{'class':'badge ok'},'ok')); }
+    else { stateTd.appendChild(el('span',{'class':'badge none'},'off')); }
+    tr.appendChild(stateTd);
+    // textContent throughout, never innerHTML: the reason is an error string
+    // from a subsystem and is not ours to trust as markup.
+    tr.appendChild(el('td',{'class':'mono'}, c.reason || '—'));
+    tb.appendChild(tr);
+  });
+}
+
+function rebuildAPI(info){
+  var tb=document.getElementById('apiBody'); if(!tb) return;
+  var eps = (info && info.endpoints) ? info.endpoints : [];
+  tb.textContent='';
+  if(!eps.length){
+    var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'8','class':'muted'},'No API requests recorded yet.'));
+    tb.appendChild(tr0);
+  } else {
+    eps.forEach(function(e2){
+      var tr=el('tr');
+      var nameTd=el('td'); nameTd.appendChild(el('code',null,e2.endpoint)); tr.appendChild(nameTd);
+      tr.appendChild(el('td',{'class':'num'}, String(e2.requests)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.errors)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.retries)));
+      tr.appendChild(el('td',{'class':'num'}, String(e2.rate_limited)));
+      tr.appendChild(el('td',{'class':'num'}, e2.last_status ? String(e2.last_status) : '—'));
+      var latTd=el('td',{'class':'num'});
+      var s=e2.duration_ms_series;
+      if(s && s.length){ latTd.appendChild(document.createTextNode(s[s.length-1]+'ms ')); } else { latTd.appendChild(el('span',{'class':'muted'},'—')); }
+      if(s && s.length>1){ var sp=newSpark(); latTd.appendChild(sp); drawSpark(sp, s); }
+      tr.appendChild(latTd);
+      var errTd=el('td',{'class':'mono'});
+      if(e2.last_error){ errTd.textContent=e2.last_error; } else { errTd.appendChild(el('span',{'class':'muted'},'—')); }
+      tr.appendChild(errTd);
+      tb.appendChild(tr);
+    });
+  }
+  if(info && info.auth){
+    setText('apiAuthMethod', info.auth.method || '—');
+    setText('apiTotalCalls', info.auth.total_calls!=null ? info.auth.total_calls : 0);
+    setText('apiTotal429', info.auth.total_429!=null ? info.auth.total_429 : 0);
+    setText('apiAuthWarn', info.auth.warning || '');
+  }
+  var rl=document.getElementById('rateLimitCard');
+  if(rl){
+    if(info && info.rate_limit){
+      rl.style.display='';
+      setText('rlCount', info.rate_limit.count);
+      setText('rlLast', info.rate_limit.last_seen ? relText(info.rate_limit.last_seen) : '—');
+    } else { rl.style.display='none'; }
+  }
+}
+
+// ── Devices table (Inventory tab) — filtered by the tailnet selector ───────
+function rebuildDevices(rows){
+  var tb=document.getElementById('devBody'); if(!tb) return;
+  rows = rows || [];
+  setText('devCount', rows.length);
+  tb.textContent='';
+  rows.forEach(function(dv){
+    var tr=el('tr');
+    var nameTd=el('td'); nameTd.appendChild(el('code',null, dv.name || dv.hostname)); tr.appendChild(nameTd);
+    var osTxt = dv.os || '';
+    if(dv.os_version) osTxt += ' '+dv.os_version;
+    tr.appendChild(el('td', null, osTxt));
+    tr.appendChild(el('td', null, dv.user || ''));
+    var addrTd=el('td',{'class':'mono'});
+    (dv.addrs||[]).forEach(function(a){ addrTd.appendChild(document.createTextNode(a+' ')); });
+    tr.appendChild(addrTd);
+    var tagTd=el('td',{'class':'mono'});
+    (dv.tags||[]).forEach(function(tg){ tagTd.appendChild(el('code',null,tg)); tagTd.appendChild(document.createTextNode(' ')); });
+    tr.appendChild(tagTd);
+    var extTd=el('td');
+    extTd.appendChild(dv.external ? el('span',{'class':'badge warn'},'external') : el('span',{'class':'badge pending'},'internal'));
+    tr.appendChild(extTd);
+    tb.appendChild(tr);
+  });
+}
+
+// ── Cardinality tab — filtered by the tailnet selector ─────────────────────
+// Series/alerts/labels are rebuilt from whichever section tailnetView(d)
+// picked; Growth stays whatever the server rendered (combined-only — see the
+// note on the page, and TailnetStatus.Cardinality.Growth's doc comment).
+function rebuildCardinality(info){
+  info = info || {available:false};
+  setText('cardTotal', info.available ? info.total : '—');
+  setText('cardAlertCount', (info.alerts||[]).length);
+
+  var alertsBody = document.getElementById('cardAlertsBody');
+  if(alertsBody){
+    alertsBody.textContent='';
+    (info.alerts||[]).forEach(function(a){
+      var tr=el('tr');
+      var lvlTd=el('td'); lvlTd.appendChild(el('span',{'class':'badge '+a.level}, a.level)); tr.appendChild(lvlTd);
+      var mTd=el('td'); mTd.appendChild(el('code',null,a.metric)); tr.appendChild(mTd);
+      tr.appendChild(el('td',{'class':'num'}, a.count+' series'));
+      alertsBody.appendChild(tr);
+    });
+  }
+
+  var seriesBody = document.getElementById('cardSeriesBody');
+  if(seriesBody){
+    seriesBody.textContent='';
+    (info.series||[]).forEach(function(s){
+      var tr=el('tr'); if(s.level==='critical') tr.className='bad';
+      var mTd=el('td'); mTd.appendChild(el('code',null,s.metric));
+      if(s.level) mTd.appendChild(el('span',{'class':'badge '+s.level}, ' '+s.level));
+      tr.appendChild(mTd);
+      tr.appendChild(el('td',{'class':'mono'}, s.prom_name||''));
+      var cTd=el('td',{'class':'num'});
+      cTd.appendChild(document.createTextNode(String(s.count)));
+      if(s.capped){ cTd.appendChild(document.createTextNode(' ')); cTd.appendChild(el('span',{'class':'badge warn','title':'cap reached; true cardinality is at least this high'},'capped')); }
+      tr.appendChild(cTd);
+      seriesBody.appendChild(tr);
+    });
+  }
+
+  var labelsBody = document.getElementById('cardLabelsBody');
+  if(labelsBody){
+    labelsBody.textContent='';
+    (info.labels||[]).forEach(function(l){
+      var tr=el('tr');
+      var lblTd=el('td'); lblTd.appendChild(el('code',null,l.label));
+      if(l.capped) lblTd.appendChild(el('span',{'class':'badge warn'},'capped'));
+      tr.appendChild(lblTd);
+      tr.appendChild(el('td',{'class':'num'}, String(l.total_distinct)));
+      var mTd=el('td');
+      (l.metrics||[]).forEach(function(m, i){
+        if(i) mTd.appendChild(el('br'));
+        mTd.appendChild(el('code',null,m.metric));
+        mTd.appendChild(document.createTextNode(' '+m.distinct+(m.capped?'+':'')));
+        if(m.examples && m.examples.length) mTd.appendChild(el('span',{'class':'ex'}, ' '+m.examples.join(', ')));
+      });
+      tr.appendChild(mTd);
+      labelsBody.appendChild(tr);
+    });
+  }
+}
+
+// ── Overview roll-up ──────────────────────────────────────────────────────
+function updateRollup(d){
+  setText('ruHealth', d.health);
+  var ok=0, failing=0, stale=0;
+  (d.collectors||[]).forEach(function(c){
+    if(c.has_run && c.last_success) ok++;
+    if(c.has_run && !c.last_success) failing++;
+    if(c.freshness_state==='stale') stale++;
+  });
+  setText('ruCollectors', ok);
+  setText('ruFailing', failing);
+  setText('ruStale', stale);
+  if(d.cardinality) setText('ruSeries', d.cardinality.available ? d.cardinality.total : '—');
+  // Last export = the freshest OTLP exporter SUCCESS, not a collector's. The
+  // collector proxy this replaced reported recent data flow while every OTLP
+  // request was failing (#317).
+  var newest=0, failing=false;
+  (d.delivery||[]).forEach(function(sig){
+    if(sig.last_success_at){ var t=Date.parse(sig.last_success_at); if(!isNaN(t)&&t>newest) newest=t; }
+    if(sig.failing) failing=true;
+  });
+  var ex=document.getElementById('ruExport');
+  if(ex){
+    ex.textContent = newest ? relMs(newest) : '—';
+    ex.style.color = failing ? 'var(--err)' : '';
+  }
+}
+
+function updateSparks(d){
+  if(d.runtime){
+    var gr=d.runtime.gc_rate_series;
+    if(gr && gr.length) setText('gcRate', gr[gr.length-1].toFixed(2)+'/s');
+  }
+  if(d.throughput){
+    setText('emitMetricRate', (d.throughput.metric_points_per_sec||0).toFixed(1));
+    setText('emitLogRate', (d.throughput.log_records_per_sec||0).toFixed(1));
+  }
+  if(d.fleet){
+    setText('fleetActive', d.fleet.active);
+    setText('fleetFailing', d.fleet.failing);
+    setText('fleetMeanDur', (d.fleet.mean_duration_ms||0).toFixed(0)+'ms');
+  }
+}
+
+function setHealth(d){
+  var b=document.getElementById('healthBadge'); if(b){
+    b.textContent=d.health;
+    b.className='badge '+(d.health==='healthy'?'ok':d.health==='degraded'?'err':'pending');
+    b.title=(d.health_reasons||[]).join('\n');
+  }
+  var rb=document.getElementById('healthReasons');
+  if(rb){ if(d.health_reasons && d.health_reasons.length){ rb.textContent=d.health_reasons.join(' · '); rb.style.display=''; } else { rb.style.display='none'; } }
+}
+function setStale(on){
+  var b=document.getElementById('staleBanner'); if(!b) return;
+  if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); } else { b.className=''; }
+}
+
+// setUpdateInfo mirrors the server-rendered header badge + Overview "Update
+// check" card (page.html.tmpl) so a state that only appears after the page
+// has been open a while (e.g. a check that starts as "checking" and later
+// resolves to "available") is reflected without a reload. Every string here
+// matches the Go template's fallthrough exactly.
+function setUpdateInfo(d){
+  var u=(d && d.update) || {};
+  var badge=document.getElementById('updateBadge');
+  if(badge){
+    if(u.state==='available'){
+      badge.style.display='';
+      badge.href=u.release_url||'#';
+      badge.textContent='update available'+(u.latest_version?': '+u.latest_version:'');
+      badge.title='current '+(u.current_version||'?')+' · latest '+(u.latest_version||'?');
+    } else {
+      badge.style.display='none';
+    }
+  }
+  var stateLabel;
+  switch(u.state){
+    case 'available': stateLabel='update available'; break;
+    case 'current': stateLabel='up to date'; break;
+    case 'error': stateLabel='check failed'; break;
+    case 'disabled': stateLabel='disabled'; break;
+    case 'checking': stateLabel='checking…'; break;
+    default: stateLabel='unknown';
+  }
+  setText('updateState', stateLabel);
+  var sub=document.getElementById('updateSub');
+  if(sub){
+    if(u.state==='available') sub.textContent=(u.current_version||'')+' → '+(u.latest_version||'');
+    else if(u.state==='current') sub.textContent=u.current_version||'';
+    else if(u.state==='error') sub.textContent='last check failed: '+(u.last_error_class||'');
+    else sub.textContent='';
+  }
+}
+
+function setDeviceVersionCheckInfo(c){
+  c=c||{};
+  var state=c.state||'checking';
+  var label=state==='ready'?'ready':state==='error'?'check failed':state==='disabled'?'disabled':'checking…';
+  setText('deviceVersionState', label);
+  var sub=' ';
+  if(state==='ready'){
+    sub='latest '+(c.latest_version||'unknown');
+    if(c.last_error_class) sub+='; last check failed: '+c.last_error_class;
+  } else if(state==='error'){
+    sub='last check failed: '+(c.last_error_class||'unknown');
+  }
+  setText('deviceVersionSub', sub);
+}
+
+// === shared poller helper (#328) — keep byte-for-byte identical across
+// statushtml, flowhtml and eventshtml; see TestPollerHelperIdenticalAcrossPages
+// in each package. createPoller wraps a periodic fetch with:
+//   - single-flight: a tick that lands while the previous one is still
+//     outstanding is folded into the next scheduled tick rather than firing
+//     a second concurrent request.
+//   - a per-call timeout via AbortController, so a hung request cannot pin
+//     the poller in the in-flight state forever.
+//   - exponential backoff on failure (capped at maxMs), reset to baseMs by
+//     the next success, by start(), or by kick().
+//   - automatic pause while the tab is hidden (visibilitychange stops the
+//     timer outright), and an immediate poll with backoff reset when the
+//     tab becomes visible again — but only while periodic polling is
+//     actually enabled (paused===false); a caller-initiated stop() (a
+//     paused/pinned view) is never silently resumed by a visibility flip.
+//   - stale-response rejection: every tick is tagged with a monotonically
+//     increasing sequence number, and a response only reaches onResult (or
+//     onError) if no later tick has already landed — a slow response that
+//     resolves after a newer one arrived is dropped, never applied.
+// start() arms the periodic timer but does not fetch immediately (a caller
+// that also wants an immediate fetch calls kick() itself, since several
+// call sites — a filter change, a pinned-window click — want a fetch
+// without necessarily re-arming periodic polling). kick() always fires one
+// fetch right now regardless of paused, and never conflicts with an
+// in-flight request thanks to the single-flight guard above.
+function createPoller(opts){
+  var fetchFn = opts.fetchFn;     // function(signal) -> Promise(data)
+  var onResult = opts.onResult;   // function(data)
+  var onError = opts.onError;     // function(err), optional
+  var baseMs = opts.baseMs;       // steady-state interval; <=0 disables periodic scheduling
+  var maxMs = opts.maxMs || (baseMs > 0 ? baseMs * 8 : 0);
+  var timeoutMs = opts.timeoutMs || 10000;
+
+  var timer = null;
+  var inFlight = false;
+  var seq = 0;
+  var maxSeenSeq = 0;
+  var backoffMs = baseMs;
+  var paused = true;
+
+  function clearTimer(){ if (timer) { clearTimeout(timer); timer = null; } }
+
+  function scheduleNext(delay){
+    clearTimer();
+    if (paused || baseMs <= 0) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    timer = setTimeout(tick, delay);
+  }
+
+  function tick(){
+    if (inFlight) { scheduleNext(baseMs); return; }
+    inFlight = true;
+    var mySeq = ++seq;
+    var controller = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timedOut = false;
+    var timeoutId = controller ? setTimeout(function(){ timedOut = true; controller.abort(); }, timeoutMs) : null;
+    fetchFn(controller ? controller.signal : undefined).then(function(data){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs;
+      onResult(data);
+      scheduleNext(backoffMs);
+    }, function(err){
+      if (timeoutId) clearTimeout(timeoutId);
+      inFlight = false;
+      if (mySeq <= maxSeenSeq) return;
+      maxSeenSeq = mySeq;
+      backoffMs = baseMs > 0 ? Math.min(maxMs, Math.max(baseMs, backoffMs * 2)) : baseMs;
+      if (onError) onError(timedOut ? new Error("timed out") : err);
+      scheduleNext(backoffMs);
+    });
+  }
+
+  function start(){
+    paused = false;
+    backoffMs = baseMs;
+    scheduleNext(baseMs);
+  }
+  function stop(){
+    paused = true;
+    clearTimer();
+  }
+  function kick(){
+    backoffMs = baseMs;
+    clearTimer();
+    tick();
+  }
+
+  if (typeof document !== "undefined" && typeof document.addEventListener === "function"){
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden){
+        clearTimer();
+      } else if (!paused){
+        backoffMs = baseMs;
+        clearTimer();
+        tick();
+      }
+    });
+  }
+
+  return {start: start, stop: stop, kick: kick};
+}
+// === end shared poller helper ===
+
+function fetchStatus(signal){
+  return fetch('/api/status.json',{cache:'no-store', signal:signal}).then(function(r){
+    if(!r.ok) throw new Error('status '+r.status);
+    return r.json();
+  });
+}
+
+function applyStatus(d){
+  lastData=d; lastOkMs=Date.now(); setStale(false);
+  setText('uptime', d.service && d.service.uptime);
+  setText('goroutines', d.runtime && d.runtime.goroutines);
+  setText('heapAlloc', d.runtime && d.runtime.heap_alloc);
+  setText('numGC', d.runtime && d.runtime.num_gc);
+  setText('cacheDevices', d.device_cache && d.device_cache.devices);
+  setText('cacheAge', d.device_cache && d.device_cache.age);
+  updateRDNS(d.reverse_dns);
+  setText('generatedAt', d.generated_at);
+  setHealth(d);
+  setUpdateInfo(d);
+	setDeviceVersionCheckInfo(d.device_version_check);
+  updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
+  // view is the tailnet-selector-filtered slice: the combined d itself for
+  // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are
+  // the only sections that vary by tailnet (#325); everything else below
+  // (components, delivery, advisories, runtime) is process-global and always
+  // reads the top-level d.
+  var view = tailnetView(d);
+  rebuildCollectors(view.collectors);
+  rebuildAPI(view.api);
+  rebuildDevices(view.devices);
+  rebuildCardinality(view.cardinality);
+  rebuildComponents(d.components);
+  rebuildDelivery(d.delivery);
+  rebuildAdvisories(d.advisories);
+  rebuildFlowFailures(d.flows && d.flows.failures);
+  updateFlowStore(d.flows);
+  updateNodeDiscovery(d.node_discovery);
+  updateSparks(d);
+  redrawCharts();
+}
+
+// statusPoller drives /api/status.json on a timer (#328): single-flight,
+// AbortController-backed timeout, capped exponential backoff, paused while
+// the tab is hidden, and immune to a stale response landing after a newer
+// one. window.__refreshMs<=0 still falls back to the 5s default here — this
+// page has never had a way to disable its auto-refresh entirely (unlike
+// /events's refreshMs<=0 path), and that pre-existing behavior is preserved
+// rather than changed as part of this fix.
+var statusPoller = createPoller({
+  fetchFn: fetchStatus,
+  onResult: applyStatus,
+  onError: function(){ setStale(true); },
+  baseMs: (window.__refreshMs>0?window.__refreshMs:5000)
+});
+
+function updateRDNS(r){
+  if(!r || !r.enabled) return;
+  setText('rdnsSize', r.size);
+  setText('rdnsHitRate', (r.hit_rate_pct!=null?r.hit_rate_pct.toFixed(1):'0.0')+'%');
+  setText('rdnsHits', r.hits); setText('rdnsMisses', r.misses); setText('rdnsNegatives', r.negatives);
+  setText('rdnsQueries', (r.query_success||0)+(r.query_fail||0));
+  setText('rdnsQuerySuccess', r.query_success); setText('rdnsQueryFail', r.query_fail);
+  setText('rdnsOverflows', r.overflows);
+  setText('rdnsEvicted', (r.evicted_expired||0)+(r.evicted_purged||0));
+  setText('rdnsEvictedExpired', r.evicted_expired); setText('rdnsEvictedPurged', r.evicted_purged);
+}
+function purgeRDNS(){
+  if(!confirm('Purge the reverse-DNS cache? Cached PTR names will be re-resolved on the next sighting.')) return;
+  var btn=document.getElementById('rdnsPurgeBtn'); if(btn) btn.disabled=true;
+  fetch('/api/rdns/purge',{method:'POST',headers:{'X-Requested-With':'fetch'},cache:'no-store'})
+    .then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); })
+    .then(function(d){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purged '+d.purged+' entr'+(d.purged===1?'y':'ies'); statusPoller.kick(); })
+    .catch(function(e){ var m=document.getElementById('rdnsPurgeMsg'); if(m) m.textContent='purge failed: '+e.message; })
+    .finally(function(){ if(btn) btn.disabled=false; });
+}
+function togglePause(){
+  paused=!paused;
+  var btn=document.getElementById('pauseBtn');
+  if(paused){ statusPoller.stop(); if(btn) btn.textContent='Resume'; }
+  else { if(btn) btn.textContent='Pause'; statusPoller.kick(); statusPoller.start(); }
+}
+function tickFreshness(){
+  setText('updatedAgo', relMs(lastOkMs));
+  var b=document.getElementById('staleBanner');
+  if(b && b.className.indexOf('show')>=0) setStale(true);
+}
+
+(function init(){
+  registerChart('chGoroutines', function(d){ return d&&d.runtime ? [{name:'goroutines', points:d.runtime.goroutines_series||[]}] : []; });
+  registerChart('chHeap', function(d){ return d&&d.runtime ? [{name:'heap', points:(d.runtime.heap_alloc_series||[]).map(function(b){return b/1048576;})}] : []; }, function(v){ return v.toFixed(0)+'M'; });
+  registerChart('chGC', function(d){ return d&&d.runtime ? [{name:'gc/s', color:cssVar('--warn'), points:d.runtime.gc_rate_series||[]}] : []; }, function(v){ return v.toFixed(1); });
+  registerChart('chCard', function(d){ return d&&d.cardinality&&d.cardinality.available ? [{name:'series', points:d.cardinality.total_series||[]}] : []; });
+  registerChart('chEmit', function(d){ return d&&d.throughput ? [
+    {name:'metric pts/s', points:d.throughput.metric_points_per_sec_series||[]},
+    {name:'log recs/s', color:cssVar('--ok'), points:d.throughput.log_records_per_sec_series||[]}] : []; },
+    function(v){ return v.toFixed(1); });
+  registerChart('chFailing', function(d){ return d&&d.fleet ? [{name:'failing', color:cssVar('--warn'), points:d.fleet.failing_series||[]}] : []; });
+  registerChart('chDuration', function(d){ return d&&d.fleet ? [{name:'mean', points:d.fleet.mean_duration_ms_series||[]}] : []; }, function(v){ return v.toFixed(0)+'ms'; });
+
+  initTabs();
+  initTailnetSelector();
+  var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click', toggleTheme);
+  var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click', togglePause);
+  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click', function(ev){ ev.preventDefault(); statusPoller.kick(); });
+  var pb=document.getElementById('rdnsPurgeBtn'); if(pb) pb.addEventListener('click', purgeRDNS);
+  window.addEventListener('resize', redrawCharts);
+  statusPoller.kick();
+  statusPoller.start();
+  setInterval(tickFreshness, 1000);
+})();
+</script>
+</body>
+</html>

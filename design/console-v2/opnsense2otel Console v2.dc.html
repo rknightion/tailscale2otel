@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles/fonts.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles.css">
+<script src="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/_ds_bundle.js"></script>
+<style>
+  body{margin:0;background:#0e1417;font-family:"Hanken Grotesk",system-ui,sans-serif}
+  a{color:var(--color-bg-accent);text-decoration:none}
+  a:hover{color:var(--color-accent-hover);text-decoration:underline}
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:64px;padding:48px">
+
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#66aecb;font-weight:600">opnsense2otel · 2otel family v2</div>
+    <h1 style="margin:0;font-size:24px;font-weight:600;color:#eef3f5">opnsense2otel embedded console</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.6;color:#9db0b8;text-wrap:pretty">Family token block verbatim, small-chart standard inherited from graph2otel. Same single page, same seven tabs, same tab-switching pattern, same lazy loads on Devices and ifIndex. The GeoIP attribution stays in the footer. Collectors, API and Config derive from the family standards and are not drawn again here; the spec says which pattern each follows. Each screen is a light / dark pair.</p>
+  </div>
+
+  <div id="3a" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">3a</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Console shell</h2>
+      <span style="font-size:12.5px;color:#7e9299">Three independent signals: exporter health, the box, and the metric capture. Each keeps its own badge.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div style="flex:none;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#7e9299;font-weight:600">{{ t.label }}</div>
+          <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;font-size:13.5px;border:1px solid var(--color-border-strong)">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default);flex-wrap:wrap">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">opnsense2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v4.22.0 · go1.25.0 · fw-lon-1 · exp-01 · up 21d 4h</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>healthy</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase" title="OPNsense API health check · last checked 4s ago"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>box ok</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase" title="Passive metric capture: full"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>capture full</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">as of 3s ago</span>
+              <button title="Toggle light or dark theme" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-soft);cursor:pointer"><svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"></path></svg></button>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default);flex-wrap:wrap">
+              <button role="tab" aria-selected="true" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Overview</button>
+              <sc-for list="{{ tabsRest }}" as="tab" hint-placeholder-count="6">
+                <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">{{ tab }}</button>
+              </sc-for>
+            </nav>
+            <div style="padding:14px 20px;font-size:12.5px;color:var(--color-fg-muted)">All three signals green: no reasons line, no banner.</div>
+
+            <div style="height:1px;background:var(--color-border-default)"></div>
+
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default);flex-wrap:wrap">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">opnsense2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v4.22.0 · go1.25.0 · fw-lon-1</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-warn);border-radius:3px;color:var(--color-status-warn);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 256 256" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"></path></svg>starting</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-fail);border-radius:3px;color:var(--color-status-fail);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase" title="dial tcp 10.0.0.1:443: connect: connection refused · last checked 6s ago"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>box unreachable</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-warn);border-radius:3px;color:var(--color-status-warn);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase" title="Passive metric capture: partial · 4 erroring gathers, last 22s ago"><svg viewBox="0 0 256 256" width="11" height="11" fill="currentColor" aria-hidden="true"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"></path></svg>capture partial</span>
+              <span style="flex:1"></span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-status-warn)">as of 2m 41s ago</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 20px;background:var(--color-bg-accent-soft);border-bottom:1px solid var(--color-border-default)">
+              <svg viewBox="0 0 256 256" width="15" height="15" fill="var(--color-status-fail)" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.6;color:var(--color-fg-soft)">OPNsense API unreachable, so collector polls are being skipped rather than failing · the collector table stays green through exactly this outage</span>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default);flex-wrap:wrap">
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Overview</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Collectors</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">API</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Cardinality</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Devices</button>
+              <button role="tab" aria-selected="true" style="display:inline-flex;align-items:center;gap:6px;padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">ifIndex<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;font-weight:400;color:var(--color-status-fail)"><svg viewBox="0 0 16 16" width="7" height="7" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>2</span></button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Config</button>
+            </nav>
+            <div style="padding:14px 20px;font-size:12.5px;color:var(--color-fg-muted)">A tab with contradicted mappings carries the count in the tab itself.</div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="3b" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">3b</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Overview tab</h2>
+      <span style="font-size:12.5px;color:#7e9299">Posture strip, service and capture cells, then the inherited small charts.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:20px">
+            <sc-for list="{{ posture }}" as="p" hint-placeholder-count="5">
+              <div style="padding:12px 14px;border-right:1px solid var(--color-border-default);display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ p.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-weight:500;font-variant-numeric:tabular-nums;color:{{ p.fg }}">{{ p.v }}</span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">{{ p.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Service and capture</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px">
+            <sc-for list="{{ serviceCards }}" as="c" hint-placeholder-count="3">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px" title="{{ c.title }}">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums;color:{{ c.fg }}">{{ c.icon }}{{ c.v }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px">
+            <sc-for list="{{ statCards }}" as="c" hint-placeholder-count="6">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums">{{ c.v }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Runtime trend, last 10 minutes</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+            <sc-for list="{{ runtimeCharts }}" as="c" hint-placeholder-count="4">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ c.v }}</span>
+                </div>
+                <svg viewBox="0 0 260 92" preserveAspectRatio="none" style="width:100%;height:92px;display:block">
+                  <line x1="44" x2="252" y1="8" y2="8" stroke="var(--color-border-default)"></line>
+                  <line x1="44" x2="252" y1="42" y2="42" stroke="var(--color-border-default)"></line>
+                  <line x1="44" x2="252" y1="76" y2="76" stroke="var(--color-border-default)"></line>
+                  <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axHi }}</text>
+                  <text x="4" y="45" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axMid }}</text>
+                  <text x="4" y="79" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axLo }}</text>
+                  <polygon fill="{{ c.color }}" fill-opacity="0.1" points="{{ c.area }}"></polygon>
+                  <polyline fill="none" stroke="{{ c.color }}" stroke-width="1.5" stroke-dasharray="{{ c.dash }}" points="{{ c.pts }}"></polyline>
+                </svg>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Throughput and fleet trend, last 10 minutes</div>
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:12px">
+            <sc-for list="{{ fleetCards }}" as="c" hint-placeholder-count="5">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums;color:{{ c.fg }}">{{ c.v }}</span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px">
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+              <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Emitted throughput</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:2px;background:var(--color-bg-accent);display:inline-block"></i>shipped/s 18.42</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:0;border-top:2px dotted var(--color-status-fail);display:inline-block"></i>dropped/s 0.04</span>
+              </div>
+              <svg viewBox="0 0 620 108" preserveAspectRatio="none" style="width:100%;height:108px;display:block">
+                <line x1="44" x2="612" y1="8" y2="8" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="612" y1="50" y2="50" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="612" y1="92" y2="92" stroke="var(--color-border-default)"></line>
+                <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">24.00</text>
+                <text x="4" y="53" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">12.00</text>
+                <text x="4" y="95" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">0.00</text>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="44,44 115,38 186,46 257,32 328,40 399,26 470,34 541,22 612,28"></polyline>
+                <polyline fill="none" stroke="var(--color-status-fail)" stroke-width="1.6" stroke-dasharray="1 3" points="44,90 115,90 186,88 257,90 328,89 399,90 470,86 541,90 612,90"></polyline>
+              </svg>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Mean run duration</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">184.2 ms</span>
+              </div>
+              <svg viewBox="0 0 300 108" preserveAspectRatio="none" style="width:100%;height:108px;display:block">
+                <line x1="44" x2="292" y1="8" y2="8" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="292" y1="50" y2="50" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="292" y1="92" y2="92" stroke="var(--color-border-default)"></line>
+                <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">240ms</text>
+                <text x="4" y="53" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">170ms</text>
+                <text x="4" y="95" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">100ms</text>
+                <polygon fill="var(--color-bg-accent)" fill-opacity="0.1" points="44,92 44,58 75,52 106,62 137,48 168,56 199,44 230,52 261,40 292,46 292,92"></polygon>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="44,58 75,52 106,62 137,48 168,56 199,44 230,52 261,40 292,46"></polyline>
+              </svg>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="3c" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">3c</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Devices tab</h2>
+      <span style="font-size:12.5px;color:#7e9299">The differentiator: ARP plus DHCPv4 and DHCPv6, merged, with OUI vendors. Lazy on tab-open.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 12px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:12px">
+            <svg viewBox="0 0 256 256" width="14" height="14" fill="var(--color-fg-muted)" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg>
+            <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);text-wrap:pretty">Merged from the ARP table plus the DHCPv4 and DHCPv6 leases, which is a live firewall read. Loads on demand, not on the auto-refresh poll.</span>
+            <span style="flex:1"></span>
+            <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default);white-space:nowrap">Reload</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;width:260px">
+              <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+              <span style="font-size:12.5px;color:var(--color-fg-faint)">Filter devices</span>
+            </span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">8 of 142 · cached 4s ago</span>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <sc-for list="{{ deviceCols }}" as="h" hint-placeholder-count="7">
+                    <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">{{ h }}</th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ devices }}" as="d" hint-placeholder-count="8">
+                  <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;height:36px">{{ d.ip }}</td>
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-soft)">{{ d.mac }}</td>
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ d.host }}</td>
+                    <td style="padding:8px 12px;font-size:12.5px">{{ d.iface }}</td>
+                    <td style="padding:8px 12px;font-size:12.5px;color:{{ d.vendorFg }}">{{ d.vendor }}</td>
+                    <td style="padding:8px 12px"><span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;border:1px solid var(--color-border-strong);border-radius:3px;padding:1px 6px;color:var(--color-fg-soft)">{{ d.source }}</span></td>
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;color:var(--color-fg-muted)">{{ d.expiry }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--color-status-fail);background:var(--color-bg-surface);margin-top:12px">
+            <svg viewBox="0 0 256 256" width="15" height="15" fill="var(--color-status-fail)" aria-hidden="true" style="flex:none;margin-top:1px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <span style="font-size:13.5px;font-weight:600">Could not load devices</span>
+              <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);max-width:720px">Metric collection is unaffected: this tab is the only route that reaches the firewall directly, and it never touches the collectors. Retry is available immediately; a failure is cached for two seconds only.</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">GET /api/diagnostics/interface/getArp: 401 unauthorized</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="3d" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">3d</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">ifIndex tab</h2>
+      <span style="font-size:12.5px;color:#7e9299">Mono-dominant, read straight down against ifinfo. Row markers replace row tints.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:12px">
+            <svg viewBox="0 0 256 256" width="14" height="14" fill="var(--color-fg-muted)" aria-hidden="true" style="flex:none;margin-top:3px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg>
+            <span style="font-size:12.5px;line-height:1.65;color:var(--color-fg-soft);max-width:940px;text-wrap:pretty">A NetFlow <span style="font-family:'JetBrains Mono',ui-monospace,monospace">ifIndex</span> is a 1-based position over <span style="font-family:'JetBrains Mono',ui-monospace,monospace">/usr/local/sbin/ifinfo</span> output, which OPNsense turns into the netgraph hook name <span style="font-family:'JetBrains Mono',ui-monospace,monospace">ifaceN</span>. It is not an OS or SNMP index and nothing pins it: adding or removing any interface renumbers every interface after it. Compare this table straight down against <span style="font-family:'JetBrains Mono',ui-monospace,monospace">ifinfo</span> on the firewall after any interface change. The exporter can only derive this mapping, so a silent divergence here mislabels every flow. Loads on demand, not on the auto-refresh poll.</span>
+            <span style="flex:1"></span>
+            <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default);white-space:nowrap">Reload</span>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 12px;background:var(--color-bg-accent-soft);border:1px solid var(--color-status-fail);margin-bottom:12px">
+            <svg viewBox="0 0 256 256" width="15" height="15" fill="var(--color-status-fail)" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+            <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-default);max-width:920px">2 interfaces resolve to an index the firewall states differently. Check the marked rows against <span style="font-family:'JetBrains Mono',ui-monospace,monospace">ifinfo</span> before trusting any per-interface flow series.</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:12px">
+            <sc-for list="{{ ifxCards }}" as="c" hint-placeholder-count="6">
+              <div style="padding:10px 12px;border-right:1px solid var(--color-border-default);display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:15px;font-variant-numeric:tabular-nums;color:{{ c.fg }}">{{ c.v }}</span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;width:240px">
+              <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+              <span style="font-size:12.5px;color:var(--color-fg-faint)">Filter interfaces</span>
+            </span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">12 of 12 · numeric order, not lexical</span>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">ifIndex</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">Device</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">Description</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">Source</th>
+                  <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">API states</th>
+                  <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ ifxRows }}" as="r" hint-placeholder-count="12">
+                  <tr style="border-bottom:1px solid var(--color-border-default);box-shadow:{{ r.marker }}" style-hover="background:var(--color-bg-hover)">
+                    <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;height:36px">{{ r.index }}</td>
+                    <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ r.device }}</td>
+                    <td style="padding:8px 12px;font-size:12.5px">{{ r.name }}</td>
+                    <td style="padding:8px 12px"><span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;border:1px solid {{ r.srcBorder }};border-radius:3px;padding:1px 6px;color:{{ r.srcFg }}">{{ r.srcIcon }}{{ r.source }}</span></td>
+                    <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;color:{{ r.statedFg }}">{{ r.stated }}</td>
+                    <td style="padding:8px 12px"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ r.noteFg }}">{{ r.noteIcon }}{{ r.note }}</span></td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-top:12px">
+            <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" style="flex:none;margin-top:3px;color:var(--color-fg-muted)"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle></svg>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <span style="display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600">NetFlow is not enabled<span style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--color-fg-muted)">disabled</span></span>
+              <span style="font-size:12.5px;line-height:1.6;color:var(--color-fg-soft);max-width:760px">There is no ifIndex map to resolve. That is a statement about configuration, not a failure, so the tab says so rather than reporting a load error. The endpoint 404s deliberately: an empty 200 would read as a map that resolved to nothing.</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="3e" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">3e</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Cardinality tab, and the footer</h2>
+      <span style="font-size:12.5px;color:#7e9299">The family dense-table standard, unchanged. GeoIP attribution is a licence requirement and stays.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+            <sc-for list="{{ cardCards }}" as="c" hint-placeholder-count="4">
+              <div style="border:1px solid {{ c.border }};background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:3px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-variant-numeric:tabular-nums;color:{{ c.fg }}">{{ c.icon }}{{ c.v }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ c.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:16px">
+            <div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Top metrics by series</span>
+                <span style="flex:1"></span>
+                <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;width:190px">
+                  <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+                  <span style="font-size:12.5px;color:var(--color-fg-faint)">Filter metrics</span>
+                </span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">8 of 1006</span>
+              </div>
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+                <table style="width:100%;border-collapse:collapse">
+                  <thead>
+                    <tr>
+                      <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Metric</th>
+                      <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Level</th>
+                      <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Series</th>
+                      <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0">Labels</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <sc-for list="{{ cardMetrics }}" as="m" hint-placeholder-count="8">
+                      <tr style="border-bottom:1px solid var(--color-border-default);box-shadow:{{ m.marker }}" style-hover="background:var(--color-bg-hover)">
+                        <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;height:36px">{{ m.name }}</td>
+                        <td style="padding:8px 12px"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ m.fg }}">{{ m.icon }}{{ m.level }}</span></td>
+                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ m.series }}</td>
+                        <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--color-fg-muted)">{{ m.labels }}</td>
+                      </tr>
+                    </sc-for>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:16px">
+              <div>
+                <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">High-cardinality labels</div>
+                <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+                  <table style="width:100%;border-collapse:collapse">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Label</th>
+                        <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Distinct</th>
+                        <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Families</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <sc-for list="{{ cardLabels }}" as="l" hint-placeholder-count="5">
+                        <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                          <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;height:36px">{{ l.name }}</td>
+                          <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ l.distinct }}</td>
+                          <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--color-fg-muted)">{{ l.families }}</td>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div>
+                <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Growth, per minute over the retained window</div>
+                <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+                  <table style="width:100%;border-collapse:collapse">
+                    <thead>
+                      <tr>
+                        <th style="text-align:left;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Metric</th>
+                        <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Series</th>
+                        <th style="text-align:right;padding:7px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Per min</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <sc-for list="{{ growth }}" as="g" hint-placeholder-count="4">
+                        <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                          <td style="padding:8px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;height:36px">{{ g.name }}</td>
+                          <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ g.series }}</td>
+                          <td style="padding:8px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;color:{{ g.fg }}">{{ g.perMin }}</td>
+                        </tr>
+                      </sc-for>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:12px;border-top:1px solid var(--color-border-default)">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">Generated at 11:42:07 · /api/status.json · /cardinality/export.json</span>
+            <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12px;color:var(--color-fg-default)">Pause</span>
+            <span style="font-size:12px;color:var(--color-bg-accent)">Refresh now</span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">updated just now</span>
+            <span style="flex:1"></span>
+            <span style="font-size:11px;color:var(--color-fg-muted)">IP geolocation data by <span style="color:var(--color-bg-accent)">DB-IP</span> (<span style="color:var(--color-bg-accent)">CC BY 4.0</span>)</span>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:2500,&quot;height&quot;:1400}}">
+class Component extends DCLogic {
+  icon(name, color, size) {
+    const paths = {
+      warnTri: "M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z",
+      warnCircle: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z",
+      info: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z",
+      pencil: "M227.31,73.37,182.63,28.68a16,16,0,0,0-22.63,0L36.69,152A15.86,15.86,0,0,0,32,163.31V208a16,16,0,0,0,16,16H92.69A15.86,15.86,0,0,0,104,219.31L227.31,96a16,16,0,0,0,0-22.63ZM51.31,160,136,75.31,152.69,92,68,176.68ZM48,179.31,76.69,208H48Zm48,25.38L79.31,188,164,103.31,180.69,120Zm96-96L147.31,64l24-24L216,84.68Z",
+    };
+    return React.createElement("svg", {
+      viewBox: "0 0 256 256", width: size || 12, height: size || 12,
+      fill: color || "currentColor", "aria-hidden": "true",
+      style: { flex: "none", verticalAlign: "-1px" },
+    }, React.createElement("path", { d: paths[name] }));
+  }
+  shape(kind, color, size) {
+    const s = size || 8;
+    const inner = kind === "dot"
+      ? React.createElement("circle", { cx: 8, cy: 8, r: 7, fill: "currentColor" })
+      : kind === "diamond"
+      ? React.createElement("path", { d: "M8 0.5 15.5 8 8 15.5 0.5 8Z", fill: "currentColor" })
+      : React.createElement("circle", { cx: 8, cy: 8, r: 6, fill: "none", stroke: "currentColor", strokeWidth: 2 });
+    return React.createElement("svg", {
+      viewBox: "0 0 16 16", width: s, height: s, "aria-hidden": "true",
+      style: { color: color, flex: "none" },
+    }, inner);
+  }
+  renderVals() {
+    const ok = "var(--color-status-ok)";
+    const warn = "var(--color-status-warn)";
+    const fail = "var(--color-status-fail)";
+    const muted = "var(--color-fg-muted)";
+    const soft = "var(--color-fg-soft)";
+    const def = "var(--color-fg-default)";
+    const accent = "var(--color-bg-accent)";
+    const line = "var(--color-border-default)";
+    const lineStrong = "var(--color-border-strong)";
+
+    const dev = (ip, mac, host, iface, vendor, source, expiry) => ({
+      ip, mac, iface, source,
+      host: host || "-",
+      vendor: vendor || "unknown",
+      vendorFg: vendor ? def : muted,
+      expiry: expiry || "-",
+    });
+
+    const ifx = (index, device, name, source, stated, disagrees) => {
+      const override = source === "override";
+      return {
+        index, device: device || "-", name: name || "-", source,
+        stated: stated || "-",
+        statedFg: disagrees ? fail : muted,
+        srcIcon: override ? this.icon("pencil", warn, 11) : this.shape("dot", muted, 7),
+        srcFg: override ? warn : soft,
+        srcBorder: override ? warn : lineStrong,
+        note: disagrees ? "disagrees" : "-",
+        noteFg: disagrees ? fail : muted,
+        noteIcon: disagrees ? this.icon("warnCircle", fail, 12) : "",
+        marker: disagrees ? "inset 2px 0 0 " + fail : override ? "inset 2px 0 0 " + accent : "none",
+      };
+    };
+
+    const metric = (name, level, series, labels) => ({
+      name, level, series, labels,
+      fg: level === "crit" ? fail : level === "warn" ? warn : muted,
+      icon: level === "crit"
+        ? this.icon("warnCircle", fail, 12)
+        : level === "warn"
+        ? this.icon("warnTri", warn, 11)
+        : this.shape("dot", muted, 7),
+      marker: level === "crit" ? "inset 2px 0 0 " + fail : "none",
+    });
+
+    return {
+      themes: [
+        { theme: "light", label: "Light, the new default" },
+        { theme: "dark", label: "Dark, honoured from prefers-color-scheme and the toggle" },
+      ],
+      tabsRest: ["Collectors", "API", "Cardinality", "Devices", "ifIndex", "Config"],
+      posture: [
+        { k: "Health", v: "healthy", sub: "no open findings", fg: ok },
+        { k: "Collectors ok", v: "61", sub: "of 65 registered", fg: def },
+        { k: "Failing", v: "1", sub: "crowdsec", fg: fail },
+        { k: "Stale", v: "3", sub: "past their interval", fg: warn },
+        { k: "Series", v: "24,182", sub: "1,006 families", fg: def },
+      ],
+      serviceCards: [
+        {
+          k: "OPNsense API", v: "ok", fg: ok, icon: this.shape("dot", ok, 9),
+          sub: "checked 4s ago",
+          title: "The OPNsense box itself, from the scheduler's health poll. Independent of collector run history: during a transport outage collector polls are skipped entirely, so the collector table stays green.",
+        },
+        {
+          k: "Metric capture", v: "full", fg: ok, icon: this.shape("dot", ok, 9),
+          sub: "no gather errors",
+          title: "Whether the metric capture this page is rendered from came from a clean gather or one that also returned an error. A partial capture is CURRENT data, not stale data.",
+        },
+        {
+          k: "Uptime", v: "21d 4h 12m", fg: def, icon: "",
+          sub: "since 2026-08-10T07:30:11Z", title: "",
+        },
+      ],
+      statCards: [
+        { k: "Active collectors", v: "65", sub: "tracked by the scheduler" },
+        { k: "Metric families", v: "1,006", sub: "" },
+        { k: "Series", v: "24,182", sub: "" },
+        { k: "Goroutines", v: "184", sub: "gomaxprocs 4" },
+        { k: "Heap in use", v: "62 MiB", sub: "gc cycles 8,412" },
+        { k: "GC rate", v: "0.62", sub: "cycles/sec" },
+      ],
+      runtimeCharts: [
+        { k: "Goroutines", v: "184", color: accent, dash: "0", axHi: "220", axMid: "180", axLo: "140", pts: "44,52 70,48 96,56 122,42 148,50 174,36 200,44 226,30 252,38", area: "44,76 44,52 70,48 96,56 122,42 148,50 174,36 200,44 226,30 252,38 252,76" },
+        { k: "Heap in use", v: "62 MiB", color: accent, dash: "0", axHi: "76M", axMid: "58M", axLo: "40M", pts: "44,48 70,54 96,44 122,58 148,46 174,60 200,48 226,56 252,44", area: "44,76 44,48 70,54 96,44 122,58 148,46 174,60 200,48 226,56 252,44 252,76" },
+        { k: "GC rate", v: "0.62", color: warn, dash: "1 3", axHi: "0.9", axMid: "0.6", axLo: "0.3", pts: "44,44 70,52 96,40 122,56 148,46 174,58 200,44 226,52 252,40", area: "" },
+        { k: "Active series", v: "24,182", color: accent, dash: "0", axHi: "25.0k", axMid: "24.0k", axLo: "23.0k", pts: "44,64 70,60 96,56 122,52 148,50 174,46 200,42 226,38 252,34", area: "44,76 44,64 70,60 96,56 122,52 148,50 174,46 200,42 226,38 252,34 252,76" },
+      ],
+      fleetCards: [
+        { k: "Records shipped", v: "18.42", sub: "log records/sec, OTLP", fg: def },
+        { k: "Records dropped", v: "0.04", sub: "log records/sec lost", fg: warn },
+        { k: "Collectors active", v: "65", sub: "tracked by the scheduler", fg: def },
+        { k: "Collectors failing", v: "1", sub: "last run failed", fg: fail },
+        { k: "Mean run duration", v: "184.2 ms", sub: "across collectors that ran", fg: def },
+      ],
+      deviceCols: ["IP", "MAC", "Hostname", "Interface", "Manufacturer", "Source", "Expiry"],
+      devices: [
+        dev("10.14.1.4", "3c:22:fb:a1:04:9e", "macbook-rob", "LAN", "Apple, Inc.", "dhcp4", "2026-08-31T13:12:04Z"),
+        dev("10.14.1.9", "b8:27:eb:44:1c:02", "hass-01", "LAN", "Raspberry Pi Foundation", "dhcp4", "2026-08-31T14:02:41Z"),
+        dev("10.14.1.22", "00:11:32:8a:44:f1", "nas-01", "LAN", "Synology Incorporated", "arp", ""),
+        dev("10.14.2.9", "d8:3a:dd:02:71:b4", "pg-primary", "SERVERS", "Raspberry Pi Trading Ltd", "dhcp4", "2026-08-31T16:41:12Z"),
+        dev("10.14.4.31", "a4:83:e7:19:c0:52", "", "IOT", "Apple, Inc.", "arp", "2026-08-31T12:04:18Z"),
+        dev("10.14.4.44", "50:02:91:6c:11:0a", "shelly-kitchen", "IOT", "Espressif Inc.", "dhcp4", "2026-09-01T02:14:00Z"),
+        dev("10.14.9.2", "f4:92:bf:88:03:1c", "ap-loft", "MGMT", "Ubiquiti Inc.", "arp", ""),
+        dev("2a02:c7c:1::14", "3c:22:fb:a1:04:9e", "", "LAN", "Apple, Inc.", "dhcp6", "2026-09-02T09:00:00Z"),
+      ],
+      ifxCards: [
+        { k: "Entries", v: "12", sub: "resolved rows", fg: def },
+        { k: "Overridden", v: "2", sub: "from the operator override", fg: accent },
+        { k: "Conflicts", v: "1", sub: "override contradicted the derivation", fg: warn },
+        { k: "Disagreements", v: "2", sub: "API states a different index", fg: fail },
+        { k: "Unmapped lookups", v: "1,204", sub: "flows that resolved to nothing", fg: warn },
+        { k: "Built", v: "11:38:02", sub: "when the map last resolved", fg: def },
+      ],
+      ifxRows: [
+        ifx(1, "ixl0", "WAN", "derived", 1, false),
+        ifx(2, "ixl1", "LAN", "derived", 2, false),
+        ifx(3, "ixl2", "SERVERS", "derived", 3, false),
+        ifx(4, "ixl3", "IOT", "derived", 4, false),
+        ifx(5, "igb0", "MGMT", "derived", 5, false),
+        ifx(6, "vlan01", "GUEST", "derived", 6, false),
+        ifx(7, "vlan02", "CAMERAS", "derived", 7, false),
+        ifx(8, "pppoe0", "AAISP", "override", 9, false),
+        ifx(9, "wg0", "WIREGUARD", "derived", 8, true),
+        ifx(10, "ovpns1", "OPENVPN", "derived", 11, true),
+        ifx(11, "gif0", "HE-TUNNEL", "override", 0, false),
+        ifx(12, "lo0", "LOOPBACK", "derived", 12, false),
+      ],
+      cardCards: [
+        { k: "Total series", v: "24,182", sub: "across 1,006 families", fg: def, border: line, icon: "" },
+        { k: "Review, at or above warn", v: "14", sub: "warn ≥ 500", fg: warn, border: warn, icon: this.icon("warnTri", warn, 14) },
+        { k: "Alerts, at or above crit", v: "2", sub: "crit ≥ 2000", fg: fail, border: fail, icon: this.icon("warnCircle", fail, 14) },
+        { k: "Series budget", v: "97%", sub: "24,182 of 25,000", fg: warn, border: warn, icon: "" },
+      ],
+      cardMetrics: [
+        metric("opnsense_flow_bytes_total", "crit", "4,204", "9"),
+        metric("opnsense_flow_packets_total", "crit", "4,204", "9"),
+        metric("opnsense_interface_bytes_total", "warn", "864", "6"),
+        metric("opnsense_zenarmor_session_bytes_total", "warn", "612", "7"),
+        metric("opnsense_arp_entries", "ok", "142", "4"),
+        metric("opnsense_certificate_expires_in_seconds", "ok", "38", "3"),
+        metric("opnsense_carp_status", "ok", "12", "3"),
+        metric("opnsense_gateway_rtt_seconds", "ok", "8", "2"),
+      ],
+      cardLabels: [
+        { name: "src_addr", distinct: "3,142", families: "4" },
+        { name: "dst_addr", distinct: "2,884", families: "4" },
+        { name: "interface", distinct: "12", families: "184" },
+        { name: "service", distinct: "142", families: "6" },
+        { name: "country", distinct: "68", families: "3" },
+      ],
+      growth: [
+        { name: "opnsense_flow_bytes_total", series: "4,204", perMin: "+18.4", fg: warn },
+        { name: "opnsense_zenarmor_session_bytes_total", series: "612", perMin: "+4.2", fg: warn },
+        { name: "opnsense_arp_entries", series: "142", perMin: "+0.2", fg: muted },
+        { name: "opnsense_interface_bytes_total", series: "864", perMin: "0.0", fg: muted },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

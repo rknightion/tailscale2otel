@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<style>
+  body{margin:0;background:#0b0e12}
+  a{color:#4493f8;text-decoration:none}
+  a:hover{text-decoration:underline}
+</style>
+</helmet>
+
+<div style="display:flex;flex-direction:column;gap:56px;padding:40px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#8b98a5;font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600">Recreated from internal/app/statushtml/page.html.tmpl · dark (current default) · Overview tab</div>
+    <div data-screen-label="v1 status console / Overview" style="width:1280px;background:#0f1419;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border:1px solid #2a323d">
+      <div style="padding:20px 24px;border-bottom:1px solid #2a323d;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+        <h1 style="margin:0;font-size:20px;font-weight:600">tailscale2otel</h1>
+        <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">v4.18.2 · go1.25.0</span>
+        <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">tailnet m7kni.io</span>
+        <span style="flex:1"></span>
+        <a href="#" style="background:#4493f8;color:#fff;border:1px solid #4493f8;border-radius:7px;padding:6px 14px;font-size:13px;font-weight:600;text-decoration:none">Flow view →</a>
+        <a href="#" style="color:#4493f8;text-decoration:none">events →</a>
+        <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit">◐</button>
+        <span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.6;background:rgba(63,185,80,.16);color:#3fb950">healthy</span>
+      </div>
+      <nav style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 24px 0;background:#0f1419;border-bottom:1px solid #2a323d">
+        <button style="background:#171c24;color:#e6edf3;border:1px solid #2a323d;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Overview</button>
+        <sc-for list="{{ v1Tabs }}" as="t" hint-placeholder-count="6">
+          <button style="background:transparent;color:#8b98a5;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">{{ t }}</button>
+        </sc-for>
+      </nav>
+      <div style="max-width:1180px;margin:0 auto;padding:20px 24px 60px">
+        <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:12px 16px;background:#171c24;border:1px solid #2a323d;border-radius:10px;margin-bottom:18px">
+          <sc-for list="{{ v1Rollup }}" as="r" hint-placeholder-count="6">
+            <div style="display:flex;flex-direction:column">
+              <span style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums">{{ r.v }}</span>
+              <span style="color:#8b98a5;font-size:11px;text-transform:uppercase;letter-spacing:.04em">{{ r.k }}</span>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px">
+          <sc-for list="{{ v1Cards }}" as="c" hint-placeholder-count="10">
+            <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:14px 16px">
+              <div style="color:#8b98a5;font-size:12px;margin-bottom:6px">{{ c.k }}</div>
+              <div style="font-size:20px;font-weight:600;font-variant-numeric:tabular-nums">{{ c.v }}</div>
+              <div style="color:#8b98a5;font-size:12px;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere">{{ c.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:26px 0 12px;font-weight:600">Runtime trend (~10 min)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px">
+          <sc-for list="{{ v1Charts }}" as="ch" hint-placeholder-count="3">
+            <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:14px 16px">
+              <div style="color:#8b98a5;font-size:12px;margin-bottom:6px">{{ ch.k }}</div>
+              <svg viewBox="0 0 300 150" preserveAspectRatio="none" style="width:100%;height:150px;display:block">
+                <line x1="0" x2="300" y1="38" y2="38" stroke="#242c37"></line>
+                <line x1="0" x2="300" y1="75" y2="75" stroke="#242c37"></line>
+                <line x1="0" x2="300" y1="112" y2="112" stroke="#242c37"></line>
+                <polyline fill="none" stroke="#4493f8" stroke-width="1.6" points="{{ ch.pts }}"></polyline>
+              </svg>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:26px 0 12px;font-weight:600">Collectors</div>
+        <table style="width:100%;border-collapse:collapse;background:#171c24;border:1px solid #2a323d;border-radius:10px;overflow:hidden">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Collector</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Status</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Interval</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Success</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Freshness</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Runs</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Next run</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Duration</th>
+              <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Last error</th>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ v1Collectors }}" as="c" hint-placeholder-count="8">
+              <tr>
+                <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;vertical-align:top"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:#1d242e;padding:1px 5px;border-radius:4px">{{ c.name }}</code> <span style="color:#8b98a5;font-size:12px">ⓘ</span></td>
+                <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.6;background:{{ c.stBg }};color:{{ c.stFg }}">{{ c.status }}</span></td>
+                <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.interval }}</td>
+                <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.success }}</td>
+                <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.6;background:{{ c.frBg }};color:{{ c.frFg }}">{{ c.fresh }}</span></td>
+                <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.runs }}</td>
+                <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.next }}</td>
+                <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.dur }}</td>
+                <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:#8b98a5;vertical-align:top">{{ c.err }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+      <div style="max-width:1180px;margin:0 auto;padding:0 24px 40px;color:#8b98a5;font-size:12px">
+        Generated at 2026-08-31T10:42:07Z · <a href="#" style="color:#4493f8">JSON</a> · <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit">Pause</button> <a href="#" style="color:#4493f8">refresh now</a> · updated just now
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#8b98a5;font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600">Recreated from statushtml page.html.tmpl · Cardinality tab (the family's dense reference table today)</div>
+    <div data-screen-label="v1 status console / Cardinality" style="width:1280px;background:#0f1419;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border:1px solid #2a323d;padding:0 0 24px">
+      <nav style="display:flex;gap:4px;flex-wrap:wrap;padding:8px 24px 0;background:#0f1419;border-bottom:1px solid #2a323d">
+        <sc-for list="{{ v1TabsCard }}" as="t" hint-placeholder-count="7">
+          <button style="background:transparent;color:#8b98a5;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">{{ t }}</button>
+        </sc-for>
+        <button style="background:#171c24;color:#e6edf3;border:1px solid #2a323d;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cardinality</button>
+      </nav>
+      <div style="max-width:1180px;margin:0 auto;padding:20px 24px 0">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:12px">
+          <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:14px 16px">
+            <div style="color:#8b98a5;font-size:12px;margin-bottom:6px">Total active series</div>
+            <div style="font-size:20px;font-weight:600;font-variant-numeric:tabular-nums">18,204</div>
+            <div style="color:#8b98a5;font-size:12px;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">across 308 metrics</div>
+          </div>
+          <div style="background:#171c24;border:1px solid #d29922;border-radius:10px;padding:14px 16px">
+            <div style="color:#8b98a5;font-size:12px;margin-bottom:6px">Threshold alerts</div>
+            <div style="font-size:20px;font-weight:600;font-variant-numeric:tabular-nums">2</div>
+            <div style="color:#8b98a5;font-size:12px;margin-top:4px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">warn ≥ 5000 · crit ≥ 20000</div>
+          </div>
+          <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:14px 16px">
+            <div style="color:#8b98a5;font-size:12px;margin-bottom:6px">Series trend (~10 min)</div>
+            <svg viewBox="0 0 300 70" preserveAspectRatio="none" style="width:100%;height:70px;display:block">
+              <polyline fill="none" stroke="#4493f8" stroke-width="1.6" points="0,52 40,49 80,47 120,44 160,40 200,36 240,30 280,24 300,21"></polyline>
+            </svg>
+          </div>
+        </div>
+        <div style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:26px 0 12px;font-weight:600">Top metrics by series</div>
+        <input type="text" placeholder="Filter metrics…" style="width:100%;max-width:340px;margin-bottom:10px;padding:7px 11px;background:#1d242e;border:1px solid #2a323d;border-radius:8px;color:#e6edf3;font-size:13px;font-family:inherit">
+        <div style="max-height:460px;overflow:auto;border:1px solid #2a323d;border-radius:10px">
+          <table style="width:100%;border-collapse:collapse;background:#171c24">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Metric</th>
+                <th style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Prometheus name</th>
+                <th style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">Series</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ v1Series }}" as="s" hint-placeholder-count="9">
+                <tr style="background:{{ s.rowBg }}">
+                  <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;vertical-align:top"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;background:#1d242e;padding:1px 5px;border-radius:4px">{{ s.metric }}</code></td>
+                  <td style="text-align:left;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ s.prom }}</td>
+                  <td style="text-align:right;padding:8px 12px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-variant-numeric:tabular-nums;vertical-align:top">{{ s.count }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#8b98a5;font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600">Recreated from internal/app/flowhtml/page.html.tmpl · Flow Explorer at /flows</div>
+    <div data-screen-label="v1 flow explorer" style="width:1400px;background:#0f1419;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border:1px solid #2a323d">
+      <div style="padding:16px 24px;border-bottom:1px solid #2a323d;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+        <h1 style="margin:0;font-size:19px;font-weight:600">tailscale2otel <span style="color:#8b98a5;font-weight:400">flows</span></h1>
+        <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">v4.18.2</span>
+        <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">retention 24h</span>
+        <span style="flex:1"></span>
+        <a href="#" style="color:#4493f8">status →</a>
+        <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit">◖</button>
+      </div>
+      <div style="max-width:1320px;margin:0 auto;padding:18px 24px 40px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;padding:11px 14px;background:#171c24;border:1px solid #2a323d;border-radius:10px">
+          <label style="color:#8b98a5;font-size:12px">Window</label>
+          <div style="display:inline-flex;border:1px solid #2a323d;border-radius:7px;overflow:hidden">
+            <button style="background:#1d242e;color:#e6edf3;border:0;border-right:1px solid #2a323d;padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer">15m</button>
+            <button style="background:#4493f8;color:#fff;border:0;border-right:1px solid #2a323d;padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer">1h</button>
+            <button style="background:#1d242e;color:#e6edf3;border:0;border-right:1px solid #2a323d;padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer">6h</button>
+            <button style="background:#1d242e;color:#e6edf3;border:0;padding:4px 11px;font-size:12px;font-family:inherit;cursor:pointer">24h</button>
+          </div>
+          <label style="color:#8b98a5;font-size:12px">Top</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>20</option></select>
+          <button style="background:#1d242e;color:#4493f8;border:1px solid #4493f8;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">● live</button>
+          <span style="flex:1"></span>
+          <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">covering Aug 31, 09:42 → Aug 31, 10:42</span>
+          <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">refresh</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:24px">
+          <sc-for list="{{ v1FlowCards }}" as="c" hint-placeholder-count="6">
+            <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:12px 14px">
+              <div style="color:#8b98a5;font-size:12px;margin-bottom:5px">{{ c.k }}</div>
+              <div style="font-size:19px;font-weight:600;font-variant-numeric:tabular-nums">{{ c.v }}</div>
+              <div style="color:#8b98a5;font-size:12px;margin-top:3px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere">{{ c.sub }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:0 0 10px;font-weight:600;display:flex;align-items:baseline;gap:10px">Traffic over time <span style="text-transform:none;letter-spacing:normal;font-weight:400;font-size:12px">drag on the chart to zoom into a span · double-click to reset</span></h2>
+        <div style="position:relative;background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:10px 12px;margin-bottom:24px">
+          <svg viewBox="0 0 1240 150" preserveAspectRatio="none" style="width:100%;height:150px;display:block">
+            <line x1="4" x2="1236" y1="110" y2="110" stroke="#242c37"></line>
+            <line x1="4" x2="1236" y1="75" y2="75" stroke="#242c37"></line>
+            <line x1="4" x2="1236" y1="40" y2="40" stroke="#242c37"></line>
+            <path d="M 4 134 L 130 118 L 260 108 L 390 96 L 520 104 L 650 74 L 780 88 L 910 60 L 1040 78 L 1160 52 L 1236 66 L 1236 134 Z" fill="#3fb950" fill-opacity="0.14"></path>
+            <path d="M 4 134 L 130 124 L 260 96 L 390 108 L 520 84 L 650 92 L 780 62 L 910 76 L 1040 50 L 1160 66 L 1236 44 L 1236 134 Z" fill="#4493f8" fill-opacity="0.14"></path>
+            <polyline fill="none" stroke="#3fb950" stroke-width="1.6" points="4,134 130,118 260,108 390,96 520,104 650,74 780,88 910,60 1040,78 1160,52 1236,66"></polyline>
+            <polyline fill="none" stroke="#4493f8" stroke-width="1.6" points="4,134 130,124 260,96 390,108 520,84 650,92 780,62 910,76 1040,50 1160,66 1236,44"></polyline>
+            <line x1="4" x2="1236" y1="134" y2="134" stroke="#2a323d"></line>
+          </svg>
+          <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#8b98a5;margin-top:5px">
+            <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:3px;border-radius:2px;display:inline-block;background:#4493f8"></i>transmitted</span>
+            <span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:3px;border-radius:2px;display:inline-block;background:#3fb950"></i>received</span>
+          </div>
+        </div>
+        <h2 style="font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:#8b98a5;margin:0 0 10px;font-weight:600;display:flex;align-items:baseline;gap:10px">Recent connections <span style="text-transform:none;letter-spacing:normal;font-weight:400;font-size:12px">1,204 matched · 200 shown</span></h2>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;padding:11px 14px;background:#171c24;border:1px solid #2a323d;border-radius:10px">
+          <label style="color:#8b98a5;font-size:12px">Device</label>
+          <input type="search" placeholder="node name" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;width:130px">
+          <label style="color:#8b98a5;font-size:12px">Address</label>
+          <input type="search" placeholder="ip or port" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;width:120px">
+          <label style="color:#8b98a5;font-size:12px">Service</label>
+          <input type="search" placeholder="e.g. https" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;width:100px">
+          <label style="color:#8b98a5;font-size:12px">Identity</label>
+          <input type="search" placeholder="user or tag" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;width:120px">
+          <label style="color:#8b98a5;font-size:12px">Type</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>any</option></select>
+          <label style="color:#8b98a5;font-size:12px">Verdict</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>any</option></select>
+          <label style="color:#8b98a5;font-size:12px">Path</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>any</option></select>
+          <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">clear filters</button>
+        </div>
+        <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;max-height:460px;overflow:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead>
+              <tr>
+                <sc-for list="{{ v1FlowCols }}" as="h" hint-placeholder-count="9">
+                  <th style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">{{ h }}</th>
+                </sc-for>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ v1Flows }}" as="f" hint-placeholder-count="8">
+                <tr>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ f.time }}</td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ f.src }}<span style="display:block;color:#8b98a5;font-size:11px;margin-top:2px">{{ f.srcId }}</span></td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ f.dst }}<span style="display:block;color:#8b98a5;font-size:11px;margin-top:2px">{{ f.dstId }}</span></td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ f.reporter }}</td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ f.service }}</td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;background:#1d242e;color:{{ f.typeFg }};font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">{{ f.type }}</span></td>
+                  <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;color:{{ f.verdictFg }}">{{ f.verdict }}</span></td>
+                  <td style="text-align:right;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:nowrap;vertical-align:top">{{ f.tx }}</td>
+                  <td style="text-align:right;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:nowrap;vertical-align:top">{{ f.rx }}</td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin:18px 0;padding:11px 14px;background:#171c24;border:1px solid #2a323d;border-radius:10px">
+          <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">load more</button>
+          <a href="#" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;text-decoration:none">export CSV</a>
+          <a href="#" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;text-decoration:none">export JSON</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="color:#8b98a5;font-size:12px;text-transform:uppercase;letter-spacing:.1em;font-weight:600">Recreated from internal/app/eventshtml/page.html.tmpl · Events Explorer at /events</div>
+    <div data-screen-label="v1 events explorer" style="width:1400px;background:#0f1419;color:#e6edf3;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;border:1px solid #2a323d">
+      <div style="padding:16px 24px;border-bottom:1px solid #2a323d;display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+        <h1 style="margin:0;font-size:19px;font-weight:600">tailscale2otel events</h1>
+        <span style="color:#8b98a5;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px">v4.18.2</span>
+        <span style="flex:1"></span>
+        <a href="#" style="color:#4493f8">status →</a>
+      </div>
+      <div style="max-width:1320px;margin:0 auto;padding:18px 24px 40px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-bottom:18px">
+          <sc-for list="{{ v1EventStats }}" as="c" hint-placeholder-count="5">
+            <div style="background:#171c24;border:1px solid #2a323d;border-radius:10px;padding:12px 14px">
+              <div style="color:#8b98a5;font-size:12px;margin-bottom:5px">{{ c.k }}</div>
+              <div style="font-size:19px;font-weight:600;font-variant-numeric:tabular-nums">{{ c.v }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px;padding:11px 14px;background:#171c24;border:1px solid #2a323d;border-radius:10px">
+          <label style="color:#8b98a5;font-size:12px">source</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>any</option></select>
+          <label style="color:#8b98a5;font-size:12px">severity</label>
+          <select style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer"><option>any</option></select>
+          <label style="color:#8b98a5;font-size:12px">actor</label>
+          <input type="text" placeholder="substring" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit">
+          <label style="color:#8b98a5;font-size:12px">action</label>
+          <input type="text" placeholder="substring" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit">
+          <label style="color:#8b98a5;font-size:12px">target</label>
+          <input type="text" placeholder="substring" style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit">
+          <label style="color:#8b98a5;font-size:12px"><input type="checkbox"> errors only</label>
+          <span style="flex:1"></span>
+          <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">apply</button>
+          <button style="background:#1d242e;color:#e6edf3;border:1px solid #2a323d;border-radius:7px;padding:4px 10px;font-size:12px;font-family:inherit;cursor:pointer">clear</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;background:#171c24;border:1px solid #2a323d;border-radius:10px;overflow:hidden">
+          <thead>
+            <tr>
+              <sc-for list="{{ v1EventCols }}" as="h" hint-placeholder-count="8">
+                <th style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;color:#8b98a5;font-size:12px;font-weight:600;background:#1d242e">{{ h }}</th>
+              </sc-for>
+            </tr>
+          </thead>
+          <tbody>
+            <sc-for list="{{ v1Events }}" as="e" hint-placeholder-count="7">
+              <tr>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ e.time }}</td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#1d242e;color:#8b98a5">{{ e.source }}</span></td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;vertical-align:top"><span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:600;background:{{ e.sevBg }};color:{{ e.sevFg }}">{{ e.sev }}</span></td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ e.action }}</td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ e.actor }}</td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ e.target }}</td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;vertical-align:top">{{ e.error }}</td>
+                <td style="text-align:left;padding:7px 11px;border-bottom:1px solid #2a323d;max-width:420px;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;color:#8b98a5;vertical-align:top">{{ e.details }}</td>
+              </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    const badge = (kind) => {
+      const map = {
+        ok: ["rgba(63,185,80,.16)", "#3fb950"],
+        err: ["rgba(248,81,73,.16)", "#f85149"],
+        warn: ["rgba(210,153,34,.16)", "#d29922"],
+        pending: ["rgba(110,118,129,.18)", "#8b98a5"],
+      };
+      return map[kind];
+    };
+    const coll = (name, status, interval, success, fresh, freshKind, runs, next, dur, err) => {
+      const [stBg, stFg] = badge(status === "ok" ? "ok" : status === "fail" ? "err" : "pending");
+      const [frBg, frFg] = badge(freshKind);
+      return { name, status, interval, success, fresh, runs, next, dur, err, stBg, stFg, frBg, frFg };
+    };
+    return {
+      v1Tabs: ["Collectors", "API", "Capabilities", "Cardinality", "Inventory & Catalog", "Config"],
+      v1TabsCard: ["Overview", "Collectors", "API", "Capabilities"],
+      v1Rollup: [
+        { v: "healthy", k: "health" }, { v: "15", k: "collectors ok" },
+        { v: "1", k: "failing" }, { v: "0", k: "stale" },
+        { v: "4s ago", k: "last export" }, { v: "18204", k: "active series" },
+      ],
+      v1Cards: [
+        { k: "Uptime", v: "6d 4h 12m", sub: "since 2026-08-25T06:30:11Z" },
+        { k: "OTLP export", v: "grpc", sub: "otlp-gateway-prod-eu-west-2.grafana.net:443 · 60s · 512 points/request" },
+        { k: "Self-observability", v: "on", sub: "" },
+        { k: "Update check", v: "up to date", sub: "v4.18.2" },
+        { k: "Device version data", v: "ready", sub: "latest 1.86.2" },
+        { k: "Devices cached", v: "142", sub: "age 41s" },
+        { k: "Goroutines", v: "68", sub: "GOMAXPROCS 8" },
+        { k: "Heap in use", v: "48 MiB", sub: "GC cycles 1204" },
+        { k: "GC rate", v: "0.4", sub: "cycles/sec" },
+        { k: "Metric points/sec", v: "312.6", sub: "8194204 emitted" },
+      ],
+      v1Charts: [
+        { k: "Goroutines", pts: "0,90 40,86 80,92 120,80 160,84 200,74 240,78 280,70 300,72" },
+        { k: "Heap in use", pts: "0,100 40,92 80,104 120,86 160,96 200,78 240,88 280,72 300,80" },
+        { k: "GC rate", pts: "0,110 40,96 80,118 120,102 160,112 200,94 240,106 280,90 300,98" },
+      ],
+      v1Collectors: [
+        coll("devices", "ok", "60s", "100%", "41s", "ok", "8842", "19s", "412ms", "—"),
+        coll("flowlogs", "ok", "60s", "99%", "58s", "ok", "8840", "2s", "1284ms", "—"),
+        coll("auditlogs", "ok", "60s", "100%", "44s", "ok", "8841", "16s", "208ms", "—"),
+        coll("users", "ok", "300s", "100%", "2m 10s", "ok", "1768", "2m 50s", "184ms", "—"),
+        coll("keys", "ok", "300s", "100%", "2m 12s", "ok", "1768", "2m 48s", "96ms", "—"),
+        coll("oauth_apps", "fail", "300s", "0%", "4m 55s", "err", "1768", "due", "3021ms", "GET /oauth-apps: 403 forbidden"),
+        coll("acl", "ok", "600s", "100%", "6m 02s", "ok", "884", "3m 58s", "142ms", "—"),
+        coll("node_metrics", "pending", "60s", "—", "never", "pending", "0", "—", "—", "—"),
+      ],
+      v1Series: [
+        { metric: "tailscale.network.io", prom: "tailscale_network_io_bytes_total", count: "6204", rowBg: "rgba(248,81,73,.07)" },
+        { metric: "tailscale.network.packets", prom: "tailscale_network_packets_total", count: "6204", rowBg: "transparent" },
+        { metric: "tailscale.network.flows", prom: "tailscale_network_flows_total", count: "3102", rowBg: "transparent" },
+        { metric: "tailscale.device.last_seen", prom: "tailscale_device_last_seen_seconds", count: "142", rowBg: "transparent" },
+        { metric: "tailscale.device.derp.latency", prom: "tailscale_device_derp_latency_seconds", count: "134", rowBg: "transparent" },
+        { metric: "tailscale.node.tx", prom: "tailscale_node_tx_bytes_total", count: "128", rowBg: "transparent" },
+        { metric: "tailscale.key.expires_in", prom: "tailscale_key_expires_in_seconds", count: "62", rowBg: "transparent" },
+        { metric: "tailscale.acl.risk_score", prom: "tailscale_acl_risk_score_ratio", count: "12", rowBg: "transparent" },
+        { metric: "tailscale.dns.nameservers", prom: "tailscale_dns_nameservers", count: "4", rowBg: "transparent" },
+      ],
+      v1FlowCards: [
+        { k: "Traffic", v: "184.2 GiB", sub: "tx 96.4 GiB · rx 87.8 GiB" },
+        { k: "Packets", v: "412M", sub: "tx 214M · rx 198M" },
+        { k: "Connections", v: "1.2k", sub: "in the selected window" },
+        { k: "Devices seen", v: "142", sub: "top 20 shown" },
+        { k: "Conversations", v: "318", sub: "directed device pairs" },
+        { k: "Retained", v: "1440 min", sub: "of 1440 · 2.4M observations" },
+      ],
+      v1FlowCols: ["Time", "Source", "Destination", "Verified reporter", "Service", "Type", "Policy", "Tx", "Rx"],
+      v1Flows: [
+        { time: "10:42:04", src: "macbook-rob", srcId: "rob@m7kni.io", dst: "nas-01", dstId: "tag:storage", reporter: "nBk3xQ2CNTRL", service: "https", type: "virtual", typeFg: "#4493f8", verdict: "permitted", verdictFg: "#3fb950", tx: "1.42 MiB", rx: "18.6 MiB" },
+        { time: "10:42:01", src: "gw-lon-1", srcId: "tag:router", dst: "10.14.2.9:5432", dstId: "subnet 10.14.2.0/24", reporter: "nLm9pR7CNTRL", service: "postgresql", type: "subnet", typeFg: "#3fb950", verdict: "permitted", verdictFg: "#3fb950", tx: "884 KiB", rx: "2.10 MiB" },
+        { time: "10:41:58", src: "ci-runner-04", srcId: "tag:ci", dst: "ghcr.io", dstId: "external · AS36459", reporter: "nQr4tS1CNTRL", service: "https", type: "exit", typeFg: "#d29922", verdict: "no_rule", verdictFg: "#d29922", tx: "312 KiB", rx: "148.4 MiB" },
+        { time: "10:41:52", src: "iphone-rob", srcId: "rob@m7kni.io", dst: "hass-01", dstId: "tag:home", reporter: "nBk3xQ2CNTRL", service: "https", type: "virtual", typeFg: "#4493f8", verdict: "permitted", verdictFg: "#3fb950", tx: "96 KiB", rx: "412 KiB" },
+        { time: "10:41:44", src: "nas-01", srcId: "tag:storage", dst: "backup-eu", dstId: "tag:storage", reporter: "nZa8yU5CNTRL", service: "ssh", type: "virtual", typeFg: "#4493f8", verdict: "permitted", verdictFg: "#3fb950", tx: "3.20 GiB", rx: "1.84 MiB" },
+        { time: "10:41:31", src: "k8s-node-3", srcId: "tag:k8s", dst: "10.20.0.14:9100", dstId: "subnet 10.20.0.0/16", reporter: "nWc2vT8CNTRL", service: "—", type: "physical", typeFg: "#8b98a5", verdict: "undetermined", verdictFg: "#8b98a5", tx: "12 KiB", rx: "184 KiB" },
+        { time: "10:41:20", src: "__other__", srcId: "other (truncated)", dst: "__other__", dstId: "other (truncated)", reporter: "—", service: "—", type: "virtual", typeFg: "#4493f8", verdict: "undetermined", verdictFg: "#8b98a5", tx: "18.4 MiB", rx: "24.1 MiB" },
+      ],
+      v1EventStats: [
+        { k: "Retained", v: "2000" }, { k: "Capacity", v: "2000" },
+        { k: "Recorded (total)", v: "48204" }, { k: "Evicted (overflow)", v: "46204" },
+        { k: "Matched", v: "312" },
+      ],
+      v1EventCols: ["time", "source", "severity", "action / type", "actor", "target", "error", "details"],
+      v1Events: (() => {
+        const rows = [
+          ["2026-08-31 10:41:58.204", "audit", "info", "UPDATE / acl.write", "rob@m7kni.io", "tailnet policy file", "", "acl updated: 4 rules added, 1 removed"],
+          ["2026-08-31 10:38:12.881", "webhook", "warn", "nodeKeyExpiringSoon", "system", "ci-runner-04", "", "key expires in 22h"],
+          ["2026-08-31 10:31:04.117", "audit", "info", "CREATE / device.authorize", "rob@m7kni.io", "k8s-node-3", "", "device authorized"],
+          ["2026-08-31 10:22:47.502", "webhook", "info", "userRoleUpdated", "rob@m7kni.io", "sam@m7kni.io", "", "role member → admin"],
+          ["2026-08-31 10:14:03.960", "audit", "warn", "DELETE / key.revoke", "svc-terraform", "authkey kX9…", "", "auth key revoked"],
+          ["2026-08-31 09:58:21.334", "webhook", "warn", "subnetIPForwardingNotEnabled", "system", "gw-lon-1", "delivery retried 2×", "advertised routes not forwarded"],
+          ["2026-08-31 09:44:10.008", "audit", "info", "UPDATE / dns.settings", "rob@m7kni.io", "magicdns", "", "magicdns enabled"],
+        ];
+        return rows.map(([time, source, sev, action, actor, target, error, details]) => ({
+          time, source, sev, action, actor, target,
+          error: error || "—",
+          details,
+          sevBg: sev === "warn" ? "rgba(210,153,34,.16)" : "rgba(63,185,80,.16)",
+          sevFg: sev === "warn" ? "#d29922" : "#3fb950",
+        }));
+      })(),
+    };
+  }
+}
+</script>
+</body>
+</html>
