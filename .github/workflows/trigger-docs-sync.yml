@@ -37,8 +37,8 @@ jobs:
           # One shared permission set, but a role per repo to pin repository_id --
           # so unlike the release-please lane these two names differ.
           role: docs-sync-tailscale2otel
-          tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
-          tailscale-audience: ${{ secrets.TS_WIF_AUDIENCE }}
+          tailscale-client-id: ${{ secrets.TS_WIF_BROKER_CLIENT_ID }}
+          tailscale-audience: ${{ secrets.TS_WIF_BROKER_AUDIENCE }}
 
       - name: Trigger documentation sync in parent repo
         uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4

@@ -65,8 +65,8 @@ jobs:
           # `role` MUST be passed. Omitting it defaults the role to `gitsync`, which
           # does not exist, and auth/gha/login answers 400.
           role: gitsync-tailscale2otel
-          tailscale-client-id: ${{ secrets.TS_WIF_CLIENT_ID }}
-          tailscale-audience: ${{ secrets.TS_WIF_AUDIENCE }}
+          tailscale-client-id: ${{ secrets.TS_WIF_BROKER_CLIENT_ID }}
+          tailscale-audience: ${{ secrets.TS_WIF_BROKER_AUDIENCE }}
 
       - name: check out the GitSync repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
