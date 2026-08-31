@@ -4,9 +4,12 @@ title: Restyle the embedded console onto design system v2 (family standard-sette
 status: To Do
 assignee: []
 created_date: '2026-08-31 12:12'
+updated_date: '2026-08-31 14:08'
 labels:
   - design-system
+milestone: m-9
 dependencies: []
+priority: high
 ordinal: 104000
 ---
 

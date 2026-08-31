@@ -1,9 +1,10 @@
 ---
 id: TSO-0102
 title: 'Split the shared TS_WIF secret: one name, two incompatible scope requirements'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-31 12:00'
+updated_date: '2026-08-31 14:16'
 labels:
   - needs-triage
 milestone: m-9
@@ -54,15 +55,39 @@ classifier. The two gh secret set commands must be run by the owner.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The broker workflows and live-contract use different WIF secret names, each pointing at an identity with the scopes it actually needs
-- [ ] #2 release-please, trigger-docs-sync and grafana-sync all succeed on a real run after the change
-- [ ] #3 live-contract still succeeds after the change, proving the fix did not simply move the breakage
-- [ ] #4 A guard test fails if a broker-token consumer and live-contract are ever pointed at the same WIF secret name
+- [x] #1 The broker workflows and live-contract use different WIF secret names, each pointing at an identity with the scopes it actually needs
+- [x] #2 release-please, trigger-docs-sync and grafana-sync all succeed on a real run after the change
+- [x] #3 live-contract still succeeds after the change, proving the fix did not simply move the breakage
+- [x] #4 A guard test fails if a broker-token consumer and live-contract are ever pointed at the same WIF secret name
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+RESOLVED 2026-08-31, commit 43f856b (workflow repoint + guard test); secrets written by the owner at 14:04:53Z and 14:04:59Z after the agent permission classifier refused the write.
+
+TS_WIF_BROKER_CLIENT_ID / TS_WIF_BROKER_AUDIENCE point at the auth_keys + tag:gha federated identity whose subject is pinned to this repository main branch, chosen over the repo:rknightion* wildcard because all three broker consumers trigger only on main. TS_WIF_CLIENT_ID / TS_WIF_AUDIENCE were left untouched on the all:read identity, so live-contract keeps the repair that started this.
+
+ALL FOUR CONSUMERS PROVEN ON REAL RUNS, not inferred:
+- release-please  43f856b  success  (first success since 03:13; edge published :main in the same run)
+- grafana-sync    14:08    success
+- trigger-docs-sync  run 33401560486  success  (workflow_dispatch)
+- live-contract      run 33401563117  success  (workflow_dispatch)
+
+TestBrokerAndReadWIFSecretsStayDistinct in internal/ci/wifsecrets_test.go fails if a broker-token consumer and live-contract are ever pointed at the same secret name again. Negative-tested: reintroducing secrets.TS_WIF_CLIENT_ID into release-please.yml turns it red naming the workflow, restoring turns it green.
+
+Durable lesson worth carrying: the failure mode was a 403 on CREATING AN AUTHKEY, i.e. the tailnet JOIN, which looks exactly like an OpenBao or camden outage. release-please.yml own header says "a failure here is infrastructure, not the commit", which sent every reader down the wrong path. Check which identity the secret names before believing the infrastructure story.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Split the shared WIF secret so tailnet-join and API-read workflows use different identities. Verified by real runs of all four consumers (release-please at 43f856b, grafana-sync, and workflow_dispatch runs 33401560486 and 33401563117), plus a negative-tested guard test.
+<!-- SECTION:FINAL_SUMMARY:END -->
