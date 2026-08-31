@@ -1,6 +1,6 @@
 ---
 id: m-1
-title: "Wave 1 — Bugs & guardrail foundations"
+title: "Wave 1: bugs and guardrail foundations"
 ---
 
 ## Description

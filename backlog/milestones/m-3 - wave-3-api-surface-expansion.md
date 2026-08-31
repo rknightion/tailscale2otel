@@ -1,6 +1,6 @@
 ---
 id: m-3
-title: "Wave 3 — API surface expansion"
+title: "Wave 3: API surface expansion"
 ---
 
 ## Description

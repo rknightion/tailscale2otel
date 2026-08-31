@@ -1,6 +1,6 @@
 ---
 id: m-4
-title: "Wave 4 — Collector & ingestion resilience"
+title: "Wave 4: collector and ingestion resilience"
 ---
 
 ## Description

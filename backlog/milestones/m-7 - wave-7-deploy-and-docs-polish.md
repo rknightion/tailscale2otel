@@ -1,6 +1,6 @@
 ---
 id: m-7
-title: "Wave 7 — Deploy & docs polish"
+title: "Wave 7: deploy and docs polish"
 ---
 
 ## Description

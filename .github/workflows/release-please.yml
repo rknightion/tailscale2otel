@@ -89,10 +89,23 @@ jobs:
   # Edge build on every non-release push to main: publishes the :main multi-arch image
   # + a main-snapshot Helm chart via the shared reusable (replaces main-publish.yml).
   # release_created gates this vs publish, so they never both run on one push.
+  #
+  # `always()` is deliberate and load-bearing. release-please mints its token from the
+  # OpenBao broker over the tailnet, so it fails on INFRASTRUCTURE — the workflow header
+  # says as much. Without always(), a skipped-by-failure release-please skipped this job
+  # too, and the :main image silently stopped being rebuilt while every other check stayed
+  # green. A lab pulling :main with imagePullPolicy: Always then restarted repeatedly onto
+  # a stale image, looking healthy and validating nothing.
+  #
+  # The mutual exclusion with `publish` still holds: release_created is 'true' ONLY when
+  # release-please actually cut a release, so a successful release skips this job, and any
+  # other outcome (success-without-release, failure, cancellation) leaves it empty and this
+  # job builds the snapshot. Publishing :main never needed the release token — it authenticates
+  # to GHCR with the caller's own packages: write.
   edge:
     name: edge (:main image + helm)
     needs: release-please
-    if: needs.release-please.outputs.release_created != 'true'
+    if: always() && needs.release-please.outputs.release_created != 'true'
     uses: ./.github/workflows/publish.yml
     permissions:
       # Same grants as `publish` above: one reusable, one code path, only release_tag differs.

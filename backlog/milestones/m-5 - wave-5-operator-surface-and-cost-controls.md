@@ -1,6 +1,6 @@
 ---
 id: m-5
-title: "Wave 5 — Operator surface & cost controls"
+title: "Wave 5: operator surface and cost controls"
 ---
 
 ## Description

@@ -1,6 +1,6 @@
 ---
 id: m-2
-title: "Wave 2 — Loki state-snapshot family"
+title: "Wave 2: Loki state-snapshot family"
 ---
 
 ## Description

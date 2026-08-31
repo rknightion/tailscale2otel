@@ -1,6 +1,6 @@
 ---
 id: m-6
-title: "Wave 6 — Config ergonomics & performance"
+title: "Wave 6: config ergonomics and performance"
 ---
 
 ## Description
