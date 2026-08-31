@@ -2,8 +2,10 @@ package tsapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,6 +97,134 @@ func tokenExchangeServer(t *testing.T, hits *int32) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprintf(w, `{"access_token":"access-for-%s","token_type":"Bearer","expires_in":0}`, jwt)
 	}))
+}
+
+// TestWorkloadIdentityTokenSource_ExchangeContract pins the documented,
+// out-of-OpenAPI token-exchange contract. The endpoint is intentionally absent
+// from the generated operation ledger, so this is the guard that must fail if
+// its path or wire shape drifts.
+func TestWorkloadIdentityTokenSource_ExchangeContract(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("signed-oidc-jwt"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v2/oauth/token-exchange" {
+			t.Errorf("path = %q, want %q", r.URL.Path, "/api/v2/oauth/token-exchange")
+		}
+		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil {
+			t.Errorf("parse Content-Type: %v", err)
+		} else if mediaType != "application/x-www-form-urlencoded" {
+			t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", mediaType)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
+		if got := r.PostForm.Get("client_id"); got != "federated-client-id" {
+			t.Errorf("client_id = %q, want %q", got, "federated-client-id")
+		}
+		if got := r.PostForm.Get("jwt"); got != "signed-oidc-jwt" {
+			t.Errorf("jwt = %q, want %q", got, "signed-oidc-jwt")
+		}
+		if got := len(r.PostForm); got != 2 {
+			t.Errorf("form has %d fields (%v), want exactly client_id and jwt", got, r.PostForm)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"short-lived-token","token_type":"Bearer","expires_in":3600}`))
+	}))
+	defer srv.Close()
+
+	src := &workloadIdentityTokenSource{
+		ctx:         context.Background(),
+		baseURL:     srv.URL,
+		clientID:    "federated-client-id",
+		idTokenFile: tokenPath,
+	}
+	tok, err := src.Token()
+	if err != nil {
+		t.Fatalf("Token: %v", err)
+	}
+	if tok.AccessToken != "short-lived-token" || tok.TokenType != "Bearer" {
+		t.Fatalf("token = %+v, want the exchange response's bearer token", tok)
+	}
+	if time.Until(tok.Expiry) < 50*time.Minute {
+		t.Fatalf("token expiry = %v, want about one hour from now", tok.Expiry)
+	}
+}
+
+func TestWorkloadIdentityTokenSource_MessageBearing4xx(t *testing.T) {
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("signed-oidc-jwt"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		// A proxy or broken endpoint must not be able to reflect the assertion into
+		// logs merely by putting it in the otherwise-documented message field.
+		_, _ = w.Write([]byte(`{"message":"Unauthorized. Visit the admin console for details; assertion=signed-oidc-jwt"}`))
+	}))
+	defer srv.Close()
+
+	src := &workloadIdentityTokenSource{
+		ctx:         context.Background(),
+		baseURL:     srv.URL,
+		clientID:    "federated-client-id",
+		idTokenFile: tokenPath,
+	}
+	_, err := src.Token()
+	if err == nil {
+		t.Fatal("Token err = nil, want the exchange rejection")
+	}
+	for _, want := range []string{"HTTP 401", "Unauthorized. Visit the admin console for details"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "signed-oidc-jwt") {
+		t.Errorf("exchange diagnostic leaks the submitted JWT: %q", err)
+	}
+	var retrieve *oauth2.RetrieveError
+	if !errors.As(err, &retrieve) {
+		t.Fatalf("error does not unwrap to oauth2.RetrieveError; auth failures would be retried and misclassified: %v", err)
+	}
+	if retrieve.Response == nil || retrieve.Response.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("retrieve error response = %+v, want HTTP 401", retrieve.Response)
+	}
+	if len(retrieve.Body) != 0 {
+		t.Fatalf("retrieve error retains the raw response body: %q", retrieve.Body)
+	}
+}
+
+func TestWorkloadIdentityTokenSource_EmptyIDTokenFile(t *testing.T) {
+	var hits int32
+	srv := tokenExchangeServer(t, &hits)
+	defer srv.Close()
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte(" \n\t"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	src := &workloadIdentityTokenSource{
+		ctx:         context.Background(),
+		baseURL:     srv.URL,
+		clientID:    "federated-client-id",
+		idTokenFile: tokenPath,
+	}
+	_, err := src.Token()
+	if err == nil || !strings.Contains(err.Error(), "is empty") {
+		t.Fatalf("Token err = %v, want a clear empty-token-file diagnostic", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 0 {
+		t.Fatalf("exchange endpoint hit %d times, want 0 for an empty issuer token", got)
+	}
 }
 
 func TestWorkloadIdentityTokenSource_Exchange(t *testing.T) {
@@ -213,6 +343,121 @@ func TestBuildHTTPClient_WorkloadIdentity_AttachesBearerToken(t *testing.T) {
 	}
 	if gotAuth != "Bearer wif-access-token" {
 		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer wif-access-token")
+	}
+}
+
+func TestBuildHTTPClient_WorkloadIdentity_CachesValidToken(t *testing.T) {
+	var exchangeHits int32
+	var apiHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == workloadIdentityExchangePath {
+			atomic.AddInt32(&exchangeHits, 1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"access_token":"cached-token","token_type":"Bearer","expires_in":3600}`))
+			return
+		}
+		atomic.AddInt32(&apiHits, 1)
+		if got := r.Header.Get("Authorization"); got != "Bearer cached-token" {
+			t.Errorf("Authorization = %q, want cached bearer token", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("jwt-v1"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	c, err := buildHTTPClient(Options{
+		WorkloadIdentityClientID:    "federated-client-id",
+		WorkloadIdentityIDTokenFile: tokenPath,
+		BaseURL:                     srv.URL,
+		MaxAttempts:                 1,
+	})
+	if err != nil {
+		t.Fatalf("buildHTTPClient: %v", err)
+	}
+
+	for range 2 {
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v2/tailnet/example.com/devices", nil)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		_ = resp.Body.Close()
+	}
+	if got := atomic.LoadInt32(&apiHits); got != 2 {
+		t.Fatalf("API endpoint hit %d times, want 2", got)
+	}
+	if got := atomic.LoadInt32(&exchangeHits); got != 1 {
+		t.Fatalf("exchange endpoint hit %d times, want 1 while the token remains valid", got)
+	}
+}
+
+func TestBuildHTTPClient_WorkloadIdentity_RefreshesExpiredTokenAndRereadsJWT(t *testing.T) {
+	var exchangeHits int32
+	var apiHits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == workloadIdentityExchangePath {
+			hit := atomic.AddInt32(&exchangeHits, 1)
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("ParseForm: %v", err)
+			}
+			wantJWT := fmt.Sprintf("jwt-v%d", hit)
+			if got := r.PostForm.Get("jwt"); got != wantJWT {
+				t.Errorf("exchange %d jwt = %q, want %q", hit, got, wantJWT)
+			}
+			expiresIn := 3600
+			if hit == 1 {
+				expiresIn = 1 // within oauth2's expiry delta, so the next use refreshes
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"access_token":"access-%d","token_type":"Bearer","expires_in":%d}`, hit, expiresIn)
+			return
+		}
+		hit := atomic.AddInt32(&apiHits, 1)
+		wantAuth := fmt.Sprintf("Bearer access-%d", hit)
+		if got := r.Header.Get("Authorization"); got != wantAuth {
+			t.Errorf("API call %d Authorization = %q, want %q", hit, got, wantAuth)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	tokenPath := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenPath, []byte("jwt-v1"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	c, err := buildHTTPClient(Options{
+		WorkloadIdentityClientID:    "federated-client-id",
+		WorkloadIdentityIDTokenFile: tokenPath,
+		BaseURL:                     srv.URL,
+		MaxAttempts:                 1,
+	})
+	if err != nil {
+		t.Fatalf("buildHTTPClient: %v", err)
+	}
+
+	request := func() {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v2/tailnet/example.com/devices", nil)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatalf("Do: %v", err)
+		}
+		_ = resp.Body.Close()
+	}
+	request()
+	if err := os.WriteFile(tokenPath, []byte("jwt-v2"), 0o600); err != nil {
+		t.Fatalf("rotate token file: %v", err)
+	}
+	request()
+
+	if got := atomic.LoadInt32(&apiHits); got != 2 {
+		t.Fatalf("API endpoint hit %d times, want 2", got)
+	}
+	if got := atomic.LoadInt32(&exchangeHits); got != 2 {
+		t.Fatalf("exchange endpoint hit %d times, want 2 after access-token expiry", got)
 	}
 }
 

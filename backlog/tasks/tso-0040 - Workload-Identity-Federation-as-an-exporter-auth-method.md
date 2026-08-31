@@ -4,7 +4,7 @@ title: Workload Identity Federation as an exporter auth method
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 23:58'
+updated_date: '2026-08-31 03:32'
 labels: []
 milestone: m-3
 dependencies: []
@@ -84,4 +84,6 @@ Never record the created identity secret on the task — description and scopes 
 Root answered the contract-ledger fork: because the exchange endpoint is absent from both vendored and live OpenAPI, it stays outside the generated operation ledger and is guarded by dedicated auth-path contract tests.
 
 CodeRabbit requested narrowing the live credential authority. Root declined that finding because it conflicts with the owner's explicit frozen authorization for this run. Live work remains limited to creating what WIF needs and excludes ACLs, devices, existing keys, and stream configuration; no credential value will enter the tracker.
+
+Root live verification created one federated identity described as tailscale2otel live contract with scopes all:read, GitHub Actions issuer, and repository-main subject; no identifier or credential value is recorded here. Existing advisory live-contract workflow run 33353811115 completed success at d3af40f, proving wrong-audience rejection, successful OIDC exchange, and read-scope API access. Required CodeRabbit review was attempted after integrated just check passed, but the service failed before analysis with recoverable WebSocket closed and no complete status line. Root treated it as failed and performed a manual adversarial review of the wire contract, response bounds, credential redaction, error classification, and cache/refresh behavior; no blocking issue was found.
 <!-- SECTION:NOTES:END -->
