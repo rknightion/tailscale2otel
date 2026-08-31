@@ -1,0 +1,29 @@
+# Minimal Headscale starter.
+#
+# This is a hand-maintained, delivery-specific starter, not a generated copy of
+# the exhaustive config.example.yaml. Use that file as the authoritative
+# reference when you need settings beyond this first-run path.
+#
+# Headscale uses a Bearer API key. Keep the key out of this file: set
+# TS2OTEL_HEADSCALE__API_KEY, or mount a secret and set headscale.api_key_file
+# to its path. Choose exactly one form. The URL is an origin only (scheme and
+# host, with no path, query, fragment, or credentials).
+#
+# This starter uses stdout so it can prove the control-plane connection without
+# requiring an OTLP backend. Change otlp.protocol and configure otlp.endpoint
+# for a real deployment. Before a rollout, validate and then run one cycle:
+#   tailscale2otel -validate -config examples/config/headscale.yaml
+#   tailscale2otel -preflight -config examples/config/headscale.yaml
+
+provider: headscale
+
+headscale:
+  url: https://headscale.example.org
+  api_key: ""
+  # api_key_file: /run/secrets/headscale-api-key
+
+otlp:
+  protocol: stdout
+  endpoint: ""                    # No backend is used by this debugging sink.
+  stdout:
+    metric_interval: 5s

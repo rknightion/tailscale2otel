@@ -77,6 +77,48 @@ func TestStarterConfigsLoadAndValidate(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "headscale",
+			file: "headscale.yaml",
+			setup: func(t *testing.T) {
+				t.Setenv("TS2OTEL_HEADSCALE__API_KEY", "placeholder-headscale-api-key")
+			},
+			assert: func(t *testing.T, c *Config) {
+				if c.Provider != "headscale" {
+					t.Errorf("provider = %q, want headscale", c.Provider)
+				}
+				if c.Headscale.URL != "https://headscale.example.org" {
+					t.Errorf("headscale.url = %q, want starter endpoint", c.Headscale.URL)
+				}
+				if c.Headscale.APIKey.Reveal() != "placeholder-headscale-api-key" {
+					t.Errorf("headscale.api_key did not load the placeholder value")
+				}
+				if c.Tailscale.Auth.OAuth.ClientID != "" || c.Tailscale.Auth.OAuth.ClientSecret.Reveal() != "" {
+					t.Error("headscale starter should not configure Tailscale OAuth credentials")
+				}
+			},
+		},
+		{
+			name:  "multi-tailnet",
+			file:  "multi-tailnet.yaml",
+			setup: setStarterTailscaleOAuth,
+			assert: func(t *testing.T, c *Config) {
+				if len(c.Tailnets) != 2 {
+					t.Fatalf("tailnets = %d entries, want 2", len(c.Tailnets))
+				}
+				for i, want := range []string{"acme.example.com", "beta.example.com"} {
+					if c.Tailnets[i].Name != want {
+						t.Errorf("tailnets[%d].name = %q, want %q", i, c.Tailnets[i].Name, want)
+					}
+					if c.Tailnets[i].Auth.Method != "oauth" {
+						t.Errorf("tailnets[%d].auth.method = %q, want oauth", i, c.Tailnets[i].Auth.Method)
+					}
+					if c.Tailnets[i].Auth.OAuth.ClientID != "" || c.Tailnets[i].Auth.OAuth.ClientSecret.Reveal() != "" {
+						t.Errorf("tailnets[%d] should leave OAuth credentials empty for the name-keyed overlay", i)
+					}
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -100,11 +142,13 @@ func TestStarterConfigsLoadAndValidate(t *testing.T) {
 			if err := cfg.Validate(); err != nil {
 				t.Fatalf("Validate(%s) = %v", path, err)
 			}
-			if cfg.Tailscale.Auth.OAuth.ClientID != "placeholder-client-id" {
-				t.Errorf("tailscale.auth.oauth.client_id = %q, want placeholder value", cfg.Tailscale.Auth.OAuth.ClientID)
-			}
-			if cfg.Tailscale.Auth.OAuth.ClientSecret.Reveal() != "placeholder-client-secret" {
-				t.Errorf("tailscale.auth.oauth.client_secret did not load the placeholder value")
+			if tt.name != "headscale" {
+				if cfg.Tailscale.Auth.OAuth.ClientID != "placeholder-client-id" {
+					t.Errorf("tailscale.auth.oauth.client_id = %q, want placeholder value", cfg.Tailscale.Auth.OAuth.ClientID)
+				}
+				if cfg.Tailscale.Auth.OAuth.ClientSecret.Reveal() != "placeholder-client-secret" {
+					t.Errorf("tailscale.auth.oauth.client_secret did not load the placeholder value")
+				}
 			}
 			tt.assert(t, cfg)
 		})

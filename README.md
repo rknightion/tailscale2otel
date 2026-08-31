@@ -83,6 +83,13 @@ cardinality controls keep flow-log metrics within a fixed series budget.
 - **[stdout](https://m7kni.io/tailscale2otel/getting-started/#stdout)** prints telemetry locally,
   with no observability backend.
 
+Ready-made configuration starters live under [`examples/config/`](./examples/config/):
+[Grafana Cloud OTLP](./examples/config/grafana-cloud-otlp.yaml),
+[Prometheus pull](./examples/config/prometheus-only.yaml), [stdout](./examples/config/stdout.yaml),
+[Headscale](./examples/config/headscale.yaml), and
+[multi-tailnet/MSP](./examples/config/multi-tailnet.yaml). They keep credentials empty and
+document the environment or mounted-file forms to fill in.
+
 The canonical runnable Docker, Compose, Helm, and binary commands live in
 [Getting Started](https://m7kni.io/tailscale2otel/getting-started/). It explains the terms, how to
 supply Tailscale authentication, and what result proves each path works. For installation details

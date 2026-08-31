@@ -212,6 +212,15 @@ extraVolumeMounts: []
 #       securityContext:
 #         capabilities:
 #           drop: ["ALL"]
+#
+# SHUTDOWN ORDER. Kubernetes sends SIGTERM to all containers in a Pod at the
+# same time; it does not stop the exporter before these sidecars. The exporter
+# has a 45-second staged drain/flush budget (receivers, ingress WAL, OTLP and
+# flow stores), while the chart's default terminationGracePeriodSeconds is 55.
+# A userspace proxy or Tailscale sidecar must therefore tolerate that window;
+# if it must stay available while the exporter drains, give it an appropriate
+# preStop/lifecycle policy and keep the Pod grace period long enough for both
+# containers. Do not assume sidecar declaration order provides shutdown order.
 extraContainers: [] # @schema item: object ; itemProperties: {"name":{"type":"string","minLength":1},"image":{"type":"string","minLength":1}}
 
 # -- Extra environment variables appended to the container's `env`, as-is. Each entry is a
@@ -484,7 +493,9 @@ networkPolicy: # @schema additionalProperties:false
   egress: # @schema additionalProperties:false
     # -- Allow DNS (UDP+TCP port 53) egress. Almost always required: the pod resolves the
     # Tailscale API host, the OTLP endpoint host, and (if configured) an S3-compatible
-    # object-store endpoint by name. Only consulted while allowAll is false.
+    # object-store endpoint by name. If enrichment.geoip.download.enabled is true, it
+    # also needs HTTPS egress to download.maxmind.com (or the hostname in
+    # enrichment.geoip.download.endpoint). Only consulted while allowAll is false.
     dns: true
     # -- Allow ALL egress (the default). READ THIS before setting it false. Kubernetes
     # NetworkPolicy has no hostname/DNS-name selector — only podSelector, namespaceSelector and
@@ -498,7 +509,29 @@ networkPolicy: # @schema additionalProperties:false
     # correct — egress defaults to allowAll for exactly that reason. Setting this false keeps
     # only egress.dns (if true) plus egress.extra, and WILL BREAK the exporter — it can reach
     # neither the Tailscale API nor your OTLP endpoint — unless egress.extra covers both. If you
-    # need a real egress restriction, use your CNI's own policy CRD instead.
+    # need a real egress restriction, use your CNI's own policy CRD instead. For example, a
+    # CiliumNetworkPolicy can allow MaxMind by hostname (add equivalent rules for the API,
+    # OTLP and object-store hosts):
+    #
+    #   apiVersion: cilium.io/v2
+    #   kind: CiliumNetworkPolicy
+    #   metadata: {name: tailscale2otel-fqdn-egress}
+    #   spec:
+    #     endpointSelector: {matchLabels: {app.kubernetes.io/name: tailscale2otel}}
+    #     egress:
+    #       - toFQDNs: [{matchName: download.maxmind.com}]
+    #         toPorts: [{ports: [{port: "443", protocol: TCP}]}]
+    # A Calico GlobalNetworkPolicy has the equivalent domain selector:
+    #
+    #   apiVersion: projectcalico.org/v3
+    #   kind: GlobalNetworkPolicy
+    #   metadata: {name: tailscale2otel-fqdn-egress}
+    #   spec:
+    #     selector: "app.kubernetes.io/name == 'tailscale2otel'"
+    #     egress:
+    #       - action: Allow
+    #         destination: {domains: [download.maxmind.com], ports: [443]}
+    #         protocol: TCP
     allowAll: true
     # -- Raw NetworkPolicyEgressRule entries appended as-is (e.g. an ipBlock scoped to your OTLP
     # gateway or object-store endpoint). Only consulted while allowAll is false.

@@ -17,7 +17,7 @@ Exit codes:
     1  drift found (missing, orphaned, or differing rules)
     2  could not talk to Grafana (gcx missing, not logged in, offline)
 
-Requires `gcx` on PATH and an authenticated context (`gcx config check`). Only stdlib
+Requires `gcx` on PATH and an authenticated context (`gcx config check --context <name>`). Only stdlib
 Python is used; there is no network access except through gcx itself.
 
 Sanitization. The pulled resources are written to a temporary directory that is deleted
@@ -64,19 +64,41 @@ def run(cmd, cwd=None):
         raise  # unreachable; die() exits, but keeps control flow explicit
 
 
+def current_context():
+    """Return gcx's selected context, accepting plain and agent output."""
+    p = run(["gcx", "config", "current-context"])
+    if p.returncode != 0:
+        die("gcx could not determine the current context:\n%s" % (p.stdout or p.stderr).strip())
+
+    name = ""
+    for line in p.stdout.splitlines():
+        value = line.strip()
+        if not value:
+            continue
+        try:
+            doc = json.loads(value)
+        except ValueError:
+            # Normal gcx output is the context name on one line. Keep the
+            # fallback deliberately conservative so an error/status sentence
+            # cannot become a context argument by accident.
+            if not value.startswith(("Error:", "WARNING:", "warn:")):
+                name = value
+            continue
+        if isinstance(doc, dict):
+            name = doc.get("current-context", doc.get("current_context", name))
+
+    if not name:
+        die("gcx returned no current context")
+    return name
+
+
 def check_gcx():
     if shutil.which("gcx") is None:
         die("gcx is not installed — see docs for the deployment workflow")
-    p = run(["gcx", "config", "check"])
+    name = current_context()
+    p = run(["gcx", "config", "check", "--context", name])
     if p.returncode != 0 or "Connectivity: online" not in p.stdout:
         die("gcx cannot reach Grafana (not logged in, or offline):\n%s" % (p.stdout or p.stderr).strip())
-    ctx = run(["gcx", "config", "current-context"])
-    name = "?"
-    for line in ctx.stdout.splitlines():
-        try:
-            name = json.loads(line).get("current-context", name)
-        except ValueError:
-            continue
     return name
 
 

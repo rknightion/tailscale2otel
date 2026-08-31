@@ -3,10 +3,10 @@ id: TSO-0085
 title: >-
   Complete the NetworkPolicy egress guidance (MaxMind, FQDN example, sidecar
   note)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:36'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-31 03:12'
 labels: []
 milestone: m-7
 dependencies: []
@@ -32,3 +32,19 @@ The values.yaml egress comment (deploy/helm/tailscale2otel/values.yaml:484-505) 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Lane K adds MaxMind egress, FQDN-policy examples, and sidecar shutdown-order guidance, then regenerates the Helm README.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane K documented MaxMind egress, worked Cilium/Calico FQDN policies, and sidecar shutdown ordering, then regenerated the Helm README. Helm lint/template and drift checks passed; code tests were intentionally skipped for documentation/declarative config.
+
+Required CodeRabbit pre-commit review attempted on the integrated staged diff after just check passed; the service failed before analysis with recoverable  and emitted no  line. Treated as a failed review, not a clean result. Root manually reviewed the full staged diff and found no blocking issue; this is an overnight review-service deviation.
+
+Correction to the preceding note: the exact recoverable error was WebSocket closed, and the review emitted no complete status line.
+<!-- SECTION:NOTES:END -->

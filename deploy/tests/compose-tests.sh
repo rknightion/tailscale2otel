@@ -143,7 +143,8 @@ SECRETS_OVERRIDE="${DEPLOY_DIR}/docker-compose.secrets.yaml"
 sdir="$(mktemp -d)"
 trap 'rm -rf "$sdir"' EXIT
 SECRET_SENTINEL="SENTINEL-compose-secret-do-not-leak"
-for f in oauth_client_secret grafana_cloud_token admin_token streaming_token webhook_secret pyroscope_password; do
+for f in oauth_client_secret grafana_cloud_token admin_token streaming_token webhook_secret pyroscope_password \
+  headscale_api_key objectstore_access_key_id objectstore_secret_access_key objectstore_session_token; do
   printf '%s' "$SECRET_SENTINEL" > "$sdir/$f"
 done
 
@@ -167,7 +168,17 @@ for pair in \
   "TS2OTEL_ADMIN__AUTH__TOKEN" \
   "TS2OTEL_STREAMING__TOKEN" \
   "TS2OTEL_WEBHOOK__SECRET" \
-  "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD"; do
+  "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD" \
+  "TS2OTEL_HEADSCALE__API_KEY" \
+  "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID" \
+  "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY" \
+  "TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN" \
+  "TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__ACCESS_KEY_ID" \
+  "TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SECRET_ACCESS_KEY" \
+  "TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SESSION_TOKEN" \
+  "TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__ACCESS_KEY_ID" \
+  "TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SECRET_ACCESS_KEY" \
+  "TS2OTEL_COLLECTORS__K8S_AUDIT__OBJECTSTORE__SESSION_TOKEN"; do
   fileval="$(svc ".environment.${pair}_FILE // \"\"")"
   plainval="$(svc ".environment.${pair} // \"\"")"
   if [[ "$fileval" == /run/secrets/* ]]; then
@@ -185,9 +196,9 @@ done
 # (OAuth / OTLP / receiver / admin / profiling) — the per-pair loop above would
 # still pass for the five that remain.
 nfile="$(svc '[.environment | to_entries[] | select(.key | test("^TS2OTEL_.*_FILE$"))] | length')"
-[[ "$nfile" == "6" ]] \
-  && ok "D: exactly 6 *_FILE credential variables rendered" \
-  || bad "D: $nfile *_FILE variables rendered, want 6 (a category was added or dropped)"
+[[ "$nfile" == "16" ]] \
+  && ok "D: exactly 16 *_FILE credential variables rendered" \
+  || bad "D: $nfile *_FILE variables rendered, want 16 (a credential family was added or dropped)"
 
 # --------------------------------------------------------------------------
 case_ "E. published-image default vs explicit developer build (#335)"

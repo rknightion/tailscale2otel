@@ -1,0 +1,55 @@
+# Minimal multi-tailnet / MSP starter.
+#
+# This is a hand-maintained, delivery-specific starter, not a generated copy of
+# the exhaustive config.example.yaml. Use that file as the authoritative
+# reference when you need settings beyond this first-run path.
+#
+# The tailnets list is file-only: put each tailnet's name and OAuth client ID in
+# this file, and provide its secret through the name-keyed environment overlay.
+# For the entries below those secret variables are:
+#   TS2OTEL_TAILNET_ACME_EXAMPLE_COM__AUTH__OAUTH__CLIENT_SECRET
+#   TS2OTEL_TAILNET_BETA_EXAMPLE_COM__AUTH__OAUTH__CLIENT_SECRET
+# The overlay is matched to the configured name; it cannot accidentally become
+# a credential for an unlisted tailnet. Keep both credential fields empty until
+# you fill in the real values. Set an entry's client_id in this file (it is an
+# identifier, not a secret) and export the matching client_secret variable. A
+# mounted secret may be used instead by setting that entry's client_secret_file.
+#
+# This starter uses stdout so the fan-out can be exercised without an OTLP
+# backend. Change otlp.protocol and configure otlp.endpoint for a real
+# deployment. Before a rollout, validate and then run one cycle:
+#   tailscale2otel -validate -config examples/config/multi-tailnet.yaml
+#   tailscale2otel -preflight -config examples/config/multi-tailnet.yaml
+
+tailscale:
+  # The single-tailnet block is intentionally left at its default sentinel;
+  # credentials are never inherited by entries in tailnets:.
+  tailnet: "-"
+  auth:
+    method: oauth
+    oauth:
+      client_id: ""
+      client_secret: ""
+      scopes: [all:read]
+
+tailnets:
+  - name: acme.example.com
+    auth:
+      method: oauth
+      oauth:
+        client_id: ""
+        client_secret: ""
+        scopes: [all:read]
+  - name: beta.example.com
+    auth:
+      method: oauth
+      oauth:
+        client_id: ""
+        client_secret: ""
+        scopes: [all:read]
+
+otlp:
+  protocol: stdout
+  endpoint: ""                    # No backend is used by this debugging sink.
+  stdout:
+    metric_interval: 5s

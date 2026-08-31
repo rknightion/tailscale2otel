@@ -286,7 +286,16 @@ config-check:
       | yq '.data."config.yaml"' > /tmp/rendered-config.yaml
     echo "--- rendered config (head) ---"
     head -20 /tmp/rendered-config.yaml
-    ./bin/configcheck config.example.yaml /tmp/rendered-config.yaml
+    # The starters are part of the supported onboarding surface. Their real
+    # credentials stay empty in git; placeholders make configcheck exercise the
+    # provider/list validation without contacting either control plane.
+    TS2OTEL_HEADSCALE__API_KEY=placeholder-headscale-api-key \
+      ./bin/configcheck config.example.yaml /tmp/rendered-config.yaml \
+      examples/config/grafana-cloud-otlp.yaml \
+      examples/config/prometheus-only.yaml \
+      examples/config/stdout.yaml \
+      examples/config/headscale.yaml \
+      examples/config/multi-tailnet.yaml
 
 # parse every dashboard panel and provisioned rule expression with the Prometheus parser
 [group('check')]

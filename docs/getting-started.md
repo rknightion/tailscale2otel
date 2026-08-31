@@ -61,6 +61,22 @@ Every route needs:
     [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection)
     for the connection settings and exactly what's affected.
 
+## Configuration starters
+
+The repository includes small, delivery-specific starters under
+[`examples/config/`](../examples/config/). Use
+[`headscale.yaml`](../examples/config/headscale.yaml) for a self-hosted Headscale control plane;
+it keeps the API key empty and documents the environment or mounted-file form. Use
+[`multi-tailnet.yaml`](../examples/config/multi-tailnet.yaml) for MSP mode; the `tailnets:` list is
+file-defined and each entry has its own OAuth identity, with a name-keyed environment overlay for
+the secret. The existing [Grafana Cloud](../examples/config/grafana-cloud-otlp.yaml),
+[Prometheus](../examples/config/prometheus-only.yaml), and
+[stdout](../examples/config/stdout.yaml) starters cover the delivery choices below.
+
+All starters are hand-maintained examples, not copies of the exhaustive
+[`config.example.yaml`](../config.example.yaml). Keep their secret fields empty and run
+`-validate` followed by `-preflight` after supplying real credentials.
+
 ## Tailscale authentication
 
 The config file is entirely optional — `tailscale2otel` runs from built-in defaults plus
