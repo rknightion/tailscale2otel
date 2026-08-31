@@ -4,7 +4,7 @@ title: Scale the scheduler stagger window with deployment size
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:13'
 labels: []
 milestone: m-6
 dependencies: []
@@ -36,3 +36,9 @@ One fixed 3s defaultStaggerWindow (internal/collector/scheduler.go:128-136) is s
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes an operator-configurable scheduler stagger window preserving the current 3s default; lane C later wires and tests it.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane C wired scheduler.initial_stagger_window into every runtime scheduler. The frozen 3s default preserves single-tailnet behavior while operators can widen the first-tick spread for larger deployments; scheduler guard tests passed.
+<!-- SECTION:NOTES:END -->

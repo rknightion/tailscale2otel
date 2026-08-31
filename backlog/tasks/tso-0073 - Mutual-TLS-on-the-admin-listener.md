@@ -4,7 +4,7 @@ title: Mutual TLS on the admin listener
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:13'
 labels: []
 milestone: m-5
 dependencies: []
@@ -36,3 +36,9 @@ The Prometheus pull listener supports client_ca_file mutual TLS (internal/app/me
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes admin listener client-CA/client-auth fields matching the metrics listener; lane G later wires TLS and handshake tests.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane G added admin client-CA/client-auth TLS parity with fail-closed CA loading and real loopback handshake tests for missing, untrusted and trusted client certificates plus token-auth composition. Deliberate negative mutations proved the guard tests.
+<!-- SECTION:NOTES:END -->

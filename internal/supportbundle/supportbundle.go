@@ -15,9 +15,11 @@
 // PII-heavy sections are opt-in and OFF by default (#321's acceptance
 // criterion): the device inventory (names, hostnames, users, IPs) is included
 // only when Options.IncludeDeviceInventory is true. Flow-log records and raw
-// audit/webhook log content are never included by this package at all — no
-// opt-in path exists for them here, so they are always excluded (see
-// Manifest.ExcludedByDefault). Only the bounded, non-PII aggregate counters
+// audit/webhook ingestion content are never included by this package at all —
+// no opt-in path exists for them here, so they are always excluded (see
+// Manifest.ExcludedByDefault). The bounded process-log tail is a different
+// surface: it is captured after the application's existing slog redaction.
+// Only the bounded, non-PII aggregate counters
 // already surfaced on the admin status page (flow-store/event-store sizing)
 // travel with this bundle, via Input.Collectors/Components/etc.
 package supportbundle
@@ -27,6 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
@@ -36,7 +39,7 @@ import (
 // FormatVersion identifies the bundle's file layout, so a future consumer (a
 // script, a support engineer's tooling) can tell an old bundle from a new one
 // without guessing from which files happen to be present.
-const FormatVersion = 1
+const FormatVersion = 2
 
 // Bounds. Every section is capped so a single bundle can never grow
 // unboundedly with tailnet size — a large tailnet's device list or collector
@@ -53,6 +56,7 @@ const (
 	maxDiagnostics      = 1000
 	maxMetricsCatalog   = 5000
 	maxLogEventsCatalog = 5000
+	maxRecentLogs       = 10000
 )
 
 // Options controls the PII-heavy sections a bundle may include. The zero
@@ -113,6 +117,10 @@ type Input struct {
 	// and file size only. The flow RECORDS themselves remain unconditionally
 	// excluded, with no opt-in path, exactly as before.
 	FlowStore statusdata.FlowStoreInfo
+	// RecentLogs is the bounded process log tail captured after slog.LogValuer
+	// resolution. Each entry is one JSON object without its trailing newline.
+	// The producer owns redaction; Write only preserves the already-safe bytes.
+	RecentLogs []string
 	// Devices is the device-enrichment table. The CALLER must pass nil unless
 	// Options.IncludeDeviceInventory is true — Write does not itself gate on
 	// Options for this field, so the caller (internal/app/admin_bundle.go) is
@@ -135,8 +143,9 @@ type Manifest struct {
 	// ExcludedByDefault lists every section this package can produce that is
 	// NOT in this bundle. "device_inventory" moves out of this list (and into
 	// Included, as "devices.json") only when Options.IncludeDeviceInventory
-	// was set. "flow_records" and "raw_logs" are ALWAYS excluded — this
-	// package has no opt-in path for either; only their bounded, non-PII
+	// was set. "flow_records" and "raw_logs" mean source-ingestion records and
+	// are ALWAYS excluded — this package has no opt-in path for either; only
+	// their bounded, non-PII
 	// aggregate counts travel — flow-store sizing and backend health via
 	// FlowStore (flow_store.json), collector run stats via Collectors — never
 	// the records themselves.
@@ -161,6 +170,7 @@ var fileOrder = []string{
 	"collectors.json",
 	"advisories.json",
 	"flow_store.json",
+	"recent_logs.jsonl",
 	"catalog_metrics.json",
 	"catalog_log_events.json",
 }
@@ -186,6 +196,7 @@ func Write(w io.Writer, in Input, opts Options, now time.Time) error {
 	advisories := boundSlice(in.Advisories, maxAdvisories, "advisories", &truncated)
 	metrics := boundSlice(in.Metrics, maxMetricsCatalog, "catalog_metrics", &truncated)
 	logEvents := boundSlice(in.LogEvents, maxLogEventsCatalog, "catalog_log_events", &truncated)
+	recentLogs := boundSlice(in.RecentLogs, maxRecentLogs, "recent_logs", &truncated)
 	api := in.API
 	api.Endpoints = boundSlice(api.Endpoints, maxAPIEndpoints, "api.endpoints", &truncated)
 
@@ -214,6 +225,16 @@ func Write(w io.Writer, in Input, opts Options, now time.Time) error {
 		if err != nil {
 			return fmt.Errorf("marshal %s: %w", name, err)
 		}
+		f, err := zw.Create(name)
+		if err != nil {
+			return fmt.Errorf("create %s: %w", name, err)
+		}
+		if _, err := f.Write(body); err != nil {
+			return fmt.Errorf("write %s: %w", name, err)
+		}
+		return nil
+	}
+	writeRaw := func(name string, body []byte) error {
 		f, err := zw.Create(name)
 		if err != nil {
 			return fmt.Errorf("create %s: %w", name, err)
@@ -252,6 +273,13 @@ func Write(w io.Writer, in Input, opts Options, now time.Time) error {
 		return err
 	}
 	if err := write("flow_store.json", in.FlowStore); err != nil {
+		return err
+	}
+	recentLogBody := []byte{}
+	if len(recentLogs) > 0 {
+		recentLogBody = []byte(strings.Join(recentLogs, "\n") + "\n")
+	}
+	if err := writeRaw("recent_logs.jsonl", recentLogBody); err != nil {
 		return err
 	}
 	if err := write("catalog_metrics.json", metrics); err != nil {

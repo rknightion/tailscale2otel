@@ -149,6 +149,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		collector.WithSelfObs(selfObs),
 		collector.WithStatusTracker(rt.status),
 		collector.WithTracer(d.tracer),
+		collector.WithStaggerWindow(cfg.Scheduler.InitialStaggerWindow.D()),
 	}
 	if d.multi {
 		schedOpts = append(schedOpts, collector.WithCheckpointNamespace(rt.name))

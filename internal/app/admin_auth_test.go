@@ -3,8 +3,10 @@ package app
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
@@ -21,6 +23,135 @@ func adminAuthApp(t *testing.T, withPprof bool) *http.Server {
 	cfg.Profiling.Pprof.Enabled = withPprof
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
 	return a.buildAdminServer()
+}
+
+func TestAdminAuth_ThrottlesOneSourceWithoutBlockingAnother(t *testing.T) {
+	rec := telemetrytest.New()
+	cfg := config.Default()
+	cfg.Admin.Auth.Token = testAdminToken
+	cfg.Admin.Auth.FailureLimit = 2
+	cfg.Admin.Auth.FailureWindow = config.Duration(time.Minute)
+	cfg.Admin.Auth.FailureBackoff = config.Duration(30 * time.Second)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+	srv := a.buildAdminServer()
+
+	bad := func(source string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = source
+		req.SetBasicAuth("admin", "wrong")
+		return do(srv, req)
+	}
+	if got := bad("192.0.2.10:1000").Code; got != http.StatusUnauthorized {
+		t.Fatalf("first failure = %d, want 401", got)
+	}
+	locked := bad("192.0.2.10:2000")
+	if locked.Code != http.StatusTooManyRequests {
+		t.Fatalf("threshold failure = %d, want 429", locked.Code)
+	}
+	if got := locked.Header().Get("Retry-After"); got != "30" {
+		t.Errorf("Retry-After = %q, want 30", got)
+	}
+
+	other := httptest.NewRequest(http.MethodGet, "/", nil)
+	other.RemoteAddr = "192.0.2.11:1000"
+	other.SetBasicAuth("admin", testAdminToken)
+	if got := do(srv, other).Code; got != http.StatusOK {
+		t.Errorf("authenticated second source = %d, want 200", got)
+	}
+
+	pts := rec.MetricPoints("tailscale2otel.admin.auth.rejected")
+	foundThrottle := false
+	for _, p := range pts {
+		foundThrottle = foundThrottle || p.Attrs["reason"] == reasonThrottled
+	}
+	if !foundThrottle {
+		t.Errorf("admin auth rejection points have no %q reason: %+v", reasonThrottled, pts)
+	}
+}
+
+func TestAdminAuthLimiter_BackoffExpiresAndSuccessClearsHistory(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	limiter := newAdminAuthLimiter(2, time.Minute, 30*time.Second, func() time.Time { return now })
+	const source = "192.0.2.20"
+
+	if blocked, _ := limiter.failure(source); blocked {
+		t.Fatal("first failure unexpectedly blocked")
+	}
+	if blocked, _ := limiter.failure(source); !blocked {
+		t.Fatal("threshold failure did not start backoff")
+	}
+	if allowed, _ := limiter.allow(source); allowed {
+		t.Fatal("source was allowed during backoff")
+	}
+
+	now = now.Add(31 * time.Second)
+	if allowed, _ := limiter.allow(source); !allowed {
+		t.Fatal("source remained blocked after backoff expiry")
+	}
+	if blocked, _ := limiter.failure(source); blocked {
+		t.Fatal("first post-expiry failure unexpectedly blocked")
+	}
+	limiter.success(source)
+	if blocked, _ := limiter.failure(source); blocked {
+		t.Fatal("one failure after successful auth reused stale failure history")
+	}
+}
+
+func TestAdminAuth_BackoffExpiryAllowsLegitimateCredential(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	cfg := config.Default()
+	cfg.Admin.Auth.Token = testAdminToken
+	cfg.Admin.Auth.FailureLimit = 1
+	cfg.Admin.Auth.FailureBackoff = config.Duration(30 * time.Second)
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	wrapped := a.newAdminAuthGateAt(func() time.Time { return now })(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	bad := httptest.NewRequest(http.MethodGet, "/", nil)
+	bad.SetBasicAuth("admin", "wrong")
+	if got := do(&http.Server{Handler: wrapped}, bad).Code; got != http.StatusTooManyRequests {
+		t.Fatalf("threshold failure = %d, want 429", got)
+	}
+
+	valid := func() *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.SetBasicAuth("admin", testAdminToken)
+		return req
+	}
+	if got := do(&http.Server{Handler: wrapped}, valid()).Code; got != http.StatusTooManyRequests {
+		t.Fatalf("valid credential during backoff = %d, want 429", got)
+	}
+	now = now.Add(31 * time.Second)
+	if got := do(&http.Server{Handler: wrapped}, valid()).Code; got != http.StatusNoContent {
+		t.Fatalf("valid credential after backoff = %d, want 204", got)
+	}
+}
+
+func TestAdminAuthLimiter_BoundsSourceMemory(t *testing.T) {
+	limiter := newAdminAuthLimiter(2, time.Minute, time.Minute, time.Now)
+	for i := 0; i < maxAdminAuthSources+100; i++ {
+		limiter.failure("192.0.2." + strconv.Itoa(i))
+	}
+	if got := limiter.sourceCount(); got > maxAdminAuthSources {
+		t.Fatalf("tracked sources = %d, want <= %d", got, maxAdminAuthSources)
+	}
+}
+
+func TestAdminAuthLimiter_UntrackedSuccessDoesNotClearOverflowBackoff(t *testing.T) {
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	limiter := newAdminAuthLimiter(1, time.Minute, time.Minute, func() time.Time { return now })
+	for i := 0; i < maxAdminAuthSources-1; i++ {
+		limiter.failure("192.0.2." + strconv.Itoa(i))
+	}
+	if blocked, _ := limiter.failure("198.51.100.1"); !blocked {
+		t.Fatal("overflow source did not start the shared backoff")
+	}
+
+	limiter.success("198.51.100.2")
+	if allowed, _ := limiter.allow("198.51.100.3"); allowed {
+		t.Fatal("successful auth from an untracked source cleared the shared overflow backoff")
+	}
 }
 
 // do issues req against srv and returns the recorded response.

@@ -30,9 +30,24 @@ func sampleInput() supportbundle.Input {
 		Advisories:  []statusdata.ConfigAdvisory{{Key: "otlp.tls.insecure", Message: "TLS verification is disabled"}},
 		Metrics:     []statusdata.MetricRow{{Name: "tailscale.devices.count", Instrument: "gauge"}},
 		LogEvents:   []statusdata.LogRow{{Name: "tailscale.device.added", Severity: "info"}},
+		RecentLogs: []string{
+			`{"time":"2026-07-28T12:00:00Z","level":"INFO","msg":"started"}`,
+		},
 		Devices: []statusdata.DeviceRow{
 			{Name: "laptop", Hostname: "laptop.tailnetXXXX.ts.net", User: "rob@example.com", Addrs: []string{"100.64.0.1"}},
 		},
+	}
+}
+
+func TestWrite_IncludesRecentLogTailAsJSONLines(t *testing.T) {
+	in := sampleInput()
+	var buf bytes.Buffer
+	if err := supportbundle.Write(&buf, in, supportbundle.Options{}, fixedNow()); err != nil {
+		t.Fatal(err)
+	}
+	files := readZip(t, buf.Bytes())
+	if got := string(files["recent_logs.jsonl"]); got != in.RecentLogs[0]+"\n" {
+		t.Fatalf("recent_logs.jsonl = %q, want one JSON line", got)
 	}
 }
 

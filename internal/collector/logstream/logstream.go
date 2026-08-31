@@ -86,6 +86,14 @@ type api interface {
 type Collector struct {
 	api      api
 	interval time.Duration
+	// configurationInterval and networkInterval are optional per-type probe
+	// cadences. A non-positive value inherits interval. When either is set,
+	// PollInterval returns the faster cadence and Collect skips the other probe
+	// until its own interval is due.
+	configurationInterval time.Duration
+	networkInterval       time.Duration
+	independentScheduling bool
+	lastProbe             map[string]time.Time
 	// prev holds the last cumulative counter value per (logType -> metricName)
 	// for delta emission. The collector is stateful between ticks.
 	prev map[string]map[string]float64
@@ -106,13 +114,27 @@ func WithAPIState(t *apistate.Tracker) Option {
 	return func(c *Collector) { c.tracker = t }
 }
 
+// WithProbeIntervals sets independent status-probe cadences for the
+// configuration and network streams. A non-positive value inherits the shared
+// collector interval, preserving existing single-interval configurations.
+// PollInterval exposes the cadence the registry should use when one probe is
+// faster than the other.
+func WithProbeIntervals(configuration, network time.Duration) Option {
+	return func(c *Collector) {
+		c.configurationInterval = configuration
+		c.networkInterval = network
+		c.independentScheduling = configuration > 0 || network > 0
+	}
+}
+
 // New returns a logstream collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
-		api:      a,
-		interval: interval,
-		prev:     map[string]map[string]float64{},
-		now:      time.Now,
+		api:       a,
+		interval:  interval,
+		prev:      map[string]map[string]float64{},
+		lastProbe: map[string]time.Time{},
+		now:       time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -131,6 +153,47 @@ func (c *Collector) DefaultInterval() time.Duration {
 	return defaultInterval
 }
 
+// PollInterval returns the scheduler cadence for this collector. With no
+// independent probe interval configured it is exactly the shared interval;
+// otherwise it is the faster effective per-type interval.
+func (c *Collector) PollInterval() time.Duration {
+	shared := c.DefaultInterval()
+	if !c.independentScheduling {
+		return shared
+	}
+	configuration := c.configurationInterval
+	if configuration <= 0 {
+		configuration = shared
+	}
+	network := c.networkInterval
+	if network <= 0 {
+		network = shared
+	}
+	if network < configuration {
+		return network
+	}
+	return configuration
+}
+
+func (c *Collector) probeInterval(logType string) time.Duration {
+	d := c.networkInterval
+	if logType == "configuration" {
+		d = c.configurationInterval
+	}
+	if d <= 0 {
+		return c.DefaultInterval()
+	}
+	return d
+}
+
+func (c *Collector) probeDue(logType string, at time.Time) bool {
+	if !c.independentScheduling {
+		return true
+	}
+	last, ok := c.lastProbe[logType]
+	return !ok || !at.Before(last.Add(c.probeInterval(logType)))
+}
+
 // Collect probes each log type's stream-status endpoint, gating 404/empty-200 as
 // "not configured" and emitting health (delta counters + gauges + error log) for
 // configured streams. Every probe also emits its bounded availability state
@@ -138,7 +201,12 @@ func (c *Collector) DefaultInterval() time.Duration {
 // other log type is still attempted first).
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	var firstErr error
+	at := c.now()
 	for _, lt := range logTypes {
+		if !c.probeDue(lt, at) {
+			continue
+		}
+		c.lastProbe[lt] = at
 		st, err := c.api.LogStreamStatus(ctx, lt)
 		state := apistate.Observe(e, c.tracker, c.Name(), statusOperation(lt), statusDisposition, err, c.now())
 		if err != nil {

@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -224,5 +226,28 @@ func TestSupportBundle_ConfigNeverLeaksAPIKeyOrOAuthSecret(t *testing.T) {
 		if strings.Contains(string(files[name]), "VERYSECRETVALUE") {
 			t.Errorf("%s leaks a configured secret value", name)
 		}
+	}
+}
+
+func TestSupportBundle_ContainsBoundedRedactedRecentLogs(t *testing.T) {
+	const secret = "support-tail-secret-canary"
+	a := bundleTestApp(t, func(c *config.Config) { c.Admin.SupportBundleLogTailRecords = 2 })
+	a.logger = withSupportBundleLogTail(slog.New(slog.NewTextHandler(io.Discard, nil)), 2, 32<<10)
+	a.logger.Info("evicted record")
+	a.logger.Info("safe record", "token", config.Secret(secret))
+	a.logger.Warn("newest record")
+
+	_, files := getBundle(t, a, "")
+	body, ok := files["recent_logs.jsonl"]
+	if !ok {
+		t.Fatal("bundle is missing recent_logs.jsonl")
+	}
+	if strings.Contains(string(body), secret) || strings.Contains(string(body), "evicted record") {
+		t.Fatalf("recent log tail leaked a secret or exceeded its bound: %s", body)
+	}
+	if !strings.Contains(string(body), `"msg":"safe record"`) ||
+		!strings.Contains(string(body), `"token":"REDACTED"`) ||
+		!strings.Contains(string(body), `"msg":"newest record"`) {
+		t.Fatalf("recent log tail lost retained/redacted records: %s", body)
 	}
 }

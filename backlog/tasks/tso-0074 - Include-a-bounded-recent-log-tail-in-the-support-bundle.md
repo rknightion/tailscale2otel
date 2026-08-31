@@ -4,7 +4,7 @@ title: Include a bounded recent-log tail in the support bundle
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:22'
 labels: []
 milestone: m-5
 dependencies: []
@@ -36,3 +36,13 @@ internal/app/admin_bundle.go collects config/diagnostics/state but not the last 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes a bounded support-bundle log-tail size; lane G later implements the redaction-safe ring and bundle output.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane G asked whether support-bundle archive ownership may include internal/supportbundle/** and whether process-wide logger capture may use minimal internal/app/app.go wiring. Root decision: yes to both. The bundle entry belongs with the existing archive implementation, and a minimal composition-root logger wrapper is the narrowest coherent seam; Lane G owns those paths for this lane, with no concurrent owner.
+
+Lane G added a configurable record-bounded, concurrency-safe, redaction-preserving process log ring and recent_logs.jsonl support-bundle entry; bundle format is now v2. Focused race tests and leak/bounds negative sentinels passed.
+
+CodeRabbit's major bounded-memory finding was verified: the ring bounded record count but one slog record could still be arbitrarily large. Fixed capture to cap each JSONL entry at otlp.limits.log_body_bytes and replace oversized entries with a valid JSON truncation marker carrying original_bytes; live logging remains untouched. The new guard was negative-tested by removing the bound, observing a 1,091-byte record exceed the 128-byte test ceiling, then restoring and passing.
+<!-- SECTION:NOTES:END -->

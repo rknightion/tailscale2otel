@@ -19,6 +19,7 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
@@ -229,7 +230,10 @@ var postureKeyToLabel = map[string]string{
 	"node:tsReleaseTrack":   attrPostureTrack,
 }
 
-const defaultInterval = 60 * time.Second
+const (
+	defaultInterval              = 60 * time.Second
+	defaultSubrequestConcurrency = 1
+)
 
 // tagOther is the sentinel tailscale.tag value the by_tag rollup folds
 // over-the-cap tags into, so per-tag totals are preserved.
@@ -336,6 +340,19 @@ type postureResult struct {
 	attributes tsapi.DeviceAttributes
 }
 
+// deviceSubrequestResult contains the result of the optional per-device API
+// calls. Fetching is separated from emission so the API calls can run through a
+// bounded worker pool while all telemetry and state mutations remain ordered on
+// the collector goroutine.
+type deviceSubrequestResult struct {
+	posture          tsapi.DeviceAttributes
+	postureErr       error
+	postureAttempted bool
+	invites          []tsapi.DeviceInvite
+	inviteErr        error
+	inviteAttempted  bool
+}
+
 // api is the subset of the Tailscale API this collector needs. It is satisfied
 // by *tsapi.Client.
 type api interface {
@@ -346,15 +363,16 @@ type api interface {
 
 // Collector implements collector.SnapshotCollector for the device inventory.
 type Collector struct {
-	api                  api
-	cache                *enrich.DeviceCache
-	interval             time.Duration
-	collectRoutes        bool
-	collectPosture       bool
-	collectDeviceInvites bool
-	perEntity            bool
-	derpRollup           bool
-	collectConnectivity  bool
+	api                   api
+	cache                 *enrich.DeviceCache
+	interval              time.Duration
+	collectRoutes         bool
+	collectPosture        bool
+	collectDeviceInvites  bool
+	subrequestConcurrency int
+	perEntity             bool
+	derpRollup            bool
+	collectConnectivity   bool
 	// geo supplies country/continent for a device's public magicsock endpoint;
 	// nil disables the fleet-geography gauge entirely.
 	geo               geoip.Lookup
@@ -517,6 +535,22 @@ func WithSubnetRouteRollup(enabled bool) Option {
 // device_invites:read OAuth scope. Per-device fetch errors are non-fatal.
 func WithDeviceInvites(enabled bool) Option {
 	return func(c *Collector) { c.collectDeviceInvites = enabled }
+}
+
+// WithSubrequestConcurrency bounds the number of devices whose optional
+// posture/invite requests may be in flight at once. One is deliberately the
+// default: it preserves the historical sequential request pattern and avoids
+// unexpectedly increasing API pressure for existing large-fleet deployments.
+// Operators can opt into a higher value after accounting for their API quota.
+// Non-positive values retain the safe sequential default.
+func WithSubrequestConcurrency(n int) Option {
+	return func(c *Collector) {
+		if n <= 0 {
+			c.subrequestConcurrency = defaultSubrequestConcurrency
+			return
+		}
+		c.subrequestConcurrency = n
+	}
 }
 
 // WithTagRollup controls the tailscale.devices.by_tag distribution gauge.
@@ -757,26 +791,27 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 // WithPerEntity) tune cardinality; per-entity gauges are emitted by default.
 func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRoutes, collectPosture bool, opts ...Option) *Collector {
 	c := &Collector{
-		api:                  api,
-		cache:                cache,
-		interval:             interval,
-		collectRoutes:        collectRoutes,
-		collectPosture:       collectPosture,
-		perEntity:            true,
-		derpRollup:           true,
-		collectConnectivity:  true,
-		subnetRouteRollup:    true,
-		postureLogMode:       postureLogChanges,
-		lastPosture:          make(map[string]string),
-		changeLogBaseline:    make(map[string]deviceChangeState),
-		expiryLogMode:        expiryLogModeDaily,
-		deviceKeyExpiryState: make(map[string]expiryState),
-		attributeExpiryState: make(map[attributeExpiryKey]expiryState),
-		collectTagRollup:     true,
-		tagRollupLimit:       50,
-		now:                  time.Now,
-		updateAvailableData:  true,
-		ephemeralData:        true,
+		api:                   api,
+		cache:                 cache,
+		interval:              interval,
+		collectRoutes:         collectRoutes,
+		collectPosture:        collectPosture,
+		subrequestConcurrency: defaultSubrequestConcurrency,
+		perEntity:             true,
+		derpRollup:            true,
+		collectConnectivity:   true,
+		subnetRouteRollup:     true,
+		postureLogMode:        postureLogChanges,
+		lastPosture:           make(map[string]string),
+		changeLogBaseline:     make(map[string]deviceChangeState),
+		expiryLogMode:         expiryLogModeDaily,
+		deviceKeyExpiryState:  make(map[string]expiryState),
+		attributeExpiryState:  make(map[attributeExpiryKey]expiryState),
+		collectTagRollup:      true,
+		tagRollupLimit:        50,
+		now:                   time.Now,
+		updateAvailableData:   true,
+		ephemeralData:         true,
 
 		multipleConnectionsData:       true,
 		blocksIncomingConnectionsData: true,
@@ -802,6 +837,60 @@ func (c *Collector) DefaultInterval() time.Duration {
 		return c.interval
 	}
 	return defaultInterval
+}
+
+// fetchSubrequests runs the optional per-device calls through one bounded pool.
+// A job represents one device and keeps that device's posture call before its
+// invite call, matching the historical order. Results are indexed by device so
+// Collect can emit all telemetry and mutate all collector state serially after
+// the fetch phase. This keeps the API concurrency bounded without making the
+// OTEL emitter or the stateful posture/expiry maps concurrent.
+func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevice) []deviceSubrequestResult {
+	if len(devs) == 0 || (!c.collectPosture && !c.collectDeviceInvites) {
+		return nil
+	}
+
+	workers := c.subrequestConcurrency
+	if workers <= 0 {
+		workers = defaultSubrequestConcurrency
+	}
+	if workers > len(devs) {
+		workers = len(devs)
+	}
+	results := make([]deviceSubrequestResult, len(devs))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				result := &results[i]
+				d := &devs[i]
+				if c.collectPosture {
+					result.postureAttempted = true
+					result.posture, result.postureErr = c.fetchPosture(ctx, d)
+				}
+				if c.collectDeviceInvites {
+					result.inviteAttempted = true
+					result.invites, result.inviteErr = c.fetchDeviceInvites(ctx, d)
+				}
+			}
+		}()
+	}
+
+	for i := range devs {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return results
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return results
 }
 
 // Collect lists devices, repopulates the cache, and emits metrics (and, when
@@ -899,6 +988,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	currentDeviceKeyExpiries := make(map[string]struct{})
 	currentAttributeExpiries := make(map[attributeExpiryKey]struct{})
 	postureResults := make([]postureResult, 0, len(devs))
+	subrequests := c.fetchSubrequests(ctx, devs)
 
 	for i := range devs {
 		d := &devs[i]
@@ -1034,20 +1124,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 
 		if c.collectPosture {
-			postureAttempted = true
-			if da, perr := c.emitPosture(ctx, e, d); perr != nil {
+			result := subrequests[i]
+			if result.postureAttempted {
+				postureAttempted = true
+			}
+			if result.postureErr != nil {
+				perr := result.postureErr
 				if postureFirstErr == nil {
 					postureFirstErr = perr
 				}
-			} else {
-				postureResults = append(postureResults, postureResult{device: d, attributes: da})
+			} else if result.postureAttempted {
+				c.emitPosture(e, d, result.posture)
+				postureResults = append(postureResults, postureResult{device: d, attributes: result.posture})
 			}
 		}
 
 		if c.collectDeviceInvites {
-			inviteAttempted = true
-			if ierr := c.tallyDeviceInvites(ctx, e, d, inviteCounts, nowT); ierr != nil && inviteFirstErr == nil {
-				inviteFirstErr = ierr
+			result := subrequests[i]
+			if result.inviteAttempted {
+				inviteAttempted = true
+			}
+			if result.inviteErr != nil {
+				if inviteFirstErr == nil {
+					inviteFirstErr = result.inviteErr
+				}
+			} else if result.inviteAttempted {
+				c.emitDeviceInvites(e, d, result.invites, inviteCounts, nowT)
 			}
 		}
 
@@ -1610,27 +1712,20 @@ func inviteDelivery(inv tsapi.DeviceInvite) string {
 	}
 }
 
-// tallyDeviceInvites fetches one device's share invites, folds them into
-// counts for the aggregate gauge, records the pending-invite age distribution,
-// and emits a per-invite log event carrying the invitee email, the acceptedBy
-// login, and the sharing device identity.
-//
-// Per-device errors (e.g. a missing device_invites:read scope -> 403, or a
-// transient failure) stay NON-FATAL: the device is skipped and collection
-// continues, so device-invite collection can never break the devices snapshot.
-// They are no longer SILENT, though — every attempt is classified through
-// apistate and tallied on the shared Coverage (#421). Before that, a 403 on
-// every device was indistinguishable from a tailnet with no invites at all,
-// while the scrape still reported success. The returned error (nil on
-// success) lets Collect aggregate this tick's per-device outcomes into a
-// single apistate.Observe call after the loop (#524); it is never used to
-// fail the enclosing Collect.
-func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice, counts map[deviceInviteKey]int, nowT time.Time) error {
+// fetchDeviceInvites fetches one device's share invites and records the
+// attempt's coverage outcome. The caller handles the returned error as
+// non-fatal, preserving the devices snapshot when one device's request fails.
+func (c *Collector) fetchDeviceInvites(ctx context.Context, d *tsapi.RichDevice) ([]tsapi.DeviceInvite, error) {
 	invs, err := c.api.DeviceInvites(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestDeviceInvites, apistate.Classify(err, apistate.Disposition{}))
-	if err != nil {
-		return err
-	}
+	return invs, err
+}
+
+// emitDeviceInvites folds one successful device's invites into the aggregate
+// gauge, records the pending-invite age distribution, and emits a per-invite
+// log event carrying the invitee email, the acceptedBy login, and the sharing
+// device identity.
+func (c *Collector) emitDeviceInvites(e telemetry.Emitter, d *tsapi.RichDevice, invs []tsapi.DeviceInvite, counts map[deviceInviteKey]int, nowT time.Time) {
 	for _, inv := range invs {
 		delivery := inviteDelivery(inv)
 		counts[deviceInviteKey{
@@ -1675,7 +1770,6 @@ func (c *Collector) tallyDeviceInvites(ctx context.Context, e telemetry.Emitter,
 			},
 		})
 	}
-	return nil
 }
 
 // emitDERPRollup aggregates the per-device DERP latency already fetched into
@@ -1717,24 +1811,19 @@ func (c *Collector) emitDERPRollup(devs []tsapi.RichDevice) {
 	}
 }
 
-// emitPosture fetches the posture attributes for one device, always emits the
-// posture info-gauge metric (constant 1, curated labels), and conditionally
-// emits the full posture LOG event depending on the configured posture log mode.
-//
-// Per-device errors are non-fatal — the device is skipped and collection
-// continues — but they are recorded on the shared Coverage tally first (#421),
-// so a posture fetch that fails on every device shows up as degraded coverage
-// instead of an empty posture surface on a green scrape. On success the
-// returned attributes are held until every device has been fetched, so the
-// later attribute-metric pass can rank keys fleet-wide; the returned error lets
-// Collect aggregate this tick's per-device outcomes into one apistate.Observe
-// call after the loop (#524) without failing the enclosing Collect.
-func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsapi.RichDevice) (tsapi.DeviceAttributes, error) {
+// fetchPosture fetches one device's posture attributes and records the attempt's
+// coverage outcome. Per-device errors are non-fatal to the enclosing snapshot.
+func (c *Collector) fetchPosture(ctx context.Context, d *tsapi.RichDevice) (tsapi.DeviceAttributes, error) {
 	da, err := c.api.DevicePostureAttributes(ctx, d.ID)
 	c.coverage.Record(c.Name(), subrequestPostureAttributes, apistate.Classify(err, apistate.Disposition{}))
-	if err != nil {
-		return tsapi.DeviceAttributes{}, err
-	}
+	return da, err
+}
+
+// emitPosture always emits the posture info-gauge metric (constant 1, curated
+// labels), and conditionally emits the full posture LOG event depending on the
+// configured posture log mode. The caller supplies a successful fetch result so
+// this stateful emission remains on the collector goroutine.
+func (c *Collector) emitPosture(e telemetry.Emitter, d *tsapi.RichDevice, da tsapi.DeviceAttributes) {
 	attrs := da.Attributes
 
 	// Info-gauge metric: always emitted (independent of log mode). Constant 1,
@@ -1766,7 +1855,7 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 	c.lastPosture[d.ID] = sig
 
 	if !emitLog {
-		return da, nil
+		return
 	}
 
 	evAttrs := telemetry.Attrs{
@@ -1789,7 +1878,6 @@ func (c *Collector) emitPosture(ctx context.Context, e telemetry.Emitter, d *tsa
 		Body:     fmt.Sprintf("device has %d posture attribute(s)", len(attrs)),
 		Attrs:    evAttrs,
 	})
-	return da, nil
 }
 
 // emitAttributes selects the bounded fleet-wide attribute key/value vocabulary,

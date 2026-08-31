@@ -70,6 +70,53 @@ func TestNameAndDefaultInterval(t *testing.T) {
 	}
 }
 
+func TestIndependentProbeIntervals(t *testing.T) {
+	var at = time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+	calls := map[string]int{}
+	api := &fakeAPI{fn: func(logType string) (*tsapi.LogStreamStatus, error) {
+		calls[logType]++
+		return sampleStatus(nil), nil
+	}}
+	c := New(api, 10*time.Second,
+		WithProbeIntervals(30*time.Second, 10*time.Second))
+	c.now = func() time.Time { return at }
+	if got := c.PollInterval(); got != 10*time.Second {
+		t.Fatalf("PollInterval() = %v, want 10s", got)
+	}
+
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("initial Collect: %v", err)
+	}
+	if calls["configuration"] != 1 || calls["network"] != 1 {
+		t.Fatalf("initial calls = %v, want one probe of each type", calls)
+	}
+
+	at = at.Add(10 * time.Second)
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("10s Collect: %v", err)
+	}
+	if calls["configuration"] != 1 || calls["network"] != 2 {
+		t.Fatalf("10s calls = %v, want configuration unchanged and network +1", calls)
+	}
+
+	at = at.Add(20 * time.Second)
+	if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatalf("30s Collect: %v", err)
+	}
+	if calls["configuration"] != 2 || calls["network"] != 3 {
+		t.Fatalf("30s calls = %v, want both probes due", calls)
+	}
+}
+
+func TestProbeIntervalsZeroInheritSharedInterval(t *testing.T) {
+	c := New(&fakeAPI{fn: func(string) (*tsapi.LogStreamStatus, error) {
+		return &tsapi.LogStreamStatus{}, nil
+	}}, 15*time.Second, WithProbeIntervals(0, 0))
+	if got := c.PollInterval(); got != 15*time.Second {
+		t.Fatalf("PollInterval() = %v, want shared 15s", got)
+	}
+}
+
 func TestGatingOn404(t *testing.T) {
 	api := &fakeAPI{fn: func(string) (*tsapi.LogStreamStatus, error) {
 		return nil, &tsapi.StatusError{Code: 404}

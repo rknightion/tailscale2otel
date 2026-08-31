@@ -74,6 +74,10 @@ func TestStatusJSON_Shape(t *testing.T) {
 	cfg.OTLP.MetricExportBatchSize = 4321
 	cfg.Admin.Listen = "127.0.0.1:9091" // loopback: stays open with no token (#227)
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	a.checkpointEffective = "memory"
+	a.checkpointReason = "checkpoint path is not writable"
+	a.evidenceEffective = "file"
+	a.evidencePath = "/state/checkpoints.json"
 	srv := a.buildAdminServer()
 
 	req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
@@ -96,6 +100,9 @@ func TestStatusJSON_Shape(t *testing.T) {
 	}
 	if got.Telemetry.MetricExportBatchSize != 4321 {
 		t.Errorf("metric export batch size = %d, want 4321", got.Telemetry.MetricExportBatchSize)
+	}
+	if len(got.DurableState.Stores) != 2 || !got.DurableState.Degraded {
+		t.Errorf("durable_state = %+v, want two stores with cursor degradation", got.DurableState)
 	}
 	if len(got.Collectors) != len(a.runtimes[0].registry.Entries()) {
 		t.Errorf("collectors = %d, want %d (one per registered collector)", len(got.Collectors), len(a.runtimes[0].registry.Entries()))

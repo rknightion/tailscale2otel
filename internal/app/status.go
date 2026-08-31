@@ -120,6 +120,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, cardLabels, cardPerMetric, cardThresholds, metricByName),
 		Flows:         a.flowStoreInfo(),
 		Events:        a.eventStoreInfo(),
+		DurableState:  a.durableStateInfo(),
 		Receivers: statusdata.ReceiversInfo{
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,
@@ -175,6 +176,42 @@ func (a *App) buildStatus() statusdata.Status {
 	healthFailures := slices.Concat(failures, deliveryHealthReasons(s.Delivery), flowStoreHealthReasons(s.Flows))
 	s.Health, s.HealthReasons = deriveHealth(s.Collectors, healthFailures)
 	return s
+}
+
+func (a *App) durableStateInfo() statusdata.DurableStateInfo {
+	evidenceConfigured := a.cfg.Checkpoint.EvidenceStore
+	if evidenceConfigured == "" {
+		evidenceConfigured = "file"
+	}
+	stores := []statusdata.DurableStoreInfo{
+		durableStoreInfo("poll_cursors", "Poll cursors", a.cfg.Checkpoint.Store,
+			a.checkpointEffective, a.checkpointPath, a.checkpointReason),
+		durableStoreInfo("semantic_evidence", "Semantic evidence", evidenceConfigured,
+			a.evidenceEffective, a.evidencePath, a.evidenceReason),
+	}
+	return statusdata.DurableStateInfo{
+		Degraded: stores[0].State == "degraded" || stores[1].State == "degraded",
+		Stores:   stores,
+	}
+}
+
+func durableStoreInfo(id, name, configured, effective, path, reason string) statusdata.DurableStoreInfo {
+	state := "durable"
+	switch {
+	case effective == "memory" && configured == "memory":
+		state = "volatile"
+	case effective != configured:
+		state = "degraded"
+	case reason != "":
+		// The store is currently in its configured mode, but startup had to
+		// relocate or recover it. Preserve that operator-actionable distinction
+		// instead of calling a cold start fully healthy.
+		state = "recovered"
+	}
+	return statusdata.DurableStoreInfo{
+		ID: id, Name: name, ConfiguredMode: configured, Mode: effective,
+		State: state, Path: path, Reason: reason,
+	}
 }
 
 // deliverySignals renders the per-signal OTLP delivery state for the status

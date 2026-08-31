@@ -60,7 +60,10 @@ type Status struct {
 	Cardinality   CardinalityInfo   `json:"cardinality"`
 	Flows         FlowStoreInfo     `json:"flow_store"`
 	Events        EventStoreInfo    `json:"event_store"`
-	Receivers     ReceiversInfo     `json:"receivers"`
+	// DurableState consolidates the two restart-state classes so consumers do
+	// not have to correlate parallel fields in Config.
+	DurableState DurableStateInfo `json:"durable_state"`
+	Receivers    ReceiversInfo    `json:"receivers"`
 	// Components is every long-running non-collector subsystem and whether it
 	// has failed, from the same state /readyz reads (#318).
 	Components []ComponentStatus `json:"components"`
@@ -97,6 +100,25 @@ type Status struct {
 	// RefreshMs is the client poll interval in milliseconds (admin.status_refresh_interval).
 	// The page falls back to 5000 when this is 0. The 1s freshness ticker is independent.
 	RefreshMs int `json:"refresh_ms,omitempty"`
+}
+
+// DurableStateInfo is the consolidated health view for every store that owns
+// restart state. Degraded is true when a store configured as durable fell back
+// to a volatile effective mode.
+type DurableStateInfo struct {
+	Degraded bool               `json:"degraded"`
+	Stores   []DurableStoreInfo `json:"stores"`
+}
+
+// DurableStoreInfo describes one durability class in operator terms.
+type DurableStoreInfo struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	ConfiguredMode string `json:"configured_mode"`
+	Mode           string `json:"mode"`
+	State          string `json:"state"` // durable | volatile | degraded | recovered
+	Path           string `json:"path,omitempty"`
+	Reason         string `json:"reason,omitempty"`
 }
 
 // TailnetStatus is one tailnet's section of the status page: its identity, auth

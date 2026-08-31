@@ -70,6 +70,32 @@ func TestBuildStatus_HasAPISection(t *testing.T) {
 	}
 }
 
+func TestBuildStatus_ConsolidatesDurableState(t *testing.T) {
+	cfg := config.Default()
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.EvidenceStore = "file"
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	a.checkpointEffective = "memory"
+	a.checkpointReason = "checkpoint path is not writable"
+	a.evidenceEffective = "file"
+	a.evidencePath = "/state/checkpoints.json"
+
+	got := a.buildStatus().DurableState
+	if !got.Degraded {
+		t.Fatal("DurableState.Degraded = false, want true when configured cursor durability fell back to memory")
+	}
+	if len(got.Stores) != 2 {
+		t.Fatalf("DurableState.Stores = %d, want 2", len(got.Stores))
+	}
+	cursor, evidence := got.Stores[0], got.Stores[1]
+	if cursor.ID != "poll_cursors" || cursor.Mode != "memory" || cursor.State != "degraded" || cursor.Reason == "" {
+		t.Errorf("cursor durable state = %+v", cursor)
+	}
+	if evidence.ID != "semantic_evidence" || evidence.Mode != "file" || evidence.State != "durable" || evidence.Path == "" {
+		t.Errorf("evidence durable state = %+v", evidence)
+	}
+}
+
 // TestBuildStatus_CollectorInfo asserts each collector row carries the
 // admin-tooltip data: a one-line purpose and the metrics it emits, sourced from
 // the in-code catalog.

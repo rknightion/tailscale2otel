@@ -4,7 +4,7 @@ title: Bound the N+1 per-device subrequests in the devices/services collectors
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:30'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:13'
 labels: []
 milestone: m-4
 dependencies: []
@@ -37,3 +37,9 @@ collect_device_invites defaults ON (internal/config/defaults.go:183) and issues 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes bounded per-device subrequest concurrency with current sequential behaviour preserved by default; lane C later implements pools and timing evidence.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane C implemented bounded device posture/invite and service host subrequest pools. Default concurrency remains 1 to preserve current sequential behavior; operators opt into bounded parallelism after considering API rate limits. Race tests cover concurrency caps and show parallel work no longer scales linearly with device count.
+<!-- SECTION:NOTES:END -->

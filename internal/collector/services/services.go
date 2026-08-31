@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
@@ -27,6 +28,8 @@ var (
 )
 
 const defaultInterval = 600 * time.Second
+
+const defaultSubrequestConcurrency = 1
 
 const (
 	metricCount    = "tailscale.services.count"
@@ -79,13 +82,14 @@ type api interface {
 
 // Collector implements collector.SnapshotCollector for Tailscale Services.
 type Collector struct {
-	api          api
-	interval     time.Duration
-	perEntity    bool
-	collectHosts bool
-	collectTags  bool
-	tagLimit     int
-	cache        *enrich.DeviceCache
+	api                   api
+	interval              time.Duration
+	perEntity             bool
+	collectHosts          bool
+	collectTags           bool
+	tagLimit              int
+	subrequestConcurrency int
+	cache                 *enrich.DeviceCache
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -104,6 +108,21 @@ func WithPerEntity(enabled bool) Option { return func(c *Collector) { c.perEntit
 // WithCollectHosts enables per-service backing-host detail, which makes one
 // extra API call per service (N+1). Off by default.
 func WithCollectHosts(enabled bool) Option { return func(c *Collector) { c.collectHosts = enabled } }
+
+// WithSubrequestConcurrency bounds the number of backing-host requests that
+// may be in flight at once. One is deliberately the default to preserve the
+// historical sequential request pattern and avoid unexpectedly increasing API
+// pressure for existing large-fleet deployments. Non-positive values retain
+// that safe sequential default.
+func WithSubrequestConcurrency(n int) Option {
+	return func(c *Collector) {
+		if n <= 0 {
+			c.subrequestConcurrency = defaultSubrequestConcurrency
+			return
+		}
+		c.subrequestConcurrency = n
+	}
+}
 
 // WithTagRollup controls the tailscale.services.by_tag distribution gauge.
 // enabled gates the rollup; limit caps the distinct tag series (the busiest
@@ -142,12 +161,13 @@ func WithClock(now func() time.Time) Option {
 // New returns a services collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
-		api:         a,
-		interval:    interval,
-		perEntity:   true,
-		collectTags: true,
-		tagLimit:    defaultTagRollupLimit,
-		now:         time.Now,
+		api:                   a,
+		interval:              interval,
+		perEntity:             true,
+		collectTags:           true,
+		tagLimit:              defaultTagRollupLimit,
+		subrequestConcurrency: defaultSubrequestConcurrency,
+		now:                   time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -164,6 +184,54 @@ func (c *Collector) DefaultInterval() time.Duration {
 		return c.interval
 	}
 	return defaultInterval
+}
+
+type hostResult struct {
+	hosts     []tsapi.ServiceHost
+	err       error
+	attempted bool
+}
+
+// fetchHosts runs the N+1 backing-host requests through a bounded worker pool.
+// Results stay indexed by service so Collect can emit telemetry serially and
+// preserve deterministic first-error behavior.
+func (c *Collector) fetchHosts(ctx context.Context, svcs []tsapi.VIPService) []hostResult {
+	if len(svcs) == 0 {
+		return nil
+	}
+	workers := c.subrequestConcurrency
+	if workers <= 0 {
+		workers = defaultSubrequestConcurrency
+	}
+	if workers > len(svcs) {
+		workers = len(svcs)
+	}
+	results := make([]hostResult, len(svcs))
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				results[i].attempted = true
+				results[i].hosts, results[i].err = c.api.ServiceHosts(ctx, svcs[i].Name)
+			}
+		}()
+	}
+
+	for i := range svcs {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			close(jobs)
+			wg.Wait()
+			return results
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return results
 }
 
 // Collect lists Tailscale Services and emits the count plus (per-entity) the
@@ -207,16 +275,28 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		hostsErr       error
 		hostInfoPoints []telemetry.GaugePoint
 	)
+	var hostResults []hostResult
+	if c.collectHosts {
+		hostResults = c.fetchHosts(ctx, svcs)
+	}
 	for i := range svcs {
 		s := &svcs[i]
 		e.Gauge(docPorts.Name, docPorts.Unit, docPorts.Description,
 			float64(len(s.Ports)), serviceAttrs(*s))
 		if c.collectHosts {
-			hostsAttempted = true
-			// First-error-wins: these failures are systemic (a scope or
-			// credential problem), not worth ranking against each other.
-			if hErr := c.emitHosts(ctx, e, *s, &hostInfoPoints); hErr != nil && hostsErr == nil {
-				hostsErr = hErr
+			result := hostResults[i]
+			if result.attempted {
+				hostsAttempted = true
+				// First-error-wins in service order: these failures are systemic
+				// (a scope or credential problem), not worth ranking against each
+				// other.
+				if result.err != nil {
+					if hostsErr == nil {
+						hostsErr = result.err
+					}
+				} else {
+					c.emitHosts(e, *s, result.hosts, &hostInfoPoints)
+				}
 			}
 		}
 	}
@@ -258,16 +338,11 @@ func (c *Collector) populateEnrichCache(ctx context.Context) error {
 	return nil
 }
 
-// emitHosts fetches and emits the backing-host counts for one service, bucketed
-// by approval + configured state. A per-service host-call failure is non-fatal
-// (the service's host series is skipped; collection continues); the error is
-// returned so Collect can aggregate it into the single listServiceHosts
-// availability observation for the tick.
-func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service tsapi.VIPService, hostInfoPoints *[]telemetry.GaugePoint) error {
-	hosts, err := c.api.ServiceHosts(ctx, service.Name)
-	if err != nil {
-		return err
-	}
+// emitHosts emits the backing-host counts for one service, bucketed by approval
+// + configured state, and appends host identity points. Fetching happens in the
+// bounded pool above; this method only mutates the emitter-owned state on the
+// collector goroutine.
+func (c *Collector) emitHosts(e telemetry.Emitter, service tsapi.VIPService, hosts []tsapi.ServiceHost, hostInfoPoints *[]telemetry.GaugePoint) {
 	type bucket struct{ approval, configured string }
 	counts := make(map[bucket]int, len(hosts))
 	for _, h := range hosts {
@@ -282,7 +357,6 @@ func (c *Collector) emitHosts(ctx context.Context, e telemetry.Emitter, service 
 	for _, h := range hosts {
 		*hostInfoPoints = append(*hostInfoPoints, c.hostInfoPoint(service, h))
 	}
-	return nil
 }
 
 // emitTagRollup emits one bounded series per service tag. A service carrying

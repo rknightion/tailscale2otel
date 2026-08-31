@@ -181,7 +181,9 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 				devices.WithKeyExpiryDisabledData(false))
 		}
 		rt.registry.Register(devices.New(cp.Client, rt.cache, c.Devices.Interval.D(),
-			c.Devices.CollectRoutes, c.Devices.CollectPosture, devOpts...), c.Devices.Interval.D())
+			c.Devices.CollectRoutes, c.Devices.CollectPosture,
+			append(devOpts, devices.WithSubrequestConcurrency(c.Devices.SubrequestConcurrency))...),
+			c.Devices.Interval.D())
 	}
 	if c.Users.Enabled && cp.Supports("users") {
 		userOpts := []users.Option{users.WithPerEntity(cfg.Cardinality.PerEntity.User)}
@@ -262,8 +264,11 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			postureintegrations.WithSnapshot(c.PostureIntegrations.SnapshotEnabled, cfg.OTLP.Limits.LogBodyBytes)), c.PostureIntegrations.Interval.D())
 	}
 	if c.LogStream.Enabled && cp.Supports("log_stream") {
-		rt.registry.Register(logstream.New(rt.client, c.LogStream.Interval.D(),
-			logstream.WithAPIState(rt.apiState)), c.LogStream.Interval.D())
+		logStreamCollector := logstream.New(rt.client, c.LogStream.Interval.D(),
+			logstream.WithAPIState(rt.apiState),
+			logstream.WithProbeIntervals(
+				c.LogStream.ConfigurationInterval.D(), c.LogStream.NetworkInterval.D()))
+		rt.registry.Register(logStreamCollector, logStreamCollector.PollInterval())
 	}
 	if c.OAuthApps.Enabled && cp.Supports("oauth_apps") {
 		rt.registry.Register(oauthapps.New(rt.client, c.OAuthApps.Interval.D(),
@@ -273,6 +278,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(services.New(rt.client, c.Services.Interval.D(),
 			services.WithPerEntity(cfg.Cardinality.PerEntity.Service),
 			services.WithCollectHosts(c.Services.CollectHosts),
+			services.WithSubrequestConcurrency(c.Services.SubrequestConcurrency),
 			services.WithTagRollup(c.Services.CollectTagRollup, c.Services.TagRollupLimit),
 			// Feed the service-VIP -> name map so flow logs resolve a service
 			// VIP peer to its service name instead of "unknown" (#166).

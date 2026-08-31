@@ -386,3 +386,28 @@ func TestCheckpointStore_WritableDefaultIsNotRelocated(t *testing.T) {
 		t.Errorf("Reason = %q, want empty when nothing was relocated", out.Reason)
 	}
 }
+
+func TestAppFlushCheckpointStoresPersistsDebouncedCursor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoints.json")
+	store, err := collector.NewFileStore(path, collector.WithWriteDebounce(time.Hour))
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	want := time.Unix(1_700_000_000, 0).UTC()
+	if err := store.Set("devices", want); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	a := &App{store: store, evidenceStore: collector.NewMemoryStore()}
+	if err := a.flushCheckpointStores(); err != nil {
+		t.Fatalf("flushCheckpointStores: %v", err)
+	}
+
+	reopened, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if got, ok := reopened.Get("devices"); !ok || !got.Equal(want) {
+		t.Fatalf("reopened devices = %v, %v; want %v, true", got, ok, want)
+	}
+}

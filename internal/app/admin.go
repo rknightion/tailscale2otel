@@ -5,18 +5,24 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/tls"
+	"crypto/x509"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/netip"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
 )
 
 // registerProbes registers the liveness (/healthz) and readiness (/readyz)
@@ -142,7 +148,131 @@ const (
 	// labeled cross-site (or whose Origin does not match the request Host) —
 	// a remote page reading the local admin surface.
 	reasonCrossSiteRequest = "cross_site_request"
+	// reasonThrottled marks a request refused during the bounded per-source
+	// backoff after repeated missing or invalid credentials.
+	reasonThrottled = "throttled"
 )
+
+const (
+	maxAdminAuthSources = 1024
+	adminAuthOverflow   = "overflow"
+)
+
+type adminAuthSourceState struct {
+	windowStart  time.Time
+	failures     int
+	blockedUntil time.Time
+}
+
+// adminAuthLimiter is a fixed-cap, per-source failure tracker. Once its source
+// budget is full, previously unseen sources share one overflow bucket. That
+// fails closed under a source-address spray without allowing the map to grow or
+// evicting an attacker's own active lockout.
+type adminAuthLimiter struct {
+	mu      sync.Mutex
+	limit   int
+	window  time.Duration
+	backoff time.Duration
+	now     func() time.Time
+	sources map[string]adminAuthSourceState
+}
+
+func newAdminAuthLimiter(limit int, window, backoff time.Duration, now func() time.Time) *adminAuthLimiter {
+	if now == nil {
+		now = time.Now
+	}
+	return &adminAuthLimiter{
+		limit: limit, window: window, backoff: backoff, now: now,
+		sources: make(map[string]adminAuthSourceState),
+	}
+}
+
+func (l *adminAuthLimiter) keyLocked(source string, now time.Time) string {
+	for key, state := range l.sources {
+		if !state.blockedUntil.After(now) && now.Sub(state.windowStart) >= l.window {
+			delete(l.sources, key)
+		}
+	}
+	if _, ok := l.sources[source]; ok || len(l.sources) < maxAdminAuthSources-1 {
+		return source
+	}
+	return adminAuthOverflow
+}
+
+func (l *adminAuthLimiter) allow(source string) (bool, time.Duration) {
+	if l == nil || l.limit <= 0 {
+		return true, 0
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	key := l.keyLocked(source, now)
+	state, ok := l.sources[key]
+	if !ok || !state.blockedUntil.After(now) {
+		if ok && !state.blockedUntil.IsZero() {
+			delete(l.sources, key)
+		}
+		return true, 0
+	}
+	return false, state.blockedUntil.Sub(now)
+}
+
+func (l *adminAuthLimiter) failure(source string) (bool, time.Duration) {
+	if l == nil || l.limit <= 0 {
+		return false, 0
+	}
+	now := l.now()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	key := l.keyLocked(source, now)
+	state := l.sources[key]
+	if state.blockedUntil.After(now) {
+		return true, state.blockedUntil.Sub(now)
+	}
+	if state.windowStart.IsZero() || now.Sub(state.windowStart) >= l.window {
+		state.windowStart = now
+		state.failures = 0
+	}
+	state.failures++
+	if state.failures >= l.limit {
+		state.blockedUntil = now.Add(l.backoff)
+	}
+	l.sources[key] = state
+	if state.blockedUntil.After(now) {
+		return true, state.blockedUntil.Sub(now)
+	}
+	return false, 0
+}
+
+func (l *adminAuthLimiter) success(source string) {
+	if l == nil || l.limit <= 0 {
+		return
+	}
+	l.mu.Lock()
+	key := l.keyLocked(source, l.now())
+	if key != adminAuthOverflow {
+		delete(l.sources, key)
+	}
+	l.mu.Unlock()
+}
+
+func (l *adminAuthLimiter) sourceCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return len(l.sources)
+}
+
+func adminAuthSource(remoteAddr string) string {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	addr, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return "unknown"
+	}
+	return addr.Unmap().String()
+}
 
 // loopbackHostHeader reports whether an HTTP Host header addresses this machine
 // over loopback: a loopback IP literal (127.0.0.0/8, ::1, with or without a
@@ -224,35 +354,71 @@ func (a *App) requireLoopbackCaller(next http.HandlerFunc) http.HandlerFunc {
 // The /healthz and /readyz probes are registered separately and never wrapped:
 // cluster health checks legitimately send an arbitrary Host.
 func (a *App) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return a.newAdminAuthGate()(next)
+}
+
+// newAdminAuthGate returns one route-wrapper factory with a shared bounded
+// limiter. buildAdminServer creates it once so failures follow a source across
+// every protected route instead of resetting at each handler boundary.
+func (a *App) newAdminAuthGate() func(http.HandlerFunc) http.HandlerFunc {
+	return a.newAdminAuthGateAt(time.Now)
+}
+
+func (a *App) newAdminAuthGateAt(now func() time.Time) func(http.HandlerFunc) http.HandlerFunc {
 	token := a.cfg.Admin.Auth.Token.Reveal()
 	if token == "" {
 		if listenaddr.IsLoopback(a.cfg.Admin.Listen) {
-			return a.requireLoopbackCaller(next)
+			return a.requireLoopbackCaller
 		}
-		return func(w http.ResponseWriter, r *http.Request) {
-			a.adminAuthRejected(reasonAuthRequired)
-			a.logger.Warn("admin request rejected: no admin.auth.token configured on a network-reachable bind",
-				"reason", reasonAuthRequired, "path", r.URL.Path, "listen", a.cfg.Admin.Listen,
-				"remedy", "set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)")
-			http.Error(w,
-				"admin access refused: set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)",
-				http.StatusForbidden)
-		}
-	}
-	return func(w http.ResponseWriter, r *http.Request) {
-		if !adminAuthorized(r, token) {
-			reason := reasonBadCredentials
-			if r.Header.Get("Authorization") == "" {
-				reason = reasonMissingCredentials
+		return func(_ http.HandlerFunc) http.HandlerFunc {
+			return func(w http.ResponseWriter, r *http.Request) {
+				a.adminAuthRejected(reasonAuthRequired)
+				a.logger.Warn("admin request rejected: no admin.auth.token configured on a network-reachable bind",
+					"reason", reasonAuthRequired, "path", r.URL.Path, "listen", a.cfg.Admin.Listen,
+					"remedy", "set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)")
+				http.Error(w,
+					"admin access refused: set admin.auth.token, or bind admin.listen to loopback (127.0.0.1 or localhost)",
+					http.StatusForbidden)
 			}
-			a.adminAuthRejected(reason)
-			a.logger.Warn("admin request rejected", "reason", reason, "path", r.URL.Path)
-			w.Header().Set("WWW-Authenticate", `Basic realm="tailscale2otel admin"`)
-			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
-			return
 		}
-		next(w, r)
 	}
+	auth := a.cfg.Admin.Auth
+	limiter := newAdminAuthLimiter(auth.FailureLimit, auth.FailureWindow.D(), auth.FailureBackoff.D(), now)
+	return func(next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			source := adminAuthSource(r.RemoteAddr)
+			if allowed, retryAfter := limiter.allow(source); !allowed {
+				a.rejectThrottledAdminAuth(w, r, retryAfter)
+				return
+			}
+			if !adminAuthorized(r, token) {
+				reason := reasonBadCredentials
+				if r.Header.Get("Authorization") == "" {
+					reason = reasonMissingCredentials
+				}
+				if blocked, retryAfter := limiter.failure(source); blocked {
+					a.rejectThrottledAdminAuth(w, r, retryAfter)
+					return
+				}
+				a.adminAuthRejected(reason)
+				a.logger.Warn("admin request rejected", "reason", reason, "path", r.URL.Path)
+				w.Header().Set("WWW-Authenticate", `Basic realm="tailscale2otel admin"`)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+				return
+			}
+			limiter.success(source)
+			next(w, r)
+		}
+	}
+}
+
+func (a *App) rejectThrottledAdminAuth(w http.ResponseWriter, r *http.Request, retryAfter time.Duration) {
+	seconds := max(1, int64(math.Ceil(retryAfter.Seconds())))
+	a.adminAuthRejected(reasonThrottled)
+	a.logger.Warn("admin request throttled after repeated authentication failures",
+		"reason", reasonThrottled, "path", r.URL.Path, "retry_after_seconds", seconds)
+	w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
+	http.Error(w, http.StatusText(http.StatusTooManyRequests), http.StatusTooManyRequests)
 }
 
 // newAdminServer builds a probes-only admin HTTP server. Retained for the
@@ -276,36 +442,37 @@ func newAdminServer(listen string) *http.Server {
 // handleIndex 404s unknown paths.
 func (a *App) buildAdminServer() *http.Server {
 	mux := http.NewServeMux()
+	auth := a.newAdminAuthGate()
 	registerProbes(mux, a.readyz)
 	if a.cfg.Admin.LandingPage {
-		mux.HandleFunc("/", a.requireAdminAuth(a.handleIndex))
-		mux.HandleFunc("/api/status.json", a.requireAdminAuth(a.handleStatusJSON))
-		mux.HandleFunc("/api/cardinality.json", a.requireAdminAuth(a.handleCardinalityJSON))
-		mux.HandleFunc("/api/config.json", a.requireAdminAuth(a.handleConfigJSON))
-		mux.HandleFunc("/api/rdns/purge", a.requireAdminAuth(a.handleRDNSPurge))
+		mux.HandleFunc("/", auth(a.handleIndex))
+		mux.HandleFunc("/api/status.json", auth(a.handleStatusJSON))
+		mux.HandleFunc("/api/cardinality.json", auth(a.handleCardinalityJSON))
+		mux.HandleFunc("/api/config.json", auth(a.handleConfigJSON))
+		mux.HandleFunc("/api/rdns/purge", auth(a.handleRDNSPurge))
 		// Always available with the landing page, like /api/config.json: the
 		// bundle is the thing an operator reaches for when something is wrong,
 		// so gating it behind another switch would hide it exactly then.
-		mux.HandleFunc("/api/support-bundle.zip", a.requireAdminAuth(a.handleSupportBundle))
+		mux.HandleFunc("/api/support-bundle.zip", auth(a.handleSupportBundle))
 		// The flow view is registered only when a store is actually being fed, so
 		// a disabled view 404s rather than serving an empty result that reads as
 		// "no traffic".
 		if a.flowsEnabled() {
-			mux.HandleFunc("/flows", a.requireAdminAuth(a.handleFlowsPage))
-			mux.HandleFunc("/api/flows.json", a.requireAdminAuth(a.handleFlowsJSON))
-			mux.HandleFunc("/api/flows/export.csv", a.requireAdminAuth(a.handleFlowsExportCSV))
-			mux.HandleFunc("/api/flows/export.json", a.requireAdminAuth(a.handleFlowsExportJSON))
+			mux.HandleFunc("/flows", auth(a.handleFlowsPage))
+			mux.HandleFunc("/api/flows.json", auth(a.handleFlowsJSON))
+			mux.HandleFunc("/api/flows/export.csv", auth(a.handleFlowsExportCSV))
+			mux.HandleFunc("/api/flows/export.json", auth(a.handleFlowsExportJSON))
 		}
 		// Same rule as the flow view above: registered only when a store is being
 		// fed, so a disabled explorer 404s rather than serving an empty timeline
 		// that reads as "nothing has happened".
 		if a.eventsEnabled() {
-			mux.HandleFunc("/events", a.requireAdminAuth(a.handleEventsPage))
-			mux.HandleFunc("/api/events.json", a.requireAdminAuth(a.handleEventsJSON))
+			mux.HandleFunc("/events", auth(a.handleEventsPage))
+			mux.HandleFunc("/api/events.json", auth(a.handleEventsJSON))
 		}
 	}
 	if a.cfg.Profiling.Pprof.Enabled {
-		registerPprof(mux, a.requireAdminAuth)
+		registerPprof(mux, auth)
 	}
 	srv := &http.Server{
 		Addr: a.cfg.Admin.Listen,
@@ -329,9 +496,44 @@ func (a *App) buildAdminServer() *http.Server {
 		reloader := certreload.New(a.cfg.Admin.TLS.CertFile, a.cfg.Admin.TLS.KeyFile,
 			appcatalog.ComponentAdmin, a.logger, a.procEmitter)
 		srv.TLSConfig = &tls.Config{GetCertificate: reloader.GetCertificate}
+		a.applyAdminClientAuth(srv.TLSConfig)
 		a.adminCerts = reloader
 	}
 	return srv
+}
+
+// applyAdminClientAuth gives the admin listener the same client-CA semantics as
+// the Prometheus listener. The CA is loaded once at listener construction; the
+// presented server certificate continues to use the independent hot reloader.
+func (a *App) applyAdminClientAuth(tlsCfg *tls.Config) {
+	caFile := a.cfg.Admin.TLS.ClientCAFile
+	if caFile == "" {
+		return
+	}
+	pool := x509.NewCertPool()
+	pemBytes, err := safefile.ReadRegular(caFile, safefile.MaxPEMBytes, safefile.AllowSymlink)
+	switch {
+	case err != nil:
+		a.logger.With(semconv.AttrComponent, appcatalog.ComponentAdmin).
+			Error("admin client CA bundle could not be read; the listener will reject every client",
+				"client_ca_file", caFile, "error", err)
+		a.componentError(appcatalog.ComponentAdmin)
+		tlsCfg.ClientCAs, tlsCfg.ClientAuth = pool, tls.RequireAndVerifyClientCert
+		return
+	case !pool.AppendCertsFromPEM(pemBytes):
+		a.logger.With(semconv.AttrComponent, appcatalog.ComponentAdmin).
+			Error("admin client CA bundle contains no parseable certificate; the listener will reject every client",
+				"client_ca_file", caFile)
+		a.componentError(appcatalog.ComponentAdmin)
+		tlsCfg.ClientCAs, tlsCfg.ClientAuth = pool, tls.RequireAndVerifyClientCert
+		return
+	}
+	tlsCfg.ClientCAs = pool
+	tlsCfg.ClientAuth = adminClientAuthType(a.cfg.Admin.TLS.ClientAuth, caFile)
+}
+
+func adminClientAuthType(mode, clientCAFile string) tls.ClientAuthType {
+	return metricsClientAuthType(mode, clientCAFile)
 }
 
 // runAdmin serves the admin endpoints until ctx is canceled, then shuts down

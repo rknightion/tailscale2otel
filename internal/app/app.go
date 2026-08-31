@@ -198,6 +198,8 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if logger == nil {
 		logger = slog.Default()
 	}
+	logger = withSupportBundleLogTail(
+		logger, cfg.Admin.SupportBundleLogTailRecords, cfg.OTLP.Limits.LogBodyBytes)
 	settings := &newSettings{}
 	for _, o := range opts {
 		o(settings)
@@ -995,6 +997,7 @@ func (a *App) Run(ctx context.Context) error {
 	for _, rt := range a.runtimes {
 		rt.flowProc.FlushRollup(rt.emitter)
 	}
+	checkpointErr := a.flushCheckpointStores()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
 	shutdownErr := a.shutdown(shutdownCtx)
@@ -1003,7 +1006,7 @@ func (a *App) Run(ctx context.Context) error {
 	if a.ingressWAL != nil {
 		closeErr = a.ingressWAL.Close()
 	}
-	return errors.Join(schedErr, shutdownErr, closeErr)
+	return errors.Join(schedErr, shutdownErr, closeErr, checkpointErr)
 }
 
 // Close flushes and tears down everything New() built, for a caller that
@@ -1026,6 +1029,7 @@ func (a *App) Close(ctx context.Context) error {
 	// cleanup, so close every per-tailnet flow store here after the final
 	// processor flush and before the telemetry pipeline is torn down.
 	flowStoreErr := a.closeFlowStores(ctx)
+	checkpointErr := a.flushCheckpointStores()
 	var closeErr error
 	if a.ingressWAL != nil {
 		closeErr = a.ingressWAL.Close()
@@ -1043,7 +1047,20 @@ func (a *App) Close(ctx context.Context) error {
 		a.restore()
 	}
 	shutdownErr := a.shutdown(ctx)
-	return errors.Join(shutdownErr, closeErr, flowStoreErr)
+	return errors.Join(shutdownErr, closeErr, flowStoreErr, checkpointErr)
+}
+
+// flushCheckpointStores makes shutdown a synchronous durability boundary even
+// when ordinary checkpoint mutations are debounced. Cursor and evidence stores
+// may share one fileStore; a second Flush is then a cheap clean no-op.
+func (a *App) flushCheckpointStores() error {
+	var err error
+	for _, store := range []collector.CheckpointStore{a.store, a.evidenceStore} {
+		if flusher, ok := store.(collector.CheckpointFlusher); ok {
+			err = errors.Join(err, flusher.Flush())
+		}
+	}
+	return err
 }
 
 // autoConfigureStreaming registers this receiver as a Splunk-HEC log-streaming
@@ -1257,7 +1274,10 @@ func checkpointStoreWithDefault(
 			}, nil
 		}
 	}
-	store, err := collector.NewFileStore(path)
+	storeOpts := []collector.FileStoreOption{
+		collector.WithWriteDebounce(cfg.Checkpoint.WriteDebounce.D()),
+	}
+	store, err := collector.NewFileStore(path, storeOpts...)
 	if errors.Is(err, collector.ErrCorruptCheckpoint) {
 		// Non-critical window-cursor state: rename the corrupt file aside and start
 		// from an empty checkpoint (cold start from initial_lookback) rather than
@@ -1276,7 +1296,7 @@ func checkpointStoreWithDefault(
 			"(window collectors cold-start from initial_lookback)",
 			"file_path", path, "moved_to", aside, "error", err)
 		reason = fmt.Sprintf("checkpoint file was corrupt; renamed aside to %s and cold-started", aside)
-		store, err = collector.NewFileStore(path)
+		store, err = collector.NewFileStore(path, storeOpts...)
 	}
 	if err != nil {
 		return nil, checkpointOutcome{}, err

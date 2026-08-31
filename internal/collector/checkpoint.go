@@ -44,6 +44,28 @@ type checkpointBatchStore interface {
 	setBatch(updates map[string]time.Time, deletes []string) error
 }
 
+// CheckpointFlusher is implemented by built-in stores that may have pending
+// debounced writes. Shutdown paths should call Flush synchronously before
+// stopping the process so the bounded crash window does not become a shutdown
+// data-loss window. Third-party CheckpointStore implementations remain valid
+// without implementing this optional interface.
+type CheckpointFlusher interface {
+	Flush() error
+}
+
+// FileStoreOption configures a file-backed checkpoint store.
+type FileStoreOption func(*fileStore)
+
+// WithWriteDebounce coalesces nearby file-store mutations into one atomic
+// persistence operation. A non-positive duration keeps Set/Delete synchronous.
+func WithWriteDebounce(d time.Duration) FileStoreOption {
+	return func(s *fileStore) {
+		if d > 0 {
+			s.writeDebounce = d
+		}
+	}
+}
+
 // UpdateCheckpointBatch applies deletes and updates as one persistence
 // operation when store supports it. Updates win when a key appears in both
 // collections. A third-party CheckpointStore falls back to the public
@@ -115,11 +137,18 @@ func (s *memoryStore) setBatch(updates map[string]time.Time, deletes []string) e
 	return nil
 }
 
+// Flush satisfies CheckpointFlusher. Memory stores have no pending I/O.
+func (s *memoryStore) Flush() error { return nil }
+
 // fileStore persists checkpoints to a JSON file, written atomically on each Set.
 type fileStore struct {
-	mu   sync.Mutex
-	path string
-	m    map[string]time.Time
+	mu            sync.Mutex
+	path          string
+	m             map[string]time.Time
+	writeDebounce time.Duration
+	timer         *time.Timer
+	dirty         bool
+	persistErr    error
 }
 
 // NewFileStore returns a file-backed checkpoint store, loading any existing
@@ -130,8 +159,13 @@ type fileStore struct {
 // exactly once per process at startup (internal/app.checkpointStore), and it
 // happens before this store has written anything, so the sweep can never race a
 // save of its own. Its outcome does not gate the store — see sweepStagingFiles.
-func NewFileStore(path string) (CheckpointStore, error) {
+func NewFileStore(path string, opts ...FileStoreOption) (CheckpointStore, error) {
 	fs := &fileStore{path: path, m: map[string]time.Time{}}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(fs)
+		}
+	}
 	sweepStagingFiles(path)
 	data, err := safefile.ReadRegular(path, safefile.MaxCheckpointBytes, safefile.NoSymlink)
 	if err != nil {
@@ -179,6 +213,10 @@ func (s *fileStore) Set(name string, t time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.m[name] = t
+	if s.writeDebounce > 0 {
+		s.markDirtyLocked()
+		return nil
+	}
 	return s.persistLocked()
 }
 
@@ -195,6 +233,10 @@ func (s *fileStore) Delete(name string) error {
 		return nil
 	}
 	delete(s.m, name)
+	if s.writeDebounce > 0 {
+		s.markDirtyLocked()
+		return nil
+	}
 	return s.persistLocked()
 }
 
@@ -207,7 +249,70 @@ func (s *fileStore) setBatch(updates map[string]time.Time, deletes []string) err
 	for key, value := range updates {
 		s.m[key] = value
 	}
+	if s.writeDebounce > 0 {
+		s.markDirtyLocked()
+		return nil
+	}
 	return s.persistLocked()
+}
+
+// markDirtyLocked records an in-memory mutation and starts one debounce timer
+// when no timer is already pending. Callers must hold s.mu.
+func (s *fileStore) markDirtyLocked() {
+	s.dirty = true
+	if s.timer == nil {
+		s.timer = time.AfterFunc(s.writeDebounce, s.persistDebounced)
+	}
+}
+
+// persistDebounced is the timer callback. Flush invalidates s.timer while
+// holding the same mutex; a callback racing with Flush then observes nil and
+// exits without issuing a duplicate write.
+func (s *fileStore) persistDebounced() {
+	s.mu.Lock()
+	if s.timer == nil {
+		s.mu.Unlock()
+		return
+	}
+	s.timer = nil
+	err := s.persistDirtyLocked()
+	path := s.path
+	s.mu.Unlock()
+	if err != nil {
+		slog.Default().Warn("debounced checkpoint persist failed; it will retry on the next mutation or shutdown flush",
+			"path", path, "error", err)
+	}
+}
+
+// persistDirtyLocked writes the latest map and tracks asynchronous errors for
+// Flush. Callers must hold s.mu.
+func (s *fileStore) persistDirtyLocked() error {
+	if !s.dirty {
+		return s.persistErr
+	}
+	s.dirty = false
+	if err := s.persistLocked(); err != nil {
+		s.dirty = true
+		s.persistErr = err
+		return err
+	}
+	s.persistErr = nil
+	return nil
+}
+
+// Flush cancels a pending debounce timer and synchronously persists the latest
+// in-memory checkpoint map. It is safe to call more than once and from a
+// shutdown path while no further Set calls are expected.
+func (s *fileStore) Flush() error {
+	s.mu.Lock()
+	if s.timer != nil {
+		timer := s.timer
+		s.timer = nil
+		timer.Stop()
+	}
+	err := s.persistDirtyLocked()
+	s.mu.Unlock()
+	return err
 }
 
 // checkpointFileMode is the intended permission of the checkpoint file:
@@ -260,6 +365,14 @@ type namespaced struct {
 func (n namespaced) Get(name string) (time.Time, bool)  { return n.store.Get(n.prefix + name) }
 func (n namespaced) Set(name string, t time.Time) error { return n.store.Set(n.prefix+name, t) }
 func (n namespaced) Delete(name string) error           { return n.store.Delete(n.prefix + name) }
+
+// Flush forwards an optional pending-write flush through a namespaced view.
+func (n namespaced) Flush() error {
+	if f, ok := n.store.(CheckpointFlusher); ok {
+		return f.Flush()
+	}
+	return nil
+}
 
 func (n namespaced) setBatch(updates map[string]time.Time, deletes []string) error {
 	prefixedUpdates := make(map[string]time.Time, len(updates))

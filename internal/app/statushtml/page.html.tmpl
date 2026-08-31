@@ -630,11 +630,29 @@
     <div class="cards">
       <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{.Config.LogLevel}}</div></div>
       <div class="card"><div class="k">Auth method</div><div class="v" style="font-size:16px">{{.Config.AuthMethod}}</div></div>
-      <div class="card"><div class="k">Poll cursor store</div><div class="v" style="font-size:16px">{{.Config.CheckpointStore}}</div>{{with .Config.CheckpointPath}}<div class="k" style="margin-top:4px;word-break:break-all">{{.}}</div>{{end}}{{with .Config.CheckpointReason}}<div class="k" style="margin-top:4px">{{.}}</div>{{end}}</div>
-      <div class="card"><div class="k">Semantic evidence store</div><div class="v" style="font-size:16px">{{.Config.EvidenceStore}}</div>{{with .Config.EvidencePath}}<div class="k" style="margin-top:4px;word-break:break-all">{{.}}</div>{{end}}{{with .Config.EvidenceReason}}<div class="k" style="margin-top:4px">{{.}}</div>{{end}}</div>
       <div class="card"><div class="k">Receivers</div><div class="v" style="font-size:16px">{{if .Receivers.Streaming}}<span class="badge ok">stream</span> {{end}}{{if .Receivers.Webhook}}<span class="badge ok">webhook</span>{{end}}{{if and (not .Receivers.Streaming) (not .Receivers.Webhook)}}<span class="muted">none</span>{{end}}</div></div>
       <div class="card"><div class="k">Profiling</div><div class="v" style="font-size:16px">{{if .Profiling.PprofEnabled}}<span class="badge ok">pprof</span> {{end}}{{if .Profiling.PyroscopeEnabled}}<span class="badge ok">pyroscope</span>{{end}}{{if and (not .Profiling.PprofEnabled) (not .Profiling.PyroscopeEnabled)}}<span class="muted">off</span>{{end}}</div>{{if .Profiling.PyroscopeServer}}<div class="sub">{{.Profiling.PyroscopeServer}}</div>{{end}}</div>
     </div>
+    <h3 id="durableState" style="margin-top:18px">Durable state</h3>
+    <div class="sub">The effective stores for poll cursors and restart-stable semantic evidence. A
+      configured file store running in memory is degraded and will lose that class of state on restart.</div>
+    <table style="margin-top:8px">
+      <thead><tr><th>State class</th><th>State</th><th>Configured mode</th><th>Effective mode</th><th>Path</th><th>Reason</th></tr></thead>
+      <tbody>
+        {{range .DurableState.Stores}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{if eq .State "durable"}}<span class="badge ok">durable</span>{{else if eq .State "degraded"}}<span class="badge err">degraded</span>{{else if eq .State "recovered"}}<span class="badge warn">recovered</span>{{else}}<span class="badge none">volatile</span>{{end}}</td>
+          <td class="mono"><code>{{.ConfiguredMode}}</code></td>
+          <td class="mono"><code>{{.Mode}}</code></td>
+          <td class="mono">{{if .Path}}{{.Path}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td>{{if .Reason}}{{.Reason}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="muted">No durable-state stores reported.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
     <h3 style="margin-top:18px">Configuration advisories</h3>
     <div class="sub">Non-fatal warnings from <code>Config.Warnings()</code> — the same set
       <code>tailscale2otel_config_warnings_ratio</code> counts. They never block startup.

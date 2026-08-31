@@ -4,7 +4,7 @@ title: Retire the 35-panel ceiling and re-group the whole dashboard tab structur
 status: In Progress
 assignee: []
 created_date: '2026-08-30 18:32'
-updated_date: '2026-08-31 01:37'
+updated_date: '2026-08-31 01:45'
 labels:
   - needs-triage
 milestone: m-7
@@ -101,4 +101,6 @@ Root pre-dispatch correction to the tab map: the proposed mechanical allocation 
 Effective ownership-map correction after first-group integration: the earlier module map and the provisional root correction are superseded by this single effective map for the rest of Wave 3. Lane A owns tabs/_devices_common.py, devices_inventory.py, devices_posture.py and devices_connectivity.py. Lane B owns tailnet_overview.py. Lane C owns network.py. Lane D owns nodemetrics.py and health_collection.py. Lane E owns health_ingestion.py. Lane F owns policy_access.py and policy_dns.py. Lane G owns policy_identity.py and policy_integrations.py. Lane H owns health_delivery.py. Lane I owns health_runtime.py. Lane J owns k8saudit.py. Lane K owns cardinality.py. Lane L owns tabs/__init__.py and the shared builder.py, dashboards.py, maps.py and layout seams. Security modules security_audit_trail.py, security_risk.py, security_compliance.py and security_identity.py remain unassigned until root allocates their next coherent lane; no lane may infer ownership from either superseded map.
 
 Final ownership completion: Lane D also owns security_audit_trail.py, security_risk.py, security_compliance.py and security_identity.py. This removes the only unassigned modules from the effective map; every tabs/*.py file now has one owner.
+
+Remaining-wave handoff after the resilience group landed: security_identity.py transfers from completed lane D to lane G for the admin-auth throttle signal and panel. Lane D retains the other security modules. No concurrent owner remains.
 <!-- SECTION:NOTES:END -->

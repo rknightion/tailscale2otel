@@ -56,6 +56,29 @@ func TestRender_Populated(t *testing.T) {
 	}
 }
 
+func TestRender_DurableStateSection(t *testing.T) {
+	s := statusdata.Status{DurableState: statusdata.DurableStateInfo{
+		Degraded: true,
+		Stores: []statusdata.DurableStoreInfo{
+			{ID: "poll_cursors", Name: "Poll cursors", Mode: "memory", State: "degraded", Reason: "configured file is not writable"},
+			{ID: "semantic_evidence", Name: "Semantic evidence", Mode: "file", State: "durable", Path: "/state/checkpoints.json"},
+		},
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="durableState"`, "Durable state", "Poll cursors", "Semantic evidence",
+		"configured file is not writable", "/state/checkpoints.json", "degraded", "durable",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("durable-state section missing %q", want)
+		}
+	}
+}
+
 // TestRender_PerTailnetSection asserts the multi-tailnet section renders one row
 // per tailnet (and is absent for a single tailnet).
 func TestRender_PerTailnetSection(t *testing.T) {
