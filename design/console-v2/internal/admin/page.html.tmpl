@@ -1,0 +1,720 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>graph2otel — status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --info:#a371f7; --pending:#6e7681;
+    --grid:#232a34;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --info:#8250df; --pending:#8c959f;
+      --grid:#e4e8ec;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --info:#8250df; --pending:#8c959f;
+    --grid:#e4e8ec;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --info:#a371f7; --pending:#6e7681;
+    --grid:#232a34;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+  /* Collectors breaks out of the centered column to ~90% of the viewport. */
+  .wide{width:92vw;max-width:92vw;margin-left:calc(50% - 46vw)}
+  section{margin:0 0 26px}
+  .sub-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:26px 0 12px;font-weight:600}
+  .sub-h .tsum{text-transform:none;letter-spacing:0;font-weight:400;margin-left:8px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.6;background:rgba(110,118,129,.18);color:var(--muted)}
+  .badge.ok{background:rgba(63,185,80,.16);color:var(--ok)}
+  .badge.err{background:rgba(248,81,73,.16);color:var(--err)}
+  .badge.warn{background:rgba(210,153,34,.16);color:var(--warn)}
+  .badge.info{background:rgba(163,113,247,.16);color:var(--info)}
+  .badge.pending,.badge.muted{background:rgba(110,118,129,.18);color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:8px}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:middle}
+  th{color:var(--muted);font-size:12px;font-weight:600;background:var(--panel2)}
+  tr:last-child td{border-bottom:0}
+  td.num{text-align:right;font-family:var(--mono)}
+  tr.bad>td{background:rgba(248,81,73,.07)} tr.skip>td{color:var(--muted)}
+  table.rl{max-width:640px}
+  .mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere} .muted{color:var(--muted)}
+  .cursor{display:block;font-size:11px;margin-top:3px;color:var(--muted)} .cursor code{background:transparent;padding:0}
+  svg.spark{width:84px;height:22px;vertical-align:middle;display:inline-block;fill:none;stroke:var(--accent);stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+  .chart-wrap{position:relative;height:120px;margin-top:8px}
+  svg.chart{width:100%;height:100%;display:block;overflow:visible}
+  .chart-tip{position:absolute;pointer-events:none;display:none;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-family:var(--mono);font-size:11px;white-space:nowrap;transform:translate(-50%,-115%);z-index:2}
+  .card .sub{color:var(--muted);font-size:11px;margin-top:5px}
+  .outcome{display:inline-flex;gap:2px;align-items:center}
+  .outcome i{width:4px;height:13px;border-radius:1px;background:var(--ok);display:inline-block} .outcome i.f{background:var(--err)}
+  .rollup{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:18px}
+  .rollup .rc{display:flex;flex-direction:column}
+  .rollup .rc .rv{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rollup .rc .rk{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .filter{width:100%;max-width:340px;margin:10px 0;padding:7px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--fg);font-size:13px}
+  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);border-bottom:1px solid var(--line)}
+  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+  #staleBanner.show{display:block}
+  .controls{display:inline-flex;gap:10px;align-items:center}
+  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.ctl:hover{border-color:var(--accent)}
+  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
+  nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:4px;flex-wrap:wrap;padding:8px 24px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .tab-btn{background:transparent;color:var(--muted);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .tab-btn:hover{color:var(--fg)} .tab-btn.active{color:var(--fg);background:var(--panel);border-color:var(--line)}
+  section[data-tab]{display:none} section[data-tab].active{display:block}
+</style>
+<script>(function(){try{var t=localStorage.getItem('graph2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+<script>window.__refreshMs = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};</script>
+<noscript><style>section[data-tab]{display:block!important;margin-bottom:34px} nav.tabs{display:none}</style></noscript>
+</head>
+<body>
+<header>
+  <h1>graph2otel</h1>
+  <span class="ver">{{.Service.Version}} &middot; {{.Service.GoVersion}}</span>
+  <span class="ver">up {{.Service.Uptime}} &middot; started {{.Service.StartedAt}}</span>
+  <span class="spacer"></span>
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+  <span class="badge {{healthClass .Health}}" id="healthBadge" title="{{range .HealthReasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
+  <span class="badge {{if .Readiness.Ready}}ok{{else}}err{{end}}" id="readinessBadge" title="{{.Readiness.Reason}}">{{.Readiness.State}}</span>
+</header>
+<div class="reasons" id="healthReasons"{{if not .HealthReasons}} style="display:none"{{end}}>{{range .HealthReasons}}{{.}} &middot; {{end}}</div>
+<div id="staleBanner"></div>
+<nav class="tabs" id="tabs">
+  <button class="tab-btn" data-target="overview">Overview</button>
+  <button class="tab-btn" data-target="collectors">Collectors</button>
+  <button class="tab-btn" data-target="config">Config</button>
+  <button class="tab-btn" data-target="cardinality">Cardinality</button>
+</nav>
+<main>
+
+  <!-- ═══ OVERVIEW ═══ -->
+  <section data-tab="overview">
+    <div class="rollup" id="rollup">
+      <div class="rc"><span class="rv" id="ruHealth">{{.Health}}</span><span class="rk">health</span></div>
+      <div class="rc"><span class="rv" id="ruReadiness">{{.Readiness.State}}</span><span class="rk">readiness</span></div>
+      <div class="rc"><span class="rv" id="ruTenants">{{len .Tenants}}</span><span class="rk">tenants</span></div>
+      <div class="rc"><span class="rv" id="ruEnabled">—</span><span class="rk">collectors</span></div>
+      <div class="rc"><span class="rv" id="ruFailing">—</span><span class="rk">failing</span></div>
+      <div class="rc"><span class="rv" id="ruPending">—</span><span class="rk">starting</span></div>
+    </div>
+
+    <!-- Throttle headroom lives at the TOP of the page (#206). -->
+    <div class="sub-h">Throttle headroom</div>
+    <div id="throttle">
+    {{range .Tenants}}{{if .RateLimits}}
+      <div class="sub-h" style="margin:14px 0 4px">Tenant <code>{{.TenantID}}</code></div>
+      <table class="rl">
+        <thead><tr><th>Workload</th><th class="num">limit/s</th><th class="num">burst</th><th class="num">tokens</th><th class="num">headroom</th><th>trend</th></tr></thead>
+        <tbody>
+        {{range .RateLimits}}
+          <tr><td><code>{{.Workload}}</code></td><td class="num">{{printf "%.3g" .LimitPerSec}}</td><td class="num">{{.Burst}}</td><td class="num">{{printf "%.1f" .Tokens}}</td><td class="num">{{printf "%.0f" .HeadroomPct}}%</td><td>{{sparklineF .HeadroomSeries}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{end}}{{else}}{{end}}
+    </div>
+
+    <div class="sub-h">Service</div>
+    <div class="cards">
+      <div class="card"><div class="k">Version</div><div class="v" style="font-size:16px">{{.Service.Version}}</div><div class="k" style="margin-top:6px">{{.Service.GoVersion}}</div></div>
+      <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="k" style="margin-top:6px">since {{.Service.StartedAt}}</div></div>
+      <div class="card"><div class="k">Tenants</div><div class="v">{{len .Tenants}}</div></div>
+    </div>
+
+    <!-- Runtime, throughput and fleet trends (#227). Every value is
+         server-rendered first so the page is meaningful before the first poll,
+         then updated in place by refresh(). -->
+    <div class="sub-h">Runtime trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS <span id="gomaxprocs">{{.Runtime.GOMAXPROCS}}</span></div>
+        <div class="chart-wrap"><svg class="chart" id="chGoroutines"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div>
+        <div class="chart-wrap"><svg class="chart" id="chHeap"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">&mdash;</div><div class="sub">cycles/sec</div>
+        <div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
+    <div class="sub-h">Throughput &amp; fleet trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Emitted to SDK</div><div class="v" id="metricRate">{{printf "%.1f" .Throughput.MetricPointsPerSec}}</div><div class="sub">metric points/sec &middot; <span id="logRate">{{printf "%.1f" .Throughput.LogRecordsPerSec}}</span> log records/sec</div>
+        <div class="chart-wrap"><svg class="chart" id="chEmit"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Active series</div><div class="v" id="activeSeries">{{.SeriesTrend.TotalSeries}}</div><div class="sub">distinct series last export</div>
+        <div class="chart-wrap"><svg class="chart" id="chCard"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="v" id="fleetFailing">{{.Fleet.Failing}}</div><div class="sub"><span id="fleetEnabled">{{.Fleet.Enabled}}</span> active &middot; <span id="fleetPending">{{.Fleet.Pending}}</span> starting</div>
+        <div class="chart-wrap"><svg class="chart" id="chFailing"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="v" id="meanDuration">{{printf "%.0f" .Fleet.MeanDurationMs}}ms</div><div class="sub">across every collector</div>
+        <div class="chart-wrap"><svg class="chart" id="chDuration"></svg><div class="chart-tip"></div></div></div>
+    </div>
+
+    {{with .Delivery}}
+    <div class="sub-h">Exporter accepted</div>
+    <div class="cards" id="deliveryStatus">
+      <div class="card">
+        <div class="k">Metrics</div>
+        <div class="v"><span class="badge {{if eq .Metrics.State "healthy"}}ok{{else if eq .Metrics.State "degraded"}}err{{else}}pending{{end}}" id="metricDeliveryState">{{.Metrics.State}}</span></div>
+        <div class="sub"><span id="metricDeliveryAttempts">{{.Metrics.ExportAttempts}}</span> attempts &middot; <span id="metricDeliverySuccesses">{{.Metrics.ExportSuccesses}}</span> accepted &middot; <span id="metricDeliveryFailures">{{.Metrics.ExportFailures}}</span> failed</div>
+        <div class="sub">flush failures <span id="metricDeliveryFlushFailures">{{.Metrics.ForceFlushFailures}}</span> &middot; shutdown failures <span id="metricDeliveryShutdownFailures">{{.Metrics.ShutdownFailures}}</span></div>
+        <div class="sub mono" id="metricDeliveryLastSuccess">last success {{if .Metrics.LastSuccessAt}}{{.Metrics.LastSuccessAt}}{{else}}&mdash;{{end}}</div>
+        <div class="sub mono" id="metricDeliveryLastFailure">last failure {{if .Metrics.LastFailureAt}}{{.Metrics.LastFailureAt}}{{if .Metrics.LastFailureCode}} &middot; {{.Metrics.LastFailureCode}}{{end}}{{else}}&mdash;{{end}}</div>
+      </div>
+      <div class="card">
+        <div class="k">Logs</div>
+        <div class="v"><span class="badge {{if eq .Logs.State "healthy"}}ok{{else if eq .Logs.State "degraded"}}err{{else}}pending{{end}}" id="logDeliveryState">{{.Logs.State}}</span></div>
+        <div class="sub"><span id="logDeliveryAttempts">{{.Logs.ExportAttempts}}</span> attempts &middot; <span id="logDeliverySuccesses">{{.Logs.ExportSuccesses}}</span> accepted &middot; <span id="logDeliveryFailures">{{.Logs.ExportFailures}}</span> failed</div>
+        <div class="sub">flush failures <span id="logDeliveryFlushFailures">{{.Logs.ForceFlushFailures}}</span> &middot; shutdown failures <span id="logDeliveryShutdownFailures">{{.Logs.ShutdownFailures}}</span></div>
+        <div class="sub mono" id="logDeliveryLastSuccess">last success {{if .Logs.LastSuccessAt}}{{.Logs.LastSuccessAt}}{{else}}&mdash;{{end}}</div>
+        <div class="sub mono" id="logDeliveryLastFailure">last failure {{if .Logs.LastFailureAt}}{{.Logs.LastFailureAt}}{{if .Logs.LastFailureCode}} &middot; {{.Logs.LastFailureCode}}{{end}}{{else}}&mdash;{{end}}</div>
+      </div>
+    </div>
+    {{end}}
+
+    {{with .Capacity}}
+    <div class="sub-h">Capacity <span class="tsum">Exact cumulative counters</span></div>
+    <div class="cards" id="capacityStatus">
+      <div class="card"><div class="k">Metrics transmitted payload</div><div class="v" id="capacityMetricBytes">{{.Transport.Metrics.TransmittedPayloadBytes}}</div><div class="sub">post-compression bytes &middot; <span id="capacityMetricRetries">{{.Transport.Metrics.RetryAttempts}}</span> exporter retries</div></div>
+      <div class="card"><div class="k">Logs transmitted payload</div><div class="v" id="capacityLogBytes">{{.Transport.Logs.TransmittedPayloadBytes}}</div><div class="sub">post-compression bytes &middot; <span id="capacityLogRetries">{{.Transport.Logs.RetryAttempts}}</span> exporter retries</div></div>
+    </div>
+    <table id="capacityVolume">
+      <thead><tr><th>Tenant</th><th>Collector</th><th>Transport</th><th>Traffic class</th><th class="num">Source records</th><th class="num">Metric points</th><th class="num">Log points</th></tr></thead>
+      <tbody id="capacityVolumeBody">
+      {{range .Volume}}
+        <tr><td><code>{{.TenantID}}</code></td><td><code>{{.Collector}}</code></td><td>{{.IngestTransport}}</td><td>{{.TrafficClass}}</td><td class="num">{{.SourceRecords}}</td><td class="num">{{.MetricPoints}}</td><td class="num">{{.LogPoints}}</td></tr>
+      {{else}}
+        <tr><td colspan="7" class="muted">No attributed volume recorded yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+
+    {{with .Cost}}
+    <div class="sub-h">Estimate, not invoice <span class="tsum">operator-supplied pricing; observational only</span></div>
+    <p class="muted">Observed interval cost includes all observed traffic. Period projection and budget ratio include recurring steady_state only.</p>
+    <div class="cards" id="costStatus">
+      <div class="card"><div class="k">Recurring projected {{.Period}}</div><div class="v" id="costProjected">{{.ProjectedPeriodMicrounits}}</div><div class="sub">{{.Currency}} microunits &middot; <span id="costInterval">{{.IntervalMicrounits}}</span> observed interval cost across all traffic</div></div>
+      <div class="card"><div class="k">Budget ratio</div><div class="v" id="costBudget">{{if .BudgetRatio}}{{printf "%.0f" .BudgetPercent}}%{{else}}&mdash;{{end}}</div><div class="sub" id="costBudgetDetail">recurring steady_state only &middot; {{if .BudgetRatio}}{{.ProjectedPeriodMicrounits}} / {{.BudgetMicrounits}} microunits{{else if .BudgetMicrounits}}collecting the first estimate{{else}}no budget comparison configured{{end}}</div></div>
+      <div class="card"><div class="k">Price metadata</div><div class="v mono" style="font-size:14px">{{.Version}}</div><div class="sub">{{.Source}} &middot; effective {{.EffectiveAt}}</div></div>
+    </div>
+    <table id="capacityCost">
+      <thead><tr><th>Tenant</th><th>Collector</th><th>Transport</th><th>Traffic class</th><th>Attribution</th><th class="num">Allocated payload bytes</th><th class="num">Observed interval cost</th><th class="num">Recurring projected {{.Period}}</th></tr></thead>
+      <tbody id="capacityCostBody">
+      {{range .Rows}}
+        <tr><td><code>{{.TenantID}}</code></td><td><code>{{.Collector}}</code></td><td>{{.IngestTransport}}</td><td>{{.TrafficClass}}</td><td><span class="badge warn">{{.Attribution}}</span></td><td class="num">{{.AllocatedPayloadBytes}}</td><td class="num">{{.IntervalMicrounits}}</td><td class="num">{{.ProjectedPeriodMicrounits}}</td></tr>
+      {{else}}
+        <tr><td colspan="8" class="muted">Collecting two complete metric intervals for the first estimate.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+    {{end}}
+  </section>
+
+  <!-- ═══ COLLECTORS ═══ -->
+  <section data-tab="collectors" class="wide">
+    <input class="filter" type="text" placeholder="Filter collectors…" oninput="filterAll(this)">
+    <div id="tenants">
+    {{range .Tenants}}
+      <div class="sub-h">Tenant <code>{{.TenantID}}</code>
+        <span class="tsum">{{.EnabledCount}} active{{if .FailingCount}} &middot; {{.FailingCount}} failing{{end}}{{if .PendingCount}} &middot; {{.PendingCount}} starting{{end}}{{if .CoveredCount}} &middot; {{.CoveredCount}} covered{{end}}{{if .SkippedCount}} &middot; {{.SkippedCount}} skipped{{end}}</span>
+      </div>
+      {{with .StartupFailure}}<div class="reasons"><span class="badge err">startup failed</span> <code>{{.Code}}</code> &middot; {{.Reason}}</div>{{end}}
+      <table class="ctable">
+        <thead><tr>
+          <th>Collector</th><th>State</th><th class="num">Interval</th><th class="num">Success</th>
+          <th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th>
+          <th class="num">Duration</th><th>Recent</th><th>Staleness</th><th>Last error</th>
+        </tr></thead>
+        <tbody>
+        {{range .Collectors}}
+          {{if .Enabled}}
+          <tr{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
+            <td><code>{{.Name}}</code>{{with .State}}<span class="cursor mono" title="durable checkpoint cursor">{{if eq .Kind "blob"}}cursor {{.ByteOffset}}B &middot; {{.BlobsTracked}} blobs{{if .NewestBlob}} &middot; newest <code>{{.NewestBlob}}</code>{{end}}{{else}}{{if .Watermark}}watermark {{.Watermark}} &middot; {{.Staleness}} behind{{else}}cold start{{end}}{{if .SeenIDs}} &middot; {{.SeenIDs}} seen{{end}}{{if .InFlightJob}} &middot; job <code>{{.InFlightJob}}</code>{{end}}{{end}}</span>{{end}}</td>
+            <td>{{if .Availability}}<span class="badge {{.Availability.BadgeClass}}">{{.Availability.State}}</span> <span class="muted mono">{{.Availability.Reason}}{{range .Availability.Limitations}} &middot; {{.}}{{end}}</span>{{else}}{{if not .HasRun}}<span class="badge pending">starting</span>{{else if .LastSuccess}}<span class="badge ok">ok</span>{{else}}<span class="badge err">failing</span>{{end}}{{end}}{{if .Transport}} <span class="muted mono" title="{{if .Availability}}resolved collector transport{{else}}ingest transport{{end}}">via {{.Transport}}</span>{{end}}</td>
+            <td class="num">{{.IntervalSec}}s</td>
+            <td class="num">{{if .HasRun}}{{printf "%.0f" .SuccessRatePct}}%{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+            <td class="num">{{.Runs}}</td>
+            <td class="num">{{.Failures}}{{if gt .ConsecutiveFailures 0}} <span class="muted">({{.ConsecutiveFailures}}&times;)</span>{{end}}</td>
+            <td class="num">{{if not .HasRun}}<span class="muted">&mdash;</span>{{else if .Overdue}}<span class="badge warn">overdue</span>{{else if le .NextRunInSec 0}}due{{else}}{{.NextRunIn}}{{end}}</td>
+            <td class="num">{{if .HasRun}}{{.LastDurationMs}}ms{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+            <td>{{sparkline .DurationMsSeries}}{{outcomeStrip .OutcomeSeries}}</td>
+            <td class="num">{{if .HasRun}}{{.Staleness}}{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+            <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+          </tr>
+          {{else if .CoveredBy}}
+          <tr><td><code>{{.Name}}</code></td><td>{{if .Availability}}<span class="badge {{.Availability.BadgeClass}}">{{.Availability.State}}</span>{{if .Transport}} <span class="muted mono" title="resolved collector transport">via {{.Transport}}</span>{{end}}{{else}}<span class="badge info">covered</span>{{end}}</td><td class="mono muted" colspan="9">collected via <code>{{.CoveredBy.Collector}}</code> <span title="covering collector transport">({{.CoveredBy.Transport}})</span>{{if .Availability}} &middot; {{.Availability.Reason}}{{range .Availability.Limitations}} &middot; {{.}}{{end}}{{else}} &middot; polled form off by design{{end}}</td></tr>
+          {{else}}
+          <tr class="skip"><td><code>{{.Name}}</code></td><td>{{if .Availability}}<span class="badge {{.Availability.BadgeClass}}">{{.Availability.State}}</span>{{else}}<span class="badge {{skipBadgeClass .SkipCategory}}">{{if .SkipCategory}}{{.SkipCategory}}{{else}}skipped{{end}}</span>{{end}}</td><td class="mono muted" colspan="9">{{if .Availability}}{{.Availability.Reason}}{{range .Availability.Limitations}} &middot; {{.}}{{end}}{{else}}skipped &mdash; {{.SkipReason}}{{end}}{{if .Transport}} &middot; <span title="{{if .Availability}}resolved collector transport{{else}}ingest transport{{end}}">via {{.Transport}}</span>{{end}}</td></tr>
+          {{end}}
+        {{else}}
+          <tr><td colspan="11" class="muted">No collectors registered or skipped for this tenant.</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{else}}
+      <p class="muted">No tenants configured.</p>
+    {{end}}
+    </div>
+  </section>
+
+  <!-- ═══ CONFIG ═══ -->
+  <section data-tab="config">
+    <div class="sub-h">Effective configuration<span class="tsum">secrets shown presence-only, never their value</span></div>
+    <div class="cards">
+      <div class="card"><div class="k">Log level</div><div class="v" style="font-size:16px">{{if .Config.LogLevel}}{{.Config.LogLevel}}{{else}}<span class="muted">&mdash;</span>{{end}}</div></div>
+      <div class="card"><div class="k">Tenants</div><div class="v">{{.Config.TenantCount}}</div></div>
+      <div class="card"><div class="k">Checkpoint dir</div><div class="v mono" style="font-size:13px">{{if .Config.CheckpointDir}}{{.Config.CheckpointDir}}{{else}}<span class="muted">&mdash;</span>{{end}}</div></div>
+      {{if .Config.RefreshInterval}}<div class="card"><div class="k">Admin refresh interval</div><div class="v" style="font-size:16px">{{.Config.RefreshInterval}}</div></div>{{end}}
+      {{if .Config.BackfillInitialLookback}}<div class="card"><div class="k">Backfill lookback</div><div class="v" style="font-size:16px">{{.Config.BackfillInitialLookback}}</div></div>{{end}}
+      <div class="card"><div class="k">Cardinality per_metric_limit</div><div class="v">{{if .Config.Cardinality.PerMetricLimit}}{{.Config.Cardinality.PerMetricLimit}}{{else}}unlimited{{end}}</div></div>
+    </div>
+
+    <div class="sub-h">OTLP</div>
+    <table class="rl">
+      <tbody>
+        <tr><td>Protocol</td><td class="mono">{{.Config.OTLP.Protocol}}</td></tr>
+        <tr><td>Endpoint</td><td class="mono">{{.Config.OTLP.Endpoint}}</td></tr>
+        {{if .Config.OTLP.GrafanaInstanceID}}<tr><td>Grafana Cloud instance</td><td class="mono">{{.Config.OTLP.GrafanaInstanceID}}</td></tr>{{end}}
+        <tr><td>Grafana Cloud token</td><td>{{if .Config.OTLP.GrafanaTokenSet}}<span class="badge ok">set</span>{{else}}<span class="badge muted">unset</span>{{end}}</td></tr>
+      </tbody>
+    </table>
+
+    <div class="sub-h">Profiling</div>
+    <table class="rl">
+      <tbody>
+        <tr><td>Pyroscope</td><td>{{if .Config.Profiling.PyroscopeEnabled}}<span class="badge ok">on</span>{{else}}<span class="badge muted">off</span>{{end}}</td></tr>
+        {{if .Config.Profiling.PyroscopeServerAddress}}<tr><td>Server address</td><td class="mono">{{.Config.Profiling.PyroscopeServerAddress}}</td></tr>{{end}}
+        {{if .Config.Profiling.PyroscopeBasicAuthUser}}<tr><td>Basic-auth user</td><td class="mono">{{.Config.Profiling.PyroscopeBasicAuthUser}}</td></tr>{{end}}
+        <tr><td>Basic-auth password</td><td>{{if .Config.Profiling.PyroscopeBasicAuthPasswordSet}}<span class="badge ok">set</span>{{else}}<span class="badge muted">unset</span>{{end}}</td></tr>
+        <tr><td>Mutex profile fraction</td><td class="num mono">{{.Config.Profiling.MutexProfileFraction}}</td></tr>
+        <tr><td>Block profile rate</td><td class="num mono">{{.Config.Profiling.BlockProfileRate}}</td></tr>
+      </tbody>
+    </table>
+
+    {{if .Config.Collectors}}
+    <div class="sub-h">Collector overrides <span class="tsum">global</span></div>
+    <table>
+      <thead><tr><th>Collector</th><th>Enabled</th><th>Interval</th><th>Source</th></tr></thead>
+      <tbody>
+      {{range .Config.Collectors}}
+        <tr><td><code>{{.Name}}</code></td><td>{{.EnabledLabel}}</td><td class="mono">{{if .Interval}}{{.Interval}}{{else}}<span class="muted">&mdash;</span>{{end}}</td><td class="mono">{{if .Source}}{{.Source}}{{else}}<span class="muted">&mdash;</span>{{end}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    {{if .Config.Tenants}}
+    <div class="sub-h">Tenants</div>
+    <table>
+      <thead><tr><th>Tenant</th><th>Client ID</th><th>Exclude self</th><th>Blob ingest</th><th>Collector overrides</th></tr></thead>
+      <tbody>
+      {{range .Config.Tenants}}
+        <tr>
+          <td><code>{{.TenantID}}</code></td>
+          <td class="mono">{{if .ClientID}}{{.ClientID}}{{else}}<span class="muted">&mdash;</span>{{end}}</td>
+          <td>{{if .ExcludeSelf}}yes{{else}}<span class="muted">no</span>{{end}}</td>
+          <td>{{if .BlobIngest}}<span class="badge ok">on</span>{{else}}<span class="muted">off</span>{{end}}</td>
+          <td class="mono">{{range .Overrides}}<code>{{.Name}}</code>{{if .Interval}}={{.Interval}}{{end}} {{else}}<span class="muted">&mdash;</span>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+  </section>
+
+  <!-- ═══ CARDINALITY ═══ -->
+  <section data-tab="cardinality">
+    <div class="rollup">
+      <div class="rc"><span class="rv">{{.Cardinality.TotalActiveSeries}}</span><span class="rk">active series</span></div>
+      <div class="rc"><span class="rv">{{.Cardinality.MetricCount}}</span><span class="rk">metrics</span></div>
+      <div class="rc"><span class="rv">{{if .Cardinality.PerMetricLimit}}{{.Cardinality.PerMetricLimit}}{{else}}&infin;{{end}}</span><span class="rk">per_metric_limit</span></div>
+      <div class="rc"><span class="rv">{{len .Cardinality.Offenders}}</span><span class="rk">offenders</span></div>
+    </div>
+    <p class="muted" style="margin:0 0 8px">Output-side active series (the series graph2otel is about to ship this export interval), after cardinality limiting — what actually gets billed. Push-based, so this is not a <code>/metrics</code> scrape.</p>
+
+    {{if .Cardinality.Offenders}}
+    <div class="sub-h">High-cardinality offenders</div>
+    <table>
+      <thead><tr><th>Metric</th><th class="num">Series</th><th class="num">Headroom</th><th>State</th></tr></thead>
+      <tbody>
+      {{range .Cardinality.Offenders}}
+        <tr class="bad"><td><code>{{.Metric}}</code></td><td class="num">{{.Count}}</td><td class="num">{{if $.Cardinality.PerMetricLimit}}{{printf "%.0f" .HeadroomPct}}%{{else}}<span class="muted">&mdash;</span>{{end}}</td><td>{{if .Capped}}<span class="badge err">uncounted</span>{{else}}<span class="badge warn">near limit</span>{{end}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    <div class="sub-h">Active series per metric</div>
+    {{if .Cardinality.Metrics}}
+    <table>
+      <thead><tr><th>Metric</th><th class="num">Series</th><th class="num">Headroom</th><th>State</th></tr></thead>
+      <tbody>
+      {{range .Cardinality.Metrics}}
+        <tr><td><code>{{.Metric}}</code></td><td class="num">{{.Count}}</td><td class="num">{{if $.Cardinality.PerMetricLimit}}{{printf "%.0f" .HeadroomPct}}%{{else}}<span class="muted">&mdash;</span>{{end}}</td><td>{{if .Capped}}<span class="badge err">uncounted</span>{{else}}<span class="badge ok">ok</span>{{end}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No active series recorded yet — self-observability is off, or no export interval has completed.</p>
+    {{end}}
+  </section>
+
+</main>
+<footer>
+  Generated at <span id="generatedAt">{{.GeneratedAt}}</span> ·
+  <a href="/api/status.json">status</a> ·
+  <a href="/api/config.json">config</a> ·
+  <a href="/api/cardinality.json">cardinality</a> ·
+  <span class="controls"><button class="ctl" id="pauseBtn">Pause</button> <a href="#" id="refreshNow">refresh now</a></span> ·
+  updated <span id="updatedAgo">just now</span> ·
+  <noscript>static snapshot (enable JavaScript for live updates)</noscript>
+</footer>
+<script>
+var SVGNS='http://www.w3.org/2000/svg';
+var lastOkMs=Date.now(), pollTimer=null, paused=false;
+
+function showTab(id){
+  var secs=document.querySelectorAll('section[data-tab]'), found=false;
+  for(var i=0;i<secs.length;i++){ var on=secs[i].getAttribute('data-tab')===id; secs[i].classList.toggle('active',on); if(on) found=true; }
+  var btns=document.querySelectorAll('#tabs .tab-btn');
+  for(var j=0;j<btns.length;j++){ btns[j].classList.toggle('active', btns[j].getAttribute('data-target')===id); }
+  if(found && location.hash!=='#'+id){ history.replaceState(null,'','#'+id); }
+  // A chart inside a hidden section measures 0 wide, so anything drawn before
+  // its tab was shown is wrong. Redraw whatever just became visible.
+  redrawCharts();
+}
+function initTabs(){
+  var btns=document.querySelectorAll('#tabs .tab-btn');
+  for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ showTab(b.getAttribute('data-target')); }); })(btns[i]); }
+  var initial=(location.hash||'').replace('#','');
+  showTab(document.querySelector('section[data-tab="'+initial+'"]')?initial:'overview');
+}
+function currentTheme(){ var t=document.documentElement.getAttribute('data-theme'); if(t) return t; return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark'; }
+function toggleTheme(){ var next=currentTheme()==='light'?'dark':'light'; document.documentElement.setAttribute('data-theme',next); try{localStorage.setItem('graph2otel-theme',next);}catch(e){} redrawCharts(); }
+
+function el(tag,attrs,text){ var e=document.createElement(tag); if(attrs){ for(var k in attrs){ if(attrs.hasOwnProperty(k)) e.setAttribute(k,attrs[k]); } } if(text!=null) e.textContent=text; return e; }
+function setText(id,v){ var e=document.getElementById(id); if(e!=null && v!=null) e.textContent=v; }
+function relMs(ms){ var s=Math.round((Date.now()-ms)/1000); if(s<0)s=0; if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||'#4493f8'; }
+function filterAll(input){ var q=input.value.toLowerCase(); var rows=document.querySelectorAll('#tenants table tbody tr'); for(var i=0;i<rows.length;i++){ rows[i].style.display=rows[i].textContent.toLowerCase().indexOf(q)>-1?'':'none'; } }
+
+function drawSpark(svg,arr){
+  if(!svg) return; while(svg.firstChild) svg.removeChild(svg.firstChild);
+  if(!arr || arr.length<2) return;
+  var W=100,H=24,n=arr.length,mn=arr[0],mx=arr[0],i;
+  for(i=1;i<n;i++){ if(arr[i]<mn)mn=arr[i]; if(arr[i]>mx)mx=arr[i]; }
+  var span=(mx-mn)||1,pts='';
+  for(i=0;i<n;i++){ var x=i*(W)/(n-1); var y=H-(arr[i]-mn)/span*H; pts+=(i?' ':'')+x.toFixed(1)+','+y.toFixed(1); }
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('preserveAspectRatio','none');
+  var pl=document.createElementNS(SVGNS,'polyline'); pl.setAttribute('points',pts); svg.appendChild(pl);
+}
+function newSpark(){ var s=document.createElementNS(SVGNS,'svg'); s.setAttribute('class','spark'); return s; }
+
+// ── Line charts (zero-dependency: value axis, gridlines, area, hover) ──────
+// CHARTS maps an <svg> id to the function that pulls its series out of the
+// latest status payload, so a refresh, a tab switch and a theme toggle can all
+// redraw every chart from one place.
+var CHARTS={}, lastData=null;
+function registerChart(svgId,seriesFn,fmtFn){ CHARTS[svgId]={seriesFn:seriesFn,fmt:fmtFn||function(v){return String(Math.round(v));}}; }
+function redrawCharts(){ for(var id in CHARTS){ if(CHARTS.hasOwnProperty(id)){ var c=CHARTS[id]; drawChart(id,c.seriesFn(lastData),c.fmt); } } }
+function drawChart(svgId,series,fmt){
+  var svg=document.getElementById(svgId); if(!svg) return;
+  var wrap=svg.parentNode, tip=wrap?wrap.querySelector('.chart-tip'):null;
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  series=(series||[]).filter(function(s){ return s.points && s.points.length; });
+  var rect=svg.getBoundingClientRect();
+  var W=Math.max(rect.width||300,120), H=Math.max(rect.height||120,50);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('preserveAspectRatio','none');
+  var maxLen=0,mn=Infinity,mx=-Infinity;
+  series.forEach(function(s){ maxLen=Math.max(maxLen,s.points.length); s.points.forEach(function(v){ if(v<mn)mn=v; if(v>mx)mx=v; }); });
+  // Fewer than two points is not a chart yet — say so rather than drawing a dot.
+  if(!series.length || maxLen<2){
+    var t=document.createElementNS(SVGNS,'text'); t.setAttribute('x',8); t.setAttribute('y',H/2);
+    t.setAttribute('fill',cssVar('--muted')); t.setAttribute('font-size','11'); t.textContent='collecting…';
+    svg.appendChild(t); return;
+  }
+  if(mn===mx){ mx=mn+1; }
+  var padL=44,padR=8,padT=8,padB=14, plotW=W-padL-padR, plotH=H-padT-padB;
+  function xAt(i){ return padL+i*plotW/(maxLen-1); }
+  function yAt(v){ return padT+(1-(v-mn)/(mx-mn))*plotH; }
+  [0,0.5,1].forEach(function(f){
+    var val=mn+(mx-mn)*f, y=yAt(val);
+    var ln=document.createElementNS(SVGNS,'line');
+    ln.setAttribute('x1',padL); ln.setAttribute('x2',W-padR); ln.setAttribute('y1',y); ln.setAttribute('y2',y);
+    ln.setAttribute('stroke',cssVar('--grid')); ln.setAttribute('stroke-width','1'); svg.appendChild(ln);
+    var tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x',4); tx.setAttribute('y',y+3);
+    tx.setAttribute('fill',cssVar('--muted')); tx.setAttribute('font-size','9');
+    tx.setAttribute('font-family','monospace'); tx.textContent=fmt(val); svg.appendChild(tx);
+  });
+  var colors=[cssVar('--accent'),cssVar('--ok'),cssVar('--warn')];
+  series.forEach(function(s,si){
+    var col=s.color||colors[si%colors.length];
+    var pts=s.points.map(function(v,i){ return xAt(i)+','+yAt(v); }).join(' ');
+    if(si===0){
+      var area=document.createElementNS(SVGNS,'polygon');
+      area.setAttribute('points',xAt(0)+','+(padT+plotH)+' '+pts+' '+xAt(s.points.length-1)+','+(padT+plotH));
+      area.setAttribute('fill',col); area.setAttribute('opacity','0.10'); svg.appendChild(area);
+    }
+    var pl=document.createElementNS(SVGNS,'polyline');
+    pl.setAttribute('fill','none'); pl.setAttribute('stroke',col); pl.setAttribute('stroke-width','1.5');
+    pl.setAttribute('points',pts); svg.appendChild(pl);
+  });
+  if(tip){
+    var cross=document.createElementNS(SVGNS,'line');
+    cross.setAttribute('stroke',cssVar('--muted')); cross.setAttribute('stroke-width','1');
+    cross.setAttribute('stroke-dasharray','2 2'); cross.setAttribute('y1',padT); cross.setAttribute('y2',padT+plotH);
+    cross.style.display='none'; svg.appendChild(cross);
+    var over=document.createElementNS(SVGNS,'rect');
+    over.setAttribute('x',padL); over.setAttribute('y',padT); over.setAttribute('width',plotW); over.setAttribute('height',plotH);
+    over.setAttribute('fill','transparent'); svg.appendChild(over);
+    over.addEventListener('mousemove',function(ev){
+      var b=svg.getBoundingClientRect();
+      var px=(ev.clientX-b.left)*(W/b.width);
+      var i=Math.round((px-padL)/plotW*(maxLen-1)); if(i<0)i=0; if(i>maxLen-1)i=maxLen-1;
+      cross.setAttribute('x1',xAt(i)); cross.setAttribute('x2',xAt(i)); cross.style.display='';
+      var parts=series.map(function(s){ var v=s.points[Math.min(i,s.points.length-1)]; return s.name+' '+fmt(v); });
+      tip.textContent=parts.join(' · '); tip.style.display='block';
+      tip.style.left=(xAt(i)/W*b.width)+'px'; tip.style.top=(padT/H*b.height)+'px';
+    });
+    over.addEventListener('mouseleave',function(){ cross.style.display='none'; tip.style.display='none'; });
+  }
+}
+function outcomeStripEl(arr){
+  var span=el('span',{'class':'outcome'}); if(!arr) return span;
+  var start=arr.length>40?arr.length-40:0;
+  for(var i=start;i<arr.length;i++){ var d=el('i'); if(!arr[i]) d.className='f'; span.appendChild(d); }
+  return span;
+}
+function availabilityClass(state){
+  if(state==='healthy'||state==='healthy_empty')return 'ok';
+  if(state==='limited'||state==='degraded')return 'warn';
+  if(state==='blocked'||state==='failed'||state==='startup_failed')return 'err';
+  if(state==='covered')return 'info';
+  if(state==='disabled')return 'muted';
+  return 'pending';
+}
+function appendAvailability(td,c){
+  var a=c.availability; if(!a)return false;
+  td.appendChild(el('span',{'class':'badge '+availabilityClass(a.state)},a.state||'unknown'));
+  var detail=a.reason||''; if(a.limitations&&a.limitations.length)detail+=(detail?' · ':'')+a.limitations.join(' · ');
+  if(detail){td.appendChild(document.createTextNode(' '));td.appendChild(el('span',{'class':'muted mono'},detail));}
+  return true;
+}
+
+function collectorRow(c){
+  if(c.enabled){
+    var tr=el('tr'); if(c.has_run && !c.last_success) tr.className='bad';
+    var nameTd=el('td'); nameTd.appendChild(el('code',null,c.name));
+    if(c.state){ var cur=el('span',{'class':'cursor mono'}); if(c.state.kind==='blob'){ cur.textContent='cursor '+(c.state.byte_offset||0)+'B · '+(c.state.blobs_tracked||0)+' blobs'+(c.state.newest_blob?' · newest '+c.state.newest_blob:''); } else { cur.textContent=c.state.watermark?('watermark '+c.state.watermark+' · '+(c.state.staleness||'')+' behind'):'cold start'; } nameTd.appendChild(cur); }
+    tr.appendChild(nameTd);
+    var stTd=el('td'); if(!appendAvailability(stTd,c)){ if(!c.has_run) stTd.appendChild(el('span',{'class':'badge pending'},'starting')); else if(c.last_success) stTd.appendChild(el('span',{'class':'badge ok'},'ok')); else stTd.appendChild(el('span',{'class':'badge err'},'failing')); } if(c.transport){ stTd.appendChild(document.createTextNode(' ')); stTd.appendChild(el('span',{'class':'muted mono','title':c.availability?'resolved collector transport':'ingest transport'},'via '+c.transport)); } tr.appendChild(stTd);
+    tr.appendChild(el('td',{'class':'num'}, (c.interval_seconds||0)+'s'));
+    tr.appendChild(el('td',{'class':'num'}, c.has_run?Math.round(c.success_rate_pct)+'%':'—'));
+    tr.appendChild(el('td',{'class':'num'}, String(c.runs||0)));
+    tr.appendChild(el('td',{'class':'num'}, String(c.failures||0)+(c.consecutive_failures>0?' ('+c.consecutive_failures+'×)':'')));
+    var nrTd=el('td',{'class':'num'}); if(!c.has_run) nrTd.appendChild(el('span',{'class':'muted'},'—')); else if(c.overdue) nrTd.appendChild(el('span',{'class':'badge warn'},'overdue')); else nrTd.textContent=(c.next_run_in_seconds<=0?'due':(c.next_run_in||'due')); tr.appendChild(nrTd);
+    tr.appendChild(el('td',{'class':'num'}, c.has_run?(c.last_duration_ms+'ms'):'—'));
+    var recTd=el('td'); if(c.duration_ms_series && c.duration_ms_series.length>1){ var sp=newSpark(); recTd.appendChild(sp); drawSpark(sp,c.duration_ms_series); } recTd.appendChild(outcomeStripEl(c.outcome_series)); tr.appendChild(recTd);
+    tr.appendChild(el('td',{'class':'num'}, c.has_run?(c.staleness||''):'—'));
+    var erTd=el('td',{'class':'mono'}); if(c.last_error) erTd.textContent=c.last_error; else erTd.appendChild(el('span',{'class':'muted'},'—')); tr.appendChild(erTd);
+    return tr;
+  }
+  if(c.covered_by){
+    var tr2=el('tr'); tr2.appendChild(el('td')).appendChild(el('code',null,c.name)); var cTd=el('td'); if(!appendAvailability(cTd,c))cTd.appendChild(el('span',{'class':'badge info'},'covered')); if(c.availability&&c.transport){cTd.appendChild(document.createTextNode(' '));cTd.appendChild(el('span',{'class':'muted mono','title':'resolved collector transport'},'via '+c.transport));} tr2.appendChild(cTd); var coveredTd=el('td',{'class':'mono muted','colspan':'9'}); coveredTd.appendChild(document.createTextNode('collected via ')); coveredTd.appendChild(el('code',null,c.covered_by.collector)); coveredTd.appendChild(document.createTextNode(' ')); coveredTd.appendChild(el('span',{'title':'covering collector transport'},'('+c.covered_by.transport+')')); if(!c.availability)coveredTd.appendChild(document.createTextNode(' · polled form off by design')); tr2.appendChild(coveredTd); return tr2;
+  }
+  var tr3=el('tr',{'class':'skip'}); tr3.appendChild(el('td')).appendChild(el('code',null,c.name)); var sTd=el('td'); if(!appendAvailability(sTd,c))sTd.appendChild(el('span',{'class':'badge '+skipClass(c.skip_category)}, c.skip_category||'skipped')); tr3.appendChild(sTd); var skipTd=el('td',{'class':'mono muted','colspan':'9'},c.availability?'':('skipped — '+(c.skip_reason||''))); if(c.transport){ if(skipTd.textContent)skipTd.appendChild(document.createTextNode(' · ')); skipTd.appendChild(el('span',{'title':c.availability?'resolved collector transport':'ingest transport'},'via '+c.transport)); } tr3.appendChild(skipTd); return tr3;
+}
+function skipClass(cat){ if(cat==='license')return 'warn'; if(cat==='experimental')return 'info'; return 'muted'; }
+
+function tenantSummary(t){
+  var parts=[t.enabled_count+' active'];
+  if(t.failing_count) parts.push(t.failing_count+' failing');
+  if(t.pending_count) parts.push(t.pending_count+' starting');
+  if(t.covered_count) parts.push(t.covered_count+' covered');
+  if(t.skipped_count) parts.push(t.skipped_count+' skipped');
+  return parts.join(' · ');
+}
+function rebuildTenants(tenants){
+  var host=document.getElementById('tenants'); if(!host) return; host.textContent='';
+  if(!tenants || !tenants.length){ host.appendChild(el('p',{'class':'muted'},'No tenants configured.')); return; }
+  tenants.forEach(function(t){
+    var h=el('div',{'class':'sub-h'}); h.appendChild(document.createTextNode('Tenant ')); h.appendChild(el('code',null,t.tenant_id)); h.appendChild(el('span',{'class':'tsum'}, tenantSummary(t))); host.appendChild(h);
+    if(t.startup_failure){ var sf=el('div',{'class':'reasons'}); sf.appendChild(el('span',{'class':'badge err'},'startup failed')); sf.appendChild(document.createTextNode(' ')); sf.appendChild(el('code',null,t.startup_failure.code)); sf.appendChild(document.createTextNode(' · '+t.startup_failure.reason)); host.appendChild(sf); }
+    var table=el('table'); var thead=el('thead'); thead.innerHTML='<tr><th>Collector</th><th>State</th><th class="num">Interval</th><th class="num">Success</th><th class="num">Runs</th><th class="num">Failures</th><th class="num">Next run</th><th class="num">Duration</th><th>Recent</th><th>Staleness</th><th>Last error</th></tr>'; table.appendChild(thead);
+    var tb=el('tbody');
+    var cols=(t.collectors||[]);
+    if(!cols.length){ var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'11','class':'muted'},'No collectors registered or skipped for this tenant.')); tb.appendChild(tr0); }
+    else cols.forEach(function(c){ tb.appendChild(collectorRow(c)); });
+    table.appendChild(tb); host.appendChild(table);
+  });
+}
+function rebuildThrottle(tenants){
+  var host=document.getElementById('throttle'); if(!host) return; host.textContent='';
+  (tenants||[]).forEach(function(t){
+    if(!t.rate_limits || !t.rate_limits.length) return;
+    var h=el('div',{'class':'sub-h'}); h.style.margin='14px 0 4px'; h.appendChild(document.createTextNode('Tenant ')); h.appendChild(el('code',null,t.tenant_id)); host.appendChild(h);
+    var table=el('table',{'class':'rl'}); var thead=el('thead'); thead.innerHTML='<tr><th>Workload</th><th class="num">limit/s</th><th class="num">burst</th><th class="num">tokens</th><th class="num">headroom</th></tr>'; table.appendChild(thead);
+    var tb=el('tbody');
+    t.rate_limits.forEach(function(r){ var tr=el('tr'); tr.appendChild(el('td')).appendChild(el('code',null,r.workload)); tr.appendChild(el('td',{'class':'num'}, Number(r.limit_per_sec).toPrecision(3))); tr.appendChild(el('td',{'class':'num'}, String(r.burst))); tr.appendChild(el('td',{'class':'num'}, Number(r.tokens_available).toFixed(1))); tr.appendChild(el('td',{'class':'num'}, Math.round(r.headroom_pct)+'%')); tb.appendChild(tr); });
+    table.appendChild(tb); host.appendChild(table);
+  });
+}
+function updateTrends(d){
+  if(d.runtime){
+    setText('goroutines',d.runtime.goroutines); setText('gomaxprocs',d.runtime.gomaxprocs);
+    setText('heapAlloc',d.runtime.heap_alloc); setText('numGC',d.runtime.num_gc);
+    var gr=d.runtime.gc_rate_series;
+    setText('gcRate', (gr && gr.length) ? gr[gr.length-1].toFixed(2) : '—');
+  }
+  if(d.throughput){
+    setText('metricRate', (d.throughput.metric_points_per_sec||0).toFixed(1));
+    setText('logRate', (d.throughput.log_records_per_sec||0).toFixed(1));
+  }
+  if(d.cardinality) setText('activeSeries', d.cardinality.total_series);
+  if(d.fleet){
+    setText('fleetFailing',d.fleet.failing); setText('fleetEnabled',d.fleet.enabled);
+    setText('fleetPending',d.fleet.pending);
+    setText('meanDuration', Math.round(d.fleet.mean_duration_ms||0)+'ms');
+  }
+}
+function updateRollup(d){
+  setText('ruHealth', d.health); setText('ruReadiness', d.readiness ? d.readiness.state : ''); setText('ruTenants', (d.tenants||[]).length);
+  var enabled=0,failing=0,pending=0;
+  (d.tenants||[]).forEach(function(t){ enabled+=t.enabled_count||0; failing+=t.failing_count||0; pending+=t.pending_count||0; });
+  setText('ruEnabled',enabled); setText('ruFailing',failing); setText('ruPending',pending);
+}
+function updateDelivery(d){
+  if(!d.delivery || !document.getElementById('deliveryStatus')) return;
+  [['metric',d.delivery.metrics],['log',d.delivery.logs]].forEach(function(row){
+    var prefix=row[0], signal=row[1]||{}, state=document.getElementById(prefix+'DeliveryState');
+    if(state){ state.textContent=signal.state||''; state.className='badge '+(signal.state==='healthy'?'ok':signal.state==='degraded'?'err':'pending'); }
+    setText(prefix+'DeliveryAttempts',signal.export_attempts);
+    setText(prefix+'DeliverySuccesses',signal.export_successes);
+    setText(prefix+'DeliveryFailures',signal.export_failures);
+    setText(prefix+'DeliveryFlushFailures',signal.force_flush_failures);
+    setText(prefix+'DeliveryShutdownFailures',signal.shutdown_failures);
+    var success=document.getElementById(prefix+'DeliveryLastSuccess');
+    if(success) success.textContent='last success '+(signal.last_success_at||'—');
+    var failure=document.getElementById(prefix+'DeliveryLastFailure');
+    if(failure) failure.textContent='last failure '+(signal.last_failure_at||'—')+(signal.last_failure_code?' · '+signal.last_failure_code:'');
+  });
+}
+function rebuildCapacity(c){
+  if(!c || !document.getElementById('capacityStatus')) return;
+  setText('capacityMetricBytes',c.transport.metrics.transmitted_payload_bytes);
+  setText('capacityMetricRetries',c.transport.metrics.retry_attempts);
+  setText('capacityLogBytes',c.transport.logs.transmitted_payload_bytes);
+  setText('capacityLogRetries',c.transport.logs.retry_attempts);
+  var volume=document.getElementById('capacityVolumeBody');
+  if(volume){
+    volume.textContent='';
+    (c.volume||[]).forEach(function(r){
+      var tr=el('tr');
+      [r.tenant_id,r.collector,r.ingest_transport,r.traffic_class,r.source_records,r.metric_points,r.log_points].forEach(function(v,i){
+        var td=el('td',i>=4?{'class':'num'}:null);
+        if(i<2) td.appendChild(el('code',null,String(v))); else td.textContent=String(v);
+        tr.appendChild(td);
+      });
+      volume.appendChild(tr);
+    });
+    if(!c.volume || !c.volume.length){ var empty=el('tr'); empty.appendChild(el('td',{'colspan':'7','class':'muted'},'No attributed volume recorded yet.')); volume.appendChild(empty); }
+  }
+  if(!c.cost || !document.getElementById('costStatus')) return;
+  setText('costProjected',c.cost.projected_period_microunits);
+  setText('costInterval',c.cost.interval_microunits);
+  setText('costBudget',c.cost.budget_ratio==null?'—':Math.round(c.cost.budget_ratio*100)+'%');
+  setText('costBudgetDetail','recurring steady_state only · '+(
+    c.cost.budget_ratio!=null
+      ? c.cost.projected_period_microunits+' / '+c.cost.budget_microunits+' microunits'
+      : c.cost.budget_microunits
+        ? 'collecting the first estimate'
+        : 'no budget comparison configured'
+  ));
+  var costs=document.getElementById('capacityCostBody');
+  if(costs){
+    costs.textContent='';
+    (c.cost.rows||[]).forEach(function(r){
+      var tr=el('tr');
+      [r.tenant_id,r.collector,r.ingest_transport,r.traffic_class,r.attribution,r.allocated_payload_bytes,r.interval_microunits,r.projected_period_microunits].forEach(function(v,i){
+        var td=el('td',i>=5?{'class':'num'}:null);
+        if(i<2) td.appendChild(el('code',null,String(v)));
+        else if(i===4) td.appendChild(el('span',{'class':'badge warn'},String(v)));
+        else td.textContent=String(v);
+        tr.appendChild(td);
+      });
+      costs.appendChild(tr);
+    });
+    if(!c.cost.rows || !c.cost.rows.length){ var empty=el('tr'); empty.appendChild(el('td',{'colspan':'8','class':'muted'},'Collecting two complete metric intervals for the first estimate.')); costs.appendChild(empty); }
+  }
+}
+function setHealth(d){
+  var b=document.getElementById('healthBadge'); if(b){ b.textContent=d.health; b.className='badge '+(d.health==='healthy'?'ok':d.health==='degraded'?'err':'pending'); b.title=(d.health_reasons||[]).join('\n'); }
+  var rb=document.getElementById('healthReasons'); if(rb){ if(d.health_reasons && d.health_reasons.length){ rb.textContent=d.health_reasons.join(' · '); rb.style.display=''; } else { rb.style.display='none'; } }
+}
+function setReadiness(d){
+  var r=d.readiness||{};
+  var b=document.getElementById('readinessBadge'); if(b){ b.textContent=r.state||''; b.className='badge '+(r.ready?'ok':'err'); b.title=r.reason||''; }
+}
+function setStale(on){ var b=document.getElementById('staleBanner'); if(!b) return; if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); } else { b.className=''; } }
+
+function refresh(){
+  fetch('/api/status.json',{cache:'no-store'}).then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); }).then(function(d){
+    lastOkMs=Date.now(); setStale(false);
+    lastData=d;
+    setHealth(d); setReadiness(d); updateRollup(d); updateTrends(d); updateDelivery(d); rebuildCapacity(d.capacity); redrawCharts();
+    if(d.service) setText('uptime', d.service.uptime);
+    setText('generatedAt', d.generated_at);
+    rebuildThrottle(d.tenants); rebuildTenants(d.tenants);
+  }).catch(function(){ setStale(true); });
+}
+function startPolling(){ if(pollTimer) clearInterval(pollTimer); var ms=(window.__refreshMs>0?window.__refreshMs:5000); pollTimer=setInterval(refresh,ms); }
+function togglePause(){ paused=!paused; var btn=document.getElementById('pauseBtn'); if(paused){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} if(btn) btn.textContent='Resume'; } else { if(btn) btn.textContent='Pause'; refresh(); startPolling(); } }
+function tickFreshness(){ setText('updatedAgo', relMs(lastOkMs)); var b=document.getElementById('staleBanner'); if(b && b.className.indexOf('show')>=0) setStale(true); }
+
+function initCharts(){
+  registerChart('chGoroutines', function(d){ return d&&d.runtime ? [{name:'goroutines', points:d.runtime.goroutines_series||[]}] : []; });
+  registerChart('chHeap', function(d){ return d&&d.runtime ? [{name:'heap', points:(d.runtime.heap_alloc_series||[]).map(function(b){ return b/1048576; })}] : []; }, function(v){ return v.toFixed(0)+'M'; });
+  registerChart('chGC', function(d){ return d&&d.runtime ? [{name:'gc/s', color:cssVar('--warn'), points:d.runtime.gc_rate_series||[]}] : []; }, function(v){ return v.toFixed(1); });
+  registerChart('chEmit', function(d){ return d&&d.throughput ? [
+    {name:'metrics/s', points:d.throughput.metric_points_series||[]},
+    {name:'logs/s', points:d.throughput.log_records_series||[]}] : []; }, function(v){ return v.toFixed(1); });
+  registerChart('chCard', function(d){ return d&&d.cardinality ? [{name:'series', points:d.cardinality.series||[]}] : []; });
+  registerChart('chFailing', function(d){ return d&&d.fleet ? [{name:'failing', color:cssVar('--err'), points:d.fleet.failing_series||[]}] : []; });
+  registerChart('chDuration', function(d){ return d&&d.fleet ? [{name:'mean', points:d.fleet.mean_duration_series||[]}] : []; }, function(v){ return v.toFixed(0)+'ms'; });
+}
+
+(function init(){
+  initTabs(); initCharts();
+  var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click',toggleTheme);
+  var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click',togglePause);
+  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click',function(ev){ ev.preventDefault(); refresh(); });
+  refresh(); startPolling(); setInterval(tickFreshness,1000);
+  window.addEventListener('resize',redrawCharts);
+})();
+</script>
+</body>
+</html>

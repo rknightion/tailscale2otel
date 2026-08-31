@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/tokens/tokens.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles/fonts.css">
+<link rel="stylesheet" href="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/styles.css">
+<script src="_ds/m7kni-design-system-v2-a03561c4-ff48-4ee7-8eb6-2f2a21c7ee72/_ds_bundle.js"></script>
+<style>
+  body{margin:0;background:#0e1417;font-family:"Hanken Grotesk",system-ui,sans-serif}
+  a{color:var(--color-bg-accent);text-decoration:none}
+  a:hover{color:var(--color-accent-hover);text-decoration:underline}
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:64px;padding:48px">
+
+  <div style="display:flex;flex-direction:column;gap:6px;max-width:900px">
+    <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#66aecb;font-weight:600">graph2otel · 2otel family v2</div>
+    <h1 style="margin:0;font-size:24px;font-weight:600;color:#eef3f5">graph2otel embedded admin console</h1>
+    <p style="margin:0;font-size:13.5px;line-height:1.6;color:#9db0b8;text-wrap:pretty">The family token block from the tailscale2otel spec, reused verbatim. Same page, same four tabs, same tab-switching pattern, same IDs and hooks. This console contributes one extension back to the family: the small-chart standard in <a href="#2c">2c</a>, which the other three consoles inherit. Each screen is a light / dark pair; light is the default.</p>
+  </div>
+
+  <div id="2a" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">2a</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Console shell</h2>
+      <span style="font-size:12.5px;color:#7e9299">Health and readiness are two separate signals, so they are two separate badges.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div style="flex:none;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:#7e9299;font-weight:600">{{ t.label }}</div>
+          <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;font-size:13.5px;border:1px solid var(--color-border-strong)">
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">graph2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v1.0.0 · go1.25.0</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">up 12d 6h 41m · started 2026-08-19T04:01:12Z</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>healthy</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-ok);border-radius:3px;color:var(--color-status-ok);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="currentColor"></circle></svg>ready</span>
+              <span style="flex:1"></span>
+              <button title="Toggle light or dark theme" style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;border:1px solid var(--color-border-strong);border-radius:3px;color:var(--color-fg-soft);cursor:pointer"><svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"></path></svg></button>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <button role="tab" aria-selected="true" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Overview</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Collectors</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Config</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Cardinality</button>
+            </nav>
+            <div style="padding:14px 20px;font-size:12.5px;color:var(--color-fg-muted)">Healthy and ready: no reasons line, no banner.</div>
+            <div style="height:1px;background:var(--color-border-default)"></div>
+            <div style="display:flex;align-items:center;gap:12px;padding:12px 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <span style="font-size:15px;font-weight:600;letter-spacing:-0.01em">graph2otel</span>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">v1.0.0 · go1.25.0</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px solid var(--color-status-fail);border-radius:3px;color:var(--color-status-fail);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>degraded</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border:1px dashed var(--color-border-strong);border-radius:3px;color:var(--color-fg-muted);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase" title="503 until the first successful collection"><svg viewBox="0 0 16 16" width="9" height="9" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle></svg>starting</span>
+              <span style="flex:1"></span>
+              <span style="font-size:12.5px;color:var(--color-fg-muted)">liveness is independent of collector outcomes</span>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 20px;background:var(--color-bg-accent-soft);border-bottom:1px solid var(--color-border-default)">
+              <svg viewBox="0 0 256 256" width="15" height="15" fill="var(--color-status-fail)" aria-hidden="true" style="flex:none;margin-top:2px"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z"></path></svg>
+              <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;line-height:1.6;color:var(--color-fg-soft)">tenant 1111…1111 startup failed: missing_permission · intune.reports.export blocked for 6 consecutive runs</span>
+            </div>
+            <nav role="tablist" style="display:flex;gap:2px;padding:0 20px;background:var(--color-bg-surface);border-bottom:1px solid var(--color-border-default)">
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Overview</button>
+              <button role="tab" aria-selected="true" style="display:inline-flex;align-items:center;gap:6px;padding:9px 12px;background:transparent;border:0;border-bottom:2px solid var(--color-bg-accent);color:var(--color-fg-default);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer">Collectors<span style="display:inline-flex;align-items:center;gap:3px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10px;font-weight:400;color:var(--color-status-fail)"><svg viewBox="0 0 16 16" width="7" height="7" aria-hidden="true"><path d="M8 0.5 15.5 8 8 15.5 0.5 8Z" fill="currentColor"></path></svg>3</span></button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Config</button>
+              <button role="tab" aria-selected="false" style="padding:9px 12px;background:transparent;border:0;border-bottom:2px solid transparent;color:var(--color-fg-muted);font-family:inherit;font-size:12.5px;font-weight:500;cursor:pointer">Cardinality</button>
+            </nav>
+            <div style="display:flex;align-items:center;gap:10px;padding:9px 20px;background:var(--color-bg-surface)">
+              <svg viewBox="0 0 256 256" width="14" height="14" fill="var(--color-status-warn)" aria-hidden="true" style="flex:none"><path d="M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z"></path></svg>
+              <span style="font-size:12.5px;color:var(--color-fg-soft)">Disconnected. Last successful update 46s ago.</span>
+              <span style="flex:1"></span>
+              <span style="padding:3px 9px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:12.5px;color:var(--color-fg-default)">Retry now</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="2b" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">2b</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Overview tab</h2>
+      <span style="font-size:12.5px;color:#7e9299">Throttle headroom stays at the top, then service, then the trends.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--color-border-default);background:var(--color-bg-surface);margin-bottom:20px">
+            <sc-for list="{{ posture }}" as="p" hint-placeholder-count="6">
+              <div style="padding:12px 14px;border-right:1px solid var(--color-border-default);display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ p.k }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:18px;font-weight:500;font-variant-numeric:tabular-nums;color:{{ p.fg }}">{{ p.v }}</span>
+                <span style="font-size:11px;color:var(--color-fg-muted)">{{ p.sub }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Throttle headroom</div>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <span style="font-size:11px;color:var(--color-fg-muted)">Tenant</span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)">11111111-1111-1111-1111-111111111111</span>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);max-width:700px;margin-bottom:20px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Workload</th>
+                  <th style="text-align:right;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">limit/s</th>
+                  <th style="text-align:right;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">burst</th>
+                  <th style="text-align:right;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">tokens</th>
+                  <th style="text-align:right;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">headroom</th>
+                  <th style="text-align:left;padding:6px 12px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ rateLimits }}" as="r" hint-placeholder-count="4">
+                  <tr style="border-bottom:1px solid var(--color-border-default)" style-hover="background:var(--color-bg-hover)">
+                    <td style="padding:7px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ r.workload }}</td>
+                    <td style="padding:7px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ r.limit }}</td>
+                    <td style="padding:7px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ r.burst }}</td>
+                    <td style="padding:7px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums">{{ r.tokens }}</td>
+                    <td style="padding:7px 12px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;color:{{ r.fg }}">{{ r.headroom }}</td>
+                    <td style="padding:7px 12px">
+                      <svg viewBox="0 0 100 22" preserveAspectRatio="none" style="width:100px;height:22px;display:block;vertical-align:middle">
+                        <polyline fill="none" stroke="{{ r.fg }}" stroke-width="1.5" vector-effect="non-scaling-stroke" points="{{ r.pts }}"></polyline>
+                      </svg>
+                    </td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Runtime trend, last 10 minutes</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+            <sc-for list="{{ runtimeCharts }}" as="c" hint-placeholder-count="3">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px">
+                  <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ c.k }}</span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;font-variant-numeric:tabular-nums">{{ c.v }}</span>
+                </div>
+                <div style="font-size:11px;color:var(--color-fg-muted);margin-bottom:4px">{{ c.sub }}</div>
+                <svg viewBox="0 0 340 96" preserveAspectRatio="none" style="width:100%;height:96px;display:block">
+                  <line x1="44" x2="332" y1="8" y2="8" stroke="var(--color-border-default)" stroke-width="1"></line>
+                  <line x1="44" x2="332" y1="45" y2="45" stroke="var(--color-border-default)" stroke-width="1"></line>
+                  <line x1="44" x2="332" y1="82" y2="82" stroke="var(--color-border-default)" stroke-width="1"></line>
+                  <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axHi }}</text>
+                  <text x="4" y="48" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axMid }}</text>
+                  <text x="4" y="85" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">{{ c.axLo }}</text>
+                  <polygon fill="{{ c.color }}" fill-opacity="0.1" points="{{ c.area }}"></polygon>
+                  <polyline fill="none" stroke="{{ c.color }}" stroke-width="1.5" points="{{ c.pts }}"></polyline>
+                </svg>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Throughput and fleet trend, last 10 minutes</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px">
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+              <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Emitted to SDK</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:2px;background:var(--color-bg-accent);display:inline-block"></i>metrics/s 312.6</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:0;border-top:2px dashed var(--color-fg-default);display:inline-block"></i>logs/s 48.2</span>
+              </div>
+              <svg viewBox="0 0 560 110" preserveAspectRatio="none" style="width:100%;height:110px;display:block">
+                <line x1="44" x2="552" y1="8" y2="8" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="552" y1="51" y2="51" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="552" y1="94" y2="94" stroke="var(--color-border-default)"></line>
+                <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">340.0</text>
+                <text x="4" y="54" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">190.0</text>
+                <text x="4" y="97" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">40.0</text>
+                <polyline fill="none" stroke="var(--color-fg-default)" stroke-width="1.5" stroke-dasharray="4 3" points="44,88 108,84 172,86 236,80 300,82 364,78 428,80 492,76 552,78"></polyline>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="44,44 108,38 172,46 236,32 300,40 364,26 428,34 492,20 552,24"></polyline>
+              </svg>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px">
+              <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">Collectors failing</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:14px;height:0;border-top:2px dotted var(--color-status-fail);display:inline-block"></i>failing 3</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">164 active · 3 starting</span>
+              </div>
+              <svg viewBox="0 0 560 110" preserveAspectRatio="none" style="width:100%;height:110px;display:block">
+                <line x1="44" x2="552" y1="8" y2="8" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="552" y1="51" y2="51" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="552" y1="94" y2="94" stroke="var(--color-border-default)"></line>
+                <text x="4" y="11" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">4</text>
+                <text x="4" y="54" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">2</text>
+                <text x="4" y="97" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">0</text>
+                <polyline fill="none" stroke="var(--color-status-fail)" stroke-width="1.6" stroke-dasharray="1 3" points="44,94 108,94 172,73 236,73 300,73 364,51 428,51 492,30 552,30"></polyline>
+              </svg>
+            </div>
+          </div>
+
+          <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Exporter accepted</div>
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px">
+            <sc-for list="{{ delivery }}" as="d" hint-placeholder-count="2">
+              <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:10px 12px;display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600">{{ d.k }}</span>
+                <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:{{ d.fg }}">{{ d.icon }}{{ d.state }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)">{{ d.counts }}</span>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">{{ d.last }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="2c" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">2c</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">The family small-chart standard</h2>
+      <span style="font-size:12.5px;color:#7e9299">Defined here, inherited by all four consoles. Series read by stroke pattern and label, never hue alone.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1180px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:12px 14px">
+              <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Anatomy, single series</div>
+              <svg viewBox="0 0 520 150" style="width:100%;height:150px;display:block">
+                <line x1="44" x2="512" y1="12" y2="12" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="512" y1="71" y2="71" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="512" y1="130" y2="130" stroke="var(--color-border-default)"></line>
+                <text x="4" y="15" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">96M</text>
+                <text x="4" y="74" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">64M</text>
+                <text x="4" y="133" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">32M</text>
+                <polygon fill="var(--color-bg-accent)" fill-opacity="0.1" points="44,130 44,104 102,96 160,110 218,84 276,92 334,66 392,74 450,52 512,60 512,130"></polygon>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="44,104 102,96 160,110 218,84 276,92 334,66 392,74 450,52 512,60"></polyline>
+                <line x1="334" x2="334" y1="12" y2="130" stroke="var(--color-fg-muted)" stroke-width="1" stroke-dasharray="2 2"></line>
+                <circle cx="334" cy="66" r="2.5" fill="var(--color-bg-accent)"></circle>
+              </svg>
+              <div style="display:flex;justify-content:flex-end;margin-top:-118px;margin-right:24px;margin-bottom:96px">
+                <span style="display:inline-block;background:var(--color-bg-raised);border:1px solid var(--color-border-strong);border-radius:6px;padding:4px 8px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-default);white-space:nowrap">heap 78M</span>
+              </div>
+              <div style="font-size:11px;line-height:1.6;color:var(--color-fg-soft);text-wrap:pretty">44px left gutter for three axis labels at 9px mono. Three gridlines at min, mid, max in <span style="font-family:'JetBrains Mono',ui-monospace,monospace">--color-border-default</span>. Area fill at 10 percent, single series only. Hover draws a dashed crosshair and a 6px-radius tooltip on the raised surface.</div>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:12px 14px">
+              <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Three series, no area</div>
+              <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px">
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:16px;height:2px;background:var(--color-bg-accent);display:inline-block"></i>series 1 · petrol · solid</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:16px;height:0;border-top:2px dashed var(--color-fg-default);display:inline-block"></i>series 2 · ink · dashed</span>
+                <span style="display:inline-flex;align-items:center;gap:5px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)"><i style="width:16px;height:0;border-top:2px dotted var(--color-status-warn);display:inline-block"></i>series 3 · ochre · dotted</span>
+              </div>
+              <svg viewBox="0 0 520 150" style="width:100%;height:150px;display:block">
+                <line x1="44" x2="512" y1="12" y2="12" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="512" y1="71" y2="71" stroke="var(--color-border-default)"></line>
+                <line x1="44" x2="512" y1="130" y2="130" stroke="var(--color-border-default)"></line>
+                <text x="4" y="15" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">1.0</text>
+                <text x="4" y="74" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">0.5</text>
+                <text x="4" y="133" fill="var(--color-fg-muted)" font-size="9" font-family="'JetBrains Mono',monospace">0.0</text>
+                <polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" points="44,110 102,96 160,102 218,80 276,88 334,62 392,70 450,46 512,54"></polyline>
+                <polyline fill="none" stroke="var(--color-fg-default)" stroke-width="1.5" stroke-dasharray="4 3" points="44,84 102,90 160,76 218,94 276,72 334,96 392,80 450,100 512,86"></polyline>
+                <polyline fill="none" stroke="var(--color-status-warn)" stroke-width="1.6" stroke-dasharray="1 3" points="44,124 102,118 160,126 218,112 276,120 334,108 392,116 450,102 512,110"></polyline>
+              </svg>
+              <div style="font-size:11px;line-height:1.6;color:var(--color-fg-soft);text-wrap:pretty">Three is the ceiling. A fourth series means the chart is answering two questions and should be two charts. Series order is fixed, so the same measure keeps the same stroke on every console.</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px">
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:12px 14px">
+              <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Fewer than two points</div>
+              <div style="height:70px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--color-border-default);border-bottom:1px solid var(--color-border-default)">
+                <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"></path></svg>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">collecting, 1 of 2 samples</span>
+              </div>
+              <div style="font-size:11px;line-height:1.6;color:var(--color-fg-soft);margin-top:8px">A single point is not a chart. Say so; never draw a dot and imply a trend.</div>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:12px 14px">
+              <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Nothing to chart</div>
+              <div style="height:70px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--color-border-default);border-bottom:1px solid var(--color-border-default)">
+                <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" style="color:var(--color-fg-muted)"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="2"></circle></svg>
+                <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">self-observability off</span>
+              </div>
+              <div style="font-size:11px;line-height:1.6;color:var(--color-fg-soft);margin-top:8px">A switched-off source draws nothing, and states the switch. Not a flat line at zero.</div>
+            </div>
+            <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface);padding:12px 14px">
+              <div style="font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;margin-bottom:8px">Sparkline, in a table cell</div>
+              <div style="height:70px;display:flex;flex-direction:column;justify-content:center;gap:8px;border-top:1px solid var(--color-border-default);border-bottom:1px solid var(--color-border-default)">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <svg viewBox="0 0 100 22" preserveAspectRatio="none" style="width:100px;height:22px;display:block"><polyline fill="none" stroke="var(--color-bg-accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" points="0,18 12,14 25,16 37,10 50,12 62,7 75,9 87,4 100,6"></polyline></svg>
+                  <span style="display:inline-flex;gap:2px;align-items:center">
+                    <sc-for list="{{ outcomes }}" as="o" hint-placeholder-count="12">
+                      <i style="width:4px;height:13px;background:{{ o }};display:inline-block"></i>
+                    </sc-for>
+                  </span>
+                  <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">2 of 12 failed</span>
+                </div>
+              </div>
+              <div style="font-size:11px;line-height:1.6;color:var(--color-fg-soft);margin-top:8px">100x22, no axis, no area, 1.5px non-scaling stroke. The outcome strip beside it carries pass and fail as full-height cells plus a count.</div>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div id="2d" style="display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;align-items:baseline;gap:10px">
+      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border:1px solid #2c3a40;color:#66aecb">2d</span>
+      <h2 style="margin:0;font-size:15px;font-weight:600;color:#eef3f5">Collectors tab</h2>
+      <span style="font-size:12.5px;color:#7e9299">Nine availability states, all word plus icon. Enabled, covered and skipped rows differ in structure, not in row tint.</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:flex-start">
+      <sc-for list="{{ themes }}" as="t" hint-placeholder-count="2">
+        <div data-theme="{{ t.theme }}" style="flex:none;box-sizing:border-box;width:1400px;background:var(--color-bg-canvas);color:var(--color-fg-default);font-family:'Hanken Grotesk',system-ui,sans-serif;border:1px solid var(--color-border-strong);padding:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border-strong);border-radius:3px;background:var(--color-bg-raised);padding:3px 8px;width:280px">
+              <svg viewBox="0 0 256 256" width="13" height="13" fill="var(--color-fg-muted)" aria-hidden="true"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+              <span style="font-size:12.5px;color:var(--color-fg-faint)">Filter collectors</span>
+            </span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">8 of 170</span>
+            <span style="flex:1"></span>
+            <span style="font-size:11px;color:var(--color-fg-muted)">Tenant</span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-soft)">11111111-1111-1111-1111-111111111111</span>
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--color-fg-muted)">164 active · 3 failing · 2 covered · 1 skipped</span>
+          </div>
+          <div style="border:1px solid var(--color-border-default);background:var(--color-bg-surface)">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <sc-for list="{{ collectorCols }}" as="h" hint-placeholder-count="11">
+                    <th style="text-align:{{ h.align }};padding:7px 10px;background:var(--color-bg-raised);border-bottom:1px solid var(--color-border-strong);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--color-fg-muted);font-weight:600;position:sticky;top:0;white-space:nowrap">{{ h.label }}</th>
+                  </sc-for>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ collectors }}" as="c" hint-placeholder-count="8">
+                  <tr style="border-bottom:1px solid var(--color-border-default);box-shadow:{{ c.marker }}" style-hover="background:var(--color-bg-hover)">
+                    <td style="padding:7px 10px;vertical-align:top">
+                      <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px">{{ c.name }}</span>
+                      <span style="display:block;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;color:var(--color-fg-muted);margin-top:2px">{{ c.cursor }}</span>
+                    </td>
+                    <td style="padding:7px 10px;vertical-align:top">
+                      <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:{{ c.stFg }};white-space:nowrap">{{ c.stIcon }}{{ c.state }}</span>
+                      <span style="display:block;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:10.5px;color:var(--color-fg-muted);margin-top:2px">{{ c.reason }}</span>
+                    </td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.interval }}</td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.success }}</td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.runs }}</td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.failures }}</td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top;color:{{ c.nextFg }}">{{ c.next }}</td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.dur }}</td>
+                    <td style="padding:7px 10px;vertical-align:top">
+                      <span style="display:inline-flex;align-items:center;gap:8px">{{ c.spark }}<span style="display:inline-flex;gap:2px;align-items:center">{{ c.strip }}</span></span>
+                    </td>
+                    <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12.5px;font-variant-numeric:tabular-nums;vertical-align:top">{{ c.staleness }}</td>
+                    <td style="padding:7px 10px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:{{ c.errFg }};vertical-align:top;max-width:300px;overflow-wrap:anywhere">{{ c.err }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px">
+            <sc-for list="{{ stateLegend }}" as="s" hint-placeholder-count="9">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--color-fg-muted)">{{ s.icon }}<span style="font-family:'JetBrains Mono',ui-monospace,monospace;color:{{ s.fg }}">{{ s.state }}</span>{{ s.meaning }}</span>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:2900,&quot;height&quot;:1400}}">
+class Component extends DCLogic {
+  icon(name, color, size) {
+    const paths = {
+      warnTri: "M236.8,188.09,149.35,36.22h0a24.76,24.76,0,0,0-42.7,0L19.2,188.09a23.51,23.51,0,0,0,0,23.72A24.35,24.35,0,0,0,40.55,224h174.9a24.35,24.35,0,0,0,21.33-12.19A23.51,23.51,0,0,0,236.8,188.09ZM222.93,203.8a8.5,8.5,0,0,1-7.48,4.2H40.55a8.5,8.5,0,0,1-7.48-4.2,7.59,7.59,0,0,1,0-7.72L120.52,44.21a8.75,8.75,0,0,1,15,0l87.45,151.87A7.59,7.59,0,0,1,222.93,203.8ZM120,144V104a8,8,0,0,1,16,0v40a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,180Z",
+      warnCircle: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm-8-80V80a8,8,0,0,1,16,0v56a8,8,0,0,1-16,0Zm20,36a12,12,0,1,1-12-12A12,12,0,0,1,140,172Z",
+      info: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z",
+      prohibit: "M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.56,87.56,0,0,1-20.41,56.28L71.72,60.4A88,88,0,0,1,216,128ZM40,128A87.56,87.56,0,0,1,60.41,71.72L184.28,195.6A88,88,0,0,1,40,128Z",
+      arrowsSplit: "M229.66,189.66l-32,32a8,8,0,0,1-11.32,0l-32-32a8,8,0,0,1,11.32-11.32L184,196.69V139.31l-56-56-56,56v57.38l18.34-18.35a8,8,0,0,1,11.32,11.32l-32,32a8,8,0,0,1-11.32,0l-32-32a8,8,0,0,1,11.32-11.32L56,196.69V136a8,8,0,0,1,2.34-5.66L120,68.69V24a8,8,0,0,1,16,0V68.69l61.66,61.65A8,8,0,0,1,200,136v60.69l18.34-18.35a8,8,0,0,1,11.32,11.32Z",
+    };
+    return React.createElement("svg", {
+      viewBox: "0 0 256 256", width: size || 12, height: size || 12,
+      fill: color || "currentColor", "aria-hidden": "true",
+      style: { flex: "none", verticalAlign: "-1px" },
+    }, React.createElement("path", { d: paths[name] }));
+  }
+  shape(kind, color, size) {
+    const s = size || 8;
+    const inner = kind === "dot"
+      ? React.createElement("circle", { cx: 8, cy: 8, r: 7, fill: "currentColor" })
+      : kind === "diamond"
+      ? React.createElement("path", { d: "M8 0.5 15.5 8 8 15.5 0.5 8Z", fill: "currentColor" })
+      : kind === "square"
+      ? React.createElement("rect", { x: 2, y: 2, width: 12, height: 12, fill: "none", stroke: "currentColor", strokeWidth: 2.5 })
+      : React.createElement("circle", { cx: 8, cy: 8, r: 6, fill: "none", stroke: "currentColor", strokeWidth: 2 });
+    return React.createElement("svg", {
+      viewBox: "0 0 16 16", width: s, height: s, "aria-hidden": "true",
+      style: { color: color, flex: "none" },
+    }, inner);
+  }
+  spark(points, color) {
+    return React.createElement("svg", {
+      viewBox: "0 0 100 22", preserveAspectRatio: "none",
+      style: { width: "100px", height: "22px", display: "block", flex: "none" },
+    }, React.createElement("polyline", {
+      fill: "none", stroke: color, strokeWidth: 1.5,
+      vectorEffect: "non-scaling-stroke", points,
+    }));
+  }
+  strip(pattern, ok, fail) {
+    return pattern.split("").map((ch, i) => React.createElement("i", {
+      key: i,
+      style: { width: "4px", height: "13px", background: ch === "1" ? ok : fail, display: "inline-block" },
+    }));
+  }
+  renderVals() {
+    const ok = "var(--color-status-ok)";
+    const warn = "var(--color-status-warn)";
+    const fail = "var(--color-status-fail)";
+    const muted = "var(--color-fg-muted)";
+    const soft = "var(--color-fg-soft)";
+    const def = "var(--color-fg-default)";
+    const accent = "var(--color-bg-accent)";
+    const track = "var(--color-bg-track)";
+
+    const stateMap = {
+      healthy: [ok, this.shape("dot", ok, 8)],
+      healthy_empty: [muted, this.shape("dot", muted, 8)],
+      limited: [warn, this.icon("warnTri", warn, 11)],
+      degraded: [warn, this.icon("warnTri", warn, 11)],
+      blocked: [fail, this.icon("prohibit", fail, 12)],
+      failed: [fail, this.icon("warnCircle", fail, 12)],
+      startup_failed: [fail, this.icon("warnCircle", fail, 12)],
+      covered: [soft, this.icon("arrowsSplit", soft, 12)],
+      disabled: [muted, this.shape("ring", muted, 8)],
+      starting: [muted, this.shape("ring", muted, 8)],
+      license: [warn, this.icon("warnTri", warn, 11)],
+      experimental: [soft, this.icon("info", soft, 12)],
+    };
+
+    const coll = (name, cursor, state, reason, interval, success, runs, failures, next, dur, sparkPts, stripPat, staleness, err) => {
+      const [stFg, stIcon] = stateMap[state] || [muted, this.shape("ring", muted, 8)];
+      const bad = state === "failed" || state === "blocked" || state === "startup_failed";
+      return {
+        name, cursor, state, reason, interval, success, runs, failures, next, dur, staleness,
+        err: err || "-",
+        errFg: err ? fail : muted,
+        stFg, stIcon,
+        marker: bad ? "inset 2px 0 0 " + fail : "none",
+        nextFg: next === "overdue" ? warn : def,
+        spark: sparkPts ? this.spark(sparkPts, accent) : "",
+        strip: stripPat ? this.strip(stripPat, ok, fail) : "",
+      };
+    };
+
+    return {
+      themes: [
+        { theme: "light", label: "Light, the new default" },
+        { theme: "dark", label: "Dark, honoured from prefers-color-scheme and the toggle" },
+      ],
+      posture: [
+        { k: "Health", v: "healthy", sub: "no open findings", fg: ok },
+        { k: "Readiness", v: "ready", sub: "first collection landed", fg: ok },
+        { k: "Tenants", v: "3", sub: "all token-verified", fg: def },
+        { k: "Collectors", v: "164", sub: "of 170 registered", fg: def },
+        { k: "Failing", v: "3", sub: "2 blocked · 1 failed", fg: fail },
+        { k: "Starting", v: "2", sub: "no run completed yet", fg: muted },
+      ],
+      rateLimits: [
+        { workload: "graph.directory", limit: "12.0", burst: "48", tokens: "44.2", headroom: "92%", fg: ok, pts: "0,6 12,5 25,7 37,4 50,6 62,3 75,5 87,2 100,4" },
+        { workload: "graph.reports", limit: "4.00", burst: "16", tokens: "6.8", headroom: "43%", fg: warn, pts: "0,4 12,7 25,9 37,8 50,11 62,10 75,13 87,12 100,14" },
+        { workload: "graph.security", limit: "8.00", burst: "32", tokens: "30.1", headroom: "94%", fg: ok, pts: "0,5 12,4 25,6 37,5 50,4 62,6 75,4 87,5 100,4" },
+        { workload: "o365.activity", limit: "2.00", burst: "8", tokens: "0.4", headroom: "5%", fg: fail, pts: "0,3 12,6 25,9 37,12 50,14 62,16 75,17 87,18 100,19" },
+      ],
+      runtimeCharts: [
+        { k: "Goroutines", v: "412", sub: "gomaxprocs 8", color: accent, axHi: "480", axMid: "380", axLo: "280", pts: "44,64 82,58 120,70 158,52 196,60 234,44 272,52 310,36 340,42", area: "44,82 44,64 82,58 120,70 158,52 196,60 234,44 272,52 310,36 340,42 340,82" },
+        { k: "Heap in use", v: "182 MiB", sub: "gc cycles 48,204", color: accent, axHi: "220M", axMid: "170M", axLo: "120M", pts: "44,70 82,62 120,74 158,56 196,66 234,50 272,58 310,42 340,48", area: "44,82 44,70 82,62 120,74 158,56 196,66 234,50 272,58 310,42 340,48 340,82" },
+        { k: "GC rate", v: "1.84", sub: "cycles/sec", color: warn, axHi: "2.4", axMid: "1.6", axLo: "0.8", pts: "44,58 82,66 120,52 158,68 196,54 234,70 272,56 310,64 340,50", area: "" },
+      ],
+      delivery: [
+        { k: "Metrics", state: "healthy", fg: ok, icon: this.shape("dot", ok, 8), counts: "12,404 attempts · 12,404 accepted · 0 failed", last: "last success 12s ago · flush failures 0" },
+        { k: "Logs", state: "degraded", fg: fail, icon: this.shape("diamond", fail, 8), counts: "12,401 attempts · 12,388 accepted · 13 failed", last: "last failure 2m 14s ago · ResourceExhausted" },
+      ],
+      outcomes: (() => {
+        const okC = "var(--color-status-ok)";
+        const failC = "var(--color-status-fail)";
+        return "111011111101".split("").map(ch => (ch === "1" ? okC : failC));
+      })(),
+      collectorCols: [
+        { label: "Collector", align: "left" }, { label: "State", align: "left" },
+        { label: "Interval", align: "right" }, { label: "Success", align: "right" },
+        { label: "Runs", align: "right" }, { label: "Failures", align: "right" },
+        { label: "Next run", align: "right" }, { label: "Duration", align: "right" },
+        { label: "Recent", align: "left" }, { label: "Staleness", align: "right" },
+        { label: "Last error", align: "left" },
+      ],
+      collectors: [
+        coll("entra.directory.users", "watermark 10:41:02Z · 18s behind · 4,204 seen", "healthy", "via graph", "300s", "100%", "3,482", "0", "4m 12s", "612ms", "0,16 12,14 25,15 37,12 50,13 62,11 75,12 87,10 100,11", "111111111111", "18s", ""),
+        coll("entra.signins.interactive", "cursor 48,204,112B · 62 blobs · newest insights-logs-signinlogs/y=2026/m=08/d=31", "healthy", "via blob", "300s", "99%", "3,480", "12", "2m 08s", "1,842ms", "0,14 12,12 25,16 37,11 50,14 62,10 75,13 87,9 100,12", "111011111111", "44s", ""),
+        coll("intune.reports.export", "in-flight job 8f2c-4a91", "blocked", "missing permission · DeviceManagementApps.Read.All", "900s", "0%", "1,160", "1,160", "overdue", "3,204ms", "0,4 12,4 25,4 37,4 50,4 62,4 75,4 87,4 100,4", "000000000000", "18m 40s", "POST /deviceManagement/reports/exportJobs: 403 forbidden"),
+        coll("m365.audit.unified", "watermark 10:36:44Z · 5m 36s behind", "limited", "async query only · 30 day ceiling", "600s", "94%", "1,740", "104", "3m 22s", "8,412ms", "0,10 12,14 25,9 37,16 50,11 62,18 75,12 87,15 100,10", "111101111011", "5m 36s", ""),
+        coll("purview.dlp_policies", "cold start", "starting", "no run completed yet", "3600s", "-", "0", "0", "-", "-", "", "", "-", ""),
+        coll("defender.hunting.alerts", "watermark 10:40:12Z · 1m 08s behind", "degraded", "undedupeable records emitted", "300s", "97%", "3,478", "104", "1m 44s", "2,104ms", "0,12 12,10 25,14 37,9 50,12 62,8 75,11 87,7 100,10", "111111011111", "1m 08s", ""),
+        coll("entra.signins.noninteractive", "", "covered", "collected via entra.signins.interactive (blob) · polled form off by design", "-", "-", "-", "-", "-", "-", "", "", "-", ""),
+        coll("mdca.discovery.parse", "", "license", "skipped · requires Defender for Cloud Apps E5", "-", "-", "-", "-", "-", "-", "", "", "-", ""),
+      ],
+      stateLegend: [
+        { state: "healthy", fg: ok, icon: this.shape("dot", ok, 8), meaning: "running, data returned" },
+        { state: "healthy_empty", fg: muted, icon: this.shape("dot", muted, 8), meaning: "running, tenant has none" },
+        { state: "limited", fg: warn, icon: this.icon("warnTri", warn, 11), meaning: "partial by source design" },
+        { state: "degraded", fg: warn, icon: this.icon("warnTri", warn, 11), meaning: "emitting, quality reduced" },
+        { state: "blocked", fg: fail, icon: this.icon("prohibit", fail, 12), meaning: "permission or licence" },
+        { state: "failed", fg: fail, icon: this.icon("warnCircle", fail, 12), meaning: "call returned an error" },
+        { state: "covered", fg: soft, icon: this.icon("arrowsSplit", soft, 12), meaning: "another collector owns it" },
+        { state: "disabled", fg: muted, icon: this.shape("ring", muted, 8), meaning: "switched off" },
+        { state: "starting", fg: muted, icon: this.shape("ring", muted, 8), meaning: "no run yet" },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

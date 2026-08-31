@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · opnsense2otel</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3' fill='%232f81f7'/><path d='M4 11 L7 5 L9 9 L12 5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+  :root{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  /* Light theme: OS-prefers-light when the user hasn't chosen, or the explicit
+     data-theme="light" stamp (which always wins over the media query). */
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme]){
+      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+      --grid:#e6eaef;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
+    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
+    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e; --pending:#8c959f;
+    --grid:#e6eaef;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
+    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --pending:#6e7681;
+    --grid:#242c37;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--accent);text-decoration:none} a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:1px 5px;border-radius:4px}
+  header{padding:20px 24px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:20px;font-weight:600}
+  header .ver{color:var(--muted);font-family:var(--mono);font-size:13px}
+  header .spacer{flex:1}
+  main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+  section{margin:0 0 26px}
+  section>h2,.sub-h{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .sub-h{margin:26px 0 12px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card .k{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .card .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .card .sub{color:var(--muted);font-size:12px;margin-top:4px;font-family:var(--mono);overflow-wrap:anywhere}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;line-height:1.6;background:rgba(110,118,129,.18);color:var(--muted)}
+  .badge-ok{background:rgba(63,185,80,.16);color:var(--ok)}
+  .badge-bad{background:rgba(248,81,73,.16);color:var(--err)}
+  .badge-warn{background:rgba(210,153,34,.16);color:var(--warn)}
+  .badge-pending{background:rgba(110,118,129,.18);color:var(--muted)}
+  table{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  th,td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+  th{color:var(--muted);font-size:12px;font-weight:600;position:sticky;top:0;background:var(--panel2)}
+  th.sortable{cursor:pointer;user-select:none}
+  tr:last-child td{border-bottom:0}
+  tr.bad>td{background:rgba(248,81,73,.07)}
+  /* ifIndex rows: a contradicted mapping is the one thing an operator must not
+     scan past, so it gets the same red tint as a failure; an operator override
+     is merely notable, so it gets a neutral accent tint. */
+  tr.ifx-disagrees>td{background:rgba(248,81,73,.10)}
+  tr.ifx-override>td{background:rgba(68,147,248,.07)}
+  tr.err-row td{color:var(--err);font-family:var(--mono);font-size:12px}
+  .mono{font-family:var(--mono);font-size:12px;overflow-wrap:anywhere}
+  .muted{color:var(--muted)} .empty{color:var(--muted);text-align:center;padding:16px}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--pending)}
+  .dot-ok{background:var(--ok)} .dot-bad{background:var(--err)} .dot-warn{background:var(--warn)}
+  svg.spark{width:90px;height:22px;vertical-align:middle;display:inline-block}
+  svg.spark polyline{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+  .outcomes{display:inline-flex;gap:2px;align-items:center}
+  .outcomes .cell{width:5px;height:14px;border-radius:1px;background:var(--ok);display:inline-block}
+  .outcomes .cell.bad{background:var(--err)}
+  .filter{width:100%;max-width:340px;margin-bottom:10px;padding:7px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;color:var(--fg);font-size:13px}
+  .scroll{max-height:460px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+  .scroll table{border:0;border-radius:0}
+  .rollup{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:10px;margin-bottom:18px}
+  .rollup .rc{display:flex;flex-direction:column}
+  .rollup .rc .rv{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .rollup .rc .rk{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .reasons{padding:6px 24px;color:var(--warn);font-size:12px;font-family:var(--mono);border-bottom:1px solid var(--line)}
+  #staleBanner{display:none;padding:8px 24px;background:rgba(210,153,34,.16);color:var(--warn);font-size:13px;border-bottom:1px solid var(--line)}
+  #staleBanner.show{display:block}
+  .chart{width:100%;height:150px;display:block}
+  .chart-wrap{position:relative}
+  .chart-tip{position:absolute;display:none;pointer-events:none;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:11px;font-family:var(--mono);white-space:nowrap;z-index:6;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .controls{display:inline-flex;gap:10px;align-items:center}
+  button.ctl{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+  button.ctl:hover{border-color:var(--accent)}
+  footer{max-width:1180px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12px}
+  nav.tabs{position:sticky;top:0;z-index:5;display:flex;gap:4px;flex-wrap:wrap;padding:8px 24px 0;background:var(--bg);border-bottom:1px solid var(--line)}
+  .tab-btn{background:transparent;color:var(--muted);border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+  .tab-btn:hover{color:var(--fg)}
+  .tab-btn.active{color:var(--fg);background:var(--panel);border-color:var(--line)}
+  section[data-tab]{display:none} section[data-tab].active{display:block}
+</style>
+<script>
+  // Apply the persisted theme BEFORE first paint to avoid a flash of the wrong
+  // theme. Falls back silently to the prefers-color-scheme media query.
+  (function(){try{var t=localStorage.getItem('opnsense-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
+<script>window.__refreshMs = {{if .RefreshMs}}{{.RefreshMs}}{{else}}5000{{end}};</script>
+<noscript><style>
+  section[data-tab]{display:block!important;margin-bottom:34px}
+  nav.tabs{display:none}
+</style></noscript>
+</head>
+<body>
+{{with .Data}}
+<header>
+  <h1>{{.Service.Name}}</h1>
+  <span class="ver">{{.Service.Version}} · {{.Service.GoVersion}}{{if .Service.Host}} · {{.Service.Host}}{{end}}{{if .Service.Instance}} · {{.Service.Instance}}{{end}}{{if .Service.Uptime}} · up {{.Service.Uptime}}{{end}}</span>
+  <span class="spacer"></span>
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+  <span class="badge badge-{{healthClass .Health}}" id="healthBadge" title="{{range .Reasons}}{{.}}&#10;{{end}}">{{.Health}}</span>
+  <span class="badge badge-{{upstreamClass .Upstream.State}}" id="upstreamBadge" title="{{if .Upstream.Reason}}{{.Upstream.Reason}}{{else}}OPNsense API health check{{end}} · last checked {{.Upstream.CheckedAgo}}">box: {{.Upstream.State}}</span>
+  <span class="badge badge-{{captureClass .Capture.State}}" id="captureBadge" title="Passive metric capture: {{.Capture.State}}{{if .Capture.ErrorCount}} · {{.Capture.ErrorCount}} erroring gathers, last {{.Capture.LastErrorAgo}}{{end}}">capture: {{.Capture.State}}</span>
+  <span class="ver" id="scrapeAge" data-scrape-age>as of {{.ScrapeAge}}</span>
+</header>
+<div class="reasons" id="healthReasons"{{if not .Reasons}} style="display:none"{{end}}>{{range .Reasons}}{{.}} · {{end}}</div>
+{{end}}
+<div id="staleBanner"></div>
+<nav class="tabs" id="tabs">
+  <button class="tab-btn" data-target="overview">Overview</button>
+  <button class="tab-btn" data-target="collectors">Collectors</button>
+  <button class="tab-btn" data-target="api">API</button>
+  <button class="tab-btn" data-target="cardinality">Cardinality</button>
+  {{if not .DisableDevices}}<button class="tab-btn" data-target="devices">Devices</button>{{end}}
+  <button class="tab-btn" data-target="ifindex">ifIndex</button>
+  {{if not .DisableConfig}}<button class="tab-btn" data-target="config">Config</button>{{end}}
+</nav>
+<main>
+{{with .Data}}
+
+  <!-- ═══ OVERVIEW ═══ -->
+  <section data-tab="overview">
+    <div class="rollup" id="rollup">
+      <div class="rc"><span class="rv" id="ruHealth">{{.Health}}</span><span class="rk">health</span></div>
+      <div class="rc"><span class="rv" id="ruCollectors">—</span><span class="rk">collectors ok</span></div>
+      <div class="rc"><span class="rv" id="ruFailing">—</span><span class="rk">failing</span></div>
+      <div class="rc"><span class="rv" id="ruStale">—</span><span class="rk">stale</span></div>
+      <div class="rc"><span class="rv" id="ruSeries">{{.Stats.Series}}</span><span class="rk">series</span></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Uptime</div><div class="v" id="uptime">{{.Service.Uptime}}</div><div class="sub">since {{.Service.Start}}</div></div>
+      <div class="card" title="The OPNsense box itself, from the scheduler's health poll. Independent of collector run history — during a transport outage collector polls are skipped entirely, so the collector table stays green."><div class="k">OPNsense API</div><div class="v" id="ovUpstream">{{.Upstream.State}}</div><div class="sub" id="ovUpstreamSub">checked {{.Upstream.CheckedAgo}}</div></div>
+      <div class="card" title="Whether the metric capture this page is rendered from came from a clean gather or one that also returned an error. A partial capture is CURRENT data, not stale data."><div class="k">Metric capture</div><div class="v" id="ovCapture">{{.Capture.State}}</div><div class="sub" id="ovCaptureSub">{{if .Capture.ErrorCount}}{{.Capture.ErrorCount}} erroring gathers{{else}}no gather errors{{end}}</div></div>
+      <div class="card"><div class="k">Active collectors</div><div class="v" id="ovCollectors">{{.Stats.ActiveCollectors}}</div></div>
+      <div class="card"><div class="k">Metric families</div><div class="v" id="ovFamilies">{{.Stats.MetricFamilies}}</div></div>
+      <div class="card"><div class="k">Series</div><div class="v" id="ovSeries">{{.Stats.Series}}</div></div>
+      <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="v" id="heapAlloc">{{.Runtime.HeapAlloc}}</div><div class="sub">GC cycles <span id="numGC">{{.Runtime.NumGC}}</span></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="v" id="gcRate">—</div><div class="sub">cycles/sec</div></div>
+    </div>
+    <div class="sub-h">Runtime trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Goroutines</div><div class="chart-wrap"><svg class="chart" id="chGoroutines"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Heap in use</div><div class="chart-wrap"><svg class="chart" id="chHeap"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">GC rate</div><div class="chart-wrap"><svg class="chart" id="chGC"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Active series</div><div class="chart-wrap"><svg class="chart" id="chCard"></svg><div class="chart-tip"></div></div></div>
+    </div>
+    <div class="sub-h">Throughput &amp; fleet trend (~10 min)</div>
+    <div class="cards">
+      <div class="card"><div class="k">Records shipped</div><div class="v" id="tpShipped">{{if .Trend.LogShipping}}{{printf "%.2f" .Trend.ShippedRate}}{{else}}—{{end}}</div><div class="sub">log records/sec (OTLP)</div></div>
+      <div class="card"><div class="k">Records dropped</div><div class="v" id="tpDropped">{{if .Trend.LogShipping}}{{printf "%.2f" .Trend.DroppedRate}}{{else}}—{{end}}</div><div class="sub">log records/sec lost</div></div>
+      <div class="card"><div class="k">Collectors active</div><div class="v" id="flActive">{{.Trend.ActiveCollectors}}</div><div class="sub">tracked by the scheduler</div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="v" id="flFailing">{{.Trend.FailingCollectors}}</div><div class="sub">last run failed</div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="v" id="flMeanMs">{{printf "%.1f" .Trend.MeanDurationMs}} ms</div><div class="sub">across collectors that have run</div></div>
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">Emitted throughput</div><div class="chart-wrap"><svg class="chart" id="chEmit"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Collectors failing</div><div class="chart-wrap"><svg class="chart" id="chFailing"></svg><div class="chart-tip"></div></div></div>
+      <div class="card"><div class="k">Mean run duration</div><div class="chart-wrap"><svg class="chart" id="chDuration"></svg><div class="chart-tip"></div></div></div>
+    </div>
+  </section>
+
+  <!-- ═══ COLLECTORS ═══ -->
+  <section data-tab="collectors">
+    <input class="filter" type="text" placeholder="Filter collectors…" oninput="filterTable(this,'collTable')">
+    <table id="collTable">
+      <thead><tr>
+        <th>Collector</th><th>State</th><th class="num">Interval</th><th class="num">Success</th>
+        <th title="Age of the metric buffer actually being served — NOT the age of the last poll attempt">Data age</th>
+        <th title="When the last poll attempt finished, successful or not">Last attempt</th>
+        <th class="num">Runs</th><th class="num">Fails</th><th class="num">Next run</th>
+        <th class="num">Last (ms)</th><th>Trend</th><th>Recent</th><th>Last error</th>
+      </tr></thead>
+      <tbody id="collBody">
+      {{range .Collectors}}
+        <tr data-name="{{.Name}}"{{if and .HasRun (not .LastSuccess)}} class="bad"{{end}}>
+          <td>{{.Display}}</td>
+          <td><span class="dot dot-{{stateClass .State}}"></span>{{.State}}</td>
+          <td class="num">{{if .IntervalSec}}{{.IntervalSec}}s{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">{{pct .SuccessRate}}</td>
+          <td>{{if eq .FreshnessState "none"}}<span class="badge badge-pending">no data</span>{{else}}<span class="badge badge-{{freshClass .FreshnessState}}" title="{{if .LastSuccessAgo}}last clean poll {{.LastSuccessAgo}}{{else}}never fully succeeded{{end}}">{{.Freshness}}</span>{{end}}</td>
+          <td class="mono">{{if .AttemptAge}}{{.AttemptAge}}{{else}}<span class="muted">—</span>{{end}}</td>
+          <td class="num">{{.Runs}}</td>
+          <td class="num">{{.Failures}}{{if gt .Consecutive 0}} <span class="muted">({{.Consecutive}}×)</span>{{end}}</td>
+          <td class="num">{{if .Scheduled}}{{.NextRunIn}}{{else}}<span class="muted">{{.NextRunIn}}</span>{{end}}</td>
+          <td class="num">{{printf "%.1f" .LastDurationMs}}</td>
+          <td>{{.Sparkline}}</td>
+          <td>{{.Outcomes}}</td>
+          <td class="mono">{{if .LastError}}{{.LastError}}{{else}}<span class="muted">—</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="13" class="empty">No collector has run yet — waiting for the first poll.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══ API ═══ -->
+  <section data-tab="api">
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Auth</div><div class="v"><span class="badge badge-{{if .API.AuthOK}}ok{{else}}bad{{end}}" id="apiAuth">{{if .API.AuthOK}}ok{{else}}failing{{end}}</span></div></div>
+      <div class="card"><div class="k">Requests (last scrape)</div><div class="v" id="apiRequests">{{printf "%.0f" .API.Requests}}</div></div>
+      <div class="card"><div class="k">Avg duration</div><div class="v" id="apiAvg">{{printf "%.1f" .API.AvgMs}} ms</div></div>
+    </div>
+    <div class="sub-h">Permission failures (401/403)</div>
+    <table>
+      <thead><tr><th>Endpoint</th><th>Code</th><th>Collector</th><th>Component</th><th>Grant this privilege</th><th class="num">Count</th></tr></thead>
+      <tbody id="apiAuthzBody">
+      {{range .API.AuthFailures}}
+        <tr title="{{.Hint}}"><td class="mono">{{.Endpoint}}</td><td>{{.Code}}</td><td>{{.Collector}}</td><td class="mono">{{.Component}}</td><td class="mono">{{.Privilege}}{{if eq .ACLStatus "unknown"}} (no narrower ACL exists){{end}}</td><td class="num">{{printf "%.0f" .Count}}</td></tr>
+      {{else}}
+        <tr><td colspan="6" class="empty">No permission failures recorded.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    <div class="sub-h">Top endpoint errors</div>
+    <table>
+      <thead><tr><th>Endpoint</th><th class="num">Errors</th></tr></thead>
+      <tbody id="apiBody">
+      {{range .API.TopErrors}}
+        <tr><td class="mono">{{.Endpoint}}</td><td class="num">{{printf "%.0f" .Count}}</td></tr>
+      {{else}}
+        <tr><td colspan="2" class="empty">No endpoint errors recorded.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═══ CARDINALITY ═══ -->
+  <section data-tab="cardinality">
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Total series</div><div class="v" id="cardTotal">{{.Cardinality.TotalSeries}}</div><div class="sub">across <span id="cardFamilies">{{.Cardinality.TotalFamilies}}</span> families</div></div>
+      <div class="card"><div class="k">Review (≥ warn)</div><div class="v" id="cardWarn">{{.Cardinality.Warn}}</div><div class="sub">warn ≥ {{.Cardinality.WarnThreshold}}</div></div>
+      <div class="card"><div class="k">Alerts (≥ crit)</div><div class="v" id="cardCrit">{{.Cardinality.Crit}}</div><div class="sub">crit ≥ {{.Cardinality.CritThreshold}}</div></div>
+      <div class="card"><div class="k">Series budget</div><div class="v" id="cardBudget">{{if .Cardinality.SeriesBudget}}{{printf "%.0f%%" .Cardinality.BudgetPercent}}{{else}}off{{end}}</div><div class="sub" id="cardBudgetSub">{{if .Cardinality.SeriesBudget}}{{.Cardinality.TotalSeries}} of {{.Cardinality.SeriesBudget}}{{if .Cardinality.OverBudget}} <span class="badge badge-bad">over</span>{{end}}{{else}}disabled{{end}}</div></div>
+    </div>
+    <div class="sub-h">Top metrics by series</div>
+    <input class="filter" type="text" placeholder="Filter metrics…" oninput="filterTable(this,'cardMetrics')">
+    <div class="scroll"><table id="cardMetrics">
+      <thead><tr><th>Metric</th><th class="num">Series</th><th class="num">Labels</th></tr></thead>
+      <tbody id="cardMetricsBody">
+      {{range .Cardinality.TopMetrics}}
+        <tr{{if eq .Level "crit"}} class="bad"{{end}}><td class="mono">{{.Name}}{{if ne .Level "ok"}} <span class="badge badge-{{if eq .Level "crit"}}bad{{else}}warn{{end}}">{{.Level}}</span>{{end}}</td><td class="num">{{.Series}}</td><td class="num">{{.Labels}}</td></tr>
+      {{else}}
+        <tr><td colspan="3" class="empty">No metrics captured yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <div class="sub-h">High-cardinality labels</div>
+    <div class="scroll"><table id="cardLabels">
+      <thead><tr><th>Label</th><th class="num">Distinct values</th><th class="num">Families</th></tr></thead>
+      <tbody id="cardLabelsBody">
+      {{range .Cardinality.TopLabels}}
+        <tr><td class="mono">{{.Name}}</td><td class="num">{{.DistinctValues}}</td><td class="num">{{.Families}}</td></tr>
+      {{else}}
+        <tr><td colspan="3" class="empty">No labels captured yet.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{if .Cardinality.Growth}}
+    <div class="sub-h">Growth (per minute over the retained window)</div>
+    <div class="scroll"><table id="cardGrowth">
+      <thead><tr><th>Metric</th><th class="num">Series</th><th class="num">Per min</th></tr></thead>
+      <tbody>
+      {{range .Cardinality.Growth}}
+        <tr><td class="mono">{{.Name}}</td><td class="num">{{.Series}}</td><td class="num">{{if gt .PerMin 0.0}}<span style="color:var(--warn)">+{{printf "%.1f" .PerMin}}</span>{{else}}<span style="color:var(--ok)">{{printf "%.1f" .PerMin}}</span>{{end}}</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+    <p class="note" style="margin-top:12px;color:var(--muted)">Full export: <a href="/cardinality/export.json"><code>/cardinality/export.json</code></a> · <a href="/api/cardinality.json"><code>/api/cardinality.json</code></a></p>
+  </section>
+
+  <!-- ═══ DEVICES ═══ -->
+  {{if not $.DisableDevices}}
+  <section data-tab="devices">
+    <p class="note" style="color:var(--muted)">Merged from the ARP table + DHCPv4/DHCPv6 leases (a live firewall read). Loads on demand — not on the auto-refresh poll. <a href="#" id="devReload">reload</a></p>
+    <div id="devError" class="reasons" style="display:none;border:0;padding:0;margin-bottom:8px"></div>
+    <input class="filter" type="text" placeholder="Filter devices…" oninput="filterTable(this,'devTable')">
+    <div class="scroll"><table id="devTable">
+      <thead><tr><th>IP</th><th>MAC</th><th>Hostname</th><th>Interface</th><th>Manufacturer</th><th>Source</th><th>Expiry</th></tr></thead>
+      <tbody id="devBody"><tr><td colspan="7" class="empty">Open this tab to load devices.</td></tr></tbody>
+    </table></div>
+  </section>
+  {{end}}
+{{end}}
+
+  <!-- ═══ IFINDEX ═══ -->
+  <section data-tab="ifindex">
+    <p class="note" style="color:var(--muted)">A NetFlow <code>ifIndex</code> is a <strong>1-based position over <code>/usr/local/sbin/ifinfo</code> output</strong>, which OPNsense turns into the netgraph hook name <code>ifaceN</code>. It is not an OS or SNMP index and nothing pins it: adding or removing <em>any</em> interface renumbers every interface after it. Compare this table straight down against <code>ifinfo</code> on the firewall after any interface change — the exporter can only derive this mapping, so a silent divergence here mislabels every flow. Loads on demand — not on the auto-refresh poll. <a href="#" id="ifxReload">reload</a></p>
+    <div id="ifxError" class="reasons" style="display:none;border:0;padding:0;margin-bottom:8px"></div>
+    <div class="cards" style="margin-bottom:12px">
+      <div class="card"><div class="k">Entries</div><div class="v" id="ifxEntries">—</div><div class="sub">resolved ifIndex rows</div></div>
+      <div class="card"><div class="k">Overridden</div><div class="v" id="ifxOverridden">—</div><div class="sub">from the operator override</div></div>
+      <div class="card"><div class="k">Conflicts</div><div class="v" id="ifxConflicts">—</div><div class="sub">overrides that contradicted the derivation</div></div>
+      <div class="card"><div class="k">Disagreements</div><div class="v" id="ifxDisagreements">—</div><div class="sub">rows the API states a different index for</div></div>
+      <div class="card"><div class="k">Unmapped lookups</div><div class="v" id="ifxUnmapped">—</div><div class="sub">flows whose ifIndex resolved to nothing</div></div>
+      <div class="card"><div class="k">Built</div><div class="v" id="ifxBuilt">—</div><div class="sub">when the map was last resolved</div></div>
+    </div>
+    <input class="filter" type="text" placeholder="Filter interfaces…" oninput="filterTable(this,'ifxTable')">
+    <div class="scroll"><table id="ifxTable">
+      <thead><tr><th class="num">ifIndex</th><th>Device</th><th>Description</th><th>Source</th><th class="num">API states</th><th>Notes</th></tr></thead>
+      <tbody id="ifxBody"><tr><td colspan="6" class="empty">Open this tab to load the resolved ifIndex map.</td></tr></tbody>
+    </table></div>
+  </section>
+
+  <!-- ═══ CONFIG ═══ -->
+  {{if not .DisableConfig}}
+  <section data-tab="config">
+    {{range .Config}}
+    <div class="sub-h">{{.Title}}</div>
+    <table style="margin-bottom:18px">
+      <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+      <tbody>
+      {{range .Items}}
+        <tr{{if .Secret}} class="muted"{{end}}><td>{{if .Display}}{{.Display}} <code class="muted">{{.Key}}</code>{{else}}{{.Key}}{{end}}</td><td class="mono">{{.Value}}</td></tr>
+      {{else}}
+        <tr><td colspan="2" class="empty">No items.</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="empty">No configuration sections available.</p>
+    {{end}}
+  </section>
+  {{end}}
+
+</main>
+<footer>
+  Generated at <span id="generatedAt">{{with .Data}}{{.Generated.Format "15:04:05"}}{{end}}</span> ·
+  <a href="/api/status.json">JSON</a> ·
+  <span class="controls"><button class="ctl" id="pauseBtn">Pause</button> <a href="#" id="refreshNow">refresh now</a></span> ·
+  updated <span id="updatedAgo">just now</span> ·
+  <noscript>static snapshot (enable JavaScript for live updates &amp; charts)</noscript>
+  <br>
+  <span class="attribution">{{geoipCredit}}</span>
+</footer>
+<script>
+var SVGNS='http://www.w3.org/2000/svg';
+var lastOkMs=Date.now(), pollTimer=null, paused=false, lastData=null, devicesLoaded=false, ifIndexLoaded=false;
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+function showTab(id){
+  var secs=document.querySelectorAll('section[data-tab]'), found=false;
+  for(var i=0;i<secs.length;i++){ var on=secs[i].getAttribute('data-tab')===id; secs[i].classList.toggle('active',on); if(on) found=true; }
+  var btns=document.querySelectorAll('#tabs .tab-btn');
+  for(var j=0;j<btns.length;j++){ btns[j].classList.toggle('active', btns[j].getAttribute('data-target')===id); }
+  if(found && location.hash!=='#'+id){ history.replaceState(null,'','#'+id); }
+  if(id==='devices' && !devicesLoaded){ loadDevices(); }
+  if(id==='ifindex' && !ifIndexLoaded){ loadIfIndex(); }
+  redrawCharts();
+}
+function initTabs(){
+  var btns=document.querySelectorAll('#tabs .tab-btn');
+  for(var i=0;i<btns.length;i++){ (function(b){ b.addEventListener('click',function(){ showTab(b.getAttribute('data-target')); }); })(btns[i]); }
+  var initial=(location.hash||'').replace('#','');
+  var valid=document.querySelector('section[data-tab="'+initial+'"]');
+  showTab(valid?initial:'overview');
+}
+
+// ── Theme toggle ──────────────────────────────────────────────────────────
+function currentTheme(){ var t=document.documentElement.getAttribute('data-theme'); if(t) return t; return (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark'; }
+function toggleTheme(){ var next=currentTheme()==='light'?'dark':'light'; document.documentElement.setAttribute('data-theme',next); try{localStorage.setItem('opnsense-theme',next);}catch(e){} redrawCharts(); }
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function filterTable(input,tableId){ var q=input.value.toLowerCase(); var rows=document.querySelectorAll('#'+tableId+' tbody tr'); for(var i=0;i<rows.length;i++){ rows[i].style.display=rows[i].textContent.toLowerCase().indexOf(q)>-1?'':'none'; } }
+function setText(id,v){ var e=document.getElementById(id); if(e!=null && v!=null) e.textContent=v; }
+function el(tag,attrs,text){ var e=document.createElement(tag); if(attrs){ for(var k in attrs){ if(attrs.hasOwnProperty(k)) e.setAttribute(k,attrs[k]); } } if(text!=null) e.textContent=text; return e; }
+function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||'#4493f8'; }
+function relMs(ms){ var s=Math.round((Date.now()-ms)/1000); if(s<0)s=0; if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+function pct(v){ if(v==null||v<0) return '—'; return Math.round(v)+'%'; }
+function stateClass(s){ if(s==='ok')return 'ok'; if(s==='failing')return 'bad'; return 'warn'; }
+function freshClass(s){ if(s==='fresh')return 'ok'; if(s==='stale')return 'warn'; return 'pending'; }
+function healthClass(h){ if(h==='healthy')return 'ok'; if(h==='degraded')return 'bad'; return 'warn'; }
+
+// ── Charts (zero-dependency line chart with axes + hover) ─────────────────
+var CHARTS={};
+function registerChart(svgId,seriesFn,fmtFn){ CHARTS[svgId]={seriesFn:seriesFn,fmt:fmtFn||function(v){return String(Math.round(v));}}; }
+function redrawCharts(){ for(var id in CHARTS){ if(CHARTS.hasOwnProperty(id)){ var c=CHARTS[id]; drawChart(id,c.seriesFn(lastData),c.fmt); } } }
+function drawChart(svgId,series,fmt){
+  var svg=document.getElementById(svgId); if(!svg) return;
+  var wrap=svg.parentNode, tip=wrap?wrap.querySelector('.chart-tip'):null;
+  while(svg.firstChild) svg.removeChild(svg.firstChild);
+  series=(series||[]).filter(function(s){ return s.points && s.points.length; });
+  var rect=svg.getBoundingClientRect();
+  var W=Math.max(rect.width||300,120), H=Math.max(rect.height||150,50);
+  svg.setAttribute('viewBox','0 0 '+W+' '+H); svg.setAttribute('preserveAspectRatio','none');
+  var maxLen=0,mn=Infinity,mx=-Infinity;
+  series.forEach(function(s){ maxLen=Math.max(maxLen,s.points.length); s.points.forEach(function(v){ if(v<mn)mn=v; if(v>mx)mx=v; }); });
+  if(!series.length || maxLen<2){ var t=document.createElementNS(SVGNS,'text'); t.setAttribute('x',8); t.setAttribute('y',H/2); t.setAttribute('fill',cssVar('--muted')); t.setAttribute('font-size','11'); t.textContent='collecting…'; svg.appendChild(t); return; }
+  if(mn===mx){ mx=mn+1; }
+  var padL=44,padR=8,padT=8,padB=16, plotW=W-padL-padR, plotH=H-padT-padB;
+  function xAt(i){ return padL+i*plotW/(maxLen-1); }
+  function yAt(v){ return padT+(1-(v-mn)/(mx-mn))*plotH; }
+  [0,0.5,1].forEach(function(f){ var val=mn+(mx-mn)*f,y=yAt(val); var ln=document.createElementNS(SVGNS,'line'); ln.setAttribute('x1',padL); ln.setAttribute('x2',W-padR); ln.setAttribute('y1',y); ln.setAttribute('y2',y); ln.setAttribute('stroke',cssVar('--grid')); ln.setAttribute('stroke-width','1'); svg.appendChild(ln); var tx=document.createElementNS(SVGNS,'text'); tx.setAttribute('x',4); tx.setAttribute('y',y+3); tx.setAttribute('fill',cssVar('--muted')); tx.setAttribute('font-size','9'); tx.setAttribute('font-family','monospace'); tx.textContent=fmt(val); svg.appendChild(tx); });
+  var colors=[cssVar('--accent'),cssVar('--ok'),cssVar('--warn')];
+  series.forEach(function(s,si){ var col=s.color||colors[si%colors.length]; var pts=s.points.map(function(v,i){ return xAt(i)+','+yAt(v); }).join(' '); if(si===0){ var area=document.createElementNS(SVGNS,'polygon'); area.setAttribute('points',xAt(0)+','+(padT+plotH)+' '+pts+' '+xAt(s.points.length-1)+','+(padT+plotH)); area.setAttribute('fill',col); area.setAttribute('opacity','0.10'); svg.appendChild(area); } var pl=document.createElementNS(SVGNS,'polyline'); pl.setAttribute('fill','none'); pl.setAttribute('stroke',col); pl.setAttribute('stroke-width','1.5'); pl.setAttribute('points',pts); svg.appendChild(pl); });
+  if(tip){
+    var cross=document.createElementNS(SVGNS,'line'); cross.setAttribute('stroke',cssVar('--muted')); cross.setAttribute('stroke-width','1'); cross.setAttribute('stroke-dasharray','2 2'); cross.setAttribute('y1',padT); cross.setAttribute('y2',padT+plotH); cross.style.display='none'; svg.appendChild(cross);
+    var over=document.createElementNS(SVGNS,'rect'); over.setAttribute('x',padL); over.setAttribute('y',padT); over.setAttribute('width',plotW); over.setAttribute('height',plotH); over.setAttribute('fill','transparent'); svg.appendChild(over);
+    over.addEventListener('mousemove',function(ev){ var b=svg.getBoundingClientRect(); var rel=(ev.clientX-b.left)*(W/b.width); var idx=Math.round((rel-padL)/plotW*(maxLen-1)); if(idx<0)idx=0; if(idx>=maxLen)idx=maxLen-1; cross.setAttribute('x1',xAt(idx)); cross.setAttribute('x2',xAt(idx)); cross.style.display=''; var lines=series.map(function(s){ var v=s.points[idx]; return s.name+' '+(v==null?'—':fmt(v)); }); tip.textContent=lines.join('  ·  '); tip.style.display='block'; tip.style.left=Math.min(Math.max(xAt(idx)*(b.width/W)-tip.offsetWidth/2,0),b.width-tip.offsetWidth)+'px'; tip.style.top='2px'; });
+    over.addEventListener('mouseleave',function(){ cross.style.display='none'; tip.style.display='none'; });
+  }
+}
+
+// ── Collectors table ──────────────────────────────────────────────────────
+function rebuildCollectors(rows){
+  var tb=document.getElementById('collBody'); if(!tb) return;
+  tb.textContent='';
+  if(!rows || !rows.length){ var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'13','class':'empty'},'No collector has run yet — waiting for the first poll.')); tb.appendChild(tr0); return; }
+  rows.forEach(function(c){
+    var tr=el('tr',{'data-name':c.Name}); if(c.HasRun && !c.LastSuccess) tr.className='bad';
+    tr.appendChild(el('td',null,c.Display));
+    var stTd=el('td'); stTd.appendChild(el('span',{'class':'dot dot-'+stateClass(c.State)})); stTd.appendChild(document.createTextNode(c.State)); tr.appendChild(stTd);
+    tr.appendChild(el('td',{'class':'num'}, c.IntervalSec?c.IntervalSec+'s':'—'));
+    tr.appendChild(el('td',{'class':'num'}, pct(c.SuccessRate)));
+    // Data age — the age of the metric buffer actually being served. NOT the
+    // attempt clock, which keeps refreshing while a failing collector replays
+    // hours-old values.
+    var frTd=el('td');
+    if(c.FreshnessState==='none'){ frTd.appendChild(el('span',{'class':'badge badge-pending'},'no data')); }
+    else { var fb=el('span',{'class':'badge badge-'+freshClass(c.FreshnessState)}, c.Freshness||'—'); fb.title=c.LastSuccessAgo?('last clean poll '+c.LastSuccessAgo):'never fully succeeded'; frTd.appendChild(fb); }
+    tr.appendChild(frTd);
+    // Last attempt — the scheduler clock, deliberately its own column.
+    var atTd=el('td',{'class':'mono'}); if(c.AttemptAge){ atTd.textContent=c.AttemptAge; } else { atTd.appendChild(el('span',{'class':'muted'},'—')); } tr.appendChild(atTd);
+    tr.appendChild(el('td',{'class':'num'}, String(c.Runs)));
+    tr.appendChild(el('td',{'class':'num'}, String(c.Failures)+(c.Consecutive>0?' ('+c.Consecutive+'×)':'')));
+    // Next run comes from the scheduler's real deadline; an unscheduled poller
+    // says so rather than showing a countdown or claiming a run is due.
+    var nrTd=el('td',{'class':'num'});
+    if(c.Scheduled){ nrTd.textContent=c.NextRunIn||'—'; } else { nrTd.appendChild(el('span',{'class':'muted'}, c.NextRunIn||'not scheduled')); }
+    tr.appendChild(nrTd);
+    tr.appendChild(el('td',{'class':'num'}, Number(c.LastDurationMs).toFixed(1)));
+    var spTd=el('td'); spTd.innerHTML=c.Sparkline||''; tr.appendChild(spTd);
+    var ocTd=el('td'); ocTd.innerHTML=c.Outcomes||''; tr.appendChild(ocTd);
+    var erTd=el('td',{'class':'mono'}); if(c.LastError){ erTd.textContent=c.LastError; } else { erTd.appendChild(el('span',{'class':'muted'},'—')); } tr.appendChild(erTd);
+    tb.appendChild(tr);
+  });
+}
+
+// ── API table ─────────────────────────────────────────────────────────────
+function rebuildAPI(api){
+  if(!api) return;
+  var ab=document.getElementById('apiAuth'); if(ab){ ab.textContent=api.AuthOK?'ok':'failing'; ab.className='badge badge-'+(api.AuthOK?'ok':'bad'); }
+  setText('apiRequests', Math.round(api.Requests||0));
+  setText('apiAvg', (api.AvgMs||0).toFixed(1)+' ms');
+  var zb=document.getElementById('apiAuthzBody');
+  if(zb){ zb.textContent='';
+    var az=api.AuthFailures||[];
+    if(!az.length){ var trz=el('tr'); trz.appendChild(el('td',{'colspan':'6','class':'empty'},'No permission failures recorded.')); zb.appendChild(trz); }
+    else { az.forEach(function(a){ var tr=el('tr',{'title':a.Hint||''});
+      tr.appendChild(el('td',{'class':'mono'},a.Endpoint));
+      tr.appendChild(el('td',{},a.Code));
+      tr.appendChild(el('td',{},a.Collector));
+      tr.appendChild(el('td',{'class':'mono'},a.Component));
+      tr.appendChild(el('td',{'class':'mono'},a.Privilege + (a.ACLStatus==='unknown' ? ' (no narrower ACL exists)' : '')));
+      tr.appendChild(el('td',{'class':'num'},String(Math.round(a.Count))));
+      zb.appendChild(tr); }); }
+  }
+  var tb=document.getElementById('apiBody'); if(!tb) return; tb.textContent='';
+  var errs=api.TopErrors||[];
+  if(!errs.length){ var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'2','class':'empty'},'No endpoint errors recorded.')); tb.appendChild(tr0); return; }
+  errs.forEach(function(e2){ var tr=el('tr'); tr.appendChild(el('td',{'class':'mono'},e2.Endpoint)); tr.appendChild(el('td',{'class':'num'},String(Math.round(e2.Count)))); tb.appendChild(tr); });
+}
+
+// ── Cardinality tables ────────────────────────────────────────────────────
+function rebuildCardinality(cd){
+  if(!cd) return;
+  setText('cardTotal', cd.TotalSeries); setText('cardFamilies', cd.TotalFamilies);
+  setText('cardWarn', cd.Warn); setText('cardCrit', cd.Crit);
+  // Series budget (#494). A budget of 0 means the check is disabled entirely,
+  // which must read as "off" rather than as 0% — 0% would look like headroom.
+  var bs=document.getElementById('cardBudgetSub');
+  if(cd.SeriesBudget){
+    setText('cardBudget', Math.round(cd.BudgetPercent)+'%');
+    if(bs){ bs.textContent=cd.TotalSeries+' of '+cd.SeriesBudget;
+      if(cd.OverBudget){ bs.appendChild(document.createTextNode(' ')); bs.appendChild(el('span',{'class':'badge badge-bad'},'over')); } }
+  } else {
+    setText('cardBudget', 'off');
+    if(bs) bs.textContent='disabled';
+  }
+  var mb=document.getElementById('cardMetricsBody');
+  if(mb){ mb.textContent='';
+    var ms=cd.TopMetrics||[];
+    if(!ms.length){ var tr0=el('tr'); tr0.appendChild(el('td',{'colspan':'3','class':'empty'},'No metrics captured yet.')); mb.appendChild(tr0); }
+    else ms.forEach(function(m){ var tr=el('tr'); if(m.Level==='crit') tr.className='bad'; var nameTd=el('td',{'class':'mono'}); nameTd.appendChild(document.createTextNode(m.Name)); if(m.Level && m.Level!=='ok'){ nameTd.appendChild(document.createTextNode(' ')); nameTd.appendChild(el('span',{'class':'badge badge-'+(m.Level==='crit'?'bad':'warn')},m.Level)); } tr.appendChild(nameTd); tr.appendChild(el('td',{'class':'num'},String(m.Series))); tr.appendChild(el('td',{'class':'num'},String(m.Labels))); mb.appendChild(tr); });
+  }
+  var lb=document.getElementById('cardLabelsBody');
+  if(lb){ lb.textContent='';
+    var ls=cd.TopLabels||[];
+    if(!ls.length){ var tr1=el('tr'); tr1.appendChild(el('td',{'colspan':'3','class':'empty'},'No labels captured yet.')); lb.appendChild(tr1); }
+    else ls.forEach(function(l){ var tr=el('tr'); tr.appendChild(el('td',{'class':'mono'},l.Name)); tr.appendChild(el('td',{'class':'num'},String(l.DistinctValues))); tr.appendChild(el('td',{'class':'num'},String(l.Families))); lb.appendChild(tr); });
+  }
+}
+
+// ── Overview roll-up + runtime ────────────────────────────────────────────
+function updateRollup(d){
+  setText('ruHealth', d.Health);
+  var ok=0,failing=0,stale=0;
+  (d.Collectors||[]).forEach(function(c){ if(c.HasRun && c.LastSuccess) ok++; if(c.HasRun && !c.LastSuccess) failing++; if(c.FreshnessState==='stale') stale++; });
+  setText('ruCollectors',ok); setText('ruFailing',failing); setText('ruStale',stale);
+  if(d.Stats) setText('ruSeries', d.Stats.Series);
+}
+function updateOverview(d){
+  if(d.Service) setText('uptime', d.Service.Uptime);
+  if(d.Stats){ setText('ovCollectors',d.Stats.ActiveCollectors); setText('ovFamilies',d.Stats.MetricFamilies); setText('ovSeries',d.Stats.Series); }
+  if(d.Runtime){ setText('goroutines',d.Runtime.Goroutines); setText('heapAlloc',d.Runtime.HeapAlloc); setText('numGC',d.Runtime.NumGC); var gr=d.Runtime.GCRateSeries; if(gr && gr.length) setText('gcRate', gr[gr.length-1].toFixed(2)+'/s'); }
+}
+function updateTrend(d){
+  var t=d.Trend; if(!t) return;
+  // No log-shipping pipeline means no emit boundary at all on a pull exporter, so
+  // show an em dash rather than 0.00/s — see TrendStats.LogShipping.
+  if(t.LogShipping){ setText('tpShipped',(t.ShippedRate||0).toFixed(2)); setText('tpDropped',(t.DroppedRate||0).toFixed(2)); }
+  else { setText('tpShipped','—'); setText('tpDropped','—'); }
+  setText('flActive', t.ActiveCollectors); setText('flFailing', t.FailingCollectors);
+  setText('flMeanMs', (t.MeanDurationMs||0).toFixed(1)+' ms');
+}
+function upstreamClass(s){ if(s==='ok') return 'ok'; if(s==='unreachable'||s==='error') return 'bad'; return 'pending'; }
+function captureClass(s){ if(s==='full') return 'ok'; if(s==='partial') return 'warn'; return 'pending'; }
+function setHealth(d){
+  var b=document.getElementById('healthBadge'); if(b){ b.textContent=d.Health; b.className='badge badge-'+healthClass(d.Health); b.title=(d.Reasons||[]).join('\n'); }
+  var rb=document.getElementById('healthReasons'); if(rb){ if(d.Reasons && d.Reasons.length){ rb.textContent=d.Reasons.join(' · '); rb.style.display=''; } else { rb.style.display='none'; } }
+  var age=document.getElementById('scrapeAge'); if(age && d.ScrapeAge) age.textContent='as of '+d.ScrapeAge;
+  // Upstream reachability is a separate signal from collector history: during a
+  // transport outage the scheduler skips collector polls entirely, so the
+  // collector table stays green through exactly the outage that matters.
+  var u=d.Upstream; var ub=document.getElementById('upstreamBadge');
+  if(ub && u){ ub.textContent='box: '+u.State; ub.className='badge badge-'+upstreamClass(u.State);
+    ub.title=(u.Reason||'OPNsense API health check')+' · last checked '+(u.CheckedAgo||'never'); }
+  // The capture badge says whether the numbers on this page came from a clean
+  // gather or a partial one. Counts and timestamps only — never an error string.
+  var c=d.Capture; var cb=document.getElementById('captureBadge');
+  if(cb && c){ cb.textContent='capture: '+c.State; cb.className='badge badge-'+captureClass(c.State);
+    cb.title='Passive metric capture: '+c.State+(c.ErrorCount?(' · '+c.ErrorCount+' erroring gathers, last '+(c.LastErrorAgo||'?')):''); }
+  var uv=document.getElementById('ovUpstream'); if(uv && u){ uv.textContent=u.State; }
+  var uvs=document.getElementById('ovUpstreamSub'); if(uvs && u){ uvs.textContent='checked '+(u.CheckedAgo||'never'); }
+  var cv=document.getElementById('ovCapture'); if(cv && c){ cv.textContent=c.State; }
+  var cvs=document.getElementById('ovCaptureSub'); if(cvs && c){ cvs.textContent=c.ErrorCount?(c.ErrorCount+' erroring gathers'):'no gather errors'; }
+}
+function setStale(on){ var b=document.getElementById('staleBanner'); if(!b) return; if(on){ b.className='show'; b.textContent='⚠ disconnected — last successful update '+relMs(lastOkMs); } else { b.className=''; } }
+
+// ── Devices (lazy) ─────────────────────────────────────────────────────────
+function loadDevices(){
+  var tb=document.getElementById('devBody'); if(!tb) return;
+  tb.textContent=''; tb.appendChild(el('tr')).appendChild(el('td',{'colspan':'7','class':'empty'},'Loading…'));
+  fetch('/api/devices.json',{cache:'no-store'}).then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); }).then(function(v){
+    devicesLoaded=true;
+    var err=document.getElementById('devError'); if(err){ if(v.Error){ err.style.display=''; err.textContent='Could not load devices: '+v.Error; } else { err.style.display='none'; } }
+    var rows=(v.Report && v.Report.Devices)||[];
+    tb.textContent='';
+    if(!rows.length){ tb.appendChild(el('tr')).appendChild(el('td',{'colspan':'7','class':'empty'},'No devices found.')); return; }
+    rows.forEach(function(dv){ var tr=el('tr'); tr.appendChild(el('td',null,dv.IP)); tr.appendChild(el('td',null,dv.MAC)); tr.appendChild(el('td',null,dv.Hostname||'—')); tr.appendChild(el('td',null,dv.Interface||'—')); tr.appendChild(el('td',null,dv.Manufacturer||'unknown')); var sTd=el('td'); sTd.appendChild(el('span',{'class':'badge'},dv.Source)); tr.appendChild(sTd); tr.appendChild(el('td',null,dv.Expiry||'—')); tb.appendChild(tr); });
+  }).catch(function(e){ devicesLoaded=false; tb.textContent=''; tb.appendChild(el('tr')).appendChild(el('td',{'colspan':'7','class':'empty'},'Failed to load: '+e.message)); });
+}
+
+// ── ifIndex map (lazy) ─────────────────────────────────────────────────────
+// The endpoint 404s when the NetFlow flow lane is off. That is a statement about
+// configuration, not a failure, so it gets its own message — "failed to load"
+// would send an operator hunting a fault that isn't there.
+function ifxEmpty(msg){ var tb=document.getElementById('ifxBody'); if(!tb) return; tb.textContent=''; tb.appendChild(el('tr')).appendChild(el('td',{'colspan':'6','class':'empty'},msg)); }
+function loadIfIndex(){
+  var tb=document.getElementById('ifxBody'); if(!tb) return;
+  ifxEmpty('Loading…');
+  fetch('/api/ifindex.json',{cache:'no-store'}).then(function(r){
+    if(r.status===404){ ifIndexLoaded=true; return null; }
+    if(!r.ok) throw new Error('status '+r.status);
+    return r.json();
+  }).then(function(v){
+    var err=document.getElementById('ifxError');
+    if(v===null){ if(err) err.style.display='none'; ifxEmpty('NetFlow is not enabled, so there is no ifIndex map to resolve.'); return; }
+    ifIndexLoaded=true;
+    if(err) err.style.display='none';
+    setText('ifxEntries', v.Entries); setText('ifxOverridden', v.Overridden);
+    setText('ifxConflicts', v.Conflicts); setText('ifxDisagreements', v.Disagreements);
+    setText('ifxUnmapped', v.Unmapped);
+    var b=v.Built?new Date(v.Built):null; setText('ifxBuilt', (b && !isNaN(b))?b.toLocaleTimeString():'—');
+    if(v.Disagreements>0 && err){ err.style.display=''; err.textContent='⚠ '+v.Disagreements+' interface(s) resolve to an index the firewall states differently — check the highlighted rows against ifinfo before trusting any per-interface flow series.'; }
+    var rows=v.Rows||[];
+    tb.textContent='';
+    if(!rows.length){ ifxEmpty('No ifIndex entries resolved yet.'); return; }
+    rows.forEach(function(x){
+      var tr=el('tr');
+      if(x.Disagrees) tr.className='ifx-disagrees';
+      else if(x.Source==='override') tr.className='ifx-override';
+      tr.appendChild(el('td',{'class':'num'},String(x.Index)));
+      tr.appendChild(el('td',{'class':'mono'},x.Device||'—'));
+      tr.appendChild(el('td',null,x.Name||'—'));
+      var sTd=el('td'); sTd.appendChild(el('span',{'class':'badge'+(x.Source==='override'?' badge-warn':'')},x.Source||'—')); tr.appendChild(sTd);
+      tr.appendChild(el('td',{'class':'num'}, x.Stated?String(x.Stated):'—'));
+      var nTd=el('td'); if(x.Disagrees){ nTd.appendChild(el('span',{'class':'badge badge-bad'},'disagrees')); } else { nTd.appendChild(el('span',{'class':'muted'},'—')); } tr.appendChild(nTd);
+      tb.appendChild(tr);
+    });
+  }).catch(function(e){ ifIndexLoaded=false; ifxEmpty('Failed to load: '+e.message); });
+}
+
+// ── Poll + patch ──────────────────────────────────────────────────────────
+function refresh(){
+  fetch('/api/status.json',{cache:'no-store'}).then(function(r){ if(!r.ok) throw new Error('status '+r.status); return r.json(); }).then(function(d){
+    lastData=d; lastOkMs=Date.now(); setStale(false);
+    setHealth(d); updateRollup(d); updateOverview(d); updateTrend(d);
+    rebuildCollectors(d.Collectors); rebuildAPI(d.API); rebuildCardinality(d.Cardinality);
+    if(d.Generated){ var g=new Date(d.Generated); if(!isNaN(g)) setText('generatedAt', g.toLocaleTimeString()); }
+    redrawCharts();
+  }).catch(function(){ setStale(true); });
+}
+function startPolling(){ if(pollTimer) clearInterval(pollTimer); var ms=(window.__refreshMs>0?window.__refreshMs:5000); pollTimer=setInterval(refresh,ms); }
+function togglePause(){ paused=!paused; var btn=document.getElementById('pauseBtn'); if(paused){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} if(btn) btn.textContent='Resume'; } else { if(btn) btn.textContent='Pause'; refresh(); startPolling(); } }
+function tickFreshness(){ setText('updatedAgo', relMs(lastOkMs)); var b=document.getElementById('staleBanner'); if(b && b.className.indexOf('show')>=0) setStale(true); }
+
+(function init(){
+  registerChart('chGoroutines', function(d){ return d&&d.Runtime ? [{name:'goroutines', points:d.Runtime.GoroutinesSeries||[]}] : []; });
+  registerChart('chHeap', function(d){ return d&&d.Runtime ? [{name:'heap', points:(d.Runtime.HeapAllocSeries||[]).map(function(b){return b/1048576;})}] : []; }, function(v){ return v.toFixed(0)+'M'; });
+  registerChart('chGC', function(d){ return d&&d.Runtime ? [{name:'gc/s', color:cssVar('--warn'), points:d.Runtime.GCRateSeries||[]}] : []; }, function(v){ return v.toFixed(1); });
+  registerChart('chCard', function(d){ return d&&d.Trend ? [{name:'series', points:d.Trend.SeriesCountSeries||[]}] : []; });
+  // Emitted throughput on a PULL exporter is the log-shipping pipeline's OTLP push
+  // path — the only stream of records this process actually emits. With log shipping
+  // off there is nothing to chart, so draw nothing rather than a fabricated flat line.
+  registerChart('chEmit', function(d){ if(!d||!d.Trend||!d.Trend.LogShipping) return []; return [{name:'shipped/s', points:d.Trend.ShippedRateSeries||[]},{name:'dropped/s', color:cssVar('--err'), points:d.Trend.DroppedRateSeries||[]}]; }, function(v){ return v.toFixed(2); });
+  registerChart('chFailing', function(d){ return d&&d.Trend ? [{name:'failing', color:cssVar('--err'), points:d.Trend.FailingSeries||[]}] : []; });
+  registerChart('chDuration', function(d){ return d&&d.Trend ? [{name:'mean', points:d.Trend.MeanDurationMsSeries||[]}] : []; }, function(v){ return v.toFixed(0)+'ms'; });
+  initTabs();
+  var tt=document.getElementById('themeToggle'); if(tt) tt.addEventListener('click',toggleTheme);
+  var p=document.getElementById('pauseBtn'); if(p) p.addEventListener('click',togglePause);
+  var rn=document.getElementById('refreshNow'); if(rn) rn.addEventListener('click',function(ev){ ev.preventDefault(); refresh(); });
+  var dr=document.getElementById('devReload'); if(dr) dr.addEventListener('click',function(ev){ ev.preventDefault(); devicesLoaded=false; loadDevices(); });
+  var ir=document.getElementById('ifxReload'); if(ir) ir.addEventListener('click',function(ev){ ev.preventDefault(); ifIndexLoaded=false; loadIfIndex(); });
+  window.addEventListener('resize', redrawCharts);
+  refresh(); startPolling(); setInterval(tickFreshness,1000);
+})();
+</script>
+</body>
+</html>
