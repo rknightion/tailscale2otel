@@ -161,6 +161,7 @@ func TestCleanupFailedConstructionClosesResourcesBeforeTelemetry(t *testing.T) {
 		context.Background(),
 		func() { calls = append(calls, "wal") },
 		func() { calls = append(calls, "rdns") },
+		func(context.Context) { calls = append(calls, "flowstores") },
 		func() { calls = append(calls, "restore") },
 		func() { calls = append(calls, "annotator") },
 		func(context.Context) error {
@@ -169,8 +170,34 @@ func TestCleanupFailedConstructionClosesResourcesBeforeTelemetry(t *testing.T) {
 		},
 	)
 
-	if want := []string{"wal", "rdns", "restore", "annotator", "telemetry"}; !slices.Equal(calls, want) {
+	want := []string{"wal", "rdns", "flowstores", "restore", "annotator", "telemetry"}
+	if !slices.Equal(calls, want) {
 		t.Fatalf("cleanup calls = %v, want %v", calls, want)
+	}
+}
+
+// TestNewFailureAfterRuntimesClosesFlowStores pins the leak CodeRabbit found
+// after Wave 3: New builds one flow store per runtime, and FOUR early returns
+// sit after that loop (the per-tailnet build error, both organization-roster
+// errors added by TSO-0034, and the ingress-WAL error). Each returns
+// (nil, err), so the caller never receives an *App and can never call Close —
+// the flow-store workers and their open SQLite handles are unreachable and
+// leak. cleanupFailedConstruction closed the WAL, the rDNS cache, telemetry
+// and the annotator, but never the stores. This completes TSO-0088's
+// ownership contract on the construction path.
+func TestNewFailureAfterRuntimesClosesFlowStores(t *testing.T) {
+	closed := false
+	cleanupFailedConstruction(
+		context.Background(),
+		nil,
+		nil,
+		func(context.Context) { closed = true },
+		nil,
+		nil,
+		nil,
+	)
+	if !closed {
+		t.Fatal("cleanupFailedConstruction must close per-runtime flow stores on a failed New")
 	}
 }
 

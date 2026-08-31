@@ -323,6 +323,16 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 					a.rdnsCache.Close()
 				}
 			},
+			func(cleanupCtx context.Context) {
+				// Every early return after the runtime loop — the per-tailnet
+				// build error, both organization-roster errors and the ingress
+				// WAL error — hands the caller (nil, err), so nothing can ever
+				// call Close. Bound the wait: a backend stuck in its internal
+				// wg.Wait must not hang a failed startup.
+				closeCtx, cancel := context.WithTimeout(cleanupCtx, flowStoreCloseTimeout)
+				defer cancel()
+				_ = a.closeFlowStores(closeCtx)
+			},
 			func() {
 				if a.restore != nil {
 					a.restore()
@@ -488,6 +498,7 @@ func cleanupFailedConstruction(
 	ctx context.Context,
 	closeWAL func(),
 	closeRDNS func(),
+	closeFlowStores func(context.Context),
 	restoreTelemetry func(),
 	closeAnnotator func(),
 	shutdownTelemetry func(context.Context) error,
@@ -497,6 +508,12 @@ func cleanupFailedConstruction(
 	}
 	if closeRDNS != nil {
 		closeRDNS()
+	}
+	// The stores come before telemetry shutdown and after the WAL, matching the
+	// Run path: a store still draining needs the emitter alive to report a close
+	// error, and the WAL must stop admitting before the stores stop consuming.
+	if closeFlowStores != nil {
+		closeFlowStores(ctx)
 	}
 	if restoreTelemetry != nil {
 		restoreTelemetry()

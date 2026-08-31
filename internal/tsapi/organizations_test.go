@@ -64,3 +64,38 @@ func TestOrganizationTailnets_RejectsRepeatedCursor(t *testing.T) {
 		t.Fatalf("requests = %d, want 2 before cursor rejection", requests)
 	}
 }
+
+// TestOrganizationTailnets_CannotEscapeItsPathSegment pins the traversal
+// finding from the post-Wave-3 review: organizationTailnetsURL built its path
+// with path.Join, which CLEANS the result. An organization containing ".."
+// walks the path up so the request lands on a different endpoint entirely,
+// and one containing "/" silently adds a segment. The organization comes from
+// config rather than a remote caller, so this is hardening rather than an
+// exploitable hole — but a roster call that quietly targets another endpoint
+// should be refused, not issued.
+func TestOrganizationTailnets_CannotEscapeItsPathSegment(t *testing.T) {
+	for _, org := range []string{"../../evil", "a/b", "..", "./x"} {
+		t.Run(org, func(t *testing.T) {
+			var gotPath string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.EscapedPath()
+				_, _ = w.Write([]byte(`{"tailnets":[]}`))
+			}))
+			defer srv.Close()
+
+			_, err := newClient(t, srv.URL).OrganizationTailnets(context.Background(), org)
+			if err != nil {
+				// Refusing the organization outright is a correct outcome.
+				return
+			}
+			const prefix = "/api/v2/organizations/"
+			if !strings.HasPrefix(gotPath, prefix) || !strings.HasSuffix(gotPath, "/tailnets") {
+				t.Fatalf("organization %q requested %q, which left the organizations path", org, gotPath)
+			}
+			seg := strings.TrimSuffix(strings.TrimPrefix(gotPath, prefix), "/tailnets")
+			if seg == "" || strings.Contains(seg, "/") {
+				t.Fatalf("organization %q requested %q: the organization must stay ONE path segment", org, seg)
+			}
+		})
+	}
+}
