@@ -57,6 +57,8 @@ const (
 	MetricAPIRateLimitUtilization = "tailscale2otel.api.rate_limit.utilization"
 	// MetricUpdateAvailable is the self update-available flag name (C4).
 	MetricUpdateAvailable = "tailscale2otel.update_available"
+	// MetricOrganizationTailnetsCount is the alpha Organizations API roster size.
+	MetricOrganizationTailnetsCount = "tailscale.organization.tailnets.count"
 	// MetricFlowStoreJournalSize is the SQLite WAL sidecar size per tailnet.
 	MetricFlowStoreJournalSize = "tailscale2otel.flow_store.journal.size"
 	// MetricFlowStoreLastCheckpointTimestamp is the Unix time of the most recent
@@ -350,6 +352,13 @@ var (
 		Instrument:  metricdoc.Gauge,
 		Description: "`1` when a newer tailscale2otel release is available on GitHub than the running build, else `0` (a **flag**, despite the `_ratio` Prometheus suffix). Emitted only when `version_checks.self` is enabled and both the running and latest versions parse — dev builds (version `dev`) never emit. Fail-open: a blocked/failed GitHub fetch emits nothing.",
 		Group:       GroupSelfObs,
+	}
+	DocOrganizationTailnetsCount = metricdoc.Metric{
+		Name:        MetricOrganizationTailnetsCount,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of tailnet IDs returned by the configured alpha Organizations API roster (a **count**, despite the `_ratio` Prometheus suffix). Discovery inventories the organization; collector runtimes still require explicit per-tailnet credentials.",
+		Group:       "Devices",
 	}
 )
 
@@ -788,7 +797,7 @@ var DocPIIFilterCategory = metricdoc.Metric{
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
+		DocUp, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,

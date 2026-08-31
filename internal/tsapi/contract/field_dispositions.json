@@ -804,6 +804,13 @@
       "note": "last-modified timestamp has no defined change classification; per-app freshness needs a new signal and dashboard panel"
     },
     {
+      "op": "listOrganizationTailnets",
+      "path": "ID",
+      "type": "tsapi.OrganizationTailnet",
+      "disposition": "enrichment",
+      "note": "opaque tailnet identifier feeds roster selection only; it is never emitted as a metric label"
+    },
+    {
       "op": "listServiceHosts",
       "path": "ApprovalLevel",
       "type": "tsapi.ServiceHost",

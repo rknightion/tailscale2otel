@@ -153,6 +153,14 @@ def tab_devices_inventory(scope):
                        "cardinality.per_entity.user.",
                desc="Users with at least one connected device, counted from the per-user "
                     "connected gauge rather than inferred from device ownership."), 3, 5),
+        (panel("Organization tailnets", "stat",
+               [prom_t("tailscale_organization_tailnets_count_ratio")],
+               unit="short", options=stat_opts(),
+               novalue="No organization roster — configure tailscale.organization and a "
+                       "tailnets:read credential to enable alpha roster discovery.",
+               desc="Tailnet IDs discovered from the configured alpha Organizations API roster. "
+                    "This inventories the organization; collector runtimes still require "
+                    "explicit per-tailnet credentials."), 3, 5),
         # #392: the old expression grouped by os/authorized/external and then summed
         # the state labels straight back out, so an unauthorized macOS laptop was
         # indistinguishable from an authorized one. Keep the state in the legend.

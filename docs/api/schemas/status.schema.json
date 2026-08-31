@@ -603,6 +603,26 @@
       },
       "type": "object"
     },
+    "device_version_check": {
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_checked_at": {
+          "type": "string"
+        },
+        "last_error_class": {
+          "type": "string"
+        },
+        "latest_version": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "devices": {
       "items": {
         "properties": {
@@ -677,6 +697,29 @@
         }
       },
       "type": "object"
+    },
+    "enable_cost_estimates": {
+      "items": {
+        "properties": {
+          "added_api_calls_per_tick": {
+            "type": "integer"
+          },
+          "added_series": {
+            "type": "integer"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "type": "array"
     },
     "event_store": {
       "properties": {

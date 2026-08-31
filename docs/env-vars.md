@@ -61,7 +61,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__HTTP__RATE_LIMIT` | `0` | `restart` | global requests/sec across ALL collectors (0 = unlimited) |
 | `TS2OTEL_TAILSCALE__MAX_RESPONSE_BYTES` | `4194304` | `restart` | cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated |
 | `TS2OTEL_TAILSCALE__MAX_LOG_RESPONSE_BYTES` | `33554432` | `restart` | cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it |
-| `TS2OTEL_TAILSCALE__ORGANIZATION` | `""` | `restart` | opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative |
+| `TS2OTEL_TAILSCALE__ORGANIZATION` | `""` | `restart` | alpha roster inventory via first runtime credential (needs tailnets:read); runtimes still require explicit credentials |
 | `TS2OTEL_OTLP__PROTOCOL` | `http` | `restart` | http \| grpc \| stdout (stdout = print signals to the console for local debug, no backend) |
 | `TS2OTEL_OTLP__ENDPOINT` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | `restart` | OTLP base URL (the exporter appends /v1/metrics, /v1/logs and /v1/traces itself) |
 | `TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID` | `""` | `restart` | Grafana Cloud stack/instance ID (set via TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID) |

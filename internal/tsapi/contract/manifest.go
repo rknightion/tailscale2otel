@@ -26,6 +26,7 @@ package contract
 //	getDevicePostureAttributes→ DevicePostureAttributes(…,devID) path: /api/v2/device/{id}/attributes (LiveRequires device-id)
 //	listUserInvites           → UserInvites           path: /api/v2/tailnet/{t}/user-invites
 //	listOAuthApps             → OAuthApps             path: /api/v2/tailnet/{t}/oauth-apps
+//	listOrganizationTailnets  → OrganizationTailnets  path: /api/v2/organizations/{organization}/tailnets?limit=100
 
 import (
 	"context"
@@ -266,6 +267,19 @@ var Manifest = []Op{
 		KnownTopLevelKeys: []string{"oauthApps"},
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.OAuthApps(ctx)
+			return err
+		},
+	},
+	{
+		ID:                "listOrganizationTailnets",
+		Method:            "GET",
+		KnownTopLevelKeys: []string{"tailnets", "cursor", "totalCount"},
+		// The alpha operation needs an organization identifier which the live
+		// contract lane intentionally never discovers or stores. Decode/fuzz
+		// exercise the real method with a placeholder instead.
+		LiveSkip: true,
+		Invoke: func(ctx context.Context, c *tsapi.Client) error {
+			_, err := c.OrganizationTailnets(ctx, "placeholder-organization")
 			return err
 		},
 	},

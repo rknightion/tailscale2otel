@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
-      "__panelId__": "101",
+      "__panelId__": "103",
       "description": "Flow records are arriving where the Tailscale-verified reporter node ID differs from the unverified embedded source reference. This bounded diagnostic ships paused: enable it where reporter/source agreement is expected.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline",
       "summary": "Verified flow reporter disagrees with embedded source identity"

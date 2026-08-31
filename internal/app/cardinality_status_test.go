@@ -13,6 +13,53 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
 )
 
+func TestEnableCostEstimatesUseLiveFleetAndSeries(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Devices.CollectPosture = false
+	cfg.Collectors.Devices.CollectDeviceInvites = false
+	cfg.Cardinality.Flow.NodeDims = true
+	cfg.Cardinality.Flow.IdentityDims = false
+
+	got := enableCostEstimates(cfg, 3, map[string]int{
+		"tailscale.network.io.rollup":      4,
+		"tailscale.network.packets.rollup": 5,
+	})
+
+	posture := findEnableCostEstimate(t, got, "collectors.devices.collect_posture")
+	if posture.AddedAPICallsPerTick != 3 || posture.AddedSeries != 3 {
+		t.Errorf("posture estimate = %+v, want 3 live-fleet API calls and series", posture)
+	}
+	identity := findEnableCostEstimate(t, got, "cardinality.flow.identity_dims")
+	if identity.AddedSeries != 18 { // (4 + 5) current series × (3 live devices - 1)
+		t.Errorf("identity estimate = %+v, want 18 from live current series and fleet", identity)
+	}
+}
+
+// TestEnableCostEstimatesIdentityRequiresNodeDims negative-tests the guard that
+// prevents a fictional cost prediction for an option the flow processor ignores.
+func TestEnableCostEstimatesIdentityRequiresNodeDims(t *testing.T) {
+	cfg := config.Default()
+	cfg.Cardinality.Flow.NodeDims = false
+	cfg.Cardinality.Flow.IdentityDims = false
+	identity := findEnableCostEstimate(t, enableCostEstimates(cfg, 9, map[string]int{
+		"tailscale.network.io.rollup": 50,
+	}), "cardinality.flow.identity_dims")
+	if identity.AddedSeries != 0 {
+		t.Errorf("identity estimate with node_dims=false = %+v, want zero", identity)
+	}
+}
+
+func findEnableCostEstimate(t *testing.T, estimates []statusdata.EnableCostEstimate, key string) statusdata.EnableCostEstimate {
+	t.Helper()
+	for _, e := range estimates {
+		if e.Key == key {
+			return e
+		}
+	}
+	t.Fatalf("no estimate for %q in %+v", key, estimates)
+	return statusdata.EnableCostEstimate{}
+}
+
 func TestFreshnessState(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	interval := time.Minute

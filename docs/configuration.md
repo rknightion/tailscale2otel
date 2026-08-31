@@ -320,7 +320,7 @@ or broken upstream (or a proxy in front of it) cannot stream an unbounded body i
 |-----|---------|-------------|
 | `tailscale.max_response_bytes` | `4194304` (4 MiB) | Cap on ONE snapshot-endpoint response body (devices, keys, dns, services, settings, posture, invites, …) before it is decoded. Must be `> 0`. Sized from a live capture at ~1.8 KiB/device, i.e. roughly 2,400 devices. These endpoints are **not paginated**, so a larger tailnet needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. |
 | `tailscale.max_log_response_bytes` | `33554432` (32 MiB) | The same cap for the bulk log pulls (`logging/network`, `logging/configuration`), which are legitimately multi-MB: roughly 13,600 flow records at ~2.4 KiB each. Must be `> 0`. If you hit it, shorten the collector's poll window rather than raising this. |
-| `tailscale.organization` | `""` | Opt in to alpha Organizations API roster discovery. Empty keeps `tailscale.tailnet` or `tailnets[]` authoritative. Discovery supplies names only; each tailnet still needs credentials. |
+| `tailscale.organization` | `""` | Opt in to alpha Organizations API roster discovery. Empty keeps `tailscale.tailnet` or `tailnets[]` authoritative. Discovery uses the first configured Tailscale runtime credential (which needs `tailnets:read`) and inventories IDs only; each collector runtime still needs explicit credentials. |
 
 A value above 64 MiB triggers a startup warning: decoding allocates several times the wire size, so a
 budget that large can exceed a typical container memory limit before the cap ever engages.
@@ -382,9 +382,9 @@ single-tailnet `tailscale:` block above is used instead.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `tailnets` | `[]` | List of tailnet entries to fan out over. A non-empty list enables multi-tailnet mode. **File-only** — like `collectors.node_metrics.targets`, a list of structs cannot be set via flat `TS2OTEL_*` env vars; use a YAML config file. |
+| `tailnets` | `[]` | List of tailnet entries to fan out over. A non-empty list enables multi-tailnet mode. **File-defined** — a list of structs cannot be set via flat indexed `TS2OTEL_*` variables; the documented name-keyed OAuth-secret overlay below is the sole exception. |
 | `tailnets[].name` | — (required) | The tailnet's name (e.g. `acme.example.com`). Required, and must be unique within the list — a missing or duplicate name is rejected at startup. |
-| `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey\|workload_identity` plus the matching sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. |
+| `tailnets[].auth` | — | Same shape as [`tailscale.auth`](#tailscale-api-connection-authentication) (`method: oauth\|apikey\|workload_identity` plus the matching sub-fields). **Not inherited** from the top-level `tailscale.auth` — every entry is fully self-contained, including credentials. An entry with an invalid or missing `auth.method` is rejected at startup. Its OAuth `client_secret` may be supplied by the name-keyed environment overlay below. |
 | `tailnets[].http` | — | Same shape as [`tailscale.http`](#tailscalehttp). Unlike `auth`, this **is** backfilled field-by-field from the top-level `tailscale.http` block (itself defaulted), which is why `tailscale.http` doubles as the fleet-wide default for the whole list (see the note above). An entry that sets its own `http.*` field overrides the fleet default for that field only. |
 | `tailnets[].objectstore.flow` | — | This tailnet's own flow-log export bucket. Same fields as [`collectors.flowlogs.objectstore`](#collectorsflowlogsobjectstore-the-s3-export-as-an-ingestion-source). Optional in general, **required on every entry** when `collectors.flowlogs.source: objectstore` — see the note below. |
 | `tailnets[].objectstore.audit` | — | This tailnet's own **configuration**-log export bucket. Same fields again, and a destination of its own — never inherited from `objectstore.flow`. Optional in general, **required on every entry** when `collectors.auditlogs.source: objectstore`. |
@@ -441,6 +441,8 @@ single-tailnet `tailscale:` block above is used instead.
 > exception; see above). An `oauth` entry that omits `scopes` still gets the least-privilege default
 > used everywhere else in this exporter: `["all:read"]` — never an unscoped token covering every scope
 > the OAuth client holds.
+>
+> **Per-tailnet OAuth secrets from environment.** Keep the list structure and every non-secret field in YAML, then inject a matching entry's OAuth secret with `TS2OTEL_TAILNET_<NORMALIZED_NAME>__AUTH__OAUTH__CLIENT_SECRET`. `NORMALIZED_NAME` is the configured `tailnets[].name` upper-cased with every non-letter/digit replaced by `_` (for example, `fleet-a` becomes `FLEET_A`). This overlay wins over a literal YAML `client_secret`; the exporter rejects a variable whose normalized name matches no entry or more than one entry, rather than silently ignoring a secret. It does not create a tailnet entry, and it does not apply to `client_secret_file`: value and file remain mutually exclusive.
 >
 > **Multi-tailnet receivers use explicit routes.** Set `streaming.routes[]` and/or `webhook.routes[]`
 > in the YAML file; every route names exactly one `tailnets[].name`, so its request is routed to that
@@ -1869,12 +1871,13 @@ Tailscale data. The pprof handlers mount on the admin server.
 
 Optional outbound checks that compare the running build / device client versions against the latest
 releases. Both sub-checks make external HTTPS calls and are **fail-open** (a failed or blocked fetch
-silently emits nothing, never errors). Disable both for air-gapped deployments.
+emits no comparison metric, never errors); the admin status page reports its last failure class so
+that state is not indistinguishable from current data. Disable both for air-gapped deployments.
 
 | Key | Default | Description |
 |-----|---------|-------------|
 | `version_checks.self.enabled` | `true` | Emit `tailscale2otel.update_available` (0/1 flag) comparing the running build to the latest tailscale2otel GitHub release. Independent of `self_observability.enabled`. |
-| `version_checks.devices.enabled` | `true` | Emit per-device `tailscale.device.version_skew` (minor releases behind latest Tailscale stable), `tailscale.fleet.latest_version` (info gauge), and `tailscale.devices.outdated` (fleet count). Requires the `devices` collector; a WARN fires if the collector is disabled. |
+| `version_checks.devices.enabled` | `true` (`false` by default with `provider: headscale`) | Emit per-device `tailscale.device.version_skew` (minor releases behind latest Tailscale stable), `tailscale.fleet.latest_version` (info gauge), and `tailscale.devices.outdated` (fleet count). Requires the `devices` collector; a WARN fires if the collector is disabled. With `provider: headscale`, the implicit default is off because Headscale device versions are not comparable to Tailscale stable; an explicit YAML/environment value still wins. |
 | `version_checks.devices.outdated_minor_threshold` | `3` | A device at least this many minor releases behind the latest Tailscale stable counts toward `tailscale.devices.outdated`. Must be ≥ 1. |
 | `version_checks.cache_ttl` | `1h` | How long a fetched "latest version" is cached before re-fetching. Must be ≥ 5m (validated). |
 | `version_checks.timeout` | `10s` | Per-request timeout for the external version fetch. Must be > 0. |

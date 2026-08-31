@@ -84,10 +84,11 @@ func (a *App) buildStatus() statusdata.Status {
 	metrics := catalog.Metrics()
 
 	s := statusdata.Status{
-		SchemaVersion: statusdata.StatusSchemaVersion,
-		Provider:      string(a.primary().cp.Kind),
-		Capabilities:  a.primary().cp.Capabilities(),
-		Update:        a.updateStatusInfo(),
+		SchemaVersion:      statusdata.StatusSchemaVersion,
+		Provider:           string(a.primary().cp.Kind),
+		Capabilities:       a.primary().cp.Capabilities(),
+		Update:             a.updateStatusInfo(),
+		DeviceVersionCheck: a.deviceVersionCheckStatusInfo(),
 		Service: statusdata.ServiceInfo{
 			Name:      serviceName,
 			Version:   a.version,
@@ -118,6 +119,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Devices:       a.deviceRows(),
 		NodeDiscovery: a.nodeDiscovery(),
 		Cardinality:   cardinalityInfo(a.cfg.SelfObservability.Enabled, cardSeries, cardLabels, cardPerMetric, cardThresholds, metricByName),
+		EnableCosts:   enableCostEstimates(a.cfg, a.cacheInfo().Devices, cardByName),
 		Flows:         a.flowStoreInfo(),
 		Events:        a.eventStoreInfo(),
 		DurableState:  a.durableStateInfo(),

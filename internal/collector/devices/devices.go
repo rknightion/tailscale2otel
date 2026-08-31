@@ -59,6 +59,7 @@ const (
 	metricAttributeInfo             = "tailscale.device.attribute.info"
 	metricAttributeExpiry           = "tailscale.device.attribute.expiry"
 	metricAttributesDropped         = "tailscale.device.attributes.dropped"
+	metricPostureComplianceFailed   = "tailscale.devices.posture_compliance.failed"
 
 	metricDevicesUntagged  = "tailscale.devices.untagged"
 	metricDevicesEphemeral = "tailscale.devices.ephemeral"
@@ -167,8 +168,9 @@ const (
 
 	// Posture attribute metric labels (tailscale.device.attribute{,.info}): the
 	// full namespaced posture key, and (info gauge only) its string value.
-	attrAttribute      = "attribute"
-	attrAttributeValue = "value"
+	attrAttribute       = "attribute"
+	attrAttributeValue  = "value"
+	attrComplianceCheck = "check"
 
 	// attrPostureDetails carries the full, arbitrary posture attribute map
 	// (JSON-encoded) on the tailscale.device.posture LOG event. The raw map's
@@ -340,6 +342,15 @@ type postureResult struct {
 	attributes tsapi.DeviceAttributes
 }
 
+// PostureComplianceCheck is one bounded, operator-named exact-match assertion
+// over a posture attribute. It mirrors the frozen configuration shape without
+// coupling the collector to the config package.
+type PostureComplianceCheck struct {
+	Name      string
+	Attribute string
+	Equals    string
+}
+
 // deviceSubrequestResult contains the result of the optional per-device API
 // calls. Fetching is separated from emission so the API calls can run through a
 // bounded worker pool while all telemetry and state mutations remain ordered on
@@ -389,8 +400,9 @@ type Collector struct {
 	// attributeKeyLimit caps the selected posture keys across the fleet and
 	// attributeValueLimit caps distinct string values per selected key. Both
 	// are unlimited when non-positive. Set by WithAttributeLimits.
-	attributeKeyLimit   int
-	attributeValueLimit int
+	attributeKeyLimit       int
+	attributeValueLimit     int
+	postureComplianceChecks []PostureComplianceCheck
 
 	// lastPosture remembers each device's last-emitted posture signature
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
@@ -692,6 +704,17 @@ func WithAttributeLimits(keyLimit, valueLimit int) Option {
 	return func(c *Collector) {
 		c.attributeKeyLimit = keyLimit
 		c.attributeValueLimit = valueLimit
+	}
+}
+
+// WithPostureComplianceChecks configures fleet-level exact-match posture
+// assertions. A device fails when the named attribute is absent, has a
+// non-scalar value, or differs from Equals. The configured name is a bounded
+// metric label value; configuration validation owns the size and uniqueness
+// constraints.
+func WithPostureComplianceChecks(checks []PostureComplianceCheck) Option {
+	return func(c *Collector) {
+		c.postureComplianceChecks = append([]PostureComplianceCheck(nil), checks...)
 	}
 }
 
@@ -1402,6 +1425,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	c.emitDistroRollup(byDistro)
+	c.emitPostureCompliance(e, postureResults)
 
 	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
 	if haveLatest {
@@ -1958,6 +1982,45 @@ func (c *Collector) emitAttributes(e telemetry.Emitter, results []postureResult,
 		c.emitAttributeExpiries(e, d, result.attributes.Expiries, selected, nowT, current)
 	}
 	return len(keyCounts) - len(selected)
+}
+
+// emitPostureCompliance emits one low-cardinality failure count for each
+// configured exact-match assertion. Only successful posture fetches reach
+// results: a failed subrequest is availability data, not evidence that a device
+// violates its posture policy.
+func (c *Collector) emitPostureCompliance(e telemetry.Emitter, results []postureResult) {
+	if len(results) == 0 {
+		return
+	}
+	for _, check := range c.postureComplianceChecks {
+		failed := 0
+		for _, result := range results {
+			value, ok := result.attributes.Attributes[check.Attribute]
+			if !ok || !postureAttributeEquals(value, check.Equals) {
+				failed++
+			}
+		}
+		e.Gauge(docPostureComplianceFailed.Name, docPostureComplianceFailed.Unit,
+			docPostureComplianceFailed.Description, float64(failed), telemetry.Attrs{
+				attrComplianceCheck: check.Name,
+			})
+	}
+}
+
+// postureAttributeEquals defines the exact-match expression syntax for a
+// posture compliance check. Posture attributes decode as JSON scalar values;
+// bool and number values use their conventional JSON spellings so
+// equals: "true" matches a boolean true on the wire. Composite and null values
+// deliberately never match, keeping the check predictable and bounded.
+func postureAttributeEquals(value any, equals string) bool {
+	switch value := value.(type) {
+	case string:
+		return value == equals
+	case bool, float64:
+		return fmt.Sprint(value) == equals
+	default:
+		return false
+	}
 }
 
 func (c *Collector) attributeAllowed(key string) bool {

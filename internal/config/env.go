@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/go-viper/mapstructure/v2"
 )
@@ -63,6 +64,72 @@ var structSliceEnvKeys = map[string]bool{
 // variables instead of allowing mapstructure to guess.
 var fileOnlyMapSliceEnvKeys = map[string]bool{
 	"collectors.node_metrics.discovery.port_overrides": true,
+}
+
+const (
+	tailnetEnvPrefix = EnvPrefix + "TAILNET_"
+	// #nosec G101 -- this is an environment-variable name suffix, not a credential value.
+	tailnetOAuthSecretEnvSuffix = "__AUTH__OAUTH__CLIENT_SECRET"
+)
+
+// applyTailnetEnvOverlays applies the deliberately narrow name-keyed escape
+// hatch for credentials inside tailnets[]. A flat environment variable cannot
+// address a list element by index safely, but an operator can provide an OAuth
+// client secret for a named configured tailnet as:
+//
+//	TS2OTEL_TAILNET_<NORMALIZED_NAME>__AUTH__OAUTH__CLIENT_SECRET
+//
+// NORMALIZED_NAME upper-cases ASCII letters and replaces every other
+// character with "_". The matching entry must exist exactly once; a typo or
+// normalization collision is a Load error rather than a silently unused
+// secret. These overlays run after file decoding, so they have the same
+// environment-wins precedence as ordinary TS2OTEL_* keys.
+func applyTailnetEnvOverlays(cfg *Config) error {
+	for _, kv := range os.Environ() {
+		name, value, ok := strings.Cut(kv, "=")
+		if !ok || !strings.HasPrefix(name, tailnetEnvPrefix) {
+			continue
+		}
+		if !strings.HasSuffix(name, tailnetOAuthSecretEnvSuffix) {
+			return fmt.Errorf("%s: unsupported name-keyed tailnet environment variable; expected %s<NORMALIZED_NAME>%s", name, tailnetEnvPrefix, tailnetOAuthSecretEnvSuffix)
+		}
+		key := strings.TrimSuffix(strings.TrimPrefix(name, tailnetEnvPrefix), tailnetOAuthSecretEnvSuffix)
+		if key == "" {
+			return fmt.Errorf("%s: name-keyed tailnet environment variable has no tailnet name", name)
+		}
+
+		matches := make([]int, 0, 1)
+		for i := range cfg.Tailnets {
+			if tailnetEnvName(cfg.Tailnets[i].Name) == key {
+				matches = append(matches, i)
+			}
+		}
+		switch len(matches) {
+		case 1:
+			cfg.Tailnets[matches[0]].Auth.OAuth.ClientSecret = Secret(value)
+		case 0:
+			return fmt.Errorf("%s: no configured tailnet matches normalized name %q", name, key)
+		default:
+			return fmt.Errorf("%s: normalized name %q matches multiple configured tailnets", name, key)
+		}
+	}
+	return nil
+}
+
+// tailnetEnvName produces the portable environment-variable spelling for one
+// configured tailnet name. It deliberately accepts non-ASCII names too: every
+// non-letter/digit rune maps to an underscore, so the result is safe for the
+// Kubernetes/Docker environment-name subset as well as POSIX environments.
+func tailnetEnvName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToUpper(r))
+		} else {
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // structSliceEnvHit is one TS2OTEL_* environment variable found to index into

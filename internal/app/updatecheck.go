@@ -64,6 +64,41 @@ func (a *App) updateStatusInfo() statusdata.UpdateInfo {
 	return updateInfo(true, a.selfRelease.Snapshot(), a.version)
 }
 
+// deviceVersionCheckStatusInfo is the status-page counterpart to the
+// release-backed device skew collectors. They deliberately emit nothing until
+// a trustworthy stable version is available, so this row makes a blocked
+// version source visible rather than indistinguishable from an up-to-date fleet.
+func (a *App) deviceVersionCheckStatusInfo() statusdata.VersionCheckInfo {
+	if a.tsRelease == nil {
+		return deviceVersionCheckInfo(false, release.Snapshot{})
+	}
+	return deviceVersionCheckInfo(true, a.tsRelease.Snapshot())
+}
+
+func deviceVersionCheckInfo(enabled bool, snap release.Snapshot) statusdata.VersionCheckInfo {
+	info := statusdata.VersionCheckInfo{Enabled: enabled}
+	if !enabled {
+		info.State = "disabled"
+		return info
+	}
+	if !snap.CheckedAt.IsZero() {
+		info.LastCheckedAt = snap.CheckedAt.UTC().Format(rfc3339)
+	}
+	info.LastErrorClass = snap.ErrClass
+	if !snap.OK {
+		if snap.ErrClass == "" {
+			info.State = "checking"
+		} else {
+			info.State = "error"
+		}
+		return info
+	}
+
+	info.State = "ready"
+	info.LatestVersion = release.Normalize(snap.Latest)
+	return info
+}
+
 // updateInfo derives the statusdata.UpdateInfo view from a release fetcher
 // snapshot and the running binary's version. Split out from
 // (*App).updateStatusInfo so it can be unit-tested with a synthetic Snapshot

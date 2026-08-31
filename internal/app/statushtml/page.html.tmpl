@@ -238,6 +238,7 @@
       <div class="card"><div class="k">OTLP export</div><div class="v">{{.Telemetry.Protocol}}</div><div class="sub">{{if .Telemetry.Endpoint}}{{.Telemetry.Endpoint}}{{else}}—{{end}} · {{.Telemetry.MetricIntervalS}}s · {{.Telemetry.MetricExportBatchSize}} points/request</div></div>
       <div class="card"><div class="k">Self-observability</div><div class="v">{{if .Service.SelfObs}}<span class="badge ok">on</span>{{else}}<span class="badge pending">off</span>{{end}}</div></div>
       <div class="card"><div class="k">Update check</div><div class="v" id="updateState">{{if eq .Update.State "available"}}update available{{else if eq .Update.State "current"}}up to date{{else if eq .Update.State "error"}}check failed{{else if eq .Update.State "disabled"}}disabled{{else if eq .Update.State "checking"}}checking&hellip;{{else}}unknown{{end}}</div><div class="sub" id="updateSub">{{if eq .Update.State "available"}}{{.Update.CurrentVersion}} &rarr; {{.Update.LatestVersion}}{{else if eq .Update.State "current"}}{{.Update.CurrentVersion}}{{else if eq .Update.State "error"}}last check failed: {{.Update.LastErrorClass}}{{else}}&nbsp;{{end}}</div></div>
+      <div class="card"><div class="k">Device version data</div><div class="v" id="deviceVersionState">{{if eq .DeviceVersionCheck.State "ready"}}ready{{else if eq .DeviceVersionCheck.State "error"}}check failed{{else if eq .DeviceVersionCheck.State "disabled"}}disabled{{else}}checking&hellip;{{end}}</div><div class="sub" id="deviceVersionSub">{{if eq .DeviceVersionCheck.State "ready"}}latest {{.DeviceVersionCheck.LatestVersion}}{{if .DeviceVersionCheck.LastErrorClass}}; last check failed: {{.DeviceVersionCheck.LastErrorClass}}{{end}}{{else if eq .DeviceVersionCheck.State "error"}}last check failed: {{.DeviceVersionCheck.LastErrorClass}}{{else}}&nbsp;{{end}}</div></div>
       {{if .Provider}}<div class="card"><div class="k">Control plane</div><div class="v"><code>{{.Provider}}</code></div>{{if .Capabilities}}<div class="sub">{{range $i,$c := .Capabilities}}{{if $i}}, {{end}}{{$c}}{{end}}</div>{{end}}</div>{{end}}
       <div class="card"><div class="k">Devices cached</div><div class="v" id="cacheDevices">{{.Cache.Devices}}</div><div class="sub">age <span id="cacheAge">{{.Cache.Age}}</span></div></div>
       <div class="card"><div class="k">Goroutines</div><div class="v" id="goroutines">{{.Runtime.Goroutines}}</div><div class="sub">GOMAXPROCS {{.Runtime.GOMAXPROCS}}</div></div>
@@ -1409,6 +1410,21 @@ function setUpdateInfo(d){
   }
 }
 
+function setDeviceVersionCheckInfo(c){
+  c=c||{};
+  var state=c.state||'checking';
+  var label=state==='ready'?'ready':state==='error'?'check failed':state==='disabled'?'disabled':'checking…';
+  setText('deviceVersionState', label);
+  var sub=' ';
+  if(state==='ready'){
+    sub='latest '+(c.latest_version||'unknown');
+    if(c.last_error_class) sub+='; last check failed: '+c.last_error_class;
+  } else if(state==='error'){
+    sub='last check failed: '+(c.last_error_class||'unknown');
+  }
+  setText('deviceVersionSub', sub);
+}
+
 // === shared poller helper (#328) — keep byte-for-byte identical across
 // statushtml, flowhtml and eventshtml; see TestPollerHelperIdenticalAcrossPages
 // in each package. createPoller wraps a periodic fetch with:
@@ -1534,6 +1550,7 @@ function applyStatus(d){
   setText('generatedAt', d.generated_at);
   setHealth(d);
   setUpdateInfo(d);
+	setDeviceVersionCheckInfo(d.device_version_check);
   updateRollup(d); // always the combined figures — the roll-up is a process-wide dashboard, not filtered
   // view is the tailnet-selector-filtered slice: the combined d itself for
   // "All", or one d.tailnets[] entry. Collectors/API/Cardinality/Devices are

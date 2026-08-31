@@ -1,10 +1,10 @@
 ---
 id: TSO-0067
 title: Cost forecast for expensive collector knobs
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-31 02:54'
 labels: []
 milestone: m-5
 dependencies: []
@@ -30,3 +30,17 @@ Options like collect_posture, collect_device_invites, services.collect_hosts, id
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Lane J derives pre-enable API-call and series estimates from live runtime fleet/cardinality state and exposes them through the existing status surface; no new config key or hardcoded fleet guess.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane J implemented live status API enable_cost_estimates from cached fleet and live series state; identity_dims reports zero when node_dims makes it inert. Root regenerated the public status schema. Red-first and negative guard evidence was completed in the lane; focused status tests passed.
+
+Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
+<!-- SECTION:NOTES:END -->

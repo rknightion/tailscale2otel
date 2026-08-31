@@ -208,6 +208,7 @@ var nonIdentifier = map[string]bool{
 	"tailscale.src.tags": true, "tailscale.dst.tags": true,
 	"tailscale.src.os": true, "tailscale.dst.os": true,
 	"go.version": true, "version": true, "http.response.status_code": true, "attribute": true,
+	"check":            true, // bounded operator-defined posture compliance check name (max 32 unique values)
 	"tailscale.key.id": true, "tailscale.posture.integration": true,
 	"tailscale.webhook_endpoint.id": true, "tailscale.audit.event_group_id": true,
 	"tailscale.target.id":                        true,

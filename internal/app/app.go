@@ -53,6 +53,10 @@ type App struct {
 	// provider/client, cache, registry+scheduler, status tracker, API stats, and
 	// poll-path processors.
 	runtimes []*tailnetRuntime
+	// organizationTailnets is the discovery-only alpha Organizations API roster.
+	// It deliberately does not create runtimes: each runtime still requires an
+	// explicitly configured credential.
+	organizationTailnets []tsapi.OrganizationTailnet
 
 	// Process-level self-observability: the process provider carries process/
 	// global signals (no tailnet dimension). Per-tailnet self-obs lives on each
@@ -423,6 +427,17 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			r.authMethod = rt.Auth.Method
 			r.apiKeySet = rt.Auth.APIKey != ""
 			r.oauthSecretSet = rt.Auth.OAuth.ClientSecret != ""
+		}
+	}
+
+	if cfg.Tailscale.Organization != "" {
+		if len(a.runtimes) == 0 || a.runtimes[0].client == nil {
+			return nil, fmt.Errorf("organization roster discovery requires a Tailscale runtime")
+		}
+		a.organizationTailnets, err = loadOrganizationRoster(
+			ctx, a.runtimes[0].client, cfg.Tailscale.Organization, a.procEmitter)
+		if err != nil {
+			return nil, fmt.Errorf("discover organization tailnets: %w", err)
 		}
 	}
 

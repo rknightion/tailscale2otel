@@ -4,7 +4,7 @@ title: Org auto-discovery of tailnets via the alpha Organizations API
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:09'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:54'
 labels: []
 milestone: m-3
 dependencies: []
@@ -37,3 +37,13 @@ Use the alpha Organizations API (listOrganizationTailnets, tailnets:read scope, 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes the organization-roster discovery config shape with a behaviour-preserving disabled default; lane A later implements pagination, roster population, inventory telemetry, contract disposition, and panel.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane A returned the frozen metric-name and credential-fan-out seams. Root decision: accept tailscale.organization.tailnets.count for the bounded org-roster inventory gauge. Take the narrowest reversible delivery: implement and consume paginated roster discovery plus inventory telemetry, but do not invent OAuth-client creation or pretend an org roster supplies per-tailnet credentials. Runtime collector fan-out remains limited to tailnets with explicit credentials; record that boundary rather than creating credentials or mutating a tailnet.
+
+Root decision implemented: org discovery is inventory-only and uses the first explicitly configured Tailscale runtime credential with tailnets:read. The paginated ID roster is retained and tailscale.organization.tailnets.count is emitted/panelled; no OAuth clients or collector runtimes are manufactured. Contract harness was extended to terminate cursor-bearing canned responses after one replay page. Focused pagination, contract-boundary and disposition checks passed.
+
+Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
+<!-- SECTION:NOTES:END -->

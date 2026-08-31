@@ -887,6 +887,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.devices.posture_compliance.failed",
+      "prom_name": "tailscale_devices_posture_compliance_failed_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.devices.ssh_enabled",
       "prom_name": "tailscale_devices_ssh_enabled_ratio",
       "surface": "operational",
@@ -1578,6 +1587,15 @@
       "kind": "metric",
       "name": "tailscale.oauth_apps.count",
       "prom_name": "tailscale_oauth_apps_count_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.organization.tailnets.count",
+      "prom_name": "tailscale_organization_tailnets_count_ratio",
       "surface": "operational",
       "dispositions": [
         "visualized"

@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 234 | 233 | 57 | 11 | 44 |
+| operational | 236 | 235 | 57 | 11 | 44 |
 | self_obs | 100 | 100 | 33 | 9 | 10 |
 
 ## Operational signals
@@ -177,6 +177,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.devices.key_expiry` | metric | `tailscale_devices_key_expiry_days` | visualized, drives_a_variable |  |
 | `tailscale.devices.key_expiry_disabled` | metric | `tailscale_devices_key_expiry_disabled_ratio` | visualized, alertable |  |
 | `tailscale.devices.outdated` | metric | `tailscale_devices_outdated_ratio` | visualized, alertable |  |
+| `tailscale.devices.posture_compliance.failed` | metric | `tailscale_devices_posture_compliance_failed_ratio` | visualized |  |
 | `tailscale.devices.ssh_enabled` | metric | `tailscale_devices_ssh_enabled_ratio` | visualized |  |
 | `tailscale.devices.untagged` | metric | `tailscale_devices_untagged_ratio` | visualized |  |
 | `tailscale.dns.magic_dns` | metric | `tailscale_dns_magic_dns_ratio` | visualized |  |
@@ -249,6 +250,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.oauth_app.scopes` | metric | `tailscale_oauth_app_scopes_ratio` | visualized |  |
 | `tailscale.oauth_apps.age` | metric | `tailscale_oauth_apps_age_seconds` | visualized |  |
 | `tailscale.oauth_apps.count` | metric | `tailscale_oauth_apps_count_ratio` | visualized |  |
+| `tailscale.organization.tailnets.count` | metric | `tailscale_organization_tailnets_count_ratio` | visualized |  |
 | `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
 | `tailscale.posture_integration.last_sync` | metric | `tailscale_posture_integration_last_sync_seconds` | visualized, alertable |  |
 | `tailscale.posture_integration.matched` | metric | `tailscale_posture_integration_matched_ratio` | visualized, alertable |  |

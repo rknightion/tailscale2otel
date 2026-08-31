@@ -83,7 +83,7 @@ tailscale:
     rate_limit: 0                     # global requests/sec across ALL collectors (0 = unlimited)
   max_response_bytes: 4194304         # cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated
   max_log_response_bytes: 33554432    # cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it
-  organization: ""                    # opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative
+  organization: ""                    # alpha roster inventory via first runtime credential (needs tailnets:read); runtimes still require explicit credentials
 # Both budgets are fleet-wide (they apply to every entry in tailnets: below too) and
 # bound the exporter's peak decode memory. Decoding costs SEVERAL TIMES the wire size,
 # so keep them well under the deployment's memory limit (Helm default: 256Mi).
@@ -96,8 +96,11 @@ tailscale:
 # entry is self-contained (its own name + auth + http + objectstore) — credentials
 # are never inherited from the tailscale: block. Tailnet identity is emitted as the
 # tailscale.tailnet OTEL resource attribute (one target_info per tailnet); query
-# fleet-wide with `sum without(instance)(...)`. FILE-ONLY: this list of structs is
-# NOT settable via TS2OTEL_* env vars. Streaming/webhook receivers work here, but
+# fleet-wide with `sum without(instance)(...)`. The list itself is FILE-ONLY, but
+# an OAuth client_secret for a named entry may be injected as
+# TS2OTEL_TAILNET_<NORMALIZED_NAME>__AUTH__OAUTH__CLIENT_SECRET, where the name is
+# upper-cased and every non-letter/digit is `_`; it wins over the YAML value and
+# errors when it matches no configured entry. Streaming/webhook receivers work here, but
 # a list of MORE THAN ONE tailnet must route them explicitly with streaming.routes /
 # webhook.routes (also FILE-ONLY), each naming one tailnets[].name. A list of exactly
 # one entry may still use the legacy single-listener fields. Default: empty (single
@@ -749,7 +752,10 @@ resource:
 
 # ── Version checks (OPTIONAL: outbound "is a newer release available?" checks) ──
 # Both sub-checks make external HTTPS calls and are fail-open (a failed/blocked fetch
-# silently emits nothing). Disable both for air-gapped deployments.
+# emits no comparison metric); the admin status page reports the blocked state. Disable
+# both for air-gapped deployments. Under provider: headscale, devices.enabled defaults
+# off unless explicitly set, because Headscale device versions are not comparable to
+# Tailscale stable.
 version_checks:
   self:
     enabled: true                     # emit tailscale2otel.update_available (running build vs latest tailscale2otel GitHub release)

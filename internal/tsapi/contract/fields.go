@@ -82,6 +82,7 @@ var responseTypes = map[string]ResponseTypeSpec{
 	"getDevicePostureAttributes": {Type: reflect.TypeOf(tsapi.DeviceAttributes{})},
 	"listUserInvites":            {Type: reflect.TypeOf([]tsapi.UserInvite(nil))},
 	"listOAuthApps":              {Type: reflect.TypeOf([]tsapi.OAuthApp(nil))},
+	"listOrganizationTailnets":   {Type: reflect.TypeOf([]tsapi.OrganizationTailnet(nil))},
 }
 
 // ResponseTypes returns the operationId → decoded-response-type registry.

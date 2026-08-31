@@ -51,6 +51,9 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	tr := apistate.NewTracker()
 	c := devices.New(api, cache, 0, true, true,
 		devices.WithAttributeNamespaces([]string{"*"}),
+		devices.WithPostureComplianceChecks([]devices.PostureComplianceCheck{{
+			Name: "managed", Attribute: "intune:isEncrypted", Equals: "true",
+		}}),
 		devices.WithDeviceInvites(true),
 		devices.WithClock(func() time.Time { return now }),
 		devices.WithAPIState(tr))
@@ -120,6 +123,13 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	}
 	if _, ok := declared["tailscale.device.attribute.expiry"]; !ok {
 		t.Error("tailscale.device.attribute.expiry not declared in devices.Catalog()")
+	}
+
+	if pts := rec.MetricPoints("tailscale.devices.posture_compliance.failed"); len(pts) != 1 {
+		t.Errorf("posture-compliance metric points = %d, want 1", len(pts))
+	}
+	if _, ok := declared["tailscale.devices.posture_compliance.failed"]; !ok {
+		t.Error("tailscale.devices.posture_compliance.failed not declared in devices.Catalog()")
 	}
 
 	// The device-invites count gauge must be both emitted (collect_device_invites

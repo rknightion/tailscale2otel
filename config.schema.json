@@ -3957,7 +3957,7 @@
         },
         "organization": {
           "default": "",
-          "description": "opt-in alpha Organizations API roster discovery; empty keeps tailscale.tailnet/tailnets authoritative",
+          "description": "alpha roster inventory via first runtime credential (needs tailnets:read); runtimes still require explicit credentials",
           "type": "string"
         },
         "tailnet": {

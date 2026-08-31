@@ -36,7 +36,8 @@ type Status struct {
 	Service       ServiceInfo `json:"service"`
 	// Update is the update-availability check (#330): whether a newer
 	// tailscale2otel release than Service.Version is available.
-	Update UpdateInfo `json:"update"`
+	Update             UpdateInfo       `json:"update"`
+	DeviceVersionCheck VersionCheckInfo `json:"device_version_check"`
 	// Provider is the control-plane backend: "tailscale" or "headscale".
 	Provider string `json:"provider"`
 	// Capabilities lists the collector/feature names supported by the active provider.
@@ -49,17 +50,18 @@ type Status struct {
 	// Tailnets is the per-tailnet breakdown (one entry per observed tailnet;
 	// length 1 in single-tailnet / Headscale mode). The top-level Collectors/
 	// Cache/Devices/API fields carry the COMBINED view across all tailnets.
-	Tailnets      []TailnetStatus   `json:"tailnets"`
-	Collectors    []CollectorStatus `json:"collectors"`
-	Cache         CacheInfo         `json:"device_cache"`
-	RDNS          RDNSInfo          `json:"reverse_dns"`
-	GeoIP         GeoIPInfo         `json:"geoip"`
-	Dedup         []DedupInfo       `json:"dedup_sets"`
-	Devices       []DeviceRow       `json:"devices"`
-	NodeDiscovery NodeDiscovery     `json:"node_discovery"`
-	Cardinality   CardinalityInfo   `json:"cardinality"`
-	Flows         FlowStoreInfo     `json:"flow_store"`
-	Events        EventStoreInfo    `json:"event_store"`
+	Tailnets      []TailnetStatus      `json:"tailnets"`
+	Collectors    []CollectorStatus    `json:"collectors"`
+	Cache         CacheInfo            `json:"device_cache"`
+	RDNS          RDNSInfo             `json:"reverse_dns"`
+	GeoIP         GeoIPInfo            `json:"geoip"`
+	Dedup         []DedupInfo          `json:"dedup_sets"`
+	Devices       []DeviceRow          `json:"devices"`
+	NodeDiscovery NodeDiscovery        `json:"node_discovery"`
+	Cardinality   CardinalityInfo      `json:"cardinality"`
+	EnableCosts   []EnableCostEstimate `json:"enable_cost_estimates"`
+	Flows         FlowStoreInfo        `json:"flow_store"`
+	Events        EventStoreInfo       `json:"event_store"`
 	// DurableState consolidates the two restart-state classes so consumers do
 	// not have to correlate parallel fields in Config.
 	DurableState DurableStateInfo `json:"durable_state"`
@@ -235,6 +237,30 @@ type UpdateInfo struct {
 	// ReleaseURL is the static, credential-free link to the project's release
 	// page (never a fetch target — the browser never requests it on its own).
 	ReleaseURL string `json:"release_url,omitempty"`
+}
+
+// VersionCheckInfo reports whether a release-backed data source is currently
+// usable. It is intentionally separate from UpdateInfo: device-version skew
+// has no local binary version to compare, but operators still need to see a
+// blocked upstream fetch instead of mistaking absent skew metrics for current
+// devices.
+type VersionCheckInfo struct {
+	Enabled        bool   `json:"enabled"`
+	State          string `json:"state"` // disabled | checking | error | ready
+	LatestVersion  string `json:"latest_version,omitempty"`
+	LastCheckedAt  string `json:"last_checked_at,omitempty"`
+	LastErrorClass string `json:"last_error_class,omitempty"`
+}
+
+// EnableCostEstimate is a pre-enable forecast for an opt-in collector or
+// cardinality setting. Its values are calculated from the status snapshot's
+// live fleet and active-series state, not an assumed fleet size.
+type EnableCostEstimate struct {
+	Key                  string `json:"key"`
+	Enabled              bool   `json:"enabled"`
+	AddedAPICallsPerTick int    `json:"added_api_calls_per_tick"`
+	AddedSeries          int    `json:"added_series"`
+	Basis                string `json:"basis"`
 }
 
 // TelemetryInfo describes the OTLP export target (never any credentials).

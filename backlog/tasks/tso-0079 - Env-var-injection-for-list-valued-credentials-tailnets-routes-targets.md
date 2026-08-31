@@ -4,7 +4,7 @@ title: 'Env-var injection for list-valued credentials (tailnets, routes, targets
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:54'
 labels: []
 milestone: m-6
 dependencies: []
@@ -36,3 +36,11 @@ tailnets:, streaming.routes, webhook.routes and node_metrics.targets are file-on
 <!-- SECTION:PLAN:BEGIN -->
 F1 records that no persistent config key is needed: this task adds an environment overlay convention for existing list-valued credential fields; lane J later implements merge and precedence tests.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane J implemented and documented TS2OTEL_TAILNET_<NORMALIZED_NAME>__AUTH__OAUTH__CLIENT_SECRET. Environment wins over YAML; unknown or ambiguous normalized names fail Load. Red-first overlay/default tests and focused config checks passed.
+
+Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
+<!-- SECTION:NOTES:END -->

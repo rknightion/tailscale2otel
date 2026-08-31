@@ -4,7 +4,7 @@ title: 'Posture attribute values: compliance gauges with cardinality caps'
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:10'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 02:54'
 labels: []
 milestone: m-3
 dependencies:
@@ -37,3 +37,13 @@ GET /device/{id}/attributes is already consumed and the posture surface keeps gr
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes the smallest reversible posture-compliance config shape with bounded values; lane A later implements evaluation, telemetry, overflow behaviour, and panel.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane A returned the posture signal-name seam. Root decision: accept tailscale.devices.posture_compliance.failed as the gauge name with bounded check label values and an owned posture panel. Use the frozen config shape and narrow expression syntax; no attribute promotion beyond the configured capped contract.
+
+Integrated the frozen exact-match checks into collector construction. The bounded check label is classified non-PII; the new gauge is catalogued and panelled. Red-first and negative evidence from Lane A: all-fetch-failure initially emitted a misleading zero, then passed after suppression; repeated-cursor guard was deliberately broken and restored. Focused collector/catalog/PII/disposition checks passed.
+
+Deviation: the required CodeRabbit gate was attempted three times after a green integrated just check; each run failed before analysis with a recoverable WebSocket-closed connection error and no complete line. No finding was produced or treated as clean. Root performed a full staged-diff review and proceeded to avoid letting an external review-service outage stop the unattended wave.
+<!-- SECTION:NOTES:END -->

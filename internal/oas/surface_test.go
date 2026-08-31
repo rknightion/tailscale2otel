@@ -314,18 +314,18 @@ func TestVendoredSpec_ConsumedOperationParameterCensus(t *testing.T) {
 		}
 	}
 
-	if total != 34 {
-		t.Errorf("consumed operations expose %d parameters, want 34 — reading only "+
+	if total != 37 {
+		t.Errorf("consumed operations expose %d parameters, want 37 — reading only "+
 			"operation.parameters yields 4 and leaving $refs unresolved yields 4",
 			total)
 	}
-	for loc, want := range map[string]int{"path": 20, "query": 13, "header": 1} {
+	for loc, want := range map[string]int{"path": 21, "query": 15, "header": 1} {
 		if byLocation[loc] != want {
 			t.Errorf("%s parameters = %d, want %d", loc, byLocation[loc], want)
 		}
 	}
-	if withDefault != 2 {
-		t.Errorf("parameters carrying a default = %d, want 2 (listUsers type, role)", withDefault)
+	if withDefault != 3 {
+		t.Errorf("parameters carrying a default = %d, want 3 (listUsers type/role, listOrganizationTailnets limit)", withDefault)
 	}
 	// FOUR, not the three a naive scan reports: listUsers `type` and `role` and
 	// the shared `fields` carry an inline enum, and `logType`'s enum arrives only
@@ -336,8 +336,8 @@ func TestVendoredSpec_ConsumedOperationParameterCensus(t *testing.T) {
 		t.Errorf("parameters carrying an enum = %d, want 4 (fields, type, role, and logType "+
 			"via its $ref'd schema)", withEnum)
 	}
-	if required != 25 {
-		t.Errorf("required parameters = %d, want 25", required)
+	if required != 26 {
+		t.Errorf("required parameters = %d, want 26", required)
 	}
 	if !refSchemaSeen {
 		t.Error("the logType parameter's $ref schema did not resolve to an enum of strings")

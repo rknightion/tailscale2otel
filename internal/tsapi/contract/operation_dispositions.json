@@ -383,8 +383,8 @@
       "id": "listOrganizationTailnets",
       "method": "get",
       "path": "/organizations/{organization}/tailnets",
-      "disposition": "parked",
-      "note": "alpha Organizations API (tailnets:read scope): org-level tailnet roster; candidate for org auto-discovery in multi-tailnet mode, awaiting a product decision"
+      "disposition": "consumed",
+      "note": "tsapi.Client.OrganizationTailnets: alpha org roster pagination (tailnets:read); runtime fan-out requires explicit credential wiring"
     },
     {
       "id": "listServiceHosts",

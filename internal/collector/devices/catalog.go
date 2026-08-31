@@ -332,6 +332,14 @@ var (
 		Description: "Number of distinct posture attribute keys suppressed by `attribute_key_limit` on this collection tick. Emitted as zero when no keys are suppressed; `attribute_value_limit` folds excess string values into `__other__` instead.",
 		Group:       groupDevices,
 	}
+	docPostureComplianceFailed = metricdoc.Metric{
+		Name:        metricPostureComplianceFailed,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Number of devices that fail each configured exact-match posture compliance check (a **count**, despite `_ratio`). A missing, composite, or different attribute value fails; only successful posture fetches are evaluated, so an API failure is reported separately as subrequest availability rather than as non-compliance. **Gated** by `collect_posture` and `posture_compliance_checks`.",
+		Attributes:  []string{attrComplianceCheck},
+		Group:       groupDevices,
+	}
 )
 
 // Tailnet-lock + per-DERP-region rollup descriptors (devices extension). The
@@ -557,7 +565,7 @@ func Catalog() []metricdoc.Metric {
 		docDevicesByDistro, docDeviceDistro, docDevicesAge,
 		docDevicesUntagged, docDevicesEphemeral, docDevicesByVersion, docDevicesByTag, docDevicesKeyExpiry,
 		docDeviceVersionSkew, docFleetLatestVersion, docDevicesOutdated,
-		docAttribute, docAttributeInfo, docAttributeExpiry, docAttributesDropped,
+		docAttribute, docAttributeInfo, docAttributeExpiry, docAttributesDropped, docPostureComplianceFailed,
 		docTailnetLockErrors, docDerpRegionLatencyMin, docDerpRegionDevices, docDerpRegionPreferred,
 		docDevicesByCountry,
 		docConnHardNAT, docConnEndpoints, docConnDirectCapable, docConnUDP, docConnIPv6,

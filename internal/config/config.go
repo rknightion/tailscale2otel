@@ -10,9 +10,10 @@
 //	TS2OTEL_COLLECTORS__FLOWLOGS__INTERVAL    -> collectors.flowlogs.interval
 //
 // The env layer overrides the file, so secrets live in environment variables
-// and never need to appear in the YAML. The file is optional: with no -config
-// path the process runs from defaults + environment alone (handy for
-// containers).
+// and never need to appear in the YAML. Lists of structs remain file-defined,
+// with one documented name-keyed overlay for per-tailnet OAuth client secrets.
+// The file is optional: with no -config path the process runs from defaults +
+// environment alone (handy for containers).
 package config
 
 import (
@@ -58,9 +59,9 @@ type Config struct {
 	// Tailnets is the optional multi-tailnet list (MSP mode). When non-empty the
 	// instance observes every listed tailnet; it is mutually exclusive with an
 	// explicit single tailscale.tailnet (Validate errors if both name a tailnet).
-	// Each entry is self-contained (its own name + auth + http). FILE-ONLY: like
-	// collectors.node_metrics.targets, a list-of-structs is not settable via flat
-	// TS2OTEL_* env vars — use a config file for multi-tailnet.
+	// Each entry is self-contained (its own name + auth + http). The list itself
+	// is file-defined, but a documented name-keyed environment overlay may supply
+	// each entry's OAuth client secret without placing that secret in YAML.
 	Tailnets          []TailnetConfig         `yaml:"tailnets" reload:"restart"`
 	Headscale         HeadscaleConfig         `yaml:"headscale"`
 	OTLP              OTLPConfig              `yaml:"otlp"`
@@ -1849,6 +1850,7 @@ func Load(path string) (*Config, error) {
 
 	// 2. Optional YAML file (overrides defaults).
 	var cfgFileWarning string
+	var deviceVersionChecksExplicit bool
 	if path != "" {
 		configData, info, err := safefile.ReadRegularInfo(path, safefile.MaxConfigBytes, safefile.AllowSymlink)
 		if err != nil {
@@ -1870,6 +1872,7 @@ func Load(path string) (*Config, error) {
 		if u := unknownFileKeys(fk.Keys(), validKeys); len(u) > 0 {
 			return nil, unknownKeyError(u, validKeys)
 		}
+		deviceVersionChecksExplicit = fk.Exists("version_checks.devices.enabled")
 		if info.Mode().Perm()&0o044 != 0 {
 			cfgFileWarning = fmt.Sprintf("config file %s is readable by group/other (mode %04o); "+
 				"it may contain credentials — restrict it to 0600 (or keep secrets in TS2OTEL_* env vars)",
@@ -1895,6 +1898,18 @@ func Load(path string) (*Config, error) {
 		},
 	}); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	if _, set := envSetKeys()["version_checks.devices.enabled"]; set {
+		deviceVersionChecksExplicit = true
+	}
+	if cfg.Provider == "headscale" && !deviceVersionChecksExplicit {
+		// The built-in default is useful for a Tailscale fleet, but comparing
+		// Headscale devices against Tailscale stable is meaningless. Preserve an
+		// explicit true or false from YAML/environment as the operator's choice.
+		cfg.VersionChecks.Devices.Enabled = false
+	}
+	if err := applyTailnetEnvOverlays(&cfg); err != nil {
+		return nil, err
 	}
 
 	cfg.unknownEnv = unknownEnvVars(validKeys)

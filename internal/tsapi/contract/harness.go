@@ -95,8 +95,23 @@ type DecodeReport struct {
 // unexpected top-level JSON keys. The httptest server accepts any path so
 // path-parameter ops work without a real device ID.
 func Decode(op Op, rawJSON []byte) DecodeReport {
+	request := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(rawJSON)
+		body := rawJSON
+		if request > 0 {
+			// A paginated decoder must receive a terminal second page from this
+			// single-body harness, otherwise replaying the same cursor tests the
+			// harness rather than the response decoder.
+			var obj map[string]json.RawMessage
+			if json.Unmarshal(rawJSON, &obj) == nil {
+				if _, ok := obj["cursor"]; ok {
+					obj["cursor"] = json.RawMessage(`""`)
+					body, _ = json.Marshal(obj)
+				}
+			}
+		}
+		request++
+		_, _ = w.Write(body)
 	}))
 	defer srv.Close()
 

@@ -74,9 +74,9 @@ func TestBoundary_EveryConsumedOperationSurvivesEveryShape(t *testing.T) {
 		}
 	}
 
-	// Guard against the matrix quietly covering nothing: 18 operations, one of them
-	// FuzzSkip, six type-mistyped (4 shape-only kinds each), eleven full (8 kinds).
-	const wantOps = 17
+	// Guard against the matrix quietly covering nothing: 19 operations, one of them
+	// FuzzSkip, six type-mistyped (4 shape-only kinds each), twelve full (8 kinds).
+	const wantOps = 18
 	if len(covered) != wantOps {
 		t.Errorf("boundary matrix ran against %d operations, want %d: %v", len(covered), wantOps, covered)
 	}
@@ -84,7 +84,7 @@ func TestBoundary_EveryConsumedOperationSurvivesEveryShape(t *testing.T) {
 	for _, n := range covered {
 		total += n
 	}
-	if want := 11*8 + 6*4; total != want {
+	if want := 12*8 + 6*4; total != want {
 		t.Errorf("boundary matrix ran %d (operation, kind) pairs, want %d — a silent drop in "+
 			"coverage looks exactly like a passing test", total, want)
 	}

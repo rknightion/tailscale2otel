@@ -1885,6 +1885,58 @@ func TestCollect_AttributeCardinalityCaps(t *testing.T) {
 	}
 }
 
+func TestCollect_PostureComplianceChecks(t *testing.T) {
+	devs := []tsapi.RichDevice{{ID: "a", Hostname: "a"}, {ID: "b", Hostname: "b"}, {ID: "c", Hostname: "c"}}
+	api := &fakeAPI{devices: devs, posture: map[string]map[string]any{
+		"a": {"vendor:managed": true, "vendor:state": "healthy"},
+		"b": {"vendor:managed": false, "vendor:state": "healthy"},
+		"c": {"vendor:state": "unhealthy"},
+	}}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(api, cache, 0, false, true,
+		devices.WithPostureComplianceChecks([]devices.PostureComplianceCheck{
+			{Name: "managed", Attribute: "vendor:managed", Equals: "true"},
+			{Name: "healthy", Attribute: "vendor:state", Equals: "healthy"},
+		}),
+	)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	pts := rec.MetricPoints("tailscale.devices.posture_compliance.failed")
+	if len(pts) != 2 {
+		t.Fatalf("posture compliance points = %d, want 2; pts=%+v", len(pts), pts)
+	}
+	if p, ok := pointByAttr(pts, map[string]string{"check": "managed"}); !ok || p.Value != 2 {
+		t.Errorf("managed failures = %+v ok=%v, want 2 (false and missing)", p, ok)
+	}
+	if p, ok := pointByAttr(pts, map[string]string{"check": "healthy"}); !ok || p.Value != 1 {
+		t.Errorf("healthy failures = %+v ok=%v, want 1 (unhealthy)", p, ok)
+	}
+}
+
+func TestCollect_PostureComplianceChecks_SuppressesUnknownFetches(t *testing.T) {
+	api := &fakeAPI{
+		devices:        []tsapi.RichDevice{{ID: "a", Hostname: "a"}},
+		postureErr:     context.DeadlineExceeded,
+		postureFailAll: true,
+	}
+	cache := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c := devices.New(api, cache, 0, false, true,
+		devices.WithPostureComplianceChecks([]devices.PostureComplianceCheck{{
+			Name: "managed", Attribute: "vendor:managed", Equals: "true",
+		}}),
+	)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if pts := rec.MetricPoints("tailscale.devices.posture_compliance.failed"); len(pts) != 0 {
+		t.Fatalf("compliance points = %+v, want none when every posture fetch failed", pts)
+	}
+}
+
 func TestCollect_AttributeDisabledWithoutAllowList(t *testing.T) {
 	// No WithAttributeNamespaces => no attribute metrics, but the posture info
 	// gauge and posture log are unaffected.

@@ -162,6 +162,16 @@ def tab_devices_posture(scope):
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
                desc="Device count by reported Tailscale client version, from posture data."), 8, 8),
+        (panel("Compliance failures", "barchart",
+               [prom_t("max by (check) (%s)" % lot("tailscale_devices_posture_compliance_failed_ratio", WIN_SLOW),
+                       legend="{{check}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               novalue="No compliance checks configured — set collectors.devices.posture_compliance_checks "
+                       "and collect_posture.",
+               desc="Devices failing each configured exact-match posture check. A missing, non-scalar, "
+                    "or different attribute value fails; devices whose posture fetch failed are absent "
+                    "rather than counted as non-compliant."), 24, 8),
     ]
 
     return [

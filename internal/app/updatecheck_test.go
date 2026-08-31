@@ -194,3 +194,35 @@ func TestUpdateInfo_FailOpenKeepsVerdictButShowsError(t *testing.T) {
 		t.Errorf("LastErrorClass = %q, want %q", got.LastErrorClass, "network")
 	}
 }
+
+// TestDeviceVersionCheckInfo_FailOpenVisible guards the device-side version
+// fetch too: unlike the emitted skew metrics, status must make a blocked
+// refresh visible even while the last fetched stable version remains usable.
+func TestDeviceVersionCheckInfo_FailOpenVisible(t *testing.T) {
+	got := deviceVersionCheckInfo(true, release.Snapshot{
+		OK:       true,
+		Latest:   "1.2.3",
+		ErrClass: "network",
+	})
+	if got.State != "ready" {
+		t.Errorf("State = %q, want ready from cached successful version", got.State)
+	}
+	if got.LatestVersion != "1.2.3" {
+		t.Errorf("LatestVersion = %q, want 1.2.3", got.LatestVersion)
+	}
+	if got.LastErrorClass != "network" {
+		t.Errorf("LastErrorClass = %q, want network (blocked refresh must be visible)", got.LastErrorClass)
+	}
+}
+
+// TestDeviceVersionCheckInfo_NeverSucceededIsNotReady negative-tests the
+// status guard: a fetcher with no successful data must not look usable.
+func TestDeviceVersionCheckInfo_NeverSucceededIsNotReady(t *testing.T) {
+	got := deviceVersionCheckInfo(true, release.Snapshot{ErrClass: "network"})
+	if got.State == "ready" {
+		t.Errorf("State = ready with no successful fetch: got %+v", got)
+	}
+	if got.State != "error" {
+		t.Errorf("State = %q, want error", got.State)
+	}
+}

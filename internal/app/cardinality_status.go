@@ -3,11 +3,70 @@ package app
 import (
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
 )
+
+// enableCostEstimates forecasts the marginal work for high-cost toggles that
+// are currently off. The fleet count comes from the live enrichment caches and
+// flow counts from the current cardinality snapshot, so an empty/starting
+// process truthfully reports zero rather than inventing a nominal deployment.
+func enableCostEstimates(cfg *config.Config, devices int, seriesByMetric map[string]int) []statusdata.EnableCostEstimate {
+	if devices < 0 {
+		devices = 0
+	}
+	estimates := []statusdata.EnableCostEstimate{
+		{
+			Key:                  "collectors.devices.collect_posture",
+			Enabled:              cfg.Collectors.Devices.CollectPosture,
+			AddedAPICallsPerTick: disabledEstimate(cfg.Collectors.Devices.CollectPosture, devices),
+			AddedSeries:          disabledEstimate(cfg.Collectors.Devices.CollectPosture, devices),
+			Basis:                "one posture request and at least one posture series per currently cached device",
+		},
+		{
+			Key:                  "collectors.devices.collect_device_invites",
+			Enabled:              cfg.Collectors.Devices.CollectDeviceInvites,
+			AddedAPICallsPerTick: disabledEstimate(cfg.Collectors.Devices.CollectDeviceInvites, devices),
+			AddedSeries:          disabledEstimate(cfg.Collectors.Devices.CollectDeviceInvites, devices),
+			Basis:                "one invite request and per-device invite series per currently cached device",
+		},
+	}
+
+	flowSeries := 0
+	for metric, count := range seriesByMetric {
+		if strings.HasPrefix(metric, "tailscale.network.") {
+			flowSeries += count
+		}
+	}
+	identitySeries := 0
+	identityBasis := "identity dimensions require cardinality.flow.node_dims"
+	if cfg.Cardinality.Flow.NodeDims {
+		identitySeries = flowSeries * max(devices-1, 0)
+		identityBasis = "current active flow series × (currently cached devices − 1)"
+	}
+	if cfg.Cardinality.Flow.IdentityDims {
+		identitySeries = 0
+		identityBasis = "already enabled"
+	}
+	estimates = append(estimates, statusdata.EnableCostEstimate{
+		Key:         "cardinality.flow.identity_dims",
+		Enabled:     cfg.Cardinality.Flow.IdentityDims,
+		AddedSeries: identitySeries,
+		Basis:       identityBasis,
+	})
+	return estimates
+}
+
+func disabledEstimate(enabled bool, value int) int {
+	if enabled {
+		return 0
+	}
+	return value
+}
 
 // aggregateLabelSnapshot merges the per-tailnet label-value snapshots into a
 // single list keyed by (metric,label): summing distinct counts, OR-ing capped,

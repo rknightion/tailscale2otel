@@ -131,6 +131,14 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	onAccepted := acceptedEventObserver(rt.emitter, cfg.SelfObservability.Enabled)
 
 	if c.Devices.Enabled && cp.Supports("devices") {
+		postureChecks := make([]devices.PostureComplianceCheck, 0, len(c.Devices.PostureComplianceChecks))
+		for _, check := range c.Devices.PostureComplianceChecks {
+			postureChecks = append(postureChecks, devices.PostureComplianceCheck{
+				Name:      check.Name,
+				Attribute: check.Attribute,
+				Equals:    check.Equals,
+			})
+		}
 		devOpts := []devices.Option{
 			devices.WithPerEntity(cfg.Cardinality.PerEntity.Device),
 			devices.WithChangeLog(c.Devices.ChangeLogEnabled),
@@ -138,6 +146,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			devices.WithExpiryLogMode(c.Devices.ExpiryLogMode),
 			devices.WithAttributeNamespaces(c.Devices.AttributeNamespaces),
 			devices.WithAttributeLimits(c.Devices.AttributeKeyLimit, c.Devices.AttributeValueLimit),
+			devices.WithPostureComplianceChecks(postureChecks),
 			devices.WithDeviceInvites(c.Devices.CollectDeviceInvites),
 			devices.WithDerpRegionRollup(cfg.Cardinality.DerpRegionRollup),
 			devices.WithTagRollup(c.Devices.CollectTagRollup, c.Devices.TagRollupLimit),
