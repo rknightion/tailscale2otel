@@ -36,3 +36,24 @@ func TestFileContentReloadKeysArePathFields(t *testing.T) {
 		}
 	}
 }
+
+func TestReceiverCredentialFilesAreLiveReloaded(t *testing.T) {
+	want := map[string]bool{
+		"streaming.token_file": false,
+		"webhook.secret_file":  false,
+	}
+	for _, row := range ReloadClassifications() {
+		if _, ok := want[row.Key]; !ok {
+			continue
+		}
+		if row.Class != ReloadFileContent {
+			t.Errorf("config key %q class = %q, want %q", row.Key, row.Class, ReloadFileContent)
+		}
+		want[row.Key] = true
+	}
+	for key, found := range want {
+		if !found {
+			t.Errorf("config key %q missing from reload classifications", key)
+		}
+	}
+}

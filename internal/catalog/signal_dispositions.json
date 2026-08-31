@@ -2142,6 +2142,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.api.rate_limit.utilization",
+      "prom_name": "tailscale2otel_api_rate_limit_utilization_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.api.rate_limit.wait",
       "prom_name": "tailscale2otel_api_rate_limit_wait_seconds",
       "surface": "self_obs",
@@ -2389,6 +2398,24 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.flow_store.journal.size",
+      "prom_name": "tailscale2otel_flow_store_journal_size_bytes",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.flow_store.last_checkpoint_timestamp",
+      "prom_name": "tailscale2otel_flow_store_last_checkpoint_timestamp_seconds",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.ingest.capture.delay",
       "prom_name": "tailscale2otel_ingest_capture_delay_seconds",
       "surface": "self_obs",
@@ -2607,6 +2634,15 @@
       "dispositions": [
         "visualized",
         "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.nodemetrics.scrape.failures",
+      "prom_name": "tailscale2otel_nodemetrics_scrape_failures_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
       ]
     },
     {
@@ -2857,6 +2893,15 @@
         "visualized"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale2otel.receiver.misconfigured",
+      "prom_name": "tailscale2otel_receiver_misconfigured_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
     },
     {
       "kind": "metric",

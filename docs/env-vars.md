@@ -374,7 +374,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | `restart` | bind address for the Splunk-HEC-compatible receiver |
 | `TS2OTEL_STREAMING__PATH` | `/services/collector/event` | `restart` | HEC endpoint path Tailscale POSTs to |
 | `TS2OTEL_STREAMING__TOKEN` | `""` | `restart` | shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind) |
-| `TS2OTEL_STREAMING__TOKEN_FILE` | `""` | `restart` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_STREAMING__TOKEN_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_STREAMING__PUBLIC_URL` | `""` | `restart` | externally reachable receiver URL; REQUIRED only when auto_configure: true |
 | `TS2OTEL_STREAMING__TLS__CERT_FILE` | `""` | `file_content` | HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints) |
 | `TS2OTEL_STREAMING__TLS__KEY_FILE` | `""` | `file_content` | HTTPS key |
@@ -387,7 +387,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | `restart` | bind address for the webhook receiver |
 | `TS2OTEL_WEBHOOK__PATH` | `/tailscale/webhook` | `restart` | endpoint path Tailscale POSTs events to |
 | `TS2OTEL_WEBHOOK__SECRET` | `""` | `restart` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read |
-| `TS2OTEL_WEBHOOK__SECRET_FILE` | `""` | `restart` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_WEBHOOK__SECRET_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_WEBHOOK__TLS__CERT_FILE` | `""` | `file_content` | serve native HTTPS when paired with key_file; leave both empty behind an HTTPS reverse proxy |
 | `TS2OTEL_WEBHOOK__TLS__KEY_FILE` | `""` | `file_content` | private key paired with cert_file; both paths are validated as readable at startup |
 | `TS2OTEL_WEBHOOK__TOLERANCE` | `5m` | `restart` | reject signed timestamps older than this (replay window); "0" disables the check |
@@ -417,7 +417,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_ADMIN__STATUS_REFRESH_INTERVAL` | `5s` | `restart` | how often the status page re-polls /api/status.json (1s freshness ticker is independent) |
 | `TS2OTEL_ADMIN__SUPPORT_BUNDLE_LOG_TAIL_RECORDS` | `200` | `restart` | bounded redaction-safe recent log records included in support bundles; 0 disables capture |
 | `TS2OTEL_ADMIN__AUTH__TOKEN` | `""` | `restart` | gate the status page + pprof behind this token (set via TS2OTEL_ADMIN__AUTH__TOKEN); empty is allowed only on a loopback listen — on any other bind the status page + JSON APIs are REFUSED with 403 (/healthz and /readyz stay open) |
-| `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | `restart` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_ADMIN__AUTH__TOKEN_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_ADMIN__AUTH__FAILURE_LIMIT` | `5` | `restart` | failures from one source inside failure_window before throttling; 0 disables |
 | `TS2OTEL_ADMIN__AUTH__FAILURE_WINDOW` | `1m` | `restart` | rolling window for failed authentication attempts |
 | `TS2OTEL_ADMIN__AUTH__FAILURE_BACKOFF` | `30s` | `restart` | throttle duration after the per-source limit is reached |
@@ -445,7 +445,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | `restart` | backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it |
 | `TS2OTEL_PROMETHEUS__LISTEN` | `127.0.0.1:2112` | `restart` | bind for /metrics (default loopback-only 127.0.0.1:2112); keep distinct from admin.listen |
 | `TS2OTEL_PROMETHEUS__AUTH__TOKEN` | `""` | `restart` | gate /metrics behind this token (Bearer or Basic password); empty + a network bind = REFUSED 403 unless allow_unauthenticated. Set via TS2OTEL_PROMETHEUS__AUTH__TOKEN |
-| `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | `restart` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
+| `TS2OTEL_PROMETHEUS__AUTH__TOKEN_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_PROMETHEUS__AUTH__ALLOW_UNAUTHENTICATED` | `false` | `restart` | acknowledge serving /metrics with NO token on a network-reachable bind (e.g. in-cluster scraping behind a NetworkPolicy); a loopback bind never needs this |
 | `TS2OTEL_PROMETHEUS__MAX_REQUESTS_IN_FLIGHT` | `4` | `restart` | cap concurrent /metrics gathers (excess gets 503); must be positive while Prometheus is enabled |
 | `TS2OTEL_PROMETHEUS__TIMEOUT` | `8s` | `restart` | give up on a single /metrics gather after this long (503); keep below the scraper's own timeout |

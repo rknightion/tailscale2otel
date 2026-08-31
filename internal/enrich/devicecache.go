@@ -156,6 +156,11 @@ type DeviceCache struct {
 	updated   time.Time
 	now       func() time.Time
 	addrSet   AddrSet
+	// staleAfter is the maximum acceptable age of the authoritative device
+	// snapshot. A zero value deliberately leaves the cache unbounded for
+	// backwards compatibility. Once stale, the entries stay available to the
+	// status page but are no longer returned to enrich live records.
+	staleAfter time.Duration
 
 	// byService maps a Tailscale Service (VIP service) backing address to the
 	// service's name (e.g. "svc:argocd"), so flow-log peers destined for a
@@ -177,6 +182,17 @@ func WithClock(now func() time.Time) Option {
 // outbound node-metrics discovery allowlist.
 func WithAddrSet(addrSet AddrSet) Option {
 	return func(c *DeviceCache) { c.addrSet = addrSet }
+}
+
+// WithStaleAfter bounds how long authoritative device identities may enrich
+// live records after the devices collector last completed a successful poll. A
+// non-positive value disables the bound, preserving the historic behavior.
+func WithStaleAfter(after time.Duration) Option {
+	return func(c *DeviceCache) {
+		if after > 0 {
+			c.staleAfter = after
+		}
+	}
 }
 
 // NewDeviceCache returns an empty cache ready for use.
@@ -396,8 +412,12 @@ func (c *DeviceCache) ReplaceServices(byAddr map[netip.Addr]string) {
 // cached. Flow-claimed identity is never returned here; ask for it explicitly
 // via ResolveNameAny or LookupNodeAny.
 func (c *DeviceCache) LookupAddr(a netip.Addr) (*DeviceMeta, bool) {
+	now := c.now()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.staleLocked(now) {
+		return nil, false
+	}
 	m, ok := c.byAddr[a]
 	return m, ok
 }
@@ -405,8 +425,12 @@ func (c *DeviceCache) LookupAddr(a netip.Addr) (*DeviceMeta, bool) {
 // LookupNode returns the AUTHORITATIVE device with the given node ID, if
 // cached. Flow-claimed identity is never returned here; see LookupNodeAny.
 func (c *DeviceCache) LookupNode(id string) (*DeviceMeta, bool) {
+	now := c.now()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	if c.staleLocked(now) {
+		return nil, false
+	}
 	m, ok := c.byNode[id]
 	return m, ok
 }
@@ -419,7 +443,7 @@ func (c *DeviceCache) LookupNodeAny(id string) (*DeviceMeta, Provenance, bool) {
 	now := c.now()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if m, ok := c.byNode[id]; ok {
+	if m, ok := c.byNode[id]; ok && !c.staleLocked(now) {
 		return m, ProvenanceAuthoritative, true
 	}
 	if e, ok := c.lookupUnverifiedLocked(id, now); ok {
@@ -493,6 +517,9 @@ func (c *DeviceCache) resolve(addrPort string, unverified bool) (string, Provena
 	c.mu.RLock()
 	m, found := c.byAddr[addr]
 	svc, svcFound := c.byService[addr]
+	if c.staleLocked(now) {
+		found = false
+	}
 	var hint string
 	if unverified && !found && !svcFound {
 		if id, ok := c.unvAddr[addr]; ok {
@@ -553,6 +580,20 @@ func (c *DeviceCache) Age() time.Duration {
 	updated := c.updated
 	c.mu.RUnlock()
 	return c.now().Sub(updated)
+}
+
+// Stale reports whether the authoritative device snapshot has exceeded its
+// configured freshness bound. It is false when the bound is disabled.
+func (c *DeviceCache) Stale() bool {
+	now := c.now()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.staleLocked(now)
+}
+
+// staleLocked reports staleness while c.mu is held for reading or writing.
+func (c *DeviceCache) staleLocked(now time.Time) bool {
+	return c.staleAfter > 0 && now.Sub(c.updated) > c.staleAfter
 }
 
 // parseAddr accepts either "ip:port" or a bare "ip" and returns the address.

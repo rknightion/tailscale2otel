@@ -69,6 +69,18 @@ func (s *Store) run() {
 	defer flushTicker.Stop()
 	sweepTicker := time.NewTicker(s.opts.SweepInterval)
 	defer sweepTicker.Stop()
+	// A zero incremental-vacuum interval is deliberately not a disabled mode:
+	// it inherits the sweep cadence. Use the sweep case for that mode so one
+	// tick performs delete, checkpoint and reclamation in that order. An
+	// explicit interval gets its own ticker and still checkpoints after each
+	// sweep, keeping journal growth observable even between vacuum ticks.
+	var vacuumTicker *time.Ticker
+	var vacuumC <-chan time.Time
+	if s.opts.IncrementalVacuumInterval > 0 {
+		vacuumTicker = time.NewTicker(s.opts.vacuumInterval())
+		vacuumC = vacuumTicker.C
+		defer vacuumTicker.Stop()
+	}
 
 	batch := make([]flowstore.Observation, 0, s.opts.BatchSize)
 	flush := func() {
@@ -90,7 +102,11 @@ func (s *Store) run() {
 			flush()
 		case <-sweepTicker.C:
 			ctx, cancel := context.WithTimeout(context.Background(), s.opts.QueryTimeout)
-			_ = s.sweep(ctx) // errors are recorded via s.fail
+			s.maintain(ctx, true, s.opts.IncrementalVacuumInterval <= 0)
+			cancel()
+		case <-vacuumC:
+			ctx, cancel := context.WithTimeout(context.Background(), s.opts.QueryTimeout)
+			s.maintain(ctx, false, true)
 			cancel()
 		case <-s.done:
 			// Clean shutdown: whatever is already sitting in the queue was
@@ -190,6 +206,65 @@ func (s *Store) flush(batch []flowstore.Observation) error {
 		s.fail(err)
 		return err
 	}
+	// Checkpoint after a committed batch so the WAL sidecar does not grow
+	// without bound during a quiet period, and so Stats can report a real
+	// last-successful-checkpoint time even when the sweep cadence is long.
+	checkpointCtx, checkpointCancel := s.queryCtx()
+	_ = s.checkpoint(checkpointCtx)
+	checkpointCancel()
+	return nil
+}
+
+// maintain runs one bounded writer-maintenance pass. The sweep is optional
+// because an explicit vacuum interval may fall between retention sweeps. A
+// checkpoint precedes incremental_vacuum: SQLite can only reclaim pages that
+// are no longer pinned by the WAL, and both operations are best-effort with
+// failures recorded on the backend rather than sent to the caller.
+func (s *Store) maintain(ctx context.Context, sweep, reclaim bool) {
+	if sweep {
+		_ = s.sweep(ctx)
+	}
+	_ = s.checkpoint(ctx)
+	if reclaim {
+		_ = s.incrementalVacuum(ctx)
+	}
+}
+
+// checkpoint records a successful passive WAL checkpoint. A busy result is
+// expected when a reader is holding a snapshot; it is not a backend failure and
+// the next flush or maintenance pass will retry it.
+func (s *Store) checkpoint(ctx context.Context) error {
+	var busy, logFrames, checkpointedFrames int
+	if err := s.db.QueryRowContext(ctx, "PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &logFrames, &checkpointedFrames); err != nil {
+		s.fail(err)
+		return err
+	}
+	if !checkpointCompleted(busy, logFrames, checkpointedFrames) {
+		return nil
+	}
+
+	s.mu.Lock()
+	s.lastCheckpointAt = time.Now().UTC()
+	s.mu.Unlock()
+	return nil
+}
+
+func checkpointCompleted(busy, logFrames, checkpointedFrames int) bool {
+	return busy == 0 && logFrames >= 0 && checkpointedFrames >= 0 && logFrames == checkpointedFrames
+}
+
+// incrementalVacuum reclaims at most the configured number of pages. The
+// numeric pragma argument cannot be bound through database/sql, but it is an
+// integer resolved from validated configuration, never request data.
+func (s *Store) incrementalVacuum(ctx context.Context) error {
+	pages := s.opts.IncrementalVacuumPages
+	if pages <= 0 {
+		return nil
+	}
+	if _, err := s.db.ExecContext(ctx, fmt.Sprintf("PRAGMA incremental_vacuum(%d)", pages)); err != nil { //nolint:gosec // G201: pages is an internal validated integer
+		s.fail(err)
+		return err
+	}
 	return nil
 }
 
@@ -280,6 +355,13 @@ func (s *Store) Stats() flowstore.Stats {
 	if fi, err := os.Stat(s.path); err == nil {
 		backend.SizeBytes = fi.Size()
 	}
+	if fi, err := os.Stat(s.path + "-wal"); err == nil {
+		backend.JournalSizeBytes = fi.Size()
+	}
+
+	s.mu.Lock()
+	backend.LastCheckpointAt = s.lastCheckpointAt
+	s.mu.Unlock()
 
 	st.Backend = backend
 	return st

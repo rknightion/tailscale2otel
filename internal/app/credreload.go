@@ -31,9 +31,26 @@ import (
 //     this app treats an unreadable secret at startup. Failing open here would
 //     start a process that exports nothing and says nothing about why.
 type credReloaders struct {
-	otlp      *credreload.Reloader // nil when no OTLP credential file is configured
-	pyroscope *credreload.Reloader // nil when no Pyroscope credential file is configured
+	otlp      *credreload.Reloader  // nil when no OTLP credential file is configured
+	pyroscope *credreload.Reloader  // nil when no Pyroscope credential file is configured
+	streaming *receiverCredReloader // nil when no streaming token file is configured
+	webhook   *receiverCredReloader // nil when no webhook secret file is configured
 }
+
+// receiverCredReloader carries one reloader plus the internal header keys that
+// identify each configured receiver credential file. credreload intentionally
+// exposes file-backed values as a header map because that is its outbound
+// transport-neutral seam; receiver providers adapt those values back to a
+// single request credential without ever exposing the sentinel as a header.
+type receiverCredReloader struct {
+	reloader *credreload.Reloader
+	keys     map[string]string // configured file path -> internal HeaderFiles key
+}
+
+const (
+	streamTokenSentinelPrefix   = "X-Tailscale2otel-Internal-Streaming-Token-" //nolint:gosec // G101: internal map-key prefix, not a credential
+	webhookSecretSentinelPrefix = "X-Tailscale2otel-Internal-Webhook-Secret-"  //nolint:gosec // G101: internal map-key prefix, not a credential
+)
 
 // gcTokenSentinel is the internal HeaderFiles key the Grafana Cloud token file
 // is watched under.
@@ -81,6 +98,76 @@ func pyroscopeCredSources(cfg *config.Config) credreload.Sources {
 	}
 }
 
+func newReceiverCredReloader(
+	paths []string,
+	prefix string,
+	interval time.Duration,
+	logger *slog.Logger,
+) (*receiverCredReloader, error) {
+	keys := make(map[string]string, len(paths))
+	headers := make(map[string]string, len(paths))
+	for i, path := range paths {
+		if path == "" {
+			continue
+		}
+		if _, ok := keys[path]; ok {
+			continue
+		}
+		key := fmt.Sprintf("%s%d", prefix, i)
+		keys[path] = key
+		headers[key] = path
+	}
+	if len(headers) == 0 {
+		return nil, nil
+	}
+	r, err := credreload.New(credreload.Options{
+		Sources:  credreload.Sources{HeaderFiles: headers},
+		Interval: interval,
+		Logger:   logger,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &receiverCredReloader{reloader: r, keys: keys}, nil
+}
+
+func (r *receiverCredReloader) provider(path string) func() string {
+	if r == nil || r.reloader == nil {
+		return nil
+	}
+	key := r.keys[path]
+	if key == "" {
+		return nil
+	}
+	return func() string { return r.reloader.Headers()[key] }
+}
+
+func streamingTokenFiles(cfg *config.Config) []string {
+	paths := make([]string, 0, 1+len(cfg.Streaming.Routes))
+	if cfg.Streaming.TokenFile != "" {
+		paths = append(paths, cfg.Streaming.TokenFile)
+	}
+	for _, route := range cfg.Streaming.Routes {
+		if route.TokenFile != "" {
+			paths = append(paths, route.TokenFile)
+		}
+	}
+	return paths
+}
+
+func webhookSecretFiles(cfg *config.Config) []string {
+	paths := make([]string, 0, 1+len(cfg.Webhook.Routes))
+	if cfg.Webhook.SecretFile != "" {
+		paths = append(paths, cfg.Webhook.SecretFile)
+	}
+	for _, route := range cfg.Webhook.Routes {
+		if route.SecretFile != "" {
+			paths = append(paths, route.SecretFile)
+		}
+	}
+	return paths
+}
+
 // newCredReloaders builds the reloaders the configuration actually needs. A
 // source set with no watched file yields a nil reloader, and every downstream
 // caller treats nil as "stay on the static path" — so a deployment that
@@ -111,7 +198,38 @@ func newCredReloaders(cfg *config.Config, logger *slog.Logger) (*credReloaders, 
 		}
 		out.pyroscope = r
 	}
+
+	// Receiver credentials use the same bounded poller settings as outbound
+	// telemetry: there is one process-wide reload policy today, while each
+	// receiver type keeps one atomic snapshot covering its top-level and route
+	// files. A disabled poller still builds the reloader, so an owner can drive
+	// Reload explicitly without restarting the listener.
+	if paths := streamingTokenFiles(cfg); len(paths) > 0 {
+		r, err := newReceiverCredReloader(paths, streamTokenSentinelPrefix,
+			receiverPollInterval(cfg.OTLP.CredentialReload), logger)
+		if err != nil {
+			return nil, fmt.Errorf("streaming receiver credential reload: %w", err)
+		}
+		out.streaming = r
+	}
+	if paths := webhookSecretFiles(cfg); len(paths) > 0 {
+		r, err := newReceiverCredReloader(paths, webhookSecretSentinelPrefix,
+			receiverPollInterval(cfg.OTLP.CredentialReload), logger)
+		if err != nil {
+			return nil, fmt.Errorf("webhook receiver credential reload: %w", err)
+		}
+		out.webhook = r
+	}
 	return out, nil
+}
+
+// receiverPollInterval uses the configured cadence even when outbound OTLP
+// credential polling is disabled. Receiver secret-file reload is an inbound
+// security contract: a rotation must take effect without an explicit Reload or
+// process restart. Keeping this separate preserves the outbound poller's
+// existing opt-in default while making receiver rotation automatic.
+func receiverPollInterval(c config.CredentialReloadConfig) time.Duration {
+	return c.Interval.D()
 }
 
 // pollInterval returns the poller period, or 0 to disable the poller. Validate()
@@ -135,6 +253,11 @@ func (c *credReloaders) Start() {
 			r.Start()
 		}
 	}
+	for _, r := range []*receiverCredReloader{c.streaming, c.webhook} {
+		if r != nil && r.reloader != nil {
+			r.reloader.Start()
+		}
+	}
 }
 
 // Stop stops every configured poller and waits for its goroutine to exit.
@@ -145,6 +268,11 @@ func (c *credReloaders) Stop() {
 	for _, r := range []*credreload.Reloader{c.otlp, c.pyroscope} {
 		if r != nil {
 			r.Stop()
+		}
+	}
+	for _, r := range []*receiverCredReloader{c.streaming, c.webhook} {
+		if r != nil && r.reloader != nil {
+			r.reloader.Stop()
 		}
 	}
 }
@@ -235,4 +363,22 @@ func (c *credReloaders) pyroscopeReloader() *credreload.Reloader {
 		return nil
 	}
 	return c.pyroscope
+}
+
+// streamTokenProvider returns a request-local token accessor for one configured
+// streaming token file. It is nil when that path is not file-backed.
+func (c *credReloaders) streamTokenProvider(path string) func() string {
+	if c == nil || c.streaming == nil {
+		return nil
+	}
+	return c.streaming.provider(path)
+}
+
+// webhookSecretProvider returns a request-local secret accessor for one
+// configured webhook secret file. It is nil when that path is not file-backed.
+func (c *credReloaders) webhookSecretProvider(path string) func() string {
+	if c == nil || c.webhook == nil {
+		return nil
+	}
+	return c.webhook.provider(path)
 }

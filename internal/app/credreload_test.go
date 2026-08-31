@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
 	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
@@ -125,5 +126,59 @@ func TestPollInterval(t *testing.T) {
 	cfg.OTLP.CredentialReload.Enabled = true
 	if got := pollInterval(cfg.OTLP.CredentialReload); got != cfg.OTLP.CredentialReload.Interval.D() {
 		t.Errorf("enabled poller interval = %v, want %v", got, cfg.OTLP.CredentialReload.Interval.D())
+	}
+}
+
+func TestReceiverPollIntervalUsesDefaultCadence(t *testing.T) {
+	cfg := config.Default()
+	if got, want := receiverPollInterval(cfg.OTLP.CredentialReload), 30*time.Second; got != want {
+		t.Fatalf("receiver poll interval = %v, want default cadence %v", got, want)
+	}
+}
+
+func TestReceiverCredentialReloadersRotateBothSecretFiles(t *testing.T) {
+	dir := t.TempDir()
+	streamPath := writeTokenFile(t, dir, "stream-token", "stream-one\n")
+	webhookPath := writeTokenFile(t, dir, "webhook-secret", "webhook-one\n")
+	cfg := config.Default()
+	cfg.Streaming.TokenFile = streamPath
+	cfg.Webhook.SecretFile = webhookPath
+
+	reloaders, err := newCredReloaders(cfg, nil)
+	if err != nil {
+		t.Fatalf("newCredReloaders: %v", err)
+	}
+	if reloaders.streaming == nil || reloaders.webhook == nil {
+		t.Fatalf("receiver reloaders = %#v, want both streaming and webhook watchers", reloaders)
+	}
+	streamToken := reloaders.streamTokenProvider(streamPath)
+	webhookSecret := reloaders.webhookSecretProvider(webhookPath)
+	if streamToken == nil || webhookSecret == nil {
+		t.Fatal("receiver file providers are nil")
+	}
+	if got := streamToken(); got != "stream-one" {
+		t.Errorf("initial stream token = %q, want stream-one", got)
+	}
+	if got := webhookSecret(); got != "webhook-one" {
+		t.Errorf("initial webhook secret = %q, want webhook-one", got)
+	}
+
+	if err := os.WriteFile(streamPath, []byte("stream-two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(webhookPath, []byte("webhook-two\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := reloaders.streaming.reloader.Reload(); err != nil {
+		t.Fatalf("streaming Reload: %v", err)
+	}
+	if err := reloaders.webhook.reloader.Reload(); err != nil {
+		t.Fatalf("webhook Reload: %v", err)
+	}
+	if got := streamToken(); got != "stream-two" {
+		t.Errorf("rotated stream token = %q, want stream-two", got)
+	}
+	if got := webhookSecret(); got != "webhook-two" {
+		t.Errorf("rotated webhook secret = %q, want webhook-two", got)
 	}
 }

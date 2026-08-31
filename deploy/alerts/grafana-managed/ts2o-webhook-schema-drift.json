@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "78",
+      "__panelId__": "80",
       "description": "A field in the webhook payload moved to `unknown` status, which means Tailscale changed the payload shape. The receiver KEEPS ACCEPTING, nothing is rejected, and no other rule goes red \u2014 whatever that field feeds is just quietly no longer populated. That silence is the entire reason this rule exists. Compare the field name on \"Webhook payload schema drift/s by field\" against the receiver's expected shape and update the decoder.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Webhook field {{ $labels.field }} moved to an unknown schema status"

@@ -4,7 +4,7 @@ title: Per-tailnet admission fairness on shared receivers
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:31'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-4
 dependencies: []
@@ -35,4 +35,6 @@ Both receiver routers share one semaphore sized from the base MaxConcurrentReque
 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes per-route receiver admission budgets with defaults that preserve current global-only behaviour; lane E later implements fairness and concurrency tests.
+
+Lane E consumes the frozen per-route admission limits to provide per-tailnet fairness on shared receivers, with focused concurrency tests.
 <!-- SECTION:PLAN:END -->

@@ -1,9 +1,10 @@
 ---
 id: TSO-0088
 title: Clarify App.Close flow-store ownership outside Run shutdown
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 12:59'
+updated_date: '2026-08-31 00:29'
 labels:
   - needs-triage
 dependencies: []
@@ -30,3 +31,9 @@ Wave 1 review found that the normal Run shutdown closes per-tailnet flow stores,
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Lane I fixes App.Close flow-store ownership outside Run shutdown with a failing lifecycle test first and no public API break.
+<!-- SECTION:PLAN:END -->

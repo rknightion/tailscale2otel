@@ -113,6 +113,22 @@ func TestAPIObserverRateLimitWait(t *testing.T) {
 	}
 }
 
+func TestEmitAPIRateLimitUtilization(t *testing.T) {
+	rec := telemetrytest.New()
+	emitAPIRateLimitUtilization(rec.Emitter(), 1)
+
+	pts := rec.MetricPoints(appcatalog.MetricAPIRateLimitUtilization)
+	if len(pts) != 1 {
+		t.Fatalf("got %d api.rate_limit.utilization points, want 1", len(pts))
+	}
+	if got := pts[0].Value; got != 1 {
+		t.Fatalf("value = %v, want 1", got)
+	}
+	if len(pts[0].Attrs) != 0 {
+		t.Fatalf("attrs = %v, want resource-scoped signal with no datapoint attrs", pts[0].Attrs)
+	}
+}
+
 // TestEmitPIIFilterCategory verifies that emitPIIFilterCategory emits one
 // datapoint per PII category: value 0 for redacted categories, 1 for emitted.
 func TestEmitPIIFilterCategory(t *testing.T) {

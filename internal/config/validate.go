@@ -252,6 +252,10 @@ func (c *Config) validateReceiverRoutes() error {
 // steer operators toward the safer choice without removing flexibility.
 func (c *Config) Warnings() []string {
 	var w []string
+	if c.OTLP.Protocol == "grpc" && c.OTLP.TLS.CAFile != "" &&
+		c.OTLP.CredentialReload.Enabled && c.OTLP.GRPCReconnectionPeriod.D() <= 0 {
+		w = append(w, "otlp.tls.ca_file is watched with otlp.protocol=grpc, but otlp.grpc_reconnection_period is unset: CA rotation is used only by a new gRPC connection. Set otlp.grpc_reconnection_period so rotated CA material takes effect without waiting for an unrelated reconnect.")
+	}
 	if c.Checkpoint.EvidenceStore == "memory" {
 		w = append(w, "checkpoint.evidence_store=memory: restart-stable ACL revision evidence will be lost on restart, so the approximate revision age can reset to process lifetime. Set checkpoint.evidence_store=file and keep checkpoint.file_path on a persistent writable volume; checkpoint.store may remain memory when poll cursors are unused.")
 	}
@@ -502,11 +506,17 @@ func (c *Config) Warnings() []string {
 		}
 	}
 	if c.Webhook.Enabled && webhookCredentialMissing {
-		w = append(w, "webhook.enabled=true with an empty webhook.secret: HMAC signature "+
-			"verification is SKIPPED, so anyone who can reach "+c.Webhook.Listen+" can post "+
-			"forged webhook events (and inflate metric cardinality via attacker-chosen event "+
-			"types). Set webhook.secret (e.g. TS2OTEL_WEBHOOK__SECRET — check the env var name), "+
-			"or only run the receiver behind an authenticating proxy on a trusted network.")
+		if listenaddr.IsLoopback(c.Webhook.Listen) {
+			w = append(w, "webhook.enabled=true with an empty webhook.secret on the loopback bind "+
+				c.Webhook.Listen+": HMAC verification is skipped. Only the local host can reach it, "+
+				"so this is accepted, but any local process can inject webhook events. Set webhook.secret "+
+				"if that matters.")
+		} else {
+			w = append(w, "webhook.enabled=true with an empty webhook.secret on the network-reachable bind "+
+				c.Webhook.Listen+": the webhook receiver REFUSES every request with HTTP 403, so NO "+
+				"events will be ingested. Set webhook.secret (for example TS2OTEL_WEBHOOK__SECRET), or "+
+				"bind webhook.listen to loopback and put an authenticating proxy in front.")
+		}
 	}
 	// The HEC streaming receiver no longer fails OPEN on an empty token (#228): on
 	// a network-reachable bind it now REFUSES every request with 403 rather than

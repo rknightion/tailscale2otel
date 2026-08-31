@@ -4,7 +4,7 @@ title: Surface zero-traffic receiver misconfiguration without breaking startup
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:35'
-updated_date: '2026-08-30 23:58'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-6
 dependencies: []
@@ -44,6 +44,8 @@ A non-loopback receiver bind with no token or secret starts successfully but ref
 Owner correction applied: preserve Validate() compatibility, sharpen the warning, add per-receiver self-observability and status visibility, then file the hard-fail for a future major.
 
 Dashboard ownership timing: F2 lands before this lane. After F2, the implementing lane edits the tab module assigned by TSO-0092's ownership map directly and regenerates dashboards; only a missing shared helper or layout seam returns to lane L.
+
+Lane E keeps startup non-breaking, sharpens the warning, and returns the receiver misconfiguration descriptor/status wiring for root-owned seams while adding its assigned-tab panel.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

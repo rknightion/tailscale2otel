@@ -83,7 +83,7 @@
 // chose. And a refusal is ATOMIC — an over-budget request returns no records at
 // all, never a prefix.
 //
-// The untokened mode is loopback-only (see insecureOpen) and is additionally
+// The untokened mode is loopback-only (see tokenlessUnsafe) and is additionally
 // gated against browser-originated requests: reachability alone authorizes it, so
 // a remote page could otherwise use a victim's browser as a confused deputy to
 // write forged records. See crossSiteReason.
@@ -392,6 +392,12 @@ type Options struct {
 	// Token, when non-empty, is the expected bearer token; requests must carry
 	// "Authorization: Splunk <Token>". An empty Token disables authentication.
 	Token string
+	// TokenProvider, when non-nil, supplies the expected token for each request.
+	// It is called on the request path and must be safe for concurrent use. The
+	// app uses it for file-backed secret rotation; a request observes one value
+	// for its complete authentication decision, and a replacement cuts over on
+	// the next request (there is no dual-accept window).
+	TokenProvider func() string
 	// Decompress selects body decompression: "auto" (default), "gzip", "zstd",
 	// or "none". In "auto" mode the Content-Encoding header decides.
 	Decompress string
@@ -406,6 +412,11 @@ type Options struct {
 	// MaxConcurrentRequests bounds handlers buffering a body simultaneously.
 	// 0 selects defaultMaxConcurrentRequests; negative disables the limit.
 	MaxConcurrentRequests int
+	// PerRouteMaxConcurrentRequests bounds any one route when this server is
+	// installed in a Router. Zero selects an automatic fair share of the global
+	// admission budget; a positive value is an explicit per-route cap and a
+	// negative value disables the per-route cap.
+	PerRouteMaxConcurrentRequests int
 	// OnIngest, when non-nil, is called with ("stream", signal, records, bytes)
 	// after a successful parse: once per non-empty signal (records>0, bytes=0) and
 	// once for the decompressed body size (records=0, bytes=len(raw)). Supplied by
@@ -420,22 +431,28 @@ type Options struct {
 // Server is the streaming receiver. It is safe to share its Handler across
 // goroutines; the underlying processors and Emitter are concurrency-safe.
 type Server struct {
-	path       string
-	token      string
-	decompress string
-	tlsCert    string
-	tlsKey     string
-	listen     string
-	maxBody    int64
+	path          string
+	token         string
+	tokenProvider func() string
+	decompress    string
+	tlsCert       string
+	tlsKey        string
+	listen        string
+	maxBody       int64
+	// maxConcurrentRequests retains the process-wide setting used to size a
+	// Router's shared listener budget. admit is the aggregate budget for a
+	// standalone server and becomes this route's sub-budget in a Router.
+	maxConcurrentRequests int
 
-	// admit is the aggregate admission semaphore (#209): a buffered channel whose
-	// capacity is the number of handlers allowed to buffer a body at once. nil
-	// when the limit is disabled.
+	// admit is the admission semaphore for this server. On a standalone server
+	// it is the aggregate #209 budget; in a Router it is this route's sub-budget.
+	// nil when that limit is disabled.
 	admit chan struct{}
-	// insecureOpen records that the receiver has NO token AND is bound somewhere
-	// other hosts can reach, i.e. it would ingest unauthenticated data from the
-	// network. The handler refuses every request in that state (fail closed).
-	insecureOpen bool
+	// globalAdmit is the shared listener budget used by a Router. It is acquired
+	// after the route budget, so a request waiting behind one noisy route never
+	// consumes a slot that another route could use.
+	globalAdmit                   chan struct{}
+	perRouteMaxConcurrentRequests int
 	// processDeadline is handlerProcessDeadline in production. It is a field only
 	// so tests can drive the deadline/write-window interaction (#232) in
 	// milliseconds instead of waiting out the real 30s budget.
@@ -495,15 +512,19 @@ type Route struct {
 // fallback route: an unknown path reaches no receiver, and therefore cannot
 // authenticate against or emit into a different tailnet.
 type Router struct {
-	routes map[string]*Server
-	base   *Server
+	routes   map[string]*Server
+	handlers map[string]http.Handler
+	base     *Server
 }
 
 // NewRouter composes already-configured per-tailnet servers. All routes share
 // the listener/TLS/budget settings carried by their base server; callers must
 // supply at least one route.
 func NewRouter(routes []Route) *Router {
-	r := &Router{routes: make(map[string]*Server, len(routes))}
+	r := &Router{
+		routes:   make(map[string]*Server, len(routes)),
+		handlers: make(map[string]http.Handler, len(routes)),
+	}
 	for _, route := range routes {
 		if route.Server == nil || route.Path == "" {
 			continue
@@ -513,18 +534,51 @@ func NewRouter(routes []Route) *Router {
 			r.base = route.Server
 		}
 	}
+	if r.base == nil {
+		return r
+	}
+
+	// Every route starts life with the standalone server's aggregate channel.
+	// Replace that channel with a route sub-budget and give all routes one
+	// process-wide channel. The request path acquires the route channel first,
+	// then the global channel; a request queued behind a noisy route therefore
+	// never consumes a slot another route could use.
+	globalMax := r.base.maxConcurrentRequests
+	if globalMax == 0 && r.base.admit != nil {
+		// Keep programmatically-constructed Servers (rather than New) useful too.
+		globalMax = cap(r.base.admit)
+	}
+	var global chan struct{}
+	if globalMax > 0 {
+		global = make(chan struct{}, globalMax)
+	}
+	for path, server := range r.routes {
+		routeMax := server.perRouteMaxConcurrentRequests
+		if routeMax == 0 && globalMax > 0 {
+			routeMax = globalMax / len(r.routes)
+			if routeMax < 1 {
+				routeMax = 1
+			}
+		}
+		server.admit = nil
+		if routeMax > 0 {
+			server.admit = make(chan struct{}, routeMax)
+		}
+		server.globalAdmit = global
+		r.handlers[path] = server.Handler()
+	}
 	return r
 }
 
 // Handler routes only exact paths before delegating to a fully isolated Server.
 func (r *Router) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		s, ok := r.routes[req.URL.Path]
+		h, ok := r.handlers[req.URL.Path]
 		if !ok {
 			http.NotFound(w, req)
 			return
 		}
-		s.Handler().ServeHTTP(w, req)
+		h.ServeHTTP(w, req)
 	})
 }
 
@@ -582,19 +636,26 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 	if maxConcurrent == 0 {
 		maxConcurrent = defaultMaxConcurrentRequests
 	}
+	admitMax := maxConcurrent
+	if opts.PerRouteMaxConcurrentRequests > 0 &&
+		(admitMax <= 0 || opts.PerRouteMaxConcurrentRequests < admitMax) {
+		admitMax = opts.PerRouteMaxConcurrentRequests
+	}
 	var admit chan struct{}
-	if maxConcurrent > 0 {
-		admit = make(chan struct{}, maxConcurrent)
+	if admitMax > 0 {
+		admit = make(chan struct{}, admitMax)
 	}
 	s := &Server{
-		path:       path,
-		token:      opts.Token,
-		decompress: decompress,
-		tlsCert:    opts.TLSCertFile,
-		tlsKey:     opts.TLSKeyFile,
-		listen:     opts.Listen,
-		maxBody:    maxBody,
-		admit:      admit,
+		path:                  path,
+		token:                 opts.Token,
+		tokenProvider:         opts.TokenProvider,
+		decompress:            decompress,
+		tlsCert:               opts.TLSCertFile,
+		tlsKey:                opts.TLSKeyFile,
+		listen:                opts.Listen,
+		maxBody:               maxBody,
+		maxConcurrentRequests: maxConcurrent,
+		admit:                 admit,
 		// Fail closed: with no token, only a loopback bind is safe, because a
 		// loopback listener is unreachable from any other host. Everything else —
 		// a wildcard bind, a LAN address, a tailnet (100.64/10) address, or an
@@ -602,14 +663,14 @@ func New(opts Options, flowProc *flowlog.Processor, auditProc *audit.Processor, 
 		// forgets streaming.token gets a refusal rather than an open ingest
 		// endpoint. listenaddr.IsLoopback itself fails closed on anything it
 		// cannot classify.
-		insecureOpen:    opts.Token == "" && !listenaddr.IsLoopback(opts.Listen),
-		processDeadline: handlerProcessDeadline,
-		flowProc:        flowProc,
-		auditProc:       auditProc,
-		emitter:         e,
-		logger:          logger,
-		onIngest:        opts.OnIngest,
-		onAccepted:      opts.OnAccepted,
+		perRouteMaxConcurrentRequests: opts.PerRouteMaxConcurrentRequests,
+		processDeadline:               handlerProcessDeadline,
+		flowProc:                      flowProc,
+		auditProc:                     auditProc,
+		emitter:                       e,
+		logger:                        logger,
+		onIngest:                      opts.OnIngest,
+		onAccepted:                    opts.OnAccepted,
 	}
 	for _, o := range options {
 		o(s)
@@ -694,29 +755,49 @@ func (s *Server) phase2DeadlineExceeded(ctx context.Context, w http.ResponseWrit
 	return true
 }
 
-// acquire takes an admission slot (#209), returning a release func. It tries a
-// non-blocking take first (the steady state), then waits up to admissionWait for
-// a slot, giving up early if the client goes away. ok=false means the receiver
-// is at capacity and the caller must refuse the request.
-func (s *Server) acquire(ctx context.Context) (release func(), ok bool) {
-	if s.admit == nil {
+// acquireAdmission takes one admission channel slot, returning a release func.
+// It tries a non-blocking take first (the steady state), then waits up to
+// admissionWait for a slot, giving up early if the client goes away. A nil
+// channel disables that layer of the budget.
+func acquireAdmission(ctx context.Context, admit chan struct{}) (release func(), ok bool) {
+	if admit == nil {
 		return func() {}, true
 	}
 	select {
-	case s.admit <- struct{}{}:
-		return func() { <-s.admit }, true
+	case admit <- struct{}{}:
+		return func() { <-admit }, true
 	default:
 	}
 	timer := time.NewTimer(admissionWait)
 	defer timer.Stop()
 	select {
-	case s.admit <- struct{}{}:
-		return func() { <-s.admit }, true
+	case admit <- struct{}{}:
+		return func() { <-admit }, true
 	case <-ctx.Done():
 		return nil, false
 	case <-timer.C:
 		return nil, false
 	}
+}
+
+// acquire takes the route budget first and the shared listener budget second.
+// This ordering is the fairness guarantee: a request waiting behind a noisy
+// route never occupies a global slot that another route could use. If the
+// second acquisition fails, the route slot is returned immediately.
+func (s *Server) acquire(ctx context.Context) (release func(), ok bool) {
+	releaseRoute, ok := acquireAdmission(ctx, s.admit)
+	if !ok {
+		return nil, false
+	}
+	releaseGlobal, ok := acquireAdmission(ctx, s.globalAdmit)
+	if !ok {
+		releaseRoute()
+		return nil, false
+	}
+	return func() {
+		releaseGlobal()
+		releaseRoute()
+	}, true
 }
 
 // handle implements the receiver's request lifecycle: method/auth checks, body
@@ -766,11 +847,16 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture the credential once for this request. A file-backed provider is an
+	// atomic last-known-good snapshot, but keeping the value local also makes a
+	// request immune to a concurrent rotation halfway through its auth checks.
+	token := s.currentToken()
+
 	// Fail closed BEFORE any body is read: with no token configured and a
 	// network-reachable bind, this endpoint would accept unauthenticated flow and
 	// audit records from anyone who can route to it. Refuse outright and name both
 	// remedies, rather than ingesting attacker-supplied telemetry.
-	if s.insecureOpen {
+	if s.tokenlessUnsafe(token) {
 		span.SetStatus(codes.Error, "auth required")
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonAuthRequired})
@@ -784,7 +870,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// forged records. Refuse anything carrying a browser's fingerprints BEFORE any
 	// body is read. A configured token makes this impossible already, so the gate
 	// is deliberately scoped to the tokenless mode — see crossSiteReason.
-	if s.token == "" {
+	if token == "" {
 		if why := httpguard.TokenlessReceiverReason(r); why != "" {
 			span.SetStatus(codes.Error, "cross-site request")
 			s.logger.Warn("stream: refusing browser-originated request to the untokened receiver", "cause", why)
@@ -797,7 +883,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if !s.authorized(r) {
+	if !s.authorizedWithToken(r, token) {
 		span.SetStatus(codes.Error, "unauthorized")
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonAuth})
@@ -805,15 +891,15 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Aggregate admission control (#209): the per-request byte cap bounds ONE
-	// body, not the sum of every body in flight. Take a slot before buffering
-	// anything so worst-case buffered memory is capped at
-	// MaxConcurrentRequests * MaxBodyBytes regardless of how many senders arrive
-	// at once. Released via defer on every exit path below.
+	// Admission control (#209): the per-request byte cap bounds ONE body, not the
+	// sum of every body in flight. Take the route slot first and then (in a
+	// Router) the shared listener slot, before buffering anything. This keeps a
+	// noisy route from consuming the listener's entire budget while still capping
+	// aggregate buffered memory. Released via defer on every exit path below.
 	release, admitted := s.acquire(r.Context())
 	if !admitted {
 		span.SetStatus(codes.Error, "overloaded")
-		s.logger.Warn("stream: refusing request, receiver at capacity", "max_concurrent_requests", cap(s.admit))
+		s.logger.Warn("stream: refusing request, receiver at capacity", "max_concurrent_requests", s.maxConcurrentRequests)
 		s.emitter.Counter(docStreamRejected.Name, docStreamRejected.Unit, docStreamRejected.Description, 1,
 			telemetry.Attrs{attrReason: reasonOverloaded})
 		w.Header().Set("Retry-After", "1")
@@ -1219,23 +1305,37 @@ func (s *Server) applyDecoded(
 	return ApplyResult{FlowsApplied: flows > 0}, nil
 }
 
-// authorized reports whether the request carries the configured token. When no
-// token is configured, all requests are authorized.
-//
+// currentToken returns the token that should be used for a new request. A
+// provider is expected to expose a lock-free last-known-good snapshot; calling
+// it once here makes the rest of one request use one credential value.
+func (s *Server) currentToken() string {
+	if s.tokenProvider != nil {
+		return s.tokenProvider()
+	}
+	return s.token
+}
+
+// tokenlessUnsafe reports whether tokenless mode is exposed on a
+// network-reachable bind. It is evaluated per request so a provider rotation
+// to/from an empty value cannot leave the old startup-time decision in force.
+func (s *Server) tokenlessUnsafe(token string) bool {
+	return token == "" && !listenaddr.IsLoopback(s.listen)
+}
+
 // Tailscale log streaming authenticates with HTTP Basic auth — base64(user:<token>),
 // where the password is the configured token — NOT "Authorization: Splunk <token>"
 // (verified via a live capture of the TailscaleLogStreamPublisher; S4-10). Accept
 // Basic auth first, then the Splunk-HEC scheme other HEC senders use. The token
 // comparison is constant-time.
-func (s *Server) authorized(r *http.Request) bool {
-	if s.token == "" {
+func (s *Server) authorizedWithToken(r *http.Request, token string) bool {
+	if token == "" {
 		return true
 	}
 	if _, pass, ok := r.BasicAuth(); ok {
-		return subtle.ConstantTimeCompare([]byte(pass), []byte(s.token)) == 1
+		return subtle.ConstantTimeCompare([]byte(pass), []byte(token)) == 1
 	}
 	if fields := strings.Fields(r.Header.Get("Authorization")); len(fields) == 2 && strings.EqualFold(fields[0], authScheme) {
-		return subtle.ConstantTimeCompare([]byte(fields[1]), []byte(s.token)) == 1
+		return subtle.ConstantTimeCompare([]byte(fields[1]), []byte(token)) == 1
 	}
 	return false
 }
@@ -1888,7 +1988,7 @@ func (s *Server) writeError(w http.ResponseWriter, status int, text string) {
 // Run binds Options.Listen and serves the handler until ctx is canceled, then
 // performs a graceful shutdown. It serves HTTPS when both TLS files are set.
 func (s *Server) Run(ctx context.Context) error {
-	if s.insecureOpen {
+	if s.tokenlessUnsafe(s.currentToken()) {
 		// Logged once, loudly, at startup: the handler refuses every request in
 		// this state, and an operator staring at 403s deserves to find the reason
 		// in the logs rather than in the source.

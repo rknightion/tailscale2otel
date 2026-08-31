@@ -214,6 +214,47 @@ func TestDeliverySuppressesRepeatedFailureLogs(t *testing.T) {
 	}
 }
 
+// A configured summary interval must control the sustained-outage diagnostic
+// cadence. Use an injected clock so this proves the boundary without sleeping.
+func TestDeliveryUsesConfiguredSummaryInterval(t *testing.T) {
+	d := newDeliveryTracker(2 * time.Minute)
+	now := time.Unix(1_000, 0)
+	d.now = func() time.Time { return now }
+	var buf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	d.setDiagnostics(logger, nil, "")
+
+	fail := errors.New("rpc error: code = Unavailable desc = connection refused")
+	d.observe(SignalMetrics, fail, 0.1)
+	now = now.Add(2*time.Minute - time.Nanosecond)
+	d.observe(SignalMetrics, fail, 0.1)
+	if got := strings.Count(buf.String(), "OTLP export still failing"); got != 0 {
+		t.Fatalf("summary count before configured interval = %d, want 0; logs = %q", got, buf.String())
+	}
+
+	now = now.Add(time.Nanosecond)
+	d.observe(SignalMetrics, fail, 0.1)
+	if got := strings.Count(buf.String(), "OTLP export still failing"); got != 1 {
+		t.Fatalf("summary count at configured interval = %d, want 1; logs = %q", got, buf.String())
+	}
+}
+
+func TestNewProviderUsesConfiguredDeliverySummaryInterval(t *testing.T) {
+	p, err := NewProvider(context.Background(), Options{
+		Protocol:              "stdout",
+		StdoutWriter:          &strings.Builder{},
+		MetricInterval:        time.Hour,
+		OutageSummaryInterval: 2 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	if got := p.delivery.summaryInterval; got != 2*time.Minute {
+		t.Fatalf("delivery summary interval = %v, want 2m", got)
+	}
+}
+
 // Exactly one recovery log when a failing signal succeeds again, and none when
 // it never failed in the first place (a healthy signal must not spam "recovered"
 // on every ordinary success).

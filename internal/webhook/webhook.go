@@ -209,6 +209,12 @@ type Options struct {
 	// Secret is the per-webhook signing secret. When empty, signature
 	// verification is skipped (useful for local testing behind a trusted proxy).
 	Secret string
+	// SecretProvider, when non-nil, supplies the signing secret for each request.
+	// It is called once per request; a request therefore observes one value even
+	// if the backing file rotates while the body is being read. The app uses this
+	// for file-backed secret rotation and keeps the last-known-good value in the
+	// provider itself.
+	SecretProvider func() string
 	// TLSCertFile and TLSKeyFile, when both set, make Run serve HTTPS.
 	TLSCertFile string
 	TLSKeyFile  string
@@ -225,6 +231,11 @@ type Options struct {
 	// — no credential is required to reach it. 0 selects
 	// defaultMaxConcurrentRequests; negative disables the limit.
 	MaxConcurrentRequests int
+	// PerRouteMaxConcurrentRequests bounds any one route when this server is
+	// installed in a Router. Zero selects an automatic fair share of the global
+	// admission budget; a positive value is an explicit per-route cap and a
+	// negative value disables the per-route cap.
+	PerRouteMaxConcurrentRequests int
 	// OnIngest, when non-nil, is called once after a successful parse with
 	// (IngestSourceWebhook, IngestSignalWebhook, len(events), len(body)).
 	// Supplied by the app, gated on self-observability.
@@ -241,15 +252,16 @@ type Options struct {
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
 type Server struct {
-	opts          Options
-	e             telemetry.Emitter
-	logger        *slog.Logger
-	now           func() time.Time // injectable clock; defaults to time.Now
-	dedup         *dedup.Set       // optional cross-source de-dup set (see WithDedup)
-	durableAppend DurableAppend
-	onIngest      func(source, signal string, records, bytes int)
-	onAccepted    ingest.AcceptedObserver
-	tracer        trace.Tracer
+	opts           Options
+	e              telemetry.Emitter
+	logger         *slog.Logger
+	now            func() time.Time // injectable clock; defaults to time.Now
+	secretProvider func() string
+	dedup          *dedup.Set // optional cross-source de-dup set (see WithDedup)
+	durableAppend  DurableAppend
+	onIngest       func(source, signal string, records, bytes int)
+	onAccepted     ingest.AcceptedObserver
+	tracer         trace.Tracer
 	// remoteParent is the inbound-traceparent trust policy (#373); empty means
 	// trust, which is the pre-#373 behavior.
 	remoteParent string
@@ -261,15 +273,20 @@ type Server struct {
 	// every route serves one TLS configuration.
 	tlsReloader *certreload.Reloader
 
-	// admit is the aggregate admission semaphore (GHSA-9547-8jpc-48h6): a
-	// buffered channel whose capacity is the number of handlers allowed to
-	// buffer a body — and thus be pending HMAC verification — at once. nil
-	// when the limit is disabled.
+	// maxConcurrentRequests retains the process-wide setting used to size a
+	// Router's shared listener budget. admit is the aggregate budget for a
+	// standalone server and becomes this route's sub-budget in a Router.
+	maxConcurrentRequests int
+	// admit is the admission semaphore for this server. On a standalone server
+	// it is the aggregate budget; in a Router it is this route's sub-budget. nil
+	// when that layer is disabled.
 	admit chan struct{}
-	// insecureOpen is true only for an empty secret on a non-loopback bind. It
-	// fails closed before buffering or parsing attacker-supplied input.
-	insecureOpen bool
-	delivery     *deliveryDeduper
+	// globalAdmit is the shared listener budget used by a Router. It is acquired
+	// after the route budget, so a request queued behind one noisy route never
+	// consumes a slot another route could use.
+	globalAdmit                   chan struct{}
+	perRouteMaxConcurrentRequests int
+	delivery                      *deliveryDeduper
 
 	// typesMu guards seenTypes, the bounded set of distinct event types already
 	// admitted as a telemetry dimension. handle (and thus emit) runs concurrently
@@ -314,7 +331,7 @@ func NewRouter(routes []Route) *Router {
 			continue
 		}
 		r.routes[route.Tailnet] = route.Server
-		if route.Server.opts.Secret == "" {
+		if route.Server.currentSecret() == "" {
 			r.tokenless = true
 		} else {
 			hasSigned = true
@@ -324,8 +341,31 @@ func NewRouter(routes []Route) *Router {
 		}
 	}
 	r.invalidAuthMix = r.tokenless && hasSigned
-	if r.base != nil && r.base.admit != nil {
-		r.admit = make(chan struct{}, cap(r.base.admit))
+	if r.base == nil {
+		return r
+	}
+
+	globalMax := r.base.maxConcurrentRequests
+	if globalMax == 0 && r.base.admit != nil {
+		// Keep programmatically-constructed Servers (rather than New) useful too.
+		globalMax = cap(r.base.admit)
+	}
+	if globalMax > 0 {
+		r.admit = make(chan struct{}, globalMax)
+	}
+	for _, server := range r.routes {
+		routeMax := server.perRouteMaxConcurrentRequests
+		if routeMax == 0 && globalMax > 0 {
+			routeMax = globalMax / len(r.routes)
+			if routeMax < 1 {
+				routeMax = 1
+			}
+		}
+		server.admit = nil
+		if routeMax > 0 {
+			server.admit = make(chan struct{}, routeMax)
+		}
+		server.globalAdmit = r.admit
 	}
 	return r
 }
@@ -359,13 +399,23 @@ func (r *Router) Handler() http.Handler {
 				return
 			}
 		}
-		release, admitted := r.acquire(req.Context())
+		defer req.Body.Close()
+		// Routing needs the body to identify its tailnet. Hold only the shared
+		// pre-body slot while reading that untrusted body; after the identity is
+		// known, release it while waiting for the route budget so a noisy route
+		// cannot pin global slots for other routes.
+		releasePreBody, admitted := acquireAdmission(req.Context(), r.admit)
 		if !admitted {
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 			return
 		}
-		defer release()
+		preBodyReleased := false
+		defer func() {
+			if !preBodyReleased {
+				releasePreBody()
+			}
+		}()
 		limit := r.base.opts.MaxBodyBytes
 		if limit == 0 {
 			limit = defaultMaxBodyBytes
@@ -384,6 +434,10 @@ func (r *Router) Handler() http.Handler {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
+		// body is now bounded and route selection can proceed without occupying
+		// the listener-wide pre-body slot.
+		releasePreBody()
+		preBodyReleased = true
 		tailnet, err := webhookTailnet(body)
 		if errors.Is(err, errTooManyEvents) {
 			r.base.rejectStatus(w, http.StatusRequestEntityTooLarge, "too_many_events",
@@ -395,30 +449,87 @@ func (r *Router) Handler() http.Handler {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return
 		}
+		releaseRoute, routeAdmitted := acquireAdmission(req.Context(), s.admit)
+		if !routeAdmitted {
+			w.Header().Set("Retry-After", "1")
+			s.rejectStatus(w, http.StatusServiceUnavailable, "overloaded",
+				"webhook route at capacity, retry shortly", nil)
+			return
+		}
+		releaseGlobal, globallyAdmitted := acquireAdmission(req.Context(), r.admit)
+		if !globallyAdmitted {
+			releaseRoute()
+			w.Header().Set("Retry-After", "1")
+			s.rejectStatus(w, http.StatusServiceUnavailable, "overloaded",
+				"webhook receiver at capacity, retry shortly", nil)
+			return
+		}
+		defer releaseGlobal()
+		defer releaseRoute()
 		req.Body = io.NopCloser(bytes.NewReader(body))
-		s.Handler().ServeHTTP(w, req)
+		s.handleWithAdmission(w, req, true)
 	})
 }
 
-func (r *Router) acquire(ctx context.Context) (func(), bool) {
-	if r.admit == nil {
+// acquireAdmission takes one admission channel slot, returning a release func.
+// A nil channel disables that layer of the budget.
+func acquireAdmission(ctx context.Context, admit chan struct{}) (func(), bool) {
+	if admit == nil {
 		return func() {}, true
 	}
 	select {
-	case r.admit <- struct{}{}:
-		return func() { <-r.admit }, true
+	case admit <- struct{}{}:
+		return func() { <-admit }, true
 	default:
 	}
 	timer := time.NewTimer(admissionWait)
 	defer timer.Stop()
 	select {
-	case r.admit <- struct{}{}:
-		return func() { <-r.admit }, true
+	case admit <- struct{}{}:
+		return func() { <-admit }, true
 	case <-ctx.Done():
 		return nil, false
 	case <-timer.C:
 		return nil, false
 	}
+}
+
+// acquire takes the route budget first and the shared listener budget second.
+// If the global layer is full, the route slot is returned before the request is
+// refused so a blocked route cannot leak capacity.
+func (s *Server) acquire(ctx context.Context) (func(), bool) {
+	releaseRoute, ok := acquireAdmission(ctx, s.admit)
+	if !ok {
+		return nil, false
+	}
+	releaseGlobal, ok := acquireAdmission(ctx, s.globalAdmit)
+	if !ok {
+		releaseRoute()
+		return nil, false
+	}
+	return func() {
+		releaseGlobal()
+		releaseRoute()
+	}, true
+}
+
+// currentSecret returns the signing secret for a new request. A provider is
+// expected to expose an atomic last-known-good snapshot; the request handler
+// stores the returned value locally so a concurrent rotation cannot change the
+// HMAC key halfway through verification.
+func (s *Server) currentSecret() string {
+	if s.secretProvider != nil {
+		return s.secretProvider()
+	}
+	return s.opts.Secret
+}
+
+// secretlessUnsafe reports whether a secretless receiver is exposed on a
+// network-reachable bind. It is deliberately evaluated per request so a
+// provider rotation to/from an empty value cannot leave a stale startup-time
+// decision in force.
+func (s *Server) secretlessUnsafe(secret string) bool {
+	return secret == "" && !listenaddr.IsLoopback(s.opts.Listen)
 }
 
 // ShutdownTimeout bounds the receiver's graceful HTTP shutdown: once the
@@ -601,20 +712,27 @@ func New(opts Options, e telemetry.Emitter, logger *slog.Logger, options ...Opti
 	if maxConcurrent == 0 {
 		maxConcurrent = defaultMaxConcurrentRequests
 	}
+	admitMax := maxConcurrent
+	if opts.PerRouteMaxConcurrentRequests > 0 &&
+		(admitMax <= 0 || opts.PerRouteMaxConcurrentRequests < admitMax) {
+		admitMax = opts.PerRouteMaxConcurrentRequests
+	}
 	var admit chan struct{}
-	if maxConcurrent > 0 {
-		admit = make(chan struct{}, maxConcurrent)
+	if admitMax > 0 {
+		admit = make(chan struct{}, admitMax)
 	}
 	s := &Server{
-		opts:         opts,
-		e:            e,
-		logger:       logger,
-		now:          time.Now,
-		onIngest:     opts.OnIngest,
-		onAccepted:   opts.OnAccepted,
-		eventStore:   opts.EventStore,
-		admit:        admit,
-		insecureOpen: opts.Secret == "" && !listenaddr.IsLoopback(opts.Listen),
+		opts:                          opts,
+		e:                             e,
+		logger:                        logger,
+		now:                           time.Now,
+		secretProvider:                opts.SecretProvider,
+		onIngest:                      opts.OnIngest,
+		onAccepted:                    opts.OnAccepted,
+		eventStore:                    opts.EventStore,
+		maxConcurrentRequests:         maxConcurrent,
+		admit:                         admit,
+		perRouteMaxConcurrentRequests: opts.PerRouteMaxConcurrentRequests,
 	}
 	for _, o := range options {
 		o(s)
@@ -676,6 +794,16 @@ func (s *Server) Run(ctx context.Context) error {
 // handle is the core request handler: it accepts only POST, verifies the
 // signature, parses the event array, and emits telemetry.
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	s.handleWithAdmission(w, r, false)
+}
+
+// handleWithAdmission is the same request path as handle, with an escape hatch
+// for Router after it has taken both the route and global admission slots. The
+// Router must read the body once before it can identify the tailnet, so it takes
+// the global slot for that pre-routing read, releases it while waiting for the
+// selected route, then reacquires it before calling here. Skipping the second
+// acquisition prevents a route from deadlocking itself on its own slot.
+func (s *Server) handleWithAdmission(w http.ResponseWriter, r *http.Request, admissionHeld bool) {
 	start := time.Now()
 
 	// Start a server span for this request BEFORE the request-duration defer
@@ -719,13 +847,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.insecureOpen {
+
+	// Capture the credential once for this request. The provider itself keeps a
+	// last-known-good value, and the local copy makes a concurrent rotation unable
+	// to change the verification key halfway through one request.
+	secret := s.currentSecret()
+	if s.secretlessUnsafe(secret) {
 		span.SetStatus(codes.Error, "auth required")
 		s.rejectStatus(w, http.StatusForbidden, "auth_required",
 			"webhook receiver refuses unauthenticated requests on a network-reachable bind", nil)
 		return
 	}
-	if s.opts.Secret == "" {
+	if secret == "" {
 		if reason := httpguard.TokenlessReceiverReason(r); reason != "" {
 			span.SetStatus(codes.Error, "cross-site request")
 			s.rejectStatus(w, http.StatusForbidden, "cross_site",
@@ -735,22 +868,20 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Aggregate admission control (GHSA-9547-8jpc-48h6): the per-request byte
-	// cap bounds ONE body, and that buffering happens BEFORE HMAC verification
-	// — reachable with no credential — so it must be bounded by an aggregate
-	// admission slot rather than by the byte cap alone. Take the slot before
-	// buffering anything so worst-case buffered memory is capped at
-	// MaxConcurrentRequests * MaxBodyBytes regardless of how many unauthenticated
-	// senders arrive at once. Released via defer on every exit path below.
-	release, admitted := s.acquire(r.Context())
-	if !admitted {
-		span.SetStatus(codes.Error, "overloaded")
-		s.logger.Warn("webhook: refusing request, receiver at capacity", "max_concurrent_requests", cap(s.admit))
-		w.Header().Set("Retry-After", "1")
-		s.rejectStatus(w, http.StatusServiceUnavailable, "overloaded", "receiver at capacity, retry shortly", nil)
-		return
+	if !admissionHeld {
+		// Admission control (GHSA-9547-8jpc-48h6): MaxBodyBytes caps ONE body,
+		// and buffering happens BEFORE HMAC verification, so the route/global
+		// budgets must be taken before reading any body bytes.
+		release, admitted := s.acquire(r.Context())
+		if !admitted {
+			span.SetStatus(codes.Error, "overloaded")
+			s.logger.Warn("webhook: refusing request, receiver at capacity", "max_concurrent_requests", s.maxConcurrentRequests)
+			w.Header().Set("Retry-After", "1")
+			s.rejectStatus(w, http.StatusServiceUnavailable, "overloaded", "receiver at capacity, retry shortly", nil)
+			return
+		}
+		defer release()
 	}
-	defer release()
 
 	body, err := s.readBody(w, r)
 	if err != nil {
@@ -765,8 +896,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.opts.Secret != "" {
-		if reason, err := s.verify(r.Header.Get(signatureHeader), body); err != nil {
+	if secret != "" {
+		if reason, err := s.verifyWithSecret(r.Header.Get(signatureHeader), body, secret); err != nil {
 			span.SetStatus(codes.Error, reason)
 			s.reject(w, reason, "signature verification failed", err)
 			return
@@ -920,32 +1051,6 @@ func (s *Server) applyAcceptedBatch(ctx context.Context, batch acceptedBatch, bo
 	}
 }
 
-// acquire takes an admission slot (GHSA-9547-8jpc-48h6), returning a release
-// func. It tries a non-blocking take first (the steady state), then waits up
-// to admissionWait for a slot, giving up early if the client goes away.
-// ok=false means the receiver is at capacity and the caller must refuse the
-// request.
-func (s *Server) acquire(ctx context.Context) (release func(), ok bool) {
-	if s.admit == nil {
-		return func() {}, true
-	}
-	select {
-	case s.admit <- struct{}{}:
-		return func() { <-s.admit }, true
-	default:
-	}
-	timer := time.NewTimer(admissionWait)
-	defer timer.Stop()
-	select {
-	case s.admit <- struct{}{}:
-		return func() { <-s.admit }, true
-	case <-ctx.Done():
-		return nil, false
-	case <-timer.C:
-		return nil, false
-	}
-}
-
 func (s *Server) readBody(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	limit := s.opts.MaxBodyBytes
 	if limit == 0 {
@@ -973,10 +1078,10 @@ func (s *Server) rejectStatus(w http.ResponseWriter, status int, reason, msg str
 	http.Error(w, http.StatusText(status), status)
 }
 
-// verify checks the signature header against the body using opts.Secret. It
-// returns a short rejection reason and an error on failure, or ("", nil) on
-// success.
-func (s *Server) verify(header string, body []byte) (string, error) {
+// verifyWithSecret checks a signature against one request-local secret. The
+// caller must skip this method entirely when secret is empty, preserving the
+// tokenless loopback mode.
+func (s *Server) verifyWithSecret(header string, body []byte, secret string) (string, error) {
 	if header == "" {
 		return "missing_signature", errors.New("missing signature header")
 	}
@@ -996,7 +1101,7 @@ func (s *Server) verify(header string, body []byte) (string, error) {
 		}
 	}
 
-	want := s.expectedSignature(ts, body)
+	want := expectedSignature(secret, ts, body)
 	for _, got := range sigs {
 		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1 {
 			return "", nil
@@ -1005,9 +1110,8 @@ func (s *Server) verify(header string, body []byte) (string, error) {
 	return "bad_signature", errors.New("no matching signature")
 }
 
-// expectedSignature computes hex(HMAC-SHA256(secret, <unixSeconds>.<body>)).
-func (s *Server) expectedSignature(ts time.Time, body []byte) string {
-	mac := hmac.New(sha256.New, []byte(s.opts.Secret))
+func expectedSignature(secret string, ts time.Time, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(strconv.FormatInt(ts.Unix(), 10)))
 	mac.Write([]byte("."))
 	mac.Write(body)

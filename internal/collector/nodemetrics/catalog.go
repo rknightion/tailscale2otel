@@ -41,7 +41,7 @@ const (
 // budget. It is a closed, single-value set today (reasonMetricNameBudget) but
 // kept as an attribute rather than folded into the metric name so a future
 // drop reason can be added without a new series name.
-const attrReason = "reason"
+const attrReason = semconv.AttrReason
 
 // reasonMetricNameBudget is the sole attrReason value emitted today.
 const reasonMetricNameBudget = "metric_name_budget"
@@ -58,6 +58,7 @@ const (
 	descNodePeerRelayPackets   = "Packets this node forwarded while acting as a peer relay. Curated from tailscaled_peer_relay_forwarded_packets_total (raw series still forwarded verbatim)."
 	descNodePeerRelayEndpoints = "Peer-relay endpoints currently configured on this node. Curated from tailscaled_peer_relay_endpoints (raw series still forwarded verbatim)."
 	descMetricNamesDropped     = "Forwarded samples dropped, by reason, because their metric name was not yet seen and the distinct forwarded metric-name budget (node_metrics.max_distinct_metrics) was already exhausted. A sustained non-zero rate means a scrape target is presenting more distinct metric names than the budget allows; check node_metrics.max_distinct_metrics and metric_allow/metric_deny."
+	descScrapeFailures         = "Failed node-metrics scrape attempts, by bounded failure reason. `connection_refused` usually means the node is reachable but tailscaled's metrics listener is unavailable; `timeout` means the target did not answer before the scrape deadline; `missing_endpoint` means the target returned HTTP 404; `http_error` covers other non-2xx HTTP responses; `other` covers malformed targets, TLS/auth/read/parse failures, and unknown transport errors."
 )
 
 var docNodeUp = metricdoc.Metric{
@@ -84,6 +85,15 @@ var docDiscoveredTargets = metricdoc.Metric{
 	Unit:        semconv.UnitTargets,
 	Instrument:  metricdoc.Gauge,
 	Description: "Active node-metrics scrape targets after the last refresh (static plus discovered). Emitted only when discovery is enabled.",
+	Group:       groupNodeMetrics,
+}
+
+var docScrapeFailures = metricdoc.Metric{
+	Name:        metricScrapeFailures,
+	Unit:        semconv.UnitDimensionless,
+	Instrument:  metricdoc.Counter,
+	Description: descScrapeFailures,
+	Attributes:  []string{semconv.AttrReason},
 	Group:       groupNodeMetrics,
 }
 
@@ -170,7 +180,7 @@ var (
 // included; the curated tailscale.node.* families derived from them are.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docNodeUp, docDiscoverySuccess, docDiscoveredTargets,
+		docNodeUp, docDiscoverySuccess, docDiscoveredTargets, docScrapeFailures,
 		docNodeIO, docNodePackets, docNodePacketsDropped,
 		docNodeHealthMessages, docNodeDERPHomeRegion,
 		docNodePeerRelayIO, docNodePeerRelayPackets, docNodePeerRelayEndpoints,

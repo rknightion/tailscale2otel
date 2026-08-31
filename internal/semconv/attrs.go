@@ -6,6 +6,11 @@ package semconv
 
 // Stable OTEL network attribute keys.
 const (
+	// AttrReason is a bounded, code-defined reason classification used by
+	// self-observation counters whose package-specific vocabulary is documented
+	// with the metric.
+	AttrReason = "reason"
+
 	NetworkIODirection  = "network.io.direction"
 	NetworkTransport    = "network.transport"
 	NetworkType         = "network.type"

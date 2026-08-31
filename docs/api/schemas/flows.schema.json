@@ -910,7 +910,14 @@
             "healthy": {
               "type": "boolean"
             },
+            "journal_size_bytes": {
+              "type": "integer"
+            },
             "kind": {
+              "type": "string"
+            },
+            "last_checkpoint_at": {
+              "format": "date-time",
               "type": "string"
             },
             "path": {

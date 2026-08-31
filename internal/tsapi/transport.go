@@ -65,7 +65,11 @@ type RequestInfo struct {
 	// self-observability can distinguish "queued behind our own rate limit"
 	// from genuine API/network latency and retry backoff (#76).
 	WaitDuration time.Duration
-	Err          string // transport error text, "" when an HTTP response was received
+	// RateLimitUtilization is a provider-pressure sample: 1 when any real
+	// response in this logical request was HTTP 429, otherwise 0. A recovered
+	// retry still reports 1 because it proved the provider quota was reached.
+	RateLimitUtilization float64
+	Err                  string // transport error text, "" when an HTTP response was received
 }
 
 // retryTransport retries 429 and 5xx responses, and transport errors that
@@ -217,6 +221,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		err       error
 		delay     = t.baseDelay
 		waitTotal time.Duration // cumulative rate-limiter wait, all attempts (#76)
+		saw429    bool
 	)
 	for attempt := 1; ; attempt++ {
 		// Acquire a rate-limiter token before starting the attempt. This waits on
@@ -230,7 +235,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			werr := t.limiter.Wait(spanCtx)
 			waitTotal += time.Since(waitStart)
 			if werr != nil {
-				t.observe(spanCtx, req, nil, werr, attempt, start, waitTotal, span)
+				t.observe(spanCtx, req, nil, werr, attempt, start, waitTotal, saw429, span)
 				return nil, werr
 			}
 		}
@@ -249,12 +254,15 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				if cancel != nil {
 					cancel()
 				}
-				t.observe(spanCtx, req, nil, gbErr, attempt, start, waitTotal, span)
+				t.observe(spanCtx, req, nil, gbErr, attempt, start, waitTotal, saw429, span)
 				return nil, gbErr
 			}
 			attemptReq.Body = body
 		}
 		resp, err = t.base.RoundTrip(attemptReq)
+		if resp != nil && resp.StatusCode == http.StatusTooManyRequests {
+			saw429 = true
+		}
 		retryable := retryableOutcome(resp, err)
 		if !retryable || attempt >= t.max {
 			t.logFinal(req, resp, err, attempt)
@@ -265,7 +273,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 					cancel()
 				}
 			}
-			t.observe(spanCtx, req, resp, err, attempt, start, waitTotal, span)
+			t.observe(spanCtx, req, resp, err, attempt, start, waitTotal, saw429, span)
 			return resp, err
 		}
 		jittered, next := httpretry.ComputeBackoff(delay, t.maxDelay, t.rndFloat())
@@ -293,7 +301,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		t.logRetry(req, resp, err, attempt, sleep)
 		select {
 		case <-spanCtx.Done():
-			t.observe(spanCtx, req, nil, spanCtx.Err(), attempt, start, waitTotal, span)
+			t.observe(spanCtx, req, nil, spanCtx.Err(), attempt, start, waitTotal, saw429, span)
 			return nil, spanCtx.Err()
 		case <-time.After(sleep):
 		}
@@ -353,7 +361,7 @@ func retryAfter(h string) time.Duration { return httpretry.RetryAfter(h) }
 // is reported separately as RequestInfo.WaitDuration and subtracted out of
 // RequestInfo.Duration so onRequest observers (and the api.duration histogram
 // built from Duration) see genuine API/network + backoff latency only.
-func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, resp *http.Response, err error, attempts int, start time.Time, waitTotal time.Duration, span trace.Span) {
+func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, resp *http.Response, err error, attempts int, start time.Time, waitTotal time.Duration, saw429 bool, span trace.Span) {
 	status := 0
 	if err == nil && resp != nil {
 		status = resp.StatusCode
@@ -401,14 +409,22 @@ func (t *retryTransport) observe(spanCtx context.Context, req *http.Request, res
 			duration = 0
 		}
 		t.onRequest(spanCtx, RequestInfo{
-			Endpoint:     endpointLabel(req.URL.Path),
-			Status:       status,
-			Attempts:     attempts,
-			Duration:     duration,
-			WaitDuration: waitTotal,
-			Err:          errStr,
+			Endpoint:             endpointLabel(req.URL.Path),
+			Status:               status,
+			Attempts:             attempts,
+			Duration:             duration,
+			WaitDuration:         waitTotal,
+			RateLimitUtilization: boolToFloat(saw429),
+			Err:                  errStr,
 		})
 	}
+}
+
+func boolToFloat(v bool) float64 {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 // Stable, bounded diagnostic classes for transport and token errors (#468).

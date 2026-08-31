@@ -196,6 +196,7 @@ func Open(opts Options) (*Store, error) {
 	// the brief exclusive locks a checkpoint or the sweep takes. foreign_keys is
 	// on for correctness even though this schema has none yet.
 	dsn := path + "?_pragma=journal_mode(WAL)" +
+		"&_pragma=auto_vacuum(INCREMENTAL)" +
 		"&_pragma=busy_timeout(5000)" +
 		"&_pragma=synchronous(NORMAL)" +
 		"&_pragma=foreign_keys(1)"
@@ -206,7 +207,6 @@ func Open(opts Options) (*Store, error) {
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), opts.QueryTimeout)
-	defer cancel()
 
 	// Force SQLite to establish one connection while the no-follow guard is
 	// held, then prove the pathname still identifies that guarded file before
@@ -215,13 +215,24 @@ func Open(opts Options) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	if err := db.PingContext(ctx); err != nil {
+		cancel()
 		_ = db.Close()
 		return nil, fmt.Errorf("sqlitestore: connect %s: %w", path, err)
 	}
 	if err := verifyDatabaseGuard(path, guard); err != nil {
+		cancel()
 		_ = db.Close()
 		return nil, err
 	}
+	if err := configureIncrementalAutoVacuum(ctx, db, opts.ConversionTimeout); err != nil {
+		cancel()
+		_ = db.Close()
+		return nil, err
+	}
+	cancel()
+
+	ctx, cancel = context.WithTimeout(context.Background(), opts.QueryTimeout)
+	defer cancel()
 	if err := migrate(ctx, db); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -253,6 +264,54 @@ func Open(opts Options) (*Store, error) {
 	go s.run()
 
 	return s, nil
+}
+
+// configureIncrementalAutoVacuum enables SQLite's incremental auto-vacuum
+// mode before the first schema mutation. A database created by an older build
+// may already contain tables with auto-vacuum disabled; SQLite only applies a
+// mode change after a full VACUUM, so do that one-time conversion here. The
+// regular writer never runs a full VACUUM — its bounded incremental ticks are
+// what reclaim pages after retention sweeps.
+func configureIncrementalAutoVacuum(ctx context.Context, db *sql.DB, conversionTimeout time.Duration) error {
+	mode, err := autoVacuumMode(ctx, db)
+	if err != nil {
+		return fmt.Errorf("sqlitestore: read auto-vacuum mode: %w", err)
+	}
+	if mode == 2 { // SQLITE_AUTO_VACUUM_INCREMENTAL
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, "PRAGMA auto_vacuum = 2"); err != nil {
+		return fmt.Errorf("sqlitestore: enable incremental auto-vacuum: %w", err)
+	}
+	mode, err = autoVacuumMode(ctx, db)
+	if err != nil {
+		return fmt.Errorf("sqlitestore: verify auto-vacuum mode: %w", err)
+	}
+	if mode != 2 {
+		// Existing tables keep the old mode until VACUUM rewrites the database.
+		conversionCtx, cancel := context.WithTimeout(context.Background(), conversionTimeout)
+		defer cancel()
+		if _, err := db.ExecContext(conversionCtx, "VACUUM"); err != nil {
+			return fmt.Errorf("sqlitestore: convert database to incremental auto-vacuum within %s: %w", conversionTimeout, err)
+		}
+		mode, err = autoVacuumMode(conversionCtx, db)
+		if err != nil {
+			return fmt.Errorf("sqlitestore: verify converted auto-vacuum mode: %w", err)
+		}
+	}
+	if mode != 2 {
+		return fmt.Errorf("sqlitestore: auto-vacuum mode = %d after enabling incremental mode", mode)
+	}
+	return nil
+}
+
+func autoVacuumMode(ctx context.Context, db *sql.DB) (int, error) {
+	var mode int
+	if err := db.QueryRowContext(ctx, "PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		return 0, err
+	}
+	return mode, nil
 }
 
 func prepareDBPath(dir, tailnet string) (string, bool, error) {

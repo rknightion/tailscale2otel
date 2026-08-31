@@ -45,6 +45,13 @@ type Options struct {
 	KeyFile            string
 
 	MetricInterval time.Duration // PeriodicReader interval (default 60s)
+	// MetricTemporality selects the aggregation temporality for OTLP metrics.
+	// "cumulative" is the default (including an empty or unknown value); "delta"
+	// is available for backends that prefer interval measurements.
+	MetricTemporality string
+	// OutageSummaryInterval controls how often a continuing OTLP export outage is
+	// summarized in diagnostics. Zero or negative uses the 5-minute default.
+	OutageSummaryInterval time.Duration
 	// MetricExportBatchSize bounds each OTLP metric request by datapoint count.
 	// The application default is 10000; zero leaves the pinned SDK feature unset
 	// for direct package callers.
@@ -249,7 +256,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	// behind the admin page, which has to work on a deployment that exports no
 	// self-telemetry at all. Only the data-point/record TALLY is gated on
 	// self-obs, since its sole consumer is the self-obs export reporter (#317).
-	delivery := newDeliveryTracker()
+	delivery := newDeliveryTracker(opts.OutageSummaryInterval)
 	metricCounter := newCountingMetricExporter(metricExp, opts.SelfObsEnabled, delivery)
 	metricExp = metricCounter
 	logCounter := newCountingLogExporter(logExp, opts.SelfObsEnabled, delivery)

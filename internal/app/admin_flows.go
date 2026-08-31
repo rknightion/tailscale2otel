@@ -114,17 +114,19 @@ func newFlowStore(cfg *config.Config, tailnet string, logger *slog.Logger) (flow
 
 	if dir := cfg.Flows.Store.Directory; dir != "" {
 		store, err := sqlitestore.Open(sqlitestore.Options{
-			Dir:           dir,
-			Tailnet:       tailnet,
-			Retention:     cfg.Flows.Store.Retention.D(),
-			MaxRows:       cfg.Flows.Store.MaxRows,
-			MaxExportRows: cfg.Flows.Store.MaxExportRows,
-			MaxFutureSkew: cfg.Flows.MaxFutureSkew.D(),
-			QueueSize:     cfg.Flows.Store.QueueSize,
-			BatchSize:     cfg.Flows.Store.BatchSize,
-			FlushInterval: cfg.Flows.Store.FlushInterval.D(),
-			QueryTimeout:  cfg.Flows.Store.QueryTimeout.D(),
-			SweepInterval: cfg.Flows.Store.SweepInterval.D(),
+			Dir:                       dir,
+			Tailnet:                   tailnet,
+			Retention:                 cfg.Flows.Store.Retention.D(),
+			MaxRows:                   cfg.Flows.Store.MaxRows,
+			MaxExportRows:             cfg.Flows.Store.MaxExportRows,
+			MaxFutureSkew:             cfg.Flows.MaxFutureSkew.D(),
+			QueueSize:                 cfg.Flows.Store.QueueSize,
+			BatchSize:                 cfg.Flows.Store.BatchSize,
+			FlushInterval:             cfg.Flows.Store.FlushInterval.D(),
+			QueryTimeout:              cfg.Flows.Store.QueryTimeout.D(),
+			SweepInterval:             cfg.Flows.Store.SweepInterval.D(),
+			IncrementalVacuumInterval: cfg.Flows.Store.IncrementalVacuumInterval.D(),
+			IncrementalVacuumPages:    cfg.Flows.Store.IncrementalVacuumPages,
 			// Unlike the memory ring, rows here outlive the process and land in
 			// backups, so pii_filter applies (see flowRedactor).
 			Redact: flowRedactor(piiCategories(cfg.PIIFilter)),
@@ -219,6 +221,7 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 	info.Retention = a.flowRetention().String()
 
 	var earliest, latest time.Time
+	var oldestCheckpoint time.Time
 	healthy := true
 	for _, rt := range a.runtimes {
 		if rt.flowStore == nil {
@@ -254,6 +257,11 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 		info.Backend.QueueDrops += b.QueueDrops
 		info.Backend.Rows += b.Rows
 		info.Backend.SizeBytes += b.SizeBytes
+		info.Backend.JournalSizeBytes += b.JournalSizeBytes
+		if !b.LastCheckpointAt.IsZero() &&
+			(oldestCheckpoint.IsZero() || b.LastCheckpointAt.Before(oldestCheckpoint)) {
+			oldestCheckpoint = b.LastCheckpointAt
+		}
 		if !b.Healthy {
 			healthy = false
 			if b.Error != "" && !slices.Contains(info.Backend.Errors, b.Error) {
@@ -266,6 +274,9 @@ func (a *App) flowStoreInfo() statusdata.FlowStoreInfo {
 		if s.Latest.After(latest) {
 			latest = s.Latest
 		}
+	}
+	if !oldestCheckpoint.IsZero() {
+		info.Backend.LastCheckpointAt = oldestCheckpoint.UTC().Format(time.RFC3339)
 	}
 	if !earliest.IsZero() {
 		info.Covered = latest.Add(flowstore.Resolution).Sub(earliest).Round(time.Minute).String()

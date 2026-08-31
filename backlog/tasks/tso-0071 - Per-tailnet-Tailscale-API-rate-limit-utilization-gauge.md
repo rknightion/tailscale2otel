@@ -1,10 +1,10 @@
 ---
 id: TSO-0071
 title: Per-tailnet Tailscale API rate-limit utilization gauge
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-5
 dependencies: []
@@ -30,3 +30,9 @@ WaitDuration exists per request in internal/tsapi/transport.go but no utilizatio
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Lane D implements per-tailnet API rate-limit utilization from transport response state, with cardinality-bounded telemetry and an assigned-tab panel.
+<!-- SECTION:PLAN:END -->

@@ -56,6 +56,16 @@ func cumulativeTemporalitySelector(sdkmetric.InstrumentKind) metricdata.Temporal
 	return metricdata.CumulativeTemporality
 }
 
+// metricTemporalitySelector resolves the user-facing setting to an SDK
+// selector. Keep cumulative as the compatibility fallback for direct package
+// callers and any value that did not pass through config validation.
+func metricTemporalitySelector(value string) sdkmetric.TemporalitySelector {
+	if value == "delta" {
+		return sdkmetric.DeltaTemporalitySelector
+	}
+	return cumulativeTemporalitySelector
+}
+
 func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, error) {
 	if !signalEnabled(opts.Signals.Metrics) {
 		return noopMetricExporter{}, nil
@@ -77,7 +87,7 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		}
 		return stdoutmetric.New(mo...)
 	case "", "http":
-		o := []otlpmetrichttp.Option{otlpmetrichttp.WithTemporalitySelector(cumulativeTemporalitySelector)}
+		o := []otlpmetrichttp.Option{otlpmetrichttp.WithTemporalitySelector(metricTemporalitySelector(opts.MetricTemporality))}
 		if opts.Endpoint != "" {
 			o = append(o, otlpmetrichttp.WithEndpointURL(otlpHTTPURL(opts.Endpoint, "metrics")))
 		}
@@ -114,7 +124,7 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		}
 		return otlpmetrichttp.New(ctx, o...)
 	case "grpc":
-		o := []otlpmetricgrpc.Option{otlpmetricgrpc.WithTemporalitySelector(cumulativeTemporalitySelector)}
+		o := []otlpmetricgrpc.Option{otlpmetricgrpc.WithTemporalitySelector(metricTemporalitySelector(opts.MetricTemporality))}
 		if opts.Endpoint != "" {
 			o = append(o, otlpmetricgrpc.WithEndpoint(opts.Endpoint))
 		}

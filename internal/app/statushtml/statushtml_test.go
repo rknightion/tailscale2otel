@@ -32,7 +32,7 @@ func TestRender_Populated(t *testing.T) {
 		Cardinality: statusdata.CardinalityInfo{Available: true, Total: 42, Series: []statusdata.SeriesRow{
 			{Metric: "tailscale.network.io", PromName: "tailscale_network_io_bytes_total", Count: 12},
 		}},
-		NodeDiscovery: statusdata.NodeDiscovery{Enabled: true, LastOK: true, Static: 1, Active: 2, Targets: []statusdata.NodeTarget{
+		NodeDiscovery: statusdata.NodeDiscovery{Enabled: true, LastOK: true, Static: 1, Active: 2, DominantFailureReason: "connection_refused", DominantFailureCount: 4, Targets: []statusdata.NodeTarget{
 			{Instance: "node-a", URL: "http://100.64.0.1:5252/metrics", Source: "discovered"},
 		}},
 		Metrics:   []statusdata.MetricRow{{Name: "tailscale.devices.count", PromName: "tailscale_devices_count_ratio", Instrument: "gauge", Series: 3}},
@@ -47,7 +47,8 @@ func TestRender_Populated(t *testing.T) {
 	for _, want := range []string{
 		"tailscale2otel", "v1.2.3", "3h12m",
 		"devices", "tailscale.network.io", "tailscale_network_io_bytes_total",
-		"node-a", "discovered", "tailscale.acl.changed", "grafana_cloud_token",
+		"node-a", "discovered", "connection_refused", "4</span> attempts", "tailscale.acl.changed", "grafana_cloud_token",
+		`id="nodeDiscoveryFailure"`, "updateNodeDiscovery(d.node_discovery)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page missing %q", want)
@@ -975,6 +976,31 @@ func TestRender_FlowStoreCapacityProfileCard(t *testing.T) {
 	}
 	if !strings.Contains(out, "worst case") {
 		t.Error("the footprint estimate is not disclosed as a worst-case planning number")
+	}
+}
+
+func TestRender_FlowStoreJournalCard(t *testing.T) {
+	s := statusdata.Status{Flows: statusdata.FlowStoreInfo{
+		Enabled: true,
+		Backend: statusdata.FlowStoreBackend{
+			Persistent:       true,
+			JournalSizeBytes: 8192,
+			LastCheckpointAt: "2026-08-31T12:34:56Z",
+		},
+	}}
+	var buf bytes.Buffer
+	if err := statushtml.Render(&buf, s); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{
+		`id="flowJournal">8192 B<`,
+		`id="flowCheckpoint">2026-08-31T12:34:56Z<`,
+		`WAL sidecar; last checkpoint`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered page missing %q", want)
+		}
 	}
 }
 

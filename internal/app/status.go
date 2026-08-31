@@ -739,6 +739,7 @@ func (a *App) nodeDiscovery() statusdata.NodeDiscovery {
 		Active:  ds.Active,
 		Targets: make([]statusdata.NodeTarget, 0, len(ds.Targets)),
 	}
+	nd.DominantFailureReason, nd.DominantFailureCount = nm.DominantScrapeFailure()
 	if !ds.LastDiscovery.IsZero() {
 		nd.LastDiscovery = ds.LastDiscovery.UTC().Format(rfc3339)
 	}

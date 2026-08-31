@@ -179,6 +179,60 @@ func TestAgeUsesInjectedClock(t *testing.T) {
 	}
 }
 
+// A cache which has outlived the configured freshness window must stop serving
+// control-plane names. During a control-plane outage, a plausible old hostname
+// is more misleading than an explicit "unknown" result.
+func TestDeviceCache_StaleAfterStopsServingAuthoritativeNames(t *testing.T) {
+	now := time.Unix(1000, 0)
+	addr := netip.MustParseAddr("100.64.0.9")
+	c := enrich.NewDeviceCache(
+		enrich.WithClock(func() time.Time { return now }),
+		enrich.WithStaleAfter(time.Minute),
+	)
+	c.Replace([]enrich.DeviceMeta{{NodeID: "n1", Hostname: "known", Addrs: []netip.Addr{addr}}})
+
+	if got := c.ResolveName(addr.String()); got != "known" {
+		t.Fatalf("ResolveName() before stale threshold = %q, want known", got)
+	}
+	if _, ok := c.LookupAddr(addr); !ok {
+		t.Fatal("LookupAddr() before stale threshold = not found, want found")
+	}
+	if _, ok := c.LookupNode("n1"); !ok {
+		t.Fatal("LookupNode() before stale threshold = not found, want found")
+	}
+
+	now = now.Add(time.Minute + time.Nanosecond)
+	if got := c.ResolveName(addr.String()); got != "unknown" {
+		t.Fatalf("ResolveName() after stale threshold = %q, want unknown", got)
+	}
+	if _, ok := c.LookupAddr(addr); ok {
+		t.Fatal("LookupAddr() after stale threshold = found, want not found")
+	}
+	if _, ok := c.LookupNode("n1"); ok {
+		t.Fatal("LookupNode() after stale threshold = found, want not found")
+	}
+	if _, prov, ok := c.LookupNodeAny("n1"); ok || prov != enrich.ProvenanceNone {
+		t.Fatalf("LookupNodeAny() after stale threshold = found=%v provenance=%v, want no result", ok, prov)
+	}
+	if got, prov := c.ResolveNameAny(addr.String()); got != "unknown" || prov != enrich.ProvenanceNone {
+		t.Fatalf("ResolveNameAny() after stale threshold = %q/%v, want unknown/no provenance", got, prov)
+	}
+}
+
+// Zero is the frozen default: it deliberately preserves existing deployments'
+// behavior until an operator opts into a freshness bound.
+func TestDeviceCache_ZeroStaleAfterLeavesAuthoritativeNamesAvailable(t *testing.T) {
+	now := time.Unix(1000, 0)
+	addr := netip.MustParseAddr("100.64.0.9")
+	c := enrich.NewDeviceCache(enrich.WithClock(func() time.Time { return now }))
+	c.Replace([]enrich.DeviceMeta{{NodeID: "n1", Hostname: "known", Addrs: []netip.Addr{addr}}})
+
+	now = now.Add(24 * time.Hour)
+	if got := c.ResolveName(addr.String()); got != "known" {
+		t.Fatalf("ResolveName() with stale threshold disabled = %q, want known", got)
+	}
+}
+
 func TestIsTailscaleAddr(t *testing.T) {
 	cases := []struct {
 		addr string

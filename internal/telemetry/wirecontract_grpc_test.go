@@ -272,3 +272,14 @@ func TestWireGRPC_CumulativeTemporalityPinned(t *testing.T) {
 	_, temporalities := metricDataPointAttrs(got["metrics"].metrics)
 	assertCumulativeTemporality(t, temporalities)
 }
+
+func TestWireGRPC_DeltaTemporalityConfigured(t *testing.T) {
+	s := newWireGRPCServer(t, nil)
+	got := driveWirePipeline(t, s.rec, "grpc", s.addr(), func(o *telemetry.Options) {
+		o.Insecure = true
+		o.MetricTemporality = "delta"
+	})
+
+	assertDeltaTemporality(t, s.rec.all())
+	assertWireTestGauge(t, got["metrics"].metrics)
+}

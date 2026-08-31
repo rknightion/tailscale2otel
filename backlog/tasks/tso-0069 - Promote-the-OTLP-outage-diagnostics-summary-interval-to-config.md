@@ -4,7 +4,7 @@ title: Promote the OTLP-outage diagnostics summary interval to config
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-5
 dependencies: []
@@ -35,4 +35,6 @@ The outage re-summary cadence is a hardcoded 5m with a comment saying "Not confi
 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes the delivery outage summary interval at the current 5m default with validation; lane H later wires it.
+
+Lane H consumes the frozen outage_summary_interval key for exporter outage diagnostics and focused timing tests.
 <!-- SECTION:PLAN:END -->

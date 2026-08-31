@@ -55,6 +55,11 @@ func apiObserver(e telemetry.Emitter) func(ctx context.Context, endpoint string,
 	}
 }
 
+func emitAPIRateLimitUtilization(e telemetry.Emitter, utilization float64) {
+	e.Gauge(appcatalog.DocAPIRateLimitUtilization.Name, appcatalog.DocAPIRateLimitUtilization.Unit,
+		appcatalog.DocAPIRateLimitUtilization.Description, utilization, nil)
+}
+
 // emitComponentError records one tailscale2otel.component.errors increment for a
 // failed non-collector subsystem (receivers, admin server, auto-configure),
 // classified by component. Pass an appcatalog.Component* value to keep the

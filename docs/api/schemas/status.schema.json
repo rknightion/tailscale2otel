@@ -700,7 +700,13 @@
             "healthy": {
               "type": "boolean"
             },
+            "journal_size_bytes": {
+              "type": "integer"
+            },
             "kind": {
+              "type": "string"
+            },
+            "last_checkpoint_at": {
               "type": "string"
             },
             "persistent": {
@@ -974,6 +980,12 @@
       "properties": {
         "active": {
           "type": "integer"
+        },
+        "dominant_failure_count": {
+          "type": "integer"
+        },
+        "dominant_failure_reason": {
+          "type": "string"
         },
         "enabled": {
           "type": "boolean"

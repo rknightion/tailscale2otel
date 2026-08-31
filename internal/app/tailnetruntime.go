@@ -135,7 +135,10 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	cfg := d.cfg
 	selfObs := cfg.SelfObservability.Enabled
 
-	rt.cache = enrich.NewDeviceCache(enrich.WithAddrSet(d.addrSet))
+	rt.cache = enrich.NewDeviceCache(
+		enrich.WithAddrSet(d.addrSet),
+		enrich.WithStaleAfter(cfg.Enrichment.DeviceCacheStaleAfter.D()),
+	)
 	rt.status = collector.NewStatusTracker()
 	rt.apiState = apistate.NewTracker()
 	rt.coverage = apistate.NewCoverage()

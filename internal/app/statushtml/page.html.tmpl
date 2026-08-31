@@ -333,6 +333,7 @@
     {{else}}
       <p class="muted">Dynamic discovery is disabled. {{if gt .NodeDiscovery.Static 0}}Scraping {{.NodeDiscovery.Static}} static target(s).{{end}}</p>
     {{end}}
+    <p class="note warn2" id="nodeDiscoveryFailure"{{if not .NodeDiscovery.DominantFailureReason}} style="display:none"{{end}}>Dominant scrape failure: <code id="nodeDiscoveryFailureReason">{{.NodeDiscovery.DominantFailureReason}}</code> (<span id="nodeDiscoveryFailureCount">{{.NodeDiscovery.DominantFailureCount}}</span> attempts). Use the node-metrics failure panel to compare all bounded failure classes.</p>
   </section>
 
   <!-- ═══ API ═══ -->
@@ -531,6 +532,7 @@
       <div class="card{{if not .Flows.Backend.Healthy}} warn2{{end}}"><div class="k">Backend</div><div class="v" style="font-size:16px" id="flowBackend">{{.Flows.Backend.Kind}}</div><div class="sub">{{if .Flows.Backend.Healthy}}on-disk store, survives restarts — flows.store.directory{{else}}UNHEALTHY: {{range .Flows.Backend.Errors}}{{.}} {{end}}{{end}}</div></div>
       <div class="card{{if .Flows.Backend.QueueDrops}} warn2{{end}}"><div class="k">Queue drops</div><div class="v" id="flowQueueDrops">{{.Flows.Backend.QueueDrops}}</div><div class="sub">{{if .Flows.Backend.QueueDrops}}the write-behind queue filled and these connections never reached disk — OTLP still carried them{{else}}no observation has been lost to a full write queue ({{.Flows.Backend.Queued}} waiting now){{end}}</div></div>
       <div class="card"><div class="k">On disk</div><div class="v" style="font-size:16px" id="flowSize">{{.Flows.Backend.SizeBytes}} B</div><div class="sub">summed across every tailnet's database file, including indexes</div></div>
+      <div class="card"><div class="k">Journal</div><div class="v" style="font-size:16px" id="flowJournal">{{.Flows.Backend.JournalSizeBytes}} B</div><div class="sub">WAL sidecar; last checkpoint <span id="flowCheckpoint">{{if .Flows.Backend.LastCheckpointAt}}{{.Flows.Backend.LastCheckpointAt}}{{else}}never{{end}}</span></div></div>
       {{else}}
       <div class="card"><div class="k">Capacity profile</div><div class="v" style="font-size:16px" id="flowProfile">{{.Flows.CapacityProfile}}</div><div class="sub">flows.capacity_profile — scales every per-minute cap and the ring together; holds {{.Flows.MaxRecent}} recent connections</div></div>
       <div class="card"><div class="k">Estimated memory</div><div class="v" style="font-size:16px" id="flowEstimate">{{.Flows.EstimatedBytes}} B</div><div class="sub">per tailnet, worst case — every dimension saturated at once, which a real tailnet does not reach. A planning bound, not a measurement.</div></div>
@@ -1098,6 +1100,32 @@ function rebuildFlowFailures(rows){
   });
 }
 
+function updateFlowStore(info){
+  if(!info) return;
+  if(info.backend){
+    if(info.backend.persistent){
+      setText('flowRows', info.backend.rows || 0);
+      setText('flowQueueDrops', info.backend.queue_drops || 0);
+      setText('flowSize', (info.backend.size_bytes || 0)+' B');
+      setText('flowJournal', (info.backend.journal_size_bytes || 0)+' B');
+      setText('flowCheckpoint', info.backend.last_checkpoint_at ? relText(info.backend.last_checkpoint_at) : 'never');
+    } else {
+      setText('flowBuckets', info.buckets || 0);
+    }
+  }
+  setText('flowCovered', info.covered || 'nothing yet');
+  setText('flowObservations', info.observations || 0);
+  setText('flowTruncated', info.truncated || 0);
+}
+
+function updateNodeDiscovery(info){
+  var warning=document.getElementById('nodeDiscoveryFailure'); if(!warning) return;
+  if(!info || !info.dominant_failure_reason){ warning.style.display='none'; return; }
+  setText('nodeDiscoveryFailureReason', info.dominant_failure_reason);
+  setText('nodeDiscoveryFailureCount', info.dominant_failure_count || 0);
+  warning.style.display='';
+}
+
 function rebuildDelivery(rows){
   var tb=document.getElementById('deliveryBody'); if(!tb) return;
   tb.textContent='';
@@ -1503,6 +1531,8 @@ function applyStatus(d){
   rebuildDelivery(d.delivery);
   rebuildAdvisories(d.advisories);
   rebuildFlowFailures(d.flows && d.flows.failures);
+  updateFlowStore(d.flows);
+  updateNodeDiscovery(d.node_discovery);
   updateSparks(d);
   redrawCharts();
 }

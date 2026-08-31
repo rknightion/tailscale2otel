@@ -4,7 +4,7 @@ title: Delta-temporality escape hatch for OTLP metrics export
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:34'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-5
 dependencies: []
@@ -35,4 +35,6 @@ cumulativeTemporalitySelector (internal/telemetry/exporters.go:51-57) is uncondi
 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes OTLP metric temporality as cumulative by default with a validated enum; lane H later wires exporter selection and tests it.
+
+Lane H consumes the frozen metric_temporality enum across both OTLP exporters, preserving gauge last-value semantics and testing delta versus cumulative selection.
 <!-- SECTION:PLAN:END -->

@@ -21,6 +21,8 @@ _PROFILING_EMPTY = ("No profile-upload series. Requires profiling.pyroscope.serv
                     "to be set (the opt-in Pyroscope push agent).")
 _TLS_EMPTY = ("No TLS certificate series. Requires TLS to be configured on at least one "
               "listener (admin, metrics, or stream).")
+_FLOWSTORE_EMPTY = ("No persistent flow-store series. Requires flows.store.directory and "
+                    "self-observability to be enabled.")
 
 
 def tab_health_runtime(scope):
@@ -186,6 +188,20 @@ def tab_health_runtime(scope):
                     "component; absent until the first success. A rotated file on disk is "
                     "picked up on the next handshake at least this recently."), 8, 6),
     ]
+    flowstore = [
+        (panel("Flow-store WAL journal size", "timeseries",
+               [prom_t("max by (tailscale_tailnet) (tailscale2otel_flow_store_journal_size_bytes)", legend="{{tailscale_tailnet}}")],
+               unit="bytes", custom=ts_custom(), options=ts_opts(placement="right"),
+               novalue=_FLOWSTORE_EMPTY,
+               desc="Current SQLite WAL sidecar size per tailnet. Sustained growth means "
+                    "checkpoints are not keeping up with persistent flow-store writes."), 12, 6),
+        (panel("Flow-store checkpoint age", "timeseries",
+               [prom_t("time() - min by (tailscale_tailnet) (tailscale2otel_flow_store_last_checkpoint_timestamp_seconds > 0)",
+                       legend="oldest checkpoint age")],
+               unit="s", custom=ts_custom(), options=ts_opts(), novalue=_FLOWSTORE_EMPTY,
+               desc="Seconds since the oldest reported successful persistent flow-store WAL "
+                    "checkpoint. Absent until the first checkpoint."), 12, 6),
+    ]
     return [row("Go runtime", goruntime), row("GC & memory", gcmem),
             row("Profiling upload", profiling), row("Profiles", profiles),
-            row("TLS certificate", tls)]
+            row("TLS certificate", tls), row("Flow-store persistence", flowstore, collapse=True)]

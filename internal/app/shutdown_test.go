@@ -89,3 +89,27 @@ func TestCloseFlowStores_BlockedRuntimeDoesNotStarveOthers(t *testing.T) {
 		t.Fatal("blocked flow-store Close did not finish after release")
 	}
 }
+
+func TestAppClose_ClosesFlowStores(t *testing.T) {
+	closed := make(chan struct{})
+	store := newShutdownTestFlowStore(func() error {
+		close(closed)
+		return nil
+	})
+	a := &App{
+		logger: slog.New(slog.DiscardHandler),
+		runtimes: []*tailnetRuntime{
+			{name: "tailnet", flowStore: store},
+		},
+		shutdown: func(context.Context) error { return nil },
+	}
+
+	if err := a.Close(context.Background()); err != nil {
+		t.Fatalf("App.Close() error = %v", err)
+	}
+	select {
+	case <-closed:
+	default:
+		t.Fatal("App.Close() returned without closing the runtime flow store")
+	}
+}

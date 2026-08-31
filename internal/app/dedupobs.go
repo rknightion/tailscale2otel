@@ -79,6 +79,7 @@ func runDedupReporter(ctx context.Context, e telemetry.Emitter, interval time.Du
 // non-nil set, advancing lastEvictions/lastHits to the current cumulative counts.
 // It is a standalone function so the catalog guard test can drive it once.
 func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, horizons map[string]time.Duration, lastEvictions, lastHits map[string]uint64) {
+	agePoints := make([]telemetry.GaugePoint, 0, len(sets))
 	for name, set := range sets {
 		if set == nil {
 			continue
@@ -90,14 +91,8 @@ func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, horizons map[str
 			e.Gauge(appcatalog.DocDedupOverlapHorizon.Name, appcatalog.DocDedupOverlapHorizon.Unit,
 				appcatalog.DocDedupOverlapHorizon.Description, horizon.Seconds(), attrs)
 		}
-		if age, ok := set.YoungestEvictionAge(); ok {
-			e.Gauge(
-				appcatalog.DocDedupYoungestEvictionAge.Name,
-				appcatalog.DocDedupYoungestEvictionAge.Unit,
-				appcatalog.DocDedupYoungestEvictionAge.Description,
-				age.Seconds(),
-				attrs,
-			)
+		if age, ok := set.TakeYoungestEvictionAge(); ok {
+			agePoints = append(agePoints, telemetry.GaugePoint{Value: age.Seconds(), Attrs: attrs})
 		}
 
 		curEvictions := set.Evictions()
@@ -114,4 +109,10 @@ func emitDedup(e telemetry.Emitter, sets map[string]*dedup.Set, horizons map[str
 		}
 		lastHits[name] = curHits
 	}
+	// A snapshot is essential: an ordinary synchronous Gauge would retain the
+	// prior low value indefinitely under cumulative temporality even after the
+	// set has cleared it. An empty snapshot drops the series, and the alert's
+	// no-data state resolves to OK.
+	e.GaugeSnapshot(appcatalog.DocDedupYoungestEvictionAge.Name, appcatalog.DocDedupYoungestEvictionAge.Unit,
+		appcatalog.DocDedupYoungestEvictionAge.Description, agePoints)
 }

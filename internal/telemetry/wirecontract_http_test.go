@@ -275,3 +275,13 @@ func TestWireHTTP_CumulativeTemporalityPinned(t *testing.T) {
 	_, temporalities := metricDataPointAttrs(got["metrics"].metrics)
 	assertCumulativeTemporality(t, temporalities)
 }
+
+func TestWireHTTP_DeltaTemporalityConfigured(t *testing.T) {
+	s := newWireHTTPServer(t, nil)
+	got := driveWirePipeline(t, s.rec, "http", s.ts.URL, func(o *telemetry.Options) {
+		o.MetricTemporality = "delta"
+	})
+
+	assertDeltaTemporality(t, s.rec.all())
+	assertWireTestGauge(t, got["metrics"].metrics)
+}

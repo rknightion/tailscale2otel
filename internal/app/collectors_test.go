@@ -18,10 +18,11 @@ import (
 // server's Options. Without it the staleness check is permanently disabled.
 func TestWebhookOptionsPlumbsTolerance(t *testing.T) {
 	got := webhookOptions(config.WebhookConfig{
-		Listen:    ":8089",
-		Path:      "/tailscale/webhook",
-		Secret:    "s",
-		Tolerance: config.Duration(7 * time.Minute),
+		Listen:                        ":8089",
+		Path:                          "/tailscale/webhook",
+		Secret:                        "s",
+		Tolerance:                     config.Duration(7 * time.Minute),
+		PerRouteMaxConcurrentRequests: 3,
 		TLS: config.StreamingTLS{
 			CertFile: "/run/tls/tls.crt",
 			KeyFile:  "/run/tls/tls.key",
@@ -33,6 +34,9 @@ func TestWebhookOptionsPlumbsTolerance(t *testing.T) {
 	if got.TLSCertFile != "/run/tls/tls.crt" || got.TLSKeyFile != "/run/tls/tls.key" {
 		t.Fatalf("webhookOptions TLS = (%q, %q), want configured cert/key",
 			got.TLSCertFile, got.TLSKeyFile)
+	}
+	if got.PerRouteMaxConcurrentRequests != 3 {
+		t.Fatalf("webhookOptions PerRouteMaxConcurrentRequests = %d, want 3", got.PerRouteMaxConcurrentRequests)
 	}
 }
 

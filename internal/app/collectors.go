@@ -383,7 +383,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 	}
 	newStream := func(
 		routeRT *tailnetRuntime,
-		path, token string,
+		path, token, tokenFile string,
 		acceptDurably bool,
 	) *stream.Server {
 		options := []stream.Option{
@@ -399,16 +399,18 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		}
 		server := stream.New(
 			stream.Options{
-				Listen:       a.cfg.Streaming.Listen,
-				Path:         path,
-				Token:        token,
-				Decompress:   a.cfg.Streaming.Decompress,
-				TLSCertFile:  a.cfg.Streaming.TLS.CertFile,
-				TLSKeyFile:   a.cfg.Streaming.TLS.KeyFile,
-				MaxBodyBytes: a.cfg.Streaming.MaxBodyBytes,
+				Listen:        a.cfg.Streaming.Listen,
+				Path:          path,
+				Token:         token,
+				TokenProvider: a.credReload.streamTokenProvider(tokenFile),
+				Decompress:    a.cfg.Streaming.Decompress,
+				TLSCertFile:   a.cfg.Streaming.TLS.CertFile,
+				TLSKeyFile:    a.cfg.Streaming.TLS.KeyFile,
+				MaxBodyBytes:  a.cfg.Streaming.MaxBodyBytes,
 				// Aggregate admission control (#209): MaxBodyBytes bounds one body,
 				// this bounds how many are buffered at once.
-				MaxConcurrentRequests: a.cfg.Streaming.MaxConcurrentRequests,
+				MaxConcurrentRequests:         a.cfg.Streaming.MaxConcurrentRequests,
+				PerRouteMaxConcurrentRequests: a.cfg.Streaming.PerRouteMaxConcurrentRequests,
 				OnIngest: ingestObserver(
 					routeRT.emitter,
 					a.cfg.SelfObservability.Enabled,
@@ -429,7 +431,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 	}
 	newWebhook := func(
 		routeRT *tailnetRuntime,
-		secret string,
+		secret, secretFile string,
 		acceptDurably bool,
 	) *webhook.Server {
 		options := []webhook.Option{
@@ -449,6 +451,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		wh := webhookOptions(a.cfg.Webhook)
 		wh.EventStore = a.eventStore // shared /events explorer store (#300); nil when disabled
 		wh.Secret = secret
+		wh.SecretProvider = a.credReload.webhookSecretProvider(secretFile)
 		wh.OnIngest = ingestObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
 		wh.OnAccepted = acceptedEventObserver(routeRT.emitter, a.cfg.SelfObservability.Enabled)
 		server := webhook.New(
@@ -467,6 +470,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 				rt,
 				a.cfg.Streaming.Path,
 				a.cfg.Streaming.Token.Reveal(),
+				a.cfg.Streaming.TokenFile,
 				a.cfg.IngressWAL.Enabled,
 			)
 		} else {
@@ -480,6 +484,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 					routeRT,
 					route.Path,
 					route.Token.Reveal(),
+					route.TokenFile,
 					a.cfg.IngressWAL.Enabled,
 				)
 				routes = append(routes, stream.Route{Path: route.Path, Server: srv})
@@ -492,6 +497,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 			a.webhookSrv = newWebhook(
 				rt,
 				a.cfg.Webhook.Secret.Reveal(),
+				a.cfg.Webhook.SecretFile,
 				a.cfg.IngressWAL.Enabled,
 			)
 		} else {
@@ -506,6 +512,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 					Server: newWebhook(
 						routeRT,
 						route.Secret.Reveal(),
+						route.SecretFile,
 						a.cfg.IngressWAL.Enabled,
 					),
 				})
@@ -521,11 +528,11 @@ func (a *App) buildReceivers() []ingressWALRoute {
 	for _, routeRT := range a.runtimes {
 		streamServer := streamServers[routeRT]
 		if streamServer == nil {
-			streamServer = newStream(routeRT, a.cfg.Streaming.Path, "", false)
+			streamServer = newStream(routeRT, a.cfg.Streaming.Path, "", "", false)
 		}
 		webhookServer := webhookServers[routeRT]
 		if webhookServer == nil {
-			webhookServer = newWebhook(routeRT, "", false)
+			webhookServer = newWebhook(routeRT, "", "", false)
 		}
 		streamApply := streamServer
 		webhookApply := webhookServer
@@ -597,6 +604,7 @@ func webhookOptions(c config.WebhookConfig) webhook.Options {
 		// whole body, so buffering necessarily precedes authentication.
 		// MaxBodyBytes bounds ONE body; this bounds their sum, so unauthenticated
 		// senders cannot multiply the per-request allowance.
-		MaxConcurrentRequests: c.MaxConcurrentRequests,
+		MaxConcurrentRequests:         c.MaxConcurrentRequests,
+		PerRouteMaxConcurrentRequests: c.PerRouteMaxConcurrentRequests,
 	}
 }

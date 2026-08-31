@@ -4,7 +4,7 @@ title: Retire the 35-panel ceiling and re-group the whole dashboard tab structur
 status: In Progress
 assignee: []
 created_date: '2026-08-30 18:32'
-updated_date: '2026-08-31 00:28'
+updated_date: '2026-08-31 01:37'
 labels:
   - needs-triage
 milestone: m-7
@@ -95,4 +95,10 @@ CodeRabbit completed with five findings. Root fixed the two valid dashboard-copy
 Three findings were left after verification: the TSO-0092 section-marker report was false (the task has exactly one NOTES begin/end pair and the ownership map is inside it); the ACL auto-approve alert correctly links to the unique Auto-approvers by kind panel at the generated ID, not the different Auto-approved exit nodes panel; and TSO-0082 already carries append-only superseding notes that define interval zero as automatic sweep cadence.
 
 Alert manifests changed because the dashboard regroup renumbered panel IDs. The authorised real push reported 126 resources and zero errors. Direct read-back of ts2o-ingress-wal-near-capacity, ts2o-dedup-set-saturated, and ts2o-dedup-youngest-eviction confirmed their updated dashboard/panel references and live resource timestamps. Dashboards were not pushed through gcx; GitSync remains their only delivery path.
+
+Root pre-dispatch correction to the tab map: the proposed mechanical allocation conflicted with the operational grouping F2 just established. To avoid placing unrelated signals on convenient files, first-group signal ownership is reassigned as follows: lane D owns nodemetrics.py and health_collection.py; lane E owns health_ingestion.py; lane H owns health_delivery.py; lane I owns health_runtime.py; lane C retains network.py. The superseded owners must not edit those files. Other proposed assignments remain provisional until their later lane starts; root will assign any still-unmapped coherent home before dispatch. This is a frozen-seam correction, not a layout change.
+
+Effective ownership-map correction after first-group integration: the earlier module map and the provisional root correction are superseded by this single effective map for the rest of Wave 3. Lane A owns tabs/_devices_common.py, devices_inventory.py, devices_posture.py and devices_connectivity.py. Lane B owns tailnet_overview.py. Lane C owns network.py. Lane D owns nodemetrics.py and health_collection.py. Lane E owns health_ingestion.py. Lane F owns policy_access.py and policy_dns.py. Lane G owns policy_identity.py and policy_integrations.py. Lane H owns health_delivery.py. Lane I owns health_runtime.py. Lane J owns k8saudit.py. Lane K owns cardinality.py. Lane L owns tabs/__init__.py and the shared builder.py, dashboards.py, maps.py and layout seams. Security modules security_audit_trail.py, security_risk.py, security_compliance.py and security_identity.py remain unassigned until root allocates their next coherent lane; no lane may infer ownership from either superseded map.
+
+Final ownership completion: Lane D also owns security_audit_trail.py, security_risk.py, security_compliance.py and security_identity.py. This removes the only unassigned modules from the effective map; every tabs/*.py file now has one owner.
 <!-- SECTION:NOTES:END -->

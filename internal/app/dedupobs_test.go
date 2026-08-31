@@ -102,3 +102,38 @@ func TestEmitDedupReportsYoungestEvictionAgeOnlyAfterEviction(t *testing.T) {
 		t.Fatalf("youngest eviction age = %v, want 90 seconds", got)
 	}
 }
+
+// TestEmitDedupYoungestEvictionAgeClearsAfterPressureSubsides proves the
+// alerting condition does not remain true after a one-off catch-up burst. The
+// shipped rule treats an absent youngest-eviction-age series as OK.
+func TestEmitDedupYoungestEvictionAgeClearsAfterPressureSubsides(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0).UTC()
+	set := dedup.New(1, dedup.WithClock(func() time.Time { return now }))
+	set.Add("first")
+	now = now.Add(90 * time.Second)
+	set.Add("catch-up") // evicts first, below the five-minute overlap horizon
+
+	rec := telemetrytest.New()
+	sets := map[string]*dedup.Set{"flow": set}
+	horizons := map[string]time.Duration{"flow": 5 * time.Minute}
+	emitDedup(rec.Emitter(), sets, horizons, map[string]uint64{}, map[string]uint64{})
+	if !youngestEvictionAlerting(rec, "flow", horizons["flow"]) {
+		t.Fatal("youngest-eviction alerting condition = false during catch-up pressure, want true")
+	}
+
+	// No eviction occurs in the recovered reporting interval, so the alerting
+	// condition must clear without restarting the process.
+	emitDedup(rec.Emitter(), sets, horizons, map[string]uint64{}, map[string]uint64{})
+	if youngestEvictionAlerting(rec, "flow", horizons["flow"]) {
+		t.Fatal("youngest-eviction alerting condition remained true after pressure cleared")
+	}
+}
+
+func youngestEvictionAlerting(rec *telemetrytest.Recorder, set string, horizon time.Duration) bool {
+	for _, point := range rec.MetricPoints("tailscale2otel.dedup.youngest_eviction_age") {
+		if point.Attrs["dedup.set"] == set {
+			return point.Value < horizon.Seconds()
+		}
+	}
+	return false
+}

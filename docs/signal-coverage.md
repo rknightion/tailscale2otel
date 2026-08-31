@@ -80,8 +80,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 233 | 232 | 57 | 11 | 44 |
-| self_obs | 96 | 96 | 33 | 9 | 10 |
+| operational | 234 | 233 | 57 | 11 | 44 |
+| self_obs | 100 | 100 | 33 | 9 | 10 |
 
 ## Operational signals
 
@@ -303,6 +303,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.nodemetrics.discovery.success` | metric | `tailscale2otel_nodemetrics_discovery_success_ratio` | visualized, alertable |  |
 | `tailscale2otel.nodemetrics.discovery.targets` | metric | `tailscale2otel_nodemetrics_discovery_targets` | visualized |  |
 | `tailscale2otel.nodemetrics.metric_names.dropped` | metric | `tailscale2otel_nodemetrics_metric_names_dropped_total` | visualized, alertable |  |
+| `tailscale2otel.nodemetrics.scrape.failures` | metric | `tailscale2otel_nodemetrics_scrape_failures_total` | visualized |  |
 | `tailscale2otel.objectstore.backlog` | metric | `tailscale2otel_objectstore_backlog_ratio` | visualized, alertable, recorded |  |
 | `tailscale2otel.objectstore.bytes` | metric | `tailscale2otel_objectstore_bytes_total` | visualized |  |
 | `tailscale2otel.objectstore.cursor.age` | metric | `tailscale2otel_objectstore_cursor_age_seconds` | visualized |  |
@@ -334,6 +335,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.api.availability` | metric | `tailscale2otel_api_availability_ratio` | visualized, alertable |  |
 | `tailscale2otel.api.duration` | metric | `tailscale2otel_api_duration_seconds` | visualized, drives_a_variable |  |
 | `tailscale2otel.api.last_probe` | metric | `tailscale2otel_api_last_probe_seconds` | visualized |  |
+| `tailscale2otel.api.rate_limit.utilization` | metric | `tailscale2otel_api_rate_limit_utilization_ratio` | visualized |  |
 | `tailscale2otel.api.rate_limit.wait` | metric | `tailscale2otel_api_rate_limit_wait_seconds` | visualized, alertable |  |
 | `tailscale2otel.api.requests` | metric | `tailscale2otel_api_requests_total` | visualized, alertable, recorded |  |
 | `tailscale2otel.api.retries` | metric | `tailscale2otel_api_retries_total` | visualized, alertable, drives_a_variable |  |
@@ -359,6 +361,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.export.failures` | metric | `tailscale2otel_export_failures_total` | visualized, alertable, drives_a_variable |  |
 | `tailscale2otel.export.log_records` | metric | `tailscale2otel_export_log_records_total` | visualized |  |
 | `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
+| `tailscale2otel.flow_store.journal.size` | metric | `tailscale2otel_flow_store_journal_size_bytes` | visualized |  |
+| `tailscale2otel.flow_store.last_checkpoint_timestamp` | metric | `tailscale2otel_flow_store_last_checkpoint_timestamp_seconds` | visualized |  |
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |
@@ -388,6 +392,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.receiver.misconfigured` | metric | `tailscale2otel_receiver_misconfigured_ratio` | visualized |  |
 | `tailscale2otel.runtime.gc.count` | metric | `tailscale2otel_runtime_gc_count_total` | visualized |  |
 | `tailscale2otel.runtime.gc.cpu_fraction` | metric | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.next_target` | metric | `tailscale2otel_runtime_gc_next_target_bytes` | visualized |  |

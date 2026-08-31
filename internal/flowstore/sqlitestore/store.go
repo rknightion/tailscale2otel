@@ -60,7 +60,15 @@ const (
 	DefaultBatchSize     = 512
 	DefaultFlushInterval = 5 * time.Second
 	DefaultQueryTimeout  = 15 * time.Second
-	DefaultSweepInterval = time.Hour
+	// DefaultConversionTimeout bounds the one-time full-database rewrite needed
+	// when an existing store first adopts incremental auto-vacuum. It is
+	// deliberately separate from the short admin-query budget.
+	DefaultConversionTimeout = 5 * time.Minute
+	DefaultSweepInterval     = time.Hour
+	// DefaultIncrementalVacuumPages bounds the amount of free space reclaimed
+	// by one maintenance tick. The interval itself has no fixed duration:
+	// zero means the existing sweep cadence.
+	DefaultIncrementalVacuumPages = 1000
 )
 
 // Options configures one per-tailnet database.
@@ -99,8 +107,17 @@ type Options struct {
 	// QueryTimeout bounds a single read. A window scan that exceeds it fails
 	// honestly rather than hanging the admin page.
 	QueryTimeout time.Duration
+	// ConversionTimeout bounds the one-time startup VACUUM that converts an
+	// existing database to incremental auto-vacuum mode.
+	ConversionTimeout time.Duration
 	// SweepInterval is how often retention and the row cap are enforced.
 	SweepInterval time.Duration
+	// IncrementalVacuumInterval controls how often SQLite free pages are
+	// reclaimed. Zero inherits SweepInterval, so retention changes eventually
+	// shrink the database without another operator action.
+	IncrementalVacuumInterval time.Duration
+	// IncrementalVacuumPages bounds the number of pages reclaimed per tick.
+	IncrementalVacuumPages int
 	// Now is the clock, injectable for tests.
 	Now func() time.Time
 	// Redact applies the configured PII policy to an observation BEFORE it is
@@ -133,12 +150,28 @@ func (o *Options) applyDefaults() {
 	if o.QueryTimeout <= 0 {
 		o.QueryTimeout = DefaultQueryTimeout
 	}
+	if o.ConversionTimeout <= 0 {
+		o.ConversionTimeout = DefaultConversionTimeout
+	}
 	if o.SweepInterval <= 0 {
 		o.SweepInterval = DefaultSweepInterval
+	}
+	if o.IncrementalVacuumPages <= 0 {
+		o.IncrementalVacuumPages = DefaultIncrementalVacuumPages
 	}
 	if o.Now == nil {
 		o.Now = time.Now
 	}
+}
+
+// vacuumInterval resolves the zero-value inheritance rule after defaults have
+// been applied. Keeping this at the store boundary means callers cannot
+// accidentally pass a non-positive duration to time.NewTicker.
+func (o Options) vacuumInterval() time.Duration {
+	if o.IncrementalVacuumInterval > 0 {
+		return o.IncrementalVacuumInterval
+	}
+	return o.SweepInterval
 }
 
 // Store is the persistent flowstore.Store implementation. It satisfies the same
@@ -158,6 +191,10 @@ type Store struct {
 	recorded int64
 	drops    int64
 	failure  error
+	// lastCheckpointAt is guarded by mu with the counters above. It is kept in
+	// process memory rather than SQLite metadata: the timestamp describes this
+	// process's observed maintenance, not data carried across a restart.
+	lastCheckpointAt time.Time
 }
 
 var _ flowstore.Store = (*Store)(nil)

@@ -3,6 +3,9 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -355,4 +358,193 @@ func TestStats_ReportsCounts(t *testing.T) {
 	if st.Earliest.IsZero() || st.Latest.IsZero() {
 		t.Fatal("Earliest/Latest should be set once a row exists")
 	}
+}
+
+func TestOpen_EnablesIncrementalAutoVacuum(t *testing.T) {
+	s := openTestStore(t, testOpts(t))
+
+	var mode int
+	if err := s.db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		t.Fatalf("PRAGMA auto_vacuum: %v", err)
+	}
+	if mode != 2 { // SQLITE_AUTO_VACUUM_INCREMENTAL
+		t.Fatalf("auto_vacuum mode = %d, want incremental (2)", mode)
+	}
+}
+
+func TestOpen_ConvertsExistingDatabaseOutsideQueryTimeout(t *testing.T) {
+	opts := testOpts(t)
+	opts.QueryTimeout = 25 * time.Millisecond
+	opts.ConversionTimeout = 5 * time.Second
+
+	path := filepath.Join(opts.Dir, dbFileName(opts.Tailnet))
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open legacy database: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA auto_vacuum = NONE"); err != nil {
+		t.Fatalf("disable auto-vacuum: %v", err)
+	}
+	if _, err := db.Exec("CREATE TABLE legacy_payload (data BLOB NOT NULL)"); err != nil {
+		t.Fatalf("create legacy payload: %v", err)
+	}
+	if _, err := db.Exec("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("create legacy metadata: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO metadata(key, value) VALUES ('tailnet', ?)", opts.Tailnet); err != nil {
+		t.Fatalf("stamp legacy tailnet identity: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO legacy_payload(data) VALUES (zeroblob(?))", 32*1024*1024); err != nil {
+		t.Fatalf("populate legacy database: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy database: %v", err)
+	}
+
+	s, err := Open(opts)
+	if err != nil {
+		t.Fatalf("Open converted database: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	var mode int
+	if err := s.db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		t.Fatalf("read converted auto-vacuum mode: %v", err)
+	}
+	if mode != 2 {
+		t.Fatalf("auto_vacuum mode = %d, want incremental (2)", mode)
+	}
+}
+
+func TestOptions_VacuumCadenceDefaultsToSweepAndOverrides(t *testing.T) {
+	opts := testOpts(t)
+	opts.SweepInterval = 7 * time.Minute
+	opts.IncrementalVacuumInterval = 0
+	opts.applyDefaults()
+	if got := opts.vacuumInterval(); got != opts.SweepInterval {
+		t.Fatalf("vacuumInterval() = %v, want sweep interval %v", got, opts.SweepInterval)
+	}
+
+	opts.IncrementalVacuumInterval = 11 * time.Minute
+	if got := opts.vacuumInterval(); got != opts.IncrementalVacuumInterval {
+		t.Fatalf("vacuumInterval() = %v, want explicit interval %v", got, opts.IncrementalVacuumInterval)
+	}
+}
+
+func TestStats_ReportsJournalAndCheckpoint(t *testing.T) {
+	opts := testOpts(t)
+	s := openTestStore(t, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := s.checkpoint(ctx); err != nil {
+		t.Fatalf("checkpoint: %v", err)
+	}
+
+	st := s.Stats()
+	if st.Backend.LastCheckpointAt.IsZero() {
+		t.Fatal("LastCheckpointAt is zero after a successful checkpoint")
+	}
+	walPath := s.path + "-wal"
+	walInfo, err := os.Stat(walPath)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("stat WAL %s: %v", walPath, err)
+	}
+	var want int64
+	if err == nil {
+		want = walInfo.Size()
+	}
+	if st.Backend.JournalSizeBytes != want {
+		t.Fatalf("JournalSizeBytes = %d, want current WAL size %d", st.Backend.JournalSizeBytes, want)
+	}
+}
+
+func TestCheckpointCompletedRequiresEveryWALFrame(t *testing.T) {
+	for _, tc := range []struct {
+		name                          string
+		busy, logFrames, checkpointed int
+		want                          bool
+	}{
+		{name: "complete", logFrames: 8, checkpointed: 8, want: true},
+		{name: "empty complete", want: true},
+		{name: "busy", busy: 1, logFrames: 8, checkpointed: 8},
+		{name: "partial", logFrames: 8, checkpointed: 5},
+		{name: "unknown counts", logFrames: -1, checkpointed: -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := checkpointCompleted(tc.busy, tc.logFrames, tc.checkpointed); got != tc.want {
+				t.Fatalf("checkpointCompleted(%d, %d, %d) = %t, want %t", tc.busy, tc.logFrames, tc.checkpointed, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSweepAutomaticallyReclaimsExpiredRows(t *testing.T) {
+	opts := testOpts(t)
+	opts.FlushInterval = 10 * time.Millisecond
+	opts.BatchSize = 32
+	opts.QueueSize = 1024
+	opts.SweepInterval = 20 * time.Millisecond
+	opts.IncrementalVacuumInterval = 0 // inherit the sweep cadence
+
+	var mu sync.Mutex
+	now := time.Now().UTC()
+	opts.Now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return now
+	}
+	s := openTestStore(t, opts)
+
+	for i := 0; i < 500; i++ {
+		o := obs(now)
+		o.SrcTags = strings.Repeat("tag", 1300)
+		if adm := s.RecordResult(o); adm != flowstore.AdmissionAccepted {
+			t.Fatalf("observation %d admission = %v, want Accepted", i, adm)
+		}
+	}
+	waitForRows(t, s.db, 500, time.Second)
+	requireCompletedCheckpoint(t, s.db)
+	before := fileSize(t, s.path)
+	if before <= 0 {
+		t.Fatalf("database size before reclamation = %d, want positive", before)
+	}
+
+	mu.Lock()
+	now = now.Add(2 * opts.Retention)
+	mu.Unlock()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rowCount(t, s.db) == 0 && fileSize(t, s.path) < before {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("expired rows were not reclaimed automatically: rows=%d size_before=%d size_after=%d", rowCount(t, s.db), before, fileSize(t, s.path))
+}
+
+func requireCompletedCheckpoint(t *testing.T, db *sql.DB) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var busy, logFrames, checkpointedFrames int
+		if err := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &logFrames, &checkpointedFrames); err != nil {
+			t.Fatalf("checkpoint before size baseline: %v", err)
+		}
+		if checkpointCompleted(busy, logFrames, checkpointedFrames) {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("checkpoint before size baseline never completed")
+}
+
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat database %s: %v", path, err)
+	}
+	return info.Size()
 }

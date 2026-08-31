@@ -433,6 +433,12 @@ type FlowStoreBackend struct {
 	// Rows retained and SizeBytes on disk, summed across every tailnet's file.
 	Rows      int64 `json:"rows,omitempty"`
 	SizeBytes int64 `json:"size_bytes,omitempty"`
+	// JournalSizeBytes is the summed SQLite write-ahead journal size across
+	// tailnets. It is omitted for the in-memory backend.
+	JournalSizeBytes int64 `json:"journal_size_bytes,omitempty"`
+	// LastCheckpointAt is the oldest successful checkpoint among persistent
+	// tailnet stores, so a lagging store cannot be hidden by a newer peer.
+	LastCheckpointAt string `json:"last_checkpoint_at,omitempty"`
 }
 
 // EventStoreInfo summarizes the bounded audit/webhook event explorer's store
@@ -472,12 +478,14 @@ type DeviceRow struct {
 
 // NodeDiscovery reports the node-metrics scraper's discovered/active targets.
 type NodeDiscovery struct {
-	Enabled       bool         `json:"enabled"`
-	LastDiscovery string       `json:"last_discovery,omitempty"`
-	LastOK        bool         `json:"last_ok"`
-	Static        int          `json:"static"`
-	Active        int          `json:"active"`
-	Targets       []NodeTarget `json:"targets"`
+	Enabled               bool         `json:"enabled"`
+	LastDiscovery         string       `json:"last_discovery,omitempty"`
+	LastOK                bool         `json:"last_ok"`
+	Static                int          `json:"static"`
+	Active                int          `json:"active"`
+	Targets               []NodeTarget `json:"targets"`
+	DominantFailureReason string       `json:"dominant_failure_reason,omitempty"`
+	DominantFailureCount  uint64       `json:"dominant_failure_count,omitempty"`
 }
 
 // NodeTarget is one node-metrics scrape target.

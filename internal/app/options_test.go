@@ -115,6 +115,20 @@ func TestTelemetryOptions_MetricExportBatchSizeWired(t *testing.T) {
 	}
 }
 
+func TestTelemetryOptions_Wave3DeliveryControlsWired(t *testing.T) {
+	cfg := config.Default()
+	cfg.OTLP.MetricTemporality = "delta"
+	cfg.OTLP.OutageSummaryInterval = config.Duration(2 * time.Minute)
+
+	opts := telemetryOptions(cfg, "v1")
+	if got := opts.MetricTemporality; got != "delta" {
+		t.Fatalf("MetricTemporality = %q, want delta", got)
+	}
+	if got := opts.OutageSummaryInterval; got != 2*time.Minute {
+		t.Fatalf("OutageSummaryInterval = %v, want 2m", got)
+	}
+}
+
 func TestTelemetryOptions_DeliveryModeDispositions(t *testing.T) {
 	t.Run("prometheus disables inherited OTLP and enables pull", func(t *testing.T) {
 		cfg := config.Default()

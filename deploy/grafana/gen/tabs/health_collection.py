@@ -101,6 +101,15 @@ def tab_health_collection(scope):
                                                   "service_instance_id", "service_name", "service_namespace"],
                                          rename={"tailscale_node": "Node", "Value": "Up"})],
                desc="Per-target node-metrics scrape health (1=up)."), 4, 5),
+        (panel("Node-metrics failed scrapes/s by reason", "timeseries",
+               [prom_t("sum by (reason) (rate(tailscale2otel_nodemetrics_scrape_failures_total[%s]))" % RI,
+                       legend="{{reason}}")],
+               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Failed node-metrics scrapes by a closed diagnostic class. `connection_refused` "
+                    "means the target accepted no metrics connection; `timeout` means it did not "
+                    "answer in time; `missing_endpoint` is HTTP 404; `http_error` is another "
+                    "non-2xx response; and `other` covers TLS, auth, parse, and unknown transport "
+                    "failures."), 24, 7),
     ]
 
     # --- Scrape performance by collector (from diagnostics.py's "Collectors" row).
@@ -200,6 +209,14 @@ def tab_health_collection(scope):
 
     # --- Rate-limiter wait (from diagnostics.py's "API rate-limiter wait..." row, ungated there).
     ratelimit = [
+        (panel("Provider rate-limit utilization by tailnet", "timeseries",
+               [prom_t("max by (tailscale_tailnet) (tailscale2otel_api_rate_limit_utilization_ratio)",
+                       legend="{{tailscale_tailnet}}")],
+               unit="percentunit", min_=0, max_=1,
+               thresholds=thr([(None, "green"), (1, "red")]), custom=ts_custom(), options=ts_opts(),
+               desc="Provider quota-pressure samples by tailnet: 1 when a logical request observed "
+                    "an HTTP 429, including one that later retried successfully; 0 otherwise. This "
+                    "is response-derived provider saturation, distinct from client-side limiter wait."), 12, 7),
         (panel("Rate-limiter wait p50/p95/p99 by endpoint", "timeseries",
                [prom_t(hq("0.5", "tailscale2otel_api_rate_limit_wait_seconds", by="endpoint"), legend="p50 {{endpoint}}"),
                 prom_t(hq("0.95", "tailscale2otel_api_rate_limit_wait_seconds", by="endpoint"), legend="p95 {{endpoint}}", refid="B"),

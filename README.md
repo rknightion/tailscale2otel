@@ -21,7 +21,7 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 
 | | |
 |---|---|
-| **301** metrics + **28** log-event types | across **16** collectors |
+| **306** metrics + **28** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
 | **125** shipped rules | **102** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
@@ -231,7 +231,7 @@ secret has a `*_file` variant for Docker/Kubernetes secrets.
 | [Getting started](https://m7kni.io/tailscale2otel/getting-started/) | Zero to first metrics in Grafana Cloud |
 | [Installation](https://m7kni.io/tailscale2otel/installation/) | Docker, Helm, compose, binaries |
 | [Configuration](https://m7kni.io/tailscale2otel/configuration/) | Every key, default and gotcha |
-| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 301 metrics and 28 log events |
+| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 306 metrics and 28 log events |
 | [Node metrics](https://m7kni.io/tailscale2otel/node-metrics/) | Central `tailscaled` scraping |
 | [Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/) | HEC receiver and webhooks |
 | [Architecture](https://m7kni.io/tailscale2otel/architecture/) | How it fits together |

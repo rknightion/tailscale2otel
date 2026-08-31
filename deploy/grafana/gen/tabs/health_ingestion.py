@@ -589,6 +589,17 @@ def tab_health_ingestion(scope):
                desc="Bounded known/unknown observations for audit action, origin, actor type, "
                     "and target property. Raw unknown values never enter metric labels."), 24, 7),
     ]
+    receiver_config = [
+        (panel("Fail-closed receiver misconfiguration", "stat",
+               [prom_t("max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)",
+                       legend="{{receiver}}")],
+               unit="short", options=stat_opts(color="background"),
+               thresholds=thr([(None, "green"), (1, "red")]), novalue="No enabled receivers.",
+               desc="1 means an enabled streaming or webhook receiver is network-reachable but "
+                    "has no credential, so it deliberately refuses every request with HTTP 403. "
+                    "Startup remains non-breaking; fix the named receiver credential or bind it "
+                    "to loopback behind an authenticating proxy."), 24, 6),
+    ]
 
     return [
         row("Object-store ingestion status", objstore_status),
@@ -600,6 +611,7 @@ def tab_health_ingestion(scope):
         row("Stream ingestion", stream, present="has_stream"),
         row("Webhook ingestion", webhook, present="has_webhook"),
         row("Receiver health", receiver, present="has_recv_dur"),
+        row("Receiver configuration", receiver_config, collapse=True),
         # Collapsed: opened once receiver health or volume points at loss.
         row("Receiver loss detail", recvloss, collapse=True),
         row("Ingestion volume", ingestvol, present="has_ingest"),

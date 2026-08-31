@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -2305,6 +2306,114 @@ func TestAPIState_AllTargetsFail_TransientFailure(t *testing.T) {
 	entries := tracker.Snapshot()
 	if len(entries) != 1 || entries[0].State != apistate.StateTransientFailure {
 		t.Fatalf("tracker snapshot = %+v, want one transient_failure entry", entries)
+	}
+}
+
+// TestScrapeFailures_ClassifiesClosedReasons exercises the operator-facing
+// scrape diagnostic, rather than the generic collector-level apistate row.
+// Every case is asserted through the emitted counter so a refactor cannot leave
+// a classifier that looks right internally but produces no usable telemetry.
+func TestScrapeFailures_ClassifiesClosedReasons(t *testing.T) {
+	tests := []struct {
+		name   string
+		result func(*http.Request) (*http.Response, error)
+		want   string
+	}{
+		{
+			name:   "connection refused",
+			result: func(*http.Request) (*http.Response, error) { return nil, syscall.ECONNREFUSED },
+			want:   "connection_refused",
+		},
+		{
+			name:   "timeout",
+			result: func(*http.Request) (*http.Response, error) { return nil, context.DeadlineExceeded },
+			want:   "timeout",
+		},
+		{
+			name: "missing endpoint",
+			result: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody}, nil
+			},
+			want: "missing_endpoint",
+		},
+		{
+			name: "other HTTP error",
+			result: func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusBadGateway, Body: http.NoBody}, nil
+			},
+			want: "http_error",
+		},
+		{
+			name:   "other transport error",
+			result: func(*http.Request) (*http.Response, error) { return nil, errors.New("broken transport") },
+			want:   "other",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := nodemetrics.New(nodemetrics.Options{
+				Targets: []nodemetrics.Target{{URL: "http://metrics.invalid/metrics", Instance: "node-a"}},
+				Client:  &http.Client{Transport: failingRoundTripper(tt.result)},
+			})
+			rec := telemetrytest.New()
+			if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+				t.Fatal("Collect() error = nil, want all-target scrape failure")
+			}
+			pts := rec.MetricPoints("tailscale2otel.nodemetrics.scrape.failures")
+			if len(pts) != 1 {
+				t.Fatalf("scrape failure points = %+v, want one", pts)
+			}
+			if got := pts[0].Attrs["reason"]; got != tt.want {
+				t.Errorf("failure reason = %q, want %q", got, tt.want)
+			}
+			if pts[0].Value != 1 || pts[0].Kind != "sum" || !pts[0].Monotonic {
+				t.Errorf("failure point = %+v, want monotonic counter increment", pts[0])
+			}
+		})
+	}
+}
+
+// TestDominantScrapeFailure pins the status-page summary seam: it is empty
+// before a failure, retains counts across collection cycles, and breaks equal
+// counts in the declared closed-vocabulary order rather than map iteration
+// order. The actual scrape counter is covered above through telemetrytest.
+func TestDominantScrapeFailure(t *testing.T) {
+	var calls atomic.Int64
+	client := &http.Client{Transport: failingRoundTripper(func(*http.Request) (*http.Response, error) {
+		switch calls.Add(1) {
+		case 1:
+			return nil, syscall.ECONNREFUSED
+		case 2:
+			return nil, context.DeadlineExceeded
+		default:
+			return &http.Response{StatusCode: http.StatusNotFound, Body: http.NoBody}, nil
+		}
+	})}
+	c := nodemetrics.New(nodemetrics.Options{
+		Targets: []nodemetrics.Target{{URL: "http://metrics.invalid/metrics", Instance: "node-a"}},
+		Client:  client,
+	})
+	if reason, count := c.DominantScrapeFailure(); reason != "" || count != 0 {
+		t.Fatalf("DominantScrapeFailure() before failures = %q/%d, want empty/0", reason, count)
+	}
+
+	for range 2 {
+		if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err == nil {
+			t.Fatal("Collect() error = nil, want all-target failure")
+		}
+	}
+	if reason, count := c.DominantScrapeFailure(); reason != "connection_refused" || count != 1 {
+		t.Fatalf("DominantScrapeFailure() tie = %q/%d, want connection_refused/1", reason, count)
+	}
+
+	for range 2 {
+		if err := c.Collect(context.Background(), telemetrytest.New().Emitter()); err == nil {
+			t.Fatal("Collect() error = nil, want all-target failure")
+		}
+	}
+	if reason, count := c.DominantScrapeFailure(); reason != "missing_endpoint" || count != 2 {
+		t.Fatalf("DominantScrapeFailure() = %q/%d, want missing_endpoint/2", reason, count)
 	}
 }
 

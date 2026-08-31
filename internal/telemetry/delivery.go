@@ -105,6 +105,12 @@ type deliveryTracker struct {
 	mu       sync.Mutex
 	bySignal map[string]*DeliveryState
 
+	// summaryInterval is the configured cadence for repeated outage diagnostics.
+	// now is injectable for deterministic boundary tests and defaults to the
+	// process clock.
+	summaryInterval time.Duration
+	now             func() time.Time
+
 	// Diagnostics (#365) are late-bound via setDiagnostics, mirroring the
 	// exportObserver pattern in export_counting.go: the tracker is constructed
 	// before the Emitter/logger exist, so both start nil and every use is
@@ -138,13 +144,21 @@ type deliveryEpisode struct {
 	suppressedSinceSummary int64
 }
 
-// diagnosticsSummaryInterval bounds how often a sustained outage re-logs, so a
-// backend down for hours produces a handful of summaries rather than silence or
-// a flood. Not configurable (yet): see this issue's CONFIG REQUEST.
+// diagnosticsSummaryInterval is the default cadence for sustained outage
+// diagnostics, so a backend down for hours produces a handful of summaries
+// rather than silence or a flood.
 const diagnosticsSummaryInterval = 5 * time.Minute
 
-func newDeliveryTracker() *deliveryTracker {
-	t := &deliveryTracker{bySignal: make(map[string]*DeliveryState, len(signalOrder))}
+func newDeliveryTracker(interval ...time.Duration) *deliveryTracker {
+	summaryInterval := diagnosticsSummaryInterval
+	if len(interval) > 0 && interval[0] > 0 {
+		summaryInterval = interval[0]
+	}
+	t := &deliveryTracker{
+		bySignal:        make(map[string]*DeliveryState, len(signalOrder)),
+		summaryInterval: summaryInterval,
+		now:             time.Now,
+	}
 	for _, s := range signalOrder {
 		t.bySignal[s] = &DeliveryState{Signal: s}
 	}
@@ -179,7 +193,7 @@ func (t *deliveryTracker) observe(signal string, err error, seconds float64) {
 	if !ok {
 		return
 	}
-	now := time.Now()
+	now := t.now()
 	s.Exports++
 	s.LastDurationSeconds = seconds
 	if err != nil {
@@ -218,7 +232,7 @@ func (t *deliveryTracker) recordFailureLocked(signal, class string, err error) {
 		t.episodes = make(map[deliveryEpisodeKey]*deliveryEpisode)
 	}
 	key := deliveryEpisodeKey{signal: signal, class: class}
-	now := time.Now()
+	now := t.now()
 	ep, ok := t.episodes[key]
 	if !ok {
 		t.episodes[key] = &deliveryEpisode{firstAt: now, lastSummaryAt: now}
@@ -227,7 +241,7 @@ func (t *deliveryTracker) recordFailureLocked(signal, class string, err error) {
 	}
 	ep.suppressedSinceSummary++
 	t.emitSuppressed(signal, class)
-	if now.Sub(ep.lastSummaryAt) >= diagnosticsSummaryInterval {
+	if now.Sub(ep.lastSummaryAt) >= t.summaryInterval {
 		t.logDiagnostic(slog.LevelWarn, "OTLP export still failing",
 			signal, class,
 			"suppressed_since_last_summary", ep.suppressedSinceSummary,

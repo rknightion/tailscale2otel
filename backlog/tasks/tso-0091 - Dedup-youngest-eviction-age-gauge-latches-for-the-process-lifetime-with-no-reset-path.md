@@ -3,9 +3,10 @@ id: TSO-0091
 title: >-
   Dedup youngest-eviction-age gauge latches for the process lifetime with no
   reset path
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 18:32'
+updated_date: '2026-08-31 00:37'
 labels:
   - needs-triage
 milestone: m-4
@@ -33,3 +34,15 @@ dedup.Set.YoungestEvictionAge (internal/dedup/dedup.go:162-172, set in evictLock
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Lane F chooses the narrowest reset mechanism among the three task options, implements it with TDD, and records the choice; it owns internal/dedup, internal/app/dedupobs.go, and tabs/policy_access.py plus policy_dns.py.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Open question resolved by root: use the narrowest reversible windowed-reset mechanism. Keep the existing metric name, type, labels, panel, and alert; atomically consume the minimum capacity-eviction residency age since the previous self-observability interval, clear the gauge series during intervals with no eviction, and retain the lifetime accessor only as an internal compatibility diagnostic. This lets the existing noDataState Ok rule resolve without restart.
+<!-- SECTION:NOTES:END -->

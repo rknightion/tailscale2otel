@@ -178,6 +178,24 @@ func TestYoungestEvictionAge_ClampsClockRollback(t *testing.T) {
 	}
 }
 
+func TestTakeYoungestEvictionAge_DoesNotClearLifetimeDiagnostic(t *testing.T) {
+	clock := time.Unix(1_700_000_000, 0).UTC()
+	s := dedup.New(1, dedup.WithClock(func() time.Time { return clock }))
+	s.Add("first")
+	clock = clock.Add(90 * time.Second)
+	s.Add("second")
+
+	if age, ok := s.TakeYoungestEvictionAge(); !ok || age != 90*time.Second {
+		t.Fatalf("TakeYoungestEvictionAge() = %v, %v, want 90s, true", age, ok)
+	}
+	if age, ok := s.YoungestEvictionAge(); !ok || age != 90*time.Second {
+		t.Fatalf("YoungestEvictionAge() after Take = %v, %v, want preserved 90s, true", age, ok)
+	}
+	if age, ok := s.TakeYoungestEvictionAge(); ok || age != 0 {
+		t.Fatalf("second TakeYoungestEvictionAge() = %v, %v, want 0, false", age, ok)
+	}
+}
+
 func TestAdd_DuplicateDoesNotEvict(t *testing.T) {
 	s := dedup.New(2)
 	s.Add("a")

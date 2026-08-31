@@ -52,8 +52,19 @@ const (
 	// MetricAPIRateLimitWait is the histogram of time API requests spent blocked
 	// on the client-side rate limiter.
 	MetricAPIRateLimitWait = "tailscale2otel.api.rate_limit.wait"
+	// MetricAPIRateLimitUtilization reports whether a logical API request met
+	// provider-side rate limiting on any attempt.
+	MetricAPIRateLimitUtilization = "tailscale2otel.api.rate_limit.utilization"
 	// MetricUpdateAvailable is the self update-available flag name (C4).
 	MetricUpdateAvailable = "tailscale2otel.update_available"
+	// MetricFlowStoreJournalSize is the SQLite WAL sidecar size per tailnet.
+	MetricFlowStoreJournalSize = "tailscale2otel.flow_store.journal.size"
+	// MetricFlowStoreLastCheckpointTimestamp is the Unix time of the most recent
+	// successful SQLite WAL checkpoint per tailnet.
+	MetricFlowStoreLastCheckpointTimestamp = "tailscale2otel.flow_store.last_checkpoint_timestamp"
+	// MetricReceiverMisconfigured marks fail-closed ingestion receivers that can
+	// accept no traffic because a network-reachable bind has no credential.
+	MetricReceiverMisconfigured = "tailscale2otel.receiver.misconfigured"
 )
 
 // Go runtime self-observability metric names. These expose the exporter's own
@@ -326,6 +337,13 @@ var (
 		Attributes:  []string{"endpoint"},
 		Group:       GroupSelfObs,
 	}
+	DocAPIRateLimitUtilization = metricdoc.Metric{
+		Name:        MetricAPIRateLimitUtilization,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` when any attempt in the latest logical Tailscale API request encountered provider-side HTTP 429 rate limiting, else `0`, scoped by the runtime's tailnet resource (a **flag**, despite the `_ratio` Prometheus suffix).",
+		Group:       GroupSelfObs,
+	}
 	DocUpdateAvailable = metricdoc.Metric{
 		Name:        MetricUpdateAvailable,
 		Unit:        "1",
@@ -536,7 +554,7 @@ var (
 		Name:        MetricDedupYoungestEvictionAge,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Smallest residency age in seconds observed for a key evicted from a de-duplication set because it reached capacity, by set. Absent until the first eviction; values below the poll overlap horizon indicate the set is undersized.",
+		Description: "Smallest residency age in seconds observed at capacity eviction since the previous self-observability reporting interval, by de-duplication set. Absent during intervals with no capacity eviction; values below the poll overlap horizon indicate the set may be undersized.",
 		Attributes:  []string{semconv.AttrDedupSet},
 		Group:       GroupSelfObs,
 	}
@@ -546,6 +564,29 @@ var (
 		Instrument:  metricdoc.Gauge,
 		Description: "Configured poll-overlap horizon in seconds for a de-duplication set, by set. The flow value is the larger of its poll interval and explicit replay overlap; audit and webhook-cross values use the audit poll interval.",
 		Attributes:  []string{semconv.AttrDedupSet},
+		Group:       GroupSelfObs,
+	}
+	DocFlowStoreJournalSize = metricdoc.Metric{
+		Name:        MetricFlowStoreJournalSize,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Current SQLite write-ahead journal sidecar size in bytes for the persistent flow store, scoped by the runtime's tailnet resource. Absent for the in-memory backend.",
+		Group:       GroupSelfObs,
+	}
+	DocFlowStoreLastCheckpointTimestamp = metricdoc.Metric{
+		Name:        MetricFlowStoreLastCheckpointTimestamp,
+		Unit:        semconv.UnitSeconds,
+		Instrument:  metricdoc.Gauge,
+		Description: "Unix timestamp in seconds of the most recent successful SQLite WAL checkpoint for the persistent flow store, scoped by the runtime's tailnet resource. Absent until the first checkpoint and for the in-memory backend.",
+		Group:       GroupSelfObs,
+		TimeSource:  metricdoc.TimestampProcessLocal,
+	}
+	DocReceiverMisconfigured = metricdoc.Metric{
+		Name:        MetricReceiverMisconfigured,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` when an enabled ingestion receiver is bound to a network-reachable address without its required token or signing secret and therefore refuses every request with HTTP 403, else `0`, by receiver (`streaming` or `webhook`).",
+		Attributes:  []string{"receiver"},
 		Group:       GroupSelfObs,
 	}
 )
@@ -747,7 +788,7 @@ var DocPIIFilterCategory = metricdoc.Metric{
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait,
+		DocUp, DocUpdateAvailable, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,
@@ -755,6 +796,8 @@ func Catalog() []metricdoc.Metric {
 		DocComponentErrors,
 		DocAdminAuthRejected,
 		DocDedupSize, DocDedupEvictions, DocDedupHits, DocDedupYoungestEvictionAge, DocDedupOverlapHorizon,
+		DocFlowStoreJournalSize, DocFlowStoreLastCheckpointTimestamp,
+		DocReceiverMisconfigured,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
 		DocIngressWALPendingEntries, DocIngressWALPendingSize,

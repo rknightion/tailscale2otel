@@ -1,10 +1,10 @@
 ---
 id: TSO-0061
 title: First-class ingest-lag signal per source and signal type
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-30 09:31'
-updated_date: '2026-08-30 18:32'
+updated_date: '2026-08-31 00:37'
 labels: []
 milestone: m-4
 dependencies: []
@@ -37,6 +37,8 @@ internal/ingest.AcceptedEvent carries EventTime/AcceptedAt - the raw material fo
 1. Read internal/catalog/signal_dispositions.json for tailscale2otel.ingest.event_age and .capture_delay. If both are already visualized, close the task on evidence with the metric names and dispositions and stop.
 2. Otherwise add the panel(s) to the health dashboard Ingestion tab (deploy/grafana/gen/tabs/health_ingestion.py), broken down by source and signal.
 3. Record the measured p95 finding and, if the 5.6h flow figure survives scrutiny, file it as its own task rather than folding an investigation into this one.
+
+Lane F first verifies whether the existing ingest_event_age histogram is already visualized; if so, close on evidence and scrutinize the observed 5.6-hour stream lag, filing surviving lag as needs-triage work. No duplicate signal is created.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -52,4 +54,6 @@ Live on the lab stack (gcx metrics query against the m7kni stack, 2026-08-30):
 So the build half of AC#2 is already done and the task reduces to the "if present, just surface it on the dashboard" branch: put it on the health dashboard Ingestion tab. Verify against internal/catalog/signal_dispositions.json which disposition these carry before assuming a panel is missing — if they are already visualized there is nothing to do at all and the task closes on evidence.
 
 Load-bearing observation while measuring: p95 of ingest_event_age for signal=flow source=stream on the lab deployment is ~20200 SECONDS (5.6 hours). Either flow events genuinely arrive that late on the streaming path, or the histogram is being skewed by a catch-up. Whichever it is, that number is the reason this signal is worth a panel — do not just add the panel, look at what it says.
+
+Evidence close: the existing tailscale2otel.ingest.event.age histogram is labelled by source and signal, its capture-delay companion exists, and both are already visualized together on the Health/Ingestion freshness panel. No duplicate signal or panel will be added. The previously measured high stream-flow p95 was not re-queried in this lane; TSO-0093 now tracks a fresh causal investigation.
 <!-- SECTION:NOTES:END -->

@@ -561,6 +561,54 @@ func TestRetryTransport_BackoffNotClippedByAttemptTimeout(t *testing.T) {
 	}
 }
 
+// A recovered 429 is still evidence that this tailnet reached the provider's
+// quota. The final status is 200 after retry, so the signal must be retained
+// from the actual intermediate response rather than inferred from final status
+// or from client-side queue time.
+func TestRequestInfo_RateLimitUtilizationPreservesRecovered429(t *testing.T) {
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: []int{http.StatusTooManyRequests, http.StatusOK}},
+		max:       2,
+		baseDelay: time.Millisecond,
+		maxDelay:  time.Millisecond,
+		rnd:       func() float64 { return 0 },
+		onRequest: func(_ context.Context, i RequestInfo) { got = i },
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if got.Status != http.StatusOK {
+		t.Fatalf("final status = %d, want 200", got.Status)
+	}
+	if got.RateLimitUtilization != 1 {
+		t.Fatalf("RateLimitUtilization = %v, want 1 after a recovered 429", got.RateLimitUtilization)
+	}
+}
+
+func TestRequestInfo_RateLimitUtilizationIsZeroWithout429(t *testing.T) {
+	var got RequestInfo
+	rt := &retryTransport{
+		base:      &fakeRoundTripper{statuses: []int{http.StatusOK}},
+		max:       1,
+		onRequest: func(_ context.Context, i RequestInfo) { got = i },
+	}
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		"https://api.tailscale.com/api/v2/tailnet/example.com/devices", nil)
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if got.RateLimitUtilization != 0 {
+		t.Fatalf("RateLimitUtilization = %v, want 0 without a 429", got.RateLimitUtilization)
+	}
+}
+
 func TestRetryTransport_WrapsBodyForCancel(t *testing.T) {
 	rt := &retryTransport{
 		base:           &fakeRoundTripper{statuses: []int{http.StatusOK}},

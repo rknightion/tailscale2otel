@@ -813,6 +813,89 @@ func assertCumulativeTemporality(t *testing.T, temporalities []metricpb.Aggregat
 	}
 }
 
+func assertDeltaTemporality(t *testing.T, requests []capturedRequest) {
+	t.Helper()
+	var sawCounter, sawHistogram, sawUpDown bool
+	for _, req := range requests {
+		if req.metrics == nil {
+			continue
+		}
+		for _, rm := range req.metrics.GetResourceMetrics() {
+			for _, sm := range rm.GetScopeMetrics() {
+				for _, m := range sm.GetMetrics() {
+					switch m.GetName() {
+					case "tailscale.wiretest.counter":
+						sum := m.GetSum()
+						if sum == nil {
+							t.Errorf("wiretest counter data = %T, want Sum", m.GetData())
+							continue
+						}
+						sawCounter = true
+						if got := sum.GetAggregationTemporality(); got != metricpb.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA {
+							t.Errorf("wiretest counter aggregation_temporality = %v, want DELTA", got)
+						}
+					case "tailscale.wiretest.histogram":
+						hist := m.GetHistogram()
+						if hist == nil {
+							t.Errorf("wiretest histogram data = %T, want Histogram", m.GetData())
+							continue
+						}
+						sawHistogram = true
+						if got := hist.GetAggregationTemporality(); got != metricpb.AggregationTemporality_AGGREGATION_TEMPORALITY_DELTA {
+							t.Errorf("wiretest histogram aggregation_temporality = %v, want DELTA", got)
+						}
+					case "tailscale.wiretest.updown":
+						sum := m.GetSum()
+						if sum == nil {
+							t.Errorf("wiretest updown data = %T, want Sum", m.GetData())
+							continue
+						}
+						sawUpDown = true
+						if got := sum.GetAggregationTemporality(); got != metricpb.AggregationTemporality_AGGREGATION_TEMPORALITY_CUMULATIVE {
+							t.Errorf("wiretest updown aggregation_temporality = %v, want CUMULATIVE", got)
+						}
+					}
+				}
+			}
+		}
+	}
+	if !sawCounter {
+		t.Error("wiretest counter not captured")
+	}
+	if !sawHistogram {
+		t.Error("wiretest histogram not captured")
+	}
+	if !sawUpDown {
+		t.Error("wiretest updown counter not captured")
+	}
+}
+
+func assertWireTestGauge(t *testing.T, req *collectormetricpb.ExportMetricsServiceRequest) {
+	t.Helper()
+	for _, rm := range req.GetResourceMetrics() {
+		for _, sm := range rm.GetScopeMetrics() {
+			for _, m := range sm.GetMetrics() {
+				if m.GetName() != "tailscale.wiretest.gauge" {
+					continue
+				}
+				gauge, ok := m.GetData().(*metricpb.Metric_Gauge)
+				if !ok || gauge.Gauge == nil {
+					t.Fatalf("wiretest gauge data = %T, want Gauge", m.GetData())
+				}
+				points := gauge.Gauge.GetDataPoints()
+				if len(points) != 1 {
+					t.Fatalf("wiretest gauge datapoints = %d, want 1", len(points))
+				}
+				if got := points[0].GetAsDouble(); got != 1 {
+					t.Errorf("wiretest gauge value = %v, want 1", got)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("wiretest gauge not captured")
+}
+
 // ---------------------------------------------------------------------------
 // Shared pipeline driver: builds one Provider against the given
 // protocol/endpoint, emits one data point of each instrument kind, one log
@@ -872,6 +955,7 @@ func driveWirePipeline(t *testing.T, rec *wireRecorder, protocol, endpoint strin
 	e := p.Emitter()
 	e.Counter("tailscale.wiretest.counter", "1", "wiretest counter", 1, telemetry.Attrs{"k": "v"})
 	e.UpDownCounter("tailscale.wiretest.updown", "1", "wiretest updown counter", 1, telemetry.Attrs{"k": "v"})
+	e.Gauge("tailscale.wiretest.gauge", "1", "wiretest gauge", 1, telemetry.Attrs{"k": "v"})
 	e.Histogram("tailscale.wiretest.histogram", "s", "wiretest histogram", 0.5, []float64{0.1, 1, 10}, telemetry.Attrs{"k": "v"})
 	e.LogEvent(telemetry.Event{
 		Name:     "tailscale.wiretest.log",
@@ -887,6 +971,10 @@ func driveWirePipeline(t *testing.T, rec *wireRecorder, protocol, endpoint strin
 	span.End()
 
 	got := make(map[string]capturedRequest, 3)
+	// ForceFlush waits for the metric and log exporters to finish. Capture those
+	// requests before Shutdown triggers their second collection; delta sums are
+	// intentionally empty on that second collection while cumulative gauges and
+	// UpDownCounters remain present.
 	got["metrics"] = waitForSignal(t, rec, "metrics", 5*time.Second, got)
 	got["logs"] = waitForSignal(t, rec, "logs", 5*time.Second, got)
 

@@ -1,5 +1,7 @@
 package flowstore
 
+import "time"
+
 // Store is the narrow seam the admin flow view codes against, so the bounded
 // in-memory ring and an opt-in persistent backend are interchangeable (#294).
 //
@@ -47,9 +49,9 @@ const (
 // so an operator can see the write-behind queue backing up or the database
 // growing BEFORE it turns into dropped observations.
 //
-// This is not telemetry. flowstore is deliberately not a second telemetry
-// pipeline, so none of this is emitted over OTLP; it is introspection served
-// from the admin API only.
+// flowstore remains an introspection model rather than a telemetry pipeline.
+// The app layer may project selected bounded numeric fields into its established
+// OTLP facade; paths, errors, and queue internals stay on the admin API only.
 type Backend struct {
 	// Kind is BackendMemory or BackendSQLite.
 	Kind string `json:"kind"`
@@ -69,6 +71,13 @@ type Backend struct {
 	Rows int64 `json:"rows,omitempty"`
 	// SizeBytes is the on-disk size of the database.
 	SizeBytes int64 `json:"size_bytes,omitempty"`
+	// JournalSizeBytes is the on-disk size of the SQLite write-ahead journal,
+	// when this backend uses one. It is zero for the memory backend and when
+	// the WAL sidecar does not currently exist.
+	JournalSizeBytes int64 `json:"journal_size_bytes,omitempty"`
+	// LastCheckpointAt is when the backend last successfully checkpointed its
+	// SQLite write-ahead journal. It is zero before the first checkpoint.
+	LastCheckpointAt time.Time `json:"last_checkpoint_at,omitempty"`
 }
 
 // Memory satisfies Store. A compile-time assertion rather than a runtime one:

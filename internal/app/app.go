@@ -514,6 +514,7 @@ func buildTailscaleProvider(
 	tsOpts.OnRequest = func(ctx context.Context, i tsapi.RequestInfo) {
 		if obs != nil {
 			obs(ctx, i.Endpoint, i.Status, i.Attempts, i.Duration, i.WaitDuration)
+			emitAPIRateLimitUtilization(emitter, i.RateLimitUtilization)
 		}
 		apiStats.Record(i)
 	}
@@ -831,6 +832,7 @@ func (a *App) Run(ctx context.Context) error {
 		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
+		go runReceiverConfigReporter(ctx, a.cfg, a.procEmitter, interval)
 		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
 		go runIngressWALReporter(ctx, a.procEmitter, a.ingressWAL, interval)
 		// webhook cross-dedup is process-global only in single-tailnet mode — report
@@ -876,6 +878,7 @@ func (a *App) Run(ctx context.Context) error {
 		for _, rt := range a.runtimes {
 			go runCardinalityReporter(ctx, rt.emitter, rt.card, a.metricGroups, interval)
 			go runExportReporter(ctx, rt.emitter, rt.exportStats, interval)
+			go runFlowStoreReporter(ctx, rt, interval)
 		}
 	}
 
@@ -1014,8 +1017,15 @@ func (a *App) Run(ctx context.Context) error {
 // own teardown. Safe to call at most once; ctx bounds the flush.
 func (a *App) Close(ctx context.Context) error {
 	for _, rt := range a.runtimes {
-		rt.flowProc.FlushRollup(rt.emitter)
+		if rt != nil && rt.flowProc != nil {
+			rt.flowProc.FlushRollup(rt.emitter)
+		}
 	}
+	// Close is also the supported lifecycle path for callers that use New plus
+	// RunOnce instead of Run. Those callers never reach Run's deferred resource
+	// cleanup, so close every per-tailnet flow store here after the final
+	// processor flush and before the telemetry pipeline is torn down.
+	flowStoreErr := a.closeFlowStores(ctx)
 	var closeErr error
 	if a.ingressWAL != nil {
 		closeErr = a.ingressWAL.Close()
@@ -1033,7 +1043,7 @@ func (a *App) Close(ctx context.Context) error {
 		a.restore()
 	}
 	shutdownErr := a.shutdown(ctx)
-	return errors.Join(shutdownErr, closeErr)
+	return errors.Join(shutdownErr, closeErr, flowStoreErr)
 }
 
 // autoConfigureStreaming registers this receiver as a Splunk-HEC log-streaming

@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -35,6 +36,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
@@ -93,6 +95,7 @@ const (
 	// gauges emitted every Collect when a Discoverer is configured.
 	metricDiscoverySuccess  = "tailscale2otel.nodemetrics.discovery.success"
 	metricDiscoveredTargets = "tailscale2otel.nodemetrics.discovery.targets"
+	metricScrapeFailures    = "tailscale2otel.nodemetrics.scrape.failures"
 
 	// staleGenerations is how many consecutive scrapes a counter series may go
 	// unobserved before its delta baseline is evicted, bounding the prev map
@@ -132,6 +135,78 @@ const (
 	// must not go looking for it in spec/tailscale-api.json.
 	opScrapeNodeMetrics = "scrapeNodeMetrics"
 )
+
+// scrapeFailureReason is deliberately closed: targets and their errors are
+// operator-controlled or network-derived, so neither may become a metric
+// attribute value. `other` preserves failure visibility when a new error shape
+// appears without creating a series for its text.
+type scrapeFailureReason string
+
+const (
+	scrapeFailureConnectionRefused scrapeFailureReason = "connection_refused"
+	scrapeFailureTimeout           scrapeFailureReason = "timeout"
+	scrapeFailureMissingEndpoint   scrapeFailureReason = "missing_endpoint"
+	scrapeFailureHTTPError         scrapeFailureReason = "http_error"
+	scrapeFailureOther             scrapeFailureReason = "other"
+)
+
+// scrapeFailureReasons fixes the externally documented vocabulary order. It
+// also supplies the deterministic tiebreak for DominantScrapeFailure: a status
+// hint must not flicker merely because concurrent workers completed in a
+// different order.
+var scrapeFailureReasons = [...]scrapeFailureReason{
+	scrapeFailureConnectionRefused,
+	scrapeFailureTimeout,
+	scrapeFailureMissingEndpoint,
+	scrapeFailureHTTPError,
+	scrapeFailureOther,
+}
+
+// scrapeFailureError preserves a closed diagnostic classification while the
+// error itself remains safe and useful to the caller/tracer. It must never
+// expose transport error text as telemetry.
+type scrapeFailureError struct {
+	reason scrapeFailureReason
+	err    error
+}
+
+func (e *scrapeFailureError) Error() string { return e.err.Error() }
+func (e *scrapeFailureError) Unwrap() error { return e.err }
+
+func newScrapeFailure(reason scrapeFailureReason, err error) error {
+	return &scrapeFailureError{reason: reason, err: err}
+}
+
+func failureReason(err error) scrapeFailureReason {
+	var scrapeErr *scrapeFailureError
+	if errors.As(err, &scrapeErr) {
+		return scrapeErr.reason
+	}
+	return scrapeFailureOther
+}
+
+func scrapeFailureReasonIndex(reason scrapeFailureReason) int {
+	for i, candidate := range scrapeFailureReasons {
+		if candidate == reason {
+			return i
+		}
+	}
+	return len(scrapeFailureReasons) - 1 // defensive fold to the closed `other` bucket
+}
+
+func classifyTransportFailure(err error) scrapeFailureReason {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return scrapeFailureTimeout
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return scrapeFailureTimeout
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return scrapeFailureConnectionRefused
+	}
+	return scrapeFailureOther
+}
 
 // prevEntry is a tracked counter series' last cumulative value and the scrape
 // generation in which it was last observed (for stale-baseline eviction).
@@ -336,6 +411,11 @@ type Collector struct {
 	// and are emitted directly (the Emitter is concurrency-safe).
 	curatedMu     sync.Mutex
 	curatedGauges *telemetry.GaugeSnapshotBuilder
+
+	// scrapeFailureCounts is a process-lifetime diagnostic for the admin status
+	// page. Unlike the emitted counter it is read locally, so it keeps only the
+	// fixed closed reason vocabulary and needs no per-target state.
+	scrapeFailureCounts [len(scrapeFailureReasons)]atomic.Uint64
 }
 
 // New returns a nodemetrics Collector. A zero Interval defaults to 60s and a
@@ -708,6 +788,11 @@ func (c *Collector) scrapeAll(ctx context.Context, targets []resolvedTarget, e t
 			if err == nil {
 				successes.Add(1)
 				up = 1
+			} else {
+				reason := failureReason(err)
+				c.recordScrapeFailure(reason)
+				e.Counter(docScrapeFailures.Name, docScrapeFailures.Unit, docScrapeFailures.Description, 1,
+					telemetry.Attrs{attrReason: string(reason)})
 			}
 			ups[idx] = telemetry.GaugePoint{Value: up, Attrs: telemetry.Attrs{attrInstance: instance}}
 		}(i, &targets[i])
@@ -720,6 +805,29 @@ func (c *Collector) scrapeAll(ctx context.Context, targets []resolvedTarget, e t
 		c.gsb.Add(docNodeUp.Name, docNodeUp.Unit, docNodeUp.Description, ups[i].Value, ups[i].Attrs)
 	}
 	return int(successes.Load())
+}
+
+func (c *Collector) recordScrapeFailure(reason scrapeFailureReason) {
+	c.scrapeFailureCounts[scrapeFailureReasonIndex(reason)].Add(1)
+}
+
+// DominantScrapeFailure returns the most common failed-scrape reason observed
+// for this collector process and its count. Before the first failure it returns
+// an empty reason and zero. Equal counts resolve in the declared closed
+// vocabulary order, keeping the status-page hint stable under concurrency.
+func (c *Collector) DominantScrapeFailure() (string, uint64) {
+	var dominant int
+	var max uint64
+	for i := range c.scrapeFailureCounts {
+		count := c.scrapeFailureCounts[i].Load()
+		if count > max {
+			dominant, max = i, count
+		}
+	}
+	if max == 0 {
+		return "", 0
+	}
+	return string(scrapeFailureReasons[dominant]), max
 }
 
 // maybeDiscover runs the Discoverer when due (every discoveryInterval since the
@@ -910,7 +1018,8 @@ func (c *Collector) scrapeTarget(ctx context.Context, rt *resolvedTarget, client
 		// used, so credentials configured on this target can never be sent
 		// over an unintended connection (GHSA-2q4v-rrm9-966w). The ERROR log
 		// was already emitted once, at target resolution (resolveTargets).
-		return instance, fmt.Errorf("nodemetrics: target %s disabled: TLS configuration failed to load", instance)
+		return instance, newScrapeFailure(scrapeFailureOther,
+			fmt.Errorf("nodemetrics: target %s disabled: TLS configuration failed to load", instance))
 	}
 	return instance, c.fetchAndEmit(ctx, t, rt.id, client, instance, e)
 }
@@ -927,7 +1036,7 @@ func (c *Collector) fetchAndEmit(ctx context.Context, t *Target, targetID string
 
 	samples, err := parse(limitedReadCloser(resp.Body, c.maxResponseBytes), c.maxSamples)
 	if err != nil {
-		return err
+		return newScrapeFailure(scrapeFailureOther, err)
 	}
 	for i := range samples {
 		c.emitSample(&samples[i], t, targetID, instance, e)
@@ -965,13 +1074,17 @@ func (c *Collector) scrapeHTTP(ctx context.Context, t *Target, client *http.Clie
 	if err != nil {
 		safeErr := errors.New("nodemetrics: scrape transport failed")
 		c.observeScrape(span, instance, t.URL, 0, safeErr)
-		return nil, safeErr
+		return nil, newScrapeFailure(classifyTransportFailure(err), safeErr)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusErr := fmt.Errorf("nodemetrics: GET %s: status %d", redact.URLOrigin(t.URL), resp.StatusCode)
 		c.observeScrape(span, instance, t.URL, resp.StatusCode, statusErr)
 		_ = resp.Body.Close()
-		return nil, statusErr
+		reason := scrapeFailureHTTPError
+		if resp.StatusCode == http.StatusNotFound {
+			reason = scrapeFailureMissingEndpoint
+		}
+		return nil, newScrapeFailure(reason, statusErr)
 	}
 	c.observeScrape(span, instance, t.URL, resp.StatusCode, nil)
 	return resp, nil

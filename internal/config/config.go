@@ -171,7 +171,7 @@ type AdminAuth struct {
 	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
-	TokenFile string `yaml:"token_file" reload:"restart"`
+	TokenFile string `yaml:"token_file" reload:"file_content"`
 	// FailureLimit failures from one source inside FailureWindow trigger
 	// FailureBackoff. Zero disables throttling.
 	FailureLimit   int      `yaml:"failure_limit" reload:"restart"`
@@ -367,7 +367,7 @@ type PrometheusAuth struct {
 	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
-	TokenFile string `yaml:"token_file" reload:"restart"`
+	TokenFile string `yaml:"token_file" reload:"file_content"`
 }
 
 // ProfilingConfig configures continuous/on-demand profiling. Everything here is
@@ -1594,7 +1594,7 @@ type StreamingConfig struct {
 	// TokenFile reads Token from a file at Load (Docker-secrets style). Value XOR
 	// file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
-	TokenFile string `yaml:"token_file" reload:"restart"`
+	TokenFile string `yaml:"token_file" reload:"file_content"`
 	// PublicURL is the externally reachable URL Tailscale should POST logs to
 	// (this receiver's public endpoint). Required only when AutoConfigure is on,
 	// since it is the sink URL registered with Tailscale.
@@ -1631,7 +1631,7 @@ type StreamingRoute struct {
 	Tailnet       string `yaml:"tailnet" reload:"restart"`
 	Path          string `yaml:"path" reload:"restart"`
 	Token         Secret `yaml:"token" reload:"restart"`
-	TokenFile     string `yaml:"token_file" reload:"restart"`
+	TokenFile     string `yaml:"token_file" reload:"file_content"`
 	PublicURL     string `yaml:"public_url" reload:"restart"`
 	AutoConfigure bool   `yaml:"auto_configure" reload:"restart"`
 }
@@ -1655,7 +1655,7 @@ type WebhookConfig struct {
 	// SecretFile reads Secret from a file at Load (Docker-secrets style). Value
 	// XOR file: setting both is a Validate error. The file content is trimmed of
 	// surrounding whitespace before use.
-	SecretFile string `yaml:"secret_file" reload:"restart"`
+	SecretFile string `yaml:"secret_file" reload:"file_content"`
 	// Tolerance is the maximum age of a webhook's signed timestamp before it is
 	// rejected as a replay. Tailscale signs "<unix>.<body>", so this bounds how
 	// long a captured, validly-signed delivery can be replayed. 0 disables the
@@ -1693,7 +1693,7 @@ type WebhookConfig struct {
 type WebhookRoute struct {
 	Tailnet    string `yaml:"tailnet" reload:"restart"`
 	Secret     Secret `yaml:"secret" reload:"restart"`
-	SecretFile string `yaml:"secret_file" reload:"restart"`
+	SecretFile string `yaml:"secret_file" reload:"file_content"`
 }
 
 // TracingConfig configures the OTEL traces pillar. Off by default; reuses otlp.*

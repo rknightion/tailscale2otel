@@ -4,7 +4,7 @@ title: Act on device-cache staleness during control-plane outages
 status: In Progress
 assignee: []
 created_date: '2026-08-30 09:31'
-updated_date: '2026-08-30 23:22'
+updated_date: '2026-08-31 00:29'
 labels: []
 milestone: m-4
 dependencies: []
@@ -35,4 +35,6 @@ enrich.DeviceCache exports Age() for the enrich.cache_age gauge (internal/enrich
 
 <!-- SECTION:PLAN:BEGIN -->
 Root F1 freezes the device-cache stale threshold with a non-disruptive default; lane D later implements observable stale behaviour and investigates unverified-tier replacement.
+
+Lane D consumes the frozen device_cache_stale_after key to change outage behavior without broadening public seams, with telemetry and an assigned-tab panel.
 <!-- SECTION:PLAN:END -->

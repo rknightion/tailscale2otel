@@ -28,6 +28,8 @@ type Set struct {
 	now                 func() time.Time
 	youngestEvictionAge time.Duration
 	hasYoungestEviction bool
+	pendingEvictionAge  time.Duration
+	hasPendingEviction  bool
 }
 
 type digest [sha256.Size]byte
@@ -171,6 +173,22 @@ func (s *Set) YoungestEvictionAge() (time.Duration, bool) {
 	return s.youngestEvictionAge, s.hasYoungestEviction
 }
 
+// TakeYoungestEvictionAge reports and clears the smallest residency age
+// observed since the previous take. It is intended for a periodic
+// observability reporter: a transient capacity burst remains visible for one
+// reporting interval, but cannot leave an alerting gauge latched forever.
+//
+// YoungestEvictionAge is deliberately not affected: it retains its existing
+// all-time low-water-mark behavior for callers that need that diagnostic.
+func (s *Set) TakeYoungestEvictionAge() (time.Duration, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	age, ok := s.pendingEvictionAge, s.hasPendingEviction
+	s.pendingEvictionAge = 0
+	s.hasPendingEviction = false
+	return age, ok
+}
+
 // evictLocked drops oldest keys until the set is within capacity. The caller
 // must hold s.mu.
 func (s *Set) evictLocked(now time.Time) {
@@ -187,6 +205,10 @@ func (s *Set) evictLocked(now time.Time) {
 		if !s.hasYoungestEviction || age < s.youngestEvictionAge {
 			s.youngestEvictionAge = age
 			s.hasYoungestEviction = true
+		}
+		if !s.hasPendingEviction || age < s.pendingEvictionAge {
+			s.pendingEvictionAge = age
+			s.hasPendingEviction = true
 		}
 	}
 	// Compact the order slice once the consumed prefix grows large, so it does
