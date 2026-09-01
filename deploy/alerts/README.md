@@ -384,3 +384,33 @@ A worked example of why this matters: the first run against a real stack found o
 left over from an earlier release, and 77 rules still carrying the old global fail-open
 `execErrState` from before per-rule evaluation policy (#388) — meaning a query error was still
 being read as OK on the deployed copies long after the repo had fixed it.
+
+### Verifying post-publication evaluation
+
+The deployment comparison above checks desired state only. It does not prove that Grafana's ruler
+has scheduled the newly published rules. `gen/verify_evaluations.py` consumes a direct ruler
+read-back and gates every shipped, unpaused rule on a nonzero evaluation timestamp at or after the
+publication boundary and within a bounded freshness window. It records `state`, `health`,
+`lastEvaluation`, and `lastError` for every shipped rule, including paused rules and fresh no-data
+results.
+
+The root deployment wrapper owns the authenticated read-back and should call
+`wait_for_evaluations` after recording the publication completion time. The read-back endpoint is
+the Grafana ruler API:
+
+```text
+/api/ruler/grafana/api/v1/rules
+```
+
+The supported task-surface form verifies one saved JSON response and fails closed when the
+publication boundary is omitted:
+
+```bash
+just verify-rule-evaluations \
+  2026-09-01T19:00:00Z \
+  /tmp/grafana-ruler-rules.json
+```
+
+An initial zero timestamp is an expected transient observation immediately after a push, not a
+pass. The bounded polling wrapper retries it; if any required rule is still missing, zero, stale,
+pre-publication, invalid, or runtime-paused when the deadline expires, the result is nonzero.

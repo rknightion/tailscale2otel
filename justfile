@@ -179,7 +179,7 @@ gen *targets:
 #
 # regenerate every generated artifact, in dependency order
 [private]
-gen-all: gen-helm gen-metrics gen-envref gen-config-schema gen-dashboards gen-promrules gen-counts gen-coverage
+gen-all: gen-helm gen-metrics gen-envref gen-config-schema gen-api-schemas gen-dashboards gen-promrules gen-counts gen-coverage
 
 # install the pinned helm-docs + helm-values-schema-json (once per machine)
 [group('gen')]
@@ -204,6 +204,11 @@ gen-helm-schema:
 [group('gen')]
 gen-config-schema:
     scripts/regen-generated.sh config-schema
+
+# regenerate docs/api/schemas from the published admin API response types
+[group('gen')]
+gen-api-schemas:
+    go test ./internal/app/apicontract -run TestSchemasInSync -update
 
 # regenerate docs/metrics.md from the in-code telemetry catalog
 [group('gen')]
@@ -421,6 +426,11 @@ validate config="config.yaml": build
 [no-exit-message]
 verify-deploy:
     python3 scripts/verify_deployment.py
+
+# verify a saved Grafana ruler read-back after a known publication boundary
+[group('infra')]
+verify-rule-evaluations published_at status_file:
+    python3 deploy/alerts/gen/verify_evaluations.py --published-at '{{ published_at }}' --status-file '{{ status_file }}' --json
 
 # DELETE alert/recording rules on the live Grafana stack that this repo no longer defines
 [confirm('This DELETES rules on the LIVE Grafana stack. Continue?')]
