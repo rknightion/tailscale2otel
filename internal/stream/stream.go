@@ -23,12 +23,14 @@
 // "proto" (e.g. 6 for TCP, 99 here) plus srcNode/dstNodes, and audit records use
 // "actionDetails" with polymorphic "old"/"new". A streamed audit record has NO
 // inner "eventTime" — its timestamp lives in the HEC "time" (unix seconds) /
-// "fields.recorded" (RFC3339), siblings of "event". The parser threads that
-// envelope time through (see extractRecords/unwrap/envelopeTime) and the handler
-// applies it to an audit record's EventTime when the record has none of its own,
-// so a streamed audit log bears the event's real occurrence time rather than the
-// OTEL ingest time (S4-10 fidelity fix). Flow records carry their own start/end
-// and ignore the envelope time.
+// "fields.recorded" (RFC3339), siblings of "event". The parser threads those
+// envelope timestamps through (see extractRecords/unwrap/envelopeTime/recordedTime).
+// The handler applies the event timestamp to an audit record's EventTime when
+// the record has none of its own, so a streamed audit log bears the event's real
+// occurrence time rather than the OTEL ingest time (S4-10 fidelity fix). Flow
+// records carry their own start/end for EventTime; when their inner logged
+// capture timestamp is absent, the publisher's fields.recorded timestamp
+// supplies CaptureTime.
 //
 // The parser stays DEFENSIVE and accepts the union of plausible shapes (the HEC
 // "event" wrapper above plus the variants below) so an unexpected sender or a
@@ -478,7 +480,19 @@ type Server struct {
 }
 
 type pendingFlow struct {
-	log flowlog.FlowLog
+	log         flowlog.FlowLog
+	captureTime time.Time
+}
+
+// flowCaptureTimestamp preserves the poll record's logged timestamp when it
+// exists, and falls back to the HEC publisher timestamp for the live stream
+// shape whose flow record omits logged. A zero result means capture delay is
+// unavailable and keeps the observer's absent-when-unavailable contract.
+func flowCaptureTimestamp(flow flowlog.FlowLog, envelopeCapture time.Time) time.Time {
+	if capture := flowlog.CaptureTimestamp(flow); !capture.IsZero() {
+		return capture
+	}
+	return envelopeCapture
 }
 
 type pendingAudit struct {
@@ -1018,7 +1032,10 @@ classifyLoop:
 				flowDecodeErr++
 				continue
 			}
-			batch.flows = append(batch.flows, pendingFlow{log: f})
+			batch.flows = append(batch.flows, pendingFlow{
+				log:         f,
+				captureTime: flowCaptureTimestamp(f, rec.captureTime),
+			})
 		case kindAudit:
 			var ev audit.Event
 			if err := json.Unmarshal(rec.raw, &ev); err != nil {
@@ -1194,7 +1211,10 @@ func decodeDurableBatch(body []byte) (decodedBatch, error) {
 			if err := json.Unmarshal(rec.raw, &flow); err != nil {
 				return decodedBatch{}, errors.New("stream: stored body is corrupt or incompatible")
 			}
-			batch.flows = append(batch.flows, pendingFlow{log: flow})
+			batch.flows = append(batch.flows, pendingFlow{
+				log:         flow,
+				captureTime: flowCaptureTimestamp(flow, rec.captureTime),
+			})
 		case kindAudit:
 			var event audit.Event
 			if err := json.Unmarshal(rec.raw, &event); err != nil {
@@ -1241,14 +1261,15 @@ func (s *Server) applyDecoded(
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		flow := batch.flows[i].log
+		flowRecord := batch.flows[i]
+		flow := flowRecord.log
 		s.flowProc.ProcessCtx(ctx, flow, s.emitter)
 		if s.onAccepted != nil {
 			s.onAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceStream,
 				Signal:      semconv.IngestSignalFlow,
 				EventTime:   flowlog.EventTimestamp(flow),
-				CaptureTime: flowlog.CaptureTimestamp(flow),
+				CaptureTime: flowRecord.captureTime,
 				AcceptedAt:  nowAccepted(),
 			})
 		}
@@ -1570,9 +1591,10 @@ func countConnections(sh shape, limit int) (int, error) {
 
 // extractedRecord pairs a raw record object with the timestamp carried by its
 // enclosing HEC envelope ("time"/"fields.recorded", siblings of "event"), or the
-// zero time when the record had no such envelope. The envelope time is used only
-// as a FALLBACK for streamed audit records that lack an inner eventTime (S4-10):
-// flow records ignore it (they carry their own start/end).
+// zero time when the record had no such envelope. envTime is used only as a
+// FALLBACK for streamed audit records that lack an inner eventTime (S4-10).
+// captureTime is the publisher's fields.recorded timestamp and is used as a
+// FALLBACK for flow records that lack their inner logged capture timestamp.
 type extractedRecord struct {
 	raw         json.RawMessage
 	envTime     time.Time
@@ -1694,7 +1716,8 @@ func extractRecordsWithLimit(raw []byte, recordLimit int) ([]extractedRecord, ex
 	}
 
 	// Unwrap each top-level value into record objects, propagating each HEC
-	// envelope's time down to the record(s) it carries. st.dropped tallies values
+	// envelope's event and capture timestamps down to the record(s) it carries.
+	// st.dropped tallies values
 	// dropped along the way (#67) — a non-object value, or one nested past
 	// maxUnwrapDepth, encountered while unwrapping before classify() ever runs.
 	// st.remaining is the #229 record budget: one wrapper can carry far more
@@ -1773,10 +1796,10 @@ func (e envelope) logsShapeOK() bool {
 }
 
 // unwrap turns a single top-level JSON value into the record object(s) it
-// carries, tagging each with the enclosing HEC envelope time (inherited down the
-// recursion): a Splunk-HEC {"event": <record>} wrapper yields its event tagged
-// with the wrapper's own "time"/"fields.recorded"; a Tailscale {"logs": [...]}
-// wrapper yields its elements; any other object is itself a record.
+// carries, tagging each with the enclosing HEC event and capture timestamps
+// (inherited down the recursion): a Splunk-HEC {"event": <record>} wrapper yields
+// its event tagged with the wrapper's own "time"/"fields.recorded"; a Tailscale
+// {"logs": [...]} wrapper yields its elements; any other object is itself a record.
 //
 // st.dropped is incremented once per value discarded along the way: a non-object
 // value (a scalar/null HEC "event", a bare scalar at top level, or a malformed

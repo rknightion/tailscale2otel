@@ -1137,6 +1137,71 @@ func TestHandleAcceptedObserver_ReportsDistinctHECTimes(t *testing.T) {
 	}
 }
 
+// TestHandleAcceptedObserver_PropagatesLiveFlowCaptureTime pins the live flow
+// envelope shape: the flow has start/end but no inner logged timestamp, while
+// the enclosing HEC object carries the publisher capture time in
+// fields.recorded. That timestamp must reach the accepted-event observer so the
+// app can emit ingest.capture.delay for stream/flow.
+func TestHandleAcceptedObserver_PropagatesLiveFlowCaptureTime(t *testing.T) {
+	var got []ingest.AcceptedEvent
+	s, rec := newServer(t, stream.Options{
+		Listen: loopbackListen,
+		OnAccepted: func(event ingest.AcceptedEvent) {
+			got = append(got, event)
+		},
+	})
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(realHECStreamBody))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", resp.Code, resp.Body.String())
+	}
+	if len(rec.MetricPoints(flowlog.MetricIO)) == 0 {
+		t.Fatal("live flow was not processed")
+	}
+
+	var flowEvent *ingest.AcceptedEvent
+	for i := range got {
+		if got[i].Signal == semconv.IngestSignalFlow {
+			flowEvent = &got[i]
+			break
+		}
+	}
+	if flowEvent == nil {
+		t.Fatalf("accepted events = %+v, want a flow event", got)
+	}
+	wantCapture, err := time.Parse(time.RFC3339Nano, "2026-06-03T15:33:01.552946176Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !flowEvent.CaptureTime.Equal(wantCapture) {
+		t.Fatalf("live flow capture time = %v, want %v; accepted events=%+v", flowEvent.CaptureTime, wantCapture, got)
+	}
+}
+
+// TestHandleAcceptedObserver_MissingFlowCaptureTimeRemainsAbsent guards the
+// negative side of the capture-delay contract: a flow with neither inner
+// logged nor envelope fields.recorded must not invent a timestamp.
+func TestHandleAcceptedObserver_MissingFlowCaptureTimeRemainsAbsent(t *testing.T) {
+	var got []ingest.AcceptedEvent
+	body := `{"event":{"nodeId":"n0001CNTRL","start":"2026-06-03T15:32:54Z","end":"2026-06-03T15:32:59Z","subnetTraffic":[{"proto":99,"src":"10.0.0.254:0","dst":"100.64.0.3:0","txPkts":8,"txBytes":216}]}}`
+	s, rec := newServer(t, stream.Options{
+		Listen:     loopbackListen,
+		OnAccepted: func(event ingest.AcceptedEvent) { got = append(got, event) },
+	})
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", nil, strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", resp.Code, resp.Body.String())
+	}
+	if len(rec.MetricPoints(flowlog.MetricIO)) == 0 {
+		t.Fatal("flow was not processed")
+	}
+	if len(got) != 1 {
+		t.Fatalf("accepted events = %d, want 1: %+v", len(got), got)
+	}
+	if !got[0].CaptureTime.IsZero() {
+		t.Fatalf("capture time = %v, want zero when both capture sources are absent", got[0].CaptureTime)
+	}
+}
+
 // TestHandleAcceptedObserver_SkipsRejectedAndUnknownBatches ensures only records
 // in a fully valid atomic batch create freshness evidence.
 func TestHandleAcceptedObserver_SkipsRejectedAndUnknownBatches(t *testing.T) {

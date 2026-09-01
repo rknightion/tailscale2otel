@@ -452,6 +452,41 @@ func TestApplyDurable_ReconstructsAndAppliesAcceptedBatch(t *testing.T) {
 	}
 }
 
+// TestApplyDurable_PropagatesLiveFlowCaptureTime guards replay of the live HEC
+// shape: a flow without inner logged must retain fields.recorded through the
+// durable decode path just as it does through synchronous delivery.
+func TestApplyDurable_PropagatesLiveFlowCaptureTime(t *testing.T) {
+	var accepted []ingest.AcceptedEvent
+	s, rec := newServer(t, stream.Options{
+		OnAccepted: func(event ingest.AcceptedEvent) { accepted = append(accepted, event) },
+	})
+	_, err := s.ApplyDurable(context.Background(), []byte(realHECStreamBody), time.Date(2026, 9, 1, 22, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("ApplyDurable: %v", err)
+	}
+	if len(rec.MetricPoints(flowlog.MetricIO)) == 0 {
+		t.Fatal("live flow was not processed during replay")
+	}
+
+	var flowEvent *ingest.AcceptedEvent
+	for i := range accepted {
+		if accepted[i].Signal == semconv.IngestSignalFlow {
+			flowEvent = &accepted[i]
+			break
+		}
+	}
+	if flowEvent == nil {
+		t.Fatalf("accepted events = %+v, want a flow event", accepted)
+	}
+	wantCapture, err := time.Parse(time.RFC3339Nano, "2026-06-03T15:33:01.552946176Z")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !flowEvent.CaptureTime.Equal(wantCapture) {
+		t.Fatalf("replayed live flow capture time = %v, want %v; accepted events=%+v", flowEvent.CaptureTime, wantCapture, accepted)
+	}
+}
+
 // TestApplyDurable_DoesNotRevalidateRequestTimeSemantics catches replay using a
 // changed semantic policy to strand an entry that was already accepted.
 func TestApplyDurable_DoesNotRevalidateRequestTimeSemantics(t *testing.T) {
