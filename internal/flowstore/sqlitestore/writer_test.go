@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -413,6 +414,101 @@ func TestOpen_ConvertsExistingDatabaseOutsideQueryTimeout(t *testing.T) {
 	}
 	if mode != 2 {
 		t.Fatalf("auto_vacuum mode = %d, want incremental (2)", mode)
+	}
+}
+
+// A full VACUUM is a one-time optimization, not a condition for reading the
+// existing store. In particular, an upgrade must not disable the flow explorer
+// when the rewrite cannot finish within its budget: the old auto-vacuum mode
+// remains a valid SQLite database and is retried on a later restart.
+func TestOpen_ConversionTimeoutFailsOpenAndPreservesExistingDatabase(t *testing.T) {
+	opts := testOpts(t)
+	opts.ConversionTimeout = time.Nanosecond
+
+	path := filepath.Join(opts.Dir, dbFileName(opts.Tailnet))
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open legacy database: %v", err)
+	}
+	if _, err := db.Exec("PRAGMA auto_vacuum = NONE"); err != nil {
+		t.Fatalf("disable auto-vacuum: %v", err)
+	}
+	if _, err := db.Exec("CREATE TABLE legacy_payload (data BLOB NOT NULL)"); err != nil {
+		t.Fatalf("create legacy payload: %v", err)
+	}
+	if _, err := db.Exec("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
+		t.Fatalf("create legacy metadata: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO metadata(key, value) VALUES ('tailnet', ?)", opts.Tailnet); err != nil {
+		t.Fatalf("stamp legacy tailnet identity: %v", err)
+	}
+	// 32 MiB is deliberately large enough to force the tested path to be a
+	// real database rewrite, not an empty-file shortcut.
+	if _, err := db.Exec("INSERT INTO legacy_payload(data) VALUES (zeroblob(?))", 32*1024*1024); err != nil {
+		t.Fatalf("populate legacy database: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy database: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat realistic legacy database: %v", err)
+	}
+	if info.Size() < 32*1024*1024 {
+		t.Fatalf("legacy database size = %d, want at least 32 MiB", info.Size())
+	}
+
+	s, err := Open(opts)
+	if err != nil {
+		t.Fatalf("Open must retain a usable legacy store when conversion times out: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	var mode int
+	if err := s.db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
+		t.Fatalf("read retained auto-vacuum mode: %v", err)
+	}
+	if mode != 0 { // SQLITE_AUTO_VACUUM_NONE
+		t.Fatalf("auto_vacuum mode = %d, want none (0) until a future conversion succeeds", mode)
+	}
+
+	var payloadBytes int
+	if err := s.db.QueryRow("SELECT length(data) FROM legacy_payload").Scan(&payloadBytes); err != nil {
+		t.Fatalf("read legacy payload after failed conversion: %v", err)
+	}
+	if payloadBytes != 32*1024*1024 {
+		t.Fatalf("legacy payload bytes = %d, want %d", payloadBytes, 32*1024*1024)
+	}
+
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM flows").Scan(&payloadBytes); err != nil {
+		t.Fatalf("query migrated flow table: %v", err)
+	}
+	if backend := s.Stats().Backend; backend.Healthy {
+		t.Fatal("Backend.Healthy = true, want false while auto-vacuum conversion is deferred")
+	} else if !strings.Contains(backend.Error, "convert database to incremental auto-vacuum") {
+		t.Fatalf("Backend.Error = %q, want the deferred conversion failure", backend.Error)
+	}
+
+	if admission := s.RecordResult(obs(time.Now().UTC())); admission != flowstore.AdmissionAccepted {
+		t.Fatalf("RecordResult admission = %v, want accepted", admission)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("close retained store: %v", err)
+	}
+	reopened, err := Open(opts)
+	if err != nil {
+		t.Fatalf("reopen retained store after deferred conversion: %v", err)
+	}
+	t.Cleanup(func() { _ = reopened.Close() })
+	waitForRows(t, reopened.db, 1, time.Second)
+}
+
+func TestDeferredAutoVacuumConversionGuard(t *testing.T) {
+	if !isDeferredAutoVacuumConversion(deferredAutoVacuumConversionError{err: errors.New("vacuum timed out")}) {
+		t.Fatal("deferred VACUUM conversion was not recognized")
+	}
+	if isDeferredAutoVacuumConversion(errors.New("open database failed")) {
+		t.Fatal("unrelated database setup error was incorrectly treated as a deferred conversion")
 	}
 }
 

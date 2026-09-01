@@ -224,10 +224,11 @@ func Open(opts Options) (*Store, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	if err := configureIncrementalAutoVacuum(ctx, db, opts.ConversionTimeout); err != nil {
+	conversionErr := configureIncrementalAutoVacuum(ctx, db, opts.ConversionTimeout)
+	if conversionErr != nil && !isDeferredAutoVacuumConversion(conversionErr) {
 		cancel()
 		_ = db.Close()
-		return nil, err
+		return nil, conversionErr
 	}
 	cancel()
 
@@ -258,6 +259,12 @@ func Open(opts Options) (*Store, error) {
 		path:  path,
 		queue: make(chan flowstore.Observation, opts.QueueSize),
 		done:  make(chan struct{}),
+	}
+	if conversionErr != nil {
+		// A failed full VACUUM leaves the original database usable. Do not let a
+		// one-time space optimization disable its explorer; retain the failure in
+		// the existing backend status and retry the conversion on the next start.
+		s.fail(conversionErr)
 	}
 
 	s.wg.Add(1)
@@ -293,7 +300,7 @@ func configureIncrementalAutoVacuum(ctx context.Context, db *sql.DB, conversionT
 		conversionCtx, cancel := context.WithTimeout(context.Background(), conversionTimeout)
 		defer cancel()
 		if _, err := db.ExecContext(conversionCtx, "VACUUM"); err != nil {
-			return fmt.Errorf("sqlitestore: convert database to incremental auto-vacuum within %s: %w", conversionTimeout, err)
+			return deferredAutoVacuumConversionError{err: fmt.Errorf("sqlitestore: convert database to incremental auto-vacuum within %s: %w", conversionTimeout, err)}
 		}
 		mode, err = autoVacuumMode(conversionCtx, db)
 		if err != nil {
@@ -304,6 +311,27 @@ func configureIncrementalAutoVacuum(ctx context.Context, db *sql.DB, conversionT
 		return fmt.Errorf("sqlitestore: auto-vacuum mode = %d after enabling incremental mode", mode)
 	}
 	return nil
+}
+
+// deferredAutoVacuumConversionError identifies the one startup error that is
+// safe to retain as degraded state: SQLite guarantees that an interrupted
+// VACUUM leaves the original database unchanged. Other setup failures still
+// prevent Open, since they could make ordinary reads or writes unsafe.
+type deferredAutoVacuumConversionError struct {
+	err error
+}
+
+func (e deferredAutoVacuumConversionError) Error() string {
+	return e.err.Error()
+}
+
+func (e deferredAutoVacuumConversionError) Unwrap() error {
+	return e.err
+}
+
+func isDeferredAutoVacuumConversion(err error) bool {
+	var deferred deferredAutoVacuumConversionError
+	return errors.As(err, &deferred)
 }
 
 func autoVacuumMode(ctx context.Context, db *sql.DB) (int, error) {
