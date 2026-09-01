@@ -29,6 +29,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
+The Role and RoleBinding for Kubernetes Lease coordination share this name.
+Truncate after adding the suffix so a release whose normal fullname already
+uses the Kubernetes 63-character limit still renders valid metadata.
+*/}}
+{{- define "tailscale2otel.coordinationRoleName" -}}
+{{- printf "%s-coordination" (include "tailscale2otel.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
 The rendered container image reference (#349). Digest wins deterministically over a
 tag: when image.digest is set, image.tag and .Chart.AppVersion are IGNORED entirely —
 the rendered reference is always `repository@digest`, NEVER `repository:tag@digest`.

@@ -55,6 +55,33 @@ See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config move
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
 
+### Coordinated replicas
+
+The chart is a singleton by default. `replicaCount` values above one fail unless
+`config.coordination.mode: kubernetes` is set; that mode permits up to three
+active-passive replicas sharing a Kubernetes `coordination.k8s.io` Lease. The
+chart renders the Lease Role and RoleBinding only in that mode, scopes `get` and
+`update` to the configured `coordination.lease_name`, and mounts the
+ServiceAccount token needed by the in-cluster Kubernetes client. Kubernetes
+cannot scope a `create` request by `resourceNames`, so that one verb is granted
+separately at namespace scope.
+
+```yaml
+replicaCount: 2
+config:
+  coordination:
+    mode: kubernetes
+    lease_name: tailscale2otel
+    namespace: default
+  checkpoint:
+    store: kubernetes
+```
+
+Use `checkpoint.store: kubernetes` when the coordinated deployment also needs
+poll cursors to survive leader hand-off without replaying the initial lookback.
+It stores them in a dedicated `<lease_name>-checkpoints` ConfigMap so checkpoint
+updates can never overwrite the chart's application-configuration ConfigMap.
+
 ### Receiver WAL durability and storage
 
 `config.ingress_wal.enabled` is `false` by default, so receiver acceptance stays

@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.32.0](https://img.shields.io/badge/Version-0.32.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.33.0](https://img.shields.io/badge/Version-0.33.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -42,6 +42,33 @@ a credential in an inline `--set secret.<KEY>` value.
 See [CHANGELOG.md](./CHANGELOG.md) for the breaking 0.2.0 migration (config moved
 under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 `${VAR}` placeholders removed from config).
+
+### Coordinated replicas
+
+The chart is a singleton by default. `replicaCount` values above one fail unless
+`config.coordination.mode: kubernetes` is set; that mode permits up to three
+active-passive replicas sharing a Kubernetes `coordination.k8s.io` Lease. The
+chart renders the Lease Role and RoleBinding only in that mode, scopes `get` and
+`update` to the configured `coordination.lease_name`, and mounts the
+ServiceAccount token needed by the in-cluster Kubernetes client. Kubernetes
+cannot scope a `create` request by `resourceNames`, so that one verb is granted
+separately at namespace scope.
+
+```yaml
+replicaCount: 2
+config:
+  coordination:
+    mode: kubernetes
+    lease_name: tailscale2otel
+    namespace: default
+  checkpoint:
+    store: kubernetes
+```
+
+Use `checkpoint.store: kubernetes` when the coordinated deployment also needs
+poll cursors to survive leader hand-off without replaying the initial lookback.
+It stores them in a dedicated `<lease_name>-checkpoints` ConfigMap so checkpoint
+updates can never overwrite the chart's application-configuration ConfigMap.
 
 ### Receiver WAL durability and storage
 
@@ -238,7 +265,7 @@ extraVolumeMounts:
 | config.cardinality.warning_threshold | int | `2000` | Status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables). |
 | config.checkpoint.evidence_store | string | `"file"` | Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to preserve ACL revision/audit provenance across restarts even in streamed deployments. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Shared state path when either store is file (mount a writable persistent volume here). |
-| config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path). |
+| config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file \| kubernetes. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path); "kubernetes" stores cursors in a dedicated <coordination.lease_name>-checkpoints ConfigMap for coordinated failover. |
 | config.checkpoint.write_debounce | string | `"0s"` | Coalesce nearby checkpoint writes; 0 preserves synchronous Set durability. |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
@@ -412,6 +439,12 @@ extraVolumeMounts:
 | config.collectors.webhooks.enabled | bool | `true` | Enable the webhook-endpoint inventory collector (count + per-endpoint subscriptions; no url/secret). |
 | config.collectors.webhooks.interval | string | `"600s"` | Poll interval. |
 | config.collectors.webhooks.snapshot_enabled | bool | `false` | Emit the complete webhook inventory response to logs on change plus a heartbeat. |
+| config.coordination.lease_duration | string | `"15s"` | Leader Lease expiry duration. Must be greater than renew_deadline. |
+| config.coordination.lease_name | string | `"tailscale2otel"` | Name of the Lease shared by coordinated replicas. Must be a DNS-1123 label. |
+| config.coordination.mode | string | `"none"` | Whole-process active-passive coordination: `none` keeps singleton behavior; `kubernetes` elects one replica through a coordination.k8s.io Lease. |
+| config.coordination.namespace | string | `"default"` | Namespace containing the coordination Lease. Must be a DNS-1123 label. |
+| config.coordination.renew_deadline | string | `"10s"` | Time allowed to renew before stepping down. Must be greater than retry_period. |
+| config.coordination.retry_period | string | `"2s"` | Interval between Lease acquisition and renewal attempts. |
 | config.delivery | object | `{"mode":"otlp"}` | Process-wide telemetry topology. otlp preserves historical push-only delivery; prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces; dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus. |
 | config.delivery.mode | string | `"otlp"` | Delivery mode: otlp \| prometheus \| dual. |
 | config.enrichment.cache_ttl | string | `"5m"` | Staleness alarm threshold for the device-enrichment cache (drives the tailscale2otel.enrich.cache_age self-obs gauge); does not evict entries. |
@@ -789,7 +822,7 @@ extraVolumeMounts:
 | probes.startup.periodSeconds | int | `10` | Seconds between startup probes. |
 | probes.startup.successThreshold | int | `1` | Consecutive successes before the startup probe hands off to liveness/readiness. Kubernetes REJECTS any value other than 1 for a startup probe — enforced here. |
 | probes.startup.timeoutSeconds | int | `1` | Seconds before a startup probe attempt times out. |
-| replicaCount | int | `1` | Replica count. MUST stay 1 — this is a singleton poller (no leader election or shared checkpoint coordination); scaling up would double-emit every metric and log against the same tailnet. Enforced by the generated values.schema.json AND a template `fail` guard (see templates/deployment.yaml) — any other value is rejected. |
+| replicaCount | int | `1` | Replica count. The default `none` coordination mode is a singleton poller: values above 1 are rejected because they would double-emit every metric and log. Set config.coordination.mode to `kubernetes` to run 2 or 3 active-passive replicas behind a Lease. The template guard enforces the mode relationship; this schema maximum enforces the Kubernetes-coordination ceiling. |
 | resources | object | `{"limits":{"cpu":"500m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"64Mi"}}` | Resource requests and limits. The defaults suit a few-hundred-device tailnet; raise limits if you enable high-volume flow-log streaming or many node-metrics targets. |
 | rolloutTrigger | string | `""` | Opaque value surfaced as the pod annotation `tailscale2otel.m7kni.io/rollout-trigger`. Changing it changes the pod template and forces a Recreate rollout. This is the supported way to pick up ANY secret-bearing change: a rotated `existingSecret`, a changed inline `secret:` value, or an edit to a secret-backed `config.yaml` (an inline credential under `config:`, a `tailnets[]` entry, or a node_metrics target bearer_token/headers). Kubernetes NEVER refreshes environment variables or Secret-mounted files in a running container, so credentials injected via `envFrom`/`secret.yaml`/`secret-config.yaml` stay stale until the pod is replaced. After rotating run e.g. `helm upgrade ... --set rolloutTrigger=$(date +%s)`. Pick anything you like (a timestamp, a git SHA, a counter) — it must NOT be a secret value or any digest of one, since annotations are readable by anyone who can read the Deployment (workload-read), a materially weaker grant than Secret-read (GHSA-825f-hph6-x65w: a published checksum of secret material lets that reader verify offline guesses against the real value). For an automated path instead, run Stakater Reloader in the cluster and set `podAnnotations.reloader.stakater.com/auto: "true"` (Reloader watches the Secret object's contents server-side and issues the rollout restart itself, so it never needs to publish a digest). The chart's own `checksum/config` annotation only ever hashes the rendered config when it is credential-free (ConfigMap-backed); a secret-backed config (Secret-backed) is never hashed anywhere — use rolloutTrigger or Reloader for that case too. |
 | secret | object | `{"TS2OTEL_ADMIN__AUTH__TOKEN":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__ACCESS_KEY_ID":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SECRET_ACCESS_KEY":"","TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN":"","TS2OTEL_HEADSCALE__API_KEY":"","TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID":"","TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD":"","TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER":"","TS2OTEL_PROMETHEUS__AUTH__TOKEN":"","TS2OTEL_STREAMING__TOKEN":"","TS2OTEL_TAILSCALE__AUTH__APIKEY":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID":"","TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET":"","TS2OTEL_TAILSCALE__TAILNET":"","TS2OTEL_WEBHOOK__SECRET":""}` | Inline secret values rendered into a Secret and injected via envFrom. These TS2OTEL_* keys override the corresponding fields in the ConfigMap config.yaml at runtime — secrets never appear in the ConfigMap. Keys left empty ("") are NOT rendered into the Secret: an empty env var would override — and blank — the same key set under `config:` (env beats file), silently disabling e.g. receiver auth. |

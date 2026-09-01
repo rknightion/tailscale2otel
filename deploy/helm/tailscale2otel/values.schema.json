@@ -156,7 +156,12 @@
                             "type": "string"
                         },
                         "store": {
-                            "type": "string"
+                            "type": "string",
+                            "enum": [
+                                "memory",
+                                "file",
+                                "kubernetes"
+                            ]
                         },
                         "write_debounce": {
                             "type": "string"
@@ -805,6 +810,34 @@
                                 }
                             },
                             "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "coordination": {
+                    "type": "object",
+                    "properties": {
+                        "lease_duration": {
+                            "type": "string"
+                        },
+                        "lease_name": {
+                            "type": "string"
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "none",
+                                "kubernetes"
+                            ]
+                        },
+                        "namespace": {
+                            "type": "string"
+                        },
+                        "renew_deadline": {
+                            "type": "string"
+                        },
+                        "retry_period": {
+                            "type": "string"
                         }
                     },
                     "additionalProperties": false
@@ -2628,7 +2661,7 @@
         },
         "replicaCount": {
             "type": "integer",
-            "maximum": 1,
+            "maximum": 3,
             "minimum": 1
         },
         "resources": {

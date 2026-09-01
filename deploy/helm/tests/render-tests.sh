@@ -1658,5 +1658,33 @@ render
   && ok "AB: no sidecar by default" \
   || bad "AB: default pod has $(dep_field '[.spec.template.spec.containers[].name] | join(" ")')"
 
+case_ "AC. coordinated replicas and checkpoint object isolation"
+
+render --set replicaCount=2
+[[ $RENDER_RC -ne 0 ]] && grep -q 'replicaCount must be 1 unless config.coordination.mode=kubernetes' <<<"$RENDER" \
+  && ok "AC: an uncoordinated second replica is rejected" \
+  || bad "AC: an uncoordinated second replica was not rejected with the coordination guard"
+
+render --set replicaCount=2 \
+       --set config.coordination.mode=kubernetes \
+       --set config.coordination.lease_name="$FULLNAME" \
+       --set config.checkpoint.store=kubernetes
+assert_rc0 "AC: coordinated replicas render"
+[[ "$(dep_field '.spec.strategy.type')" == "RollingUpdate" ]] \
+  && ok "AC: coordinated deployment uses RollingUpdate" \
+  || bad "AC: coordinated deployment does not use RollingUpdate"
+[[ "$(dep_field '.spec.template.spec.automountServiceAccountToken')" == "true" ]] \
+  && ok "AC: coordinated pod receives its Kubernetes API token" \
+  || bad "AC: coordinated pod has no Kubernetes API token"
+[[ "$(docs_of Role | yq '.rules[] | select(.resources[] == "leases" and .verbs[] == "get") | .resourceNames[]')" == "$FULLNAME" ]] \
+  && ok "AC: Lease renewal RBAC is scoped to the configured Lease" \
+  || bad "AC: Lease renewal RBAC is not scoped to the configured Lease"
+[[ "$(docs_of Role | yq '.rules[] | select(.resources[] == "configmaps" and .verbs[] == "get") | .resourceNames[]')" == "${FULLNAME}-checkpoints" ]] \
+  && ok "AC: checkpoint RBAC targets a dedicated ConfigMap" \
+  || bad "AC: checkpoint RBAC can collide with the application config ConfigMap"
+[[ "$(docs_of ConfigMap | yq '.metadata.name')" == "$FULLNAME" ]] \
+  && ok "AC: application configuration keeps its existing ConfigMap name" \
+  || bad "AC: application configuration ConfigMap unexpectedly moved"
+
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

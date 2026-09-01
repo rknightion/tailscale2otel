@@ -3,6 +3,11 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.33.0: add optional Kubernetes Lease coordination for active-passive replicas.
+# `replicaCount` stays at one unless `config.coordination.mode=kubernetes`, which
+# permits up to three replicas and switches the Deployment to RollingUpdate. The
+# coordinated pod receives a least-privilege Role/RoleBinding for its configured
+# Lease and mounts its ServiceAccount token for the in-cluster client.
 # 0.32.0: add `extraContainers` — sidecar containers appended to the pod spec verbatim, for a
 # companion process that must share the exporter's network namespace or volumes. The motivating
 # case is a `tailscale` sidecar giving the pod real tailnet membership, which is the only way
@@ -170,7 +175,7 @@ type: application
 # profiling.pyroscope.tailnet_label, tracing.remote_parent, tracing.samplers.*, and the new
 # top-level resource: block (service_namespace/deployment_environment/attributes/from_env).
 # 0.28.0: add config.flows.capacity_profile (#329).
-version: 0.32.0
+version: 0.33.0
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "4.0.1" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

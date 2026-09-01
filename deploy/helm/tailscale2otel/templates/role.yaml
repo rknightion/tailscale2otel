@@ -1,0 +1,51 @@
+{{- if eq .Values.config.coordination.mode "kubernetes" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "tailscale2otel.coordinationRoleName" . }}
+  namespace: {{ .Values.config.coordination.namespace | quote }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+rules:
+  # Reading and renewing the configured Lease are name-scoped. No list/watch,
+  # patch, delete, or access to another Lease is needed by client-go's
+  # resourcelock.LeaseLock.
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - update
+    resourceNames:
+      - {{ .Values.config.coordination.lease_name | quote }}
+  # Kubernetes cannot apply resourceNames to create: the POST URL has no
+  # resource name, so this is the narrowest portable create grant. The named
+  # get/update rule above still limits all operations that carry a Lease name.
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+  # The checkpoint store keeps its cursor and replay state in a dedicated
+  # <Lease>-checkpoints ConfigMap, never the chart's application-config
+  # ConfigMap. Reads and updates are scoped to that object; create is
+  # necessarily separate because Kubernetes cannot scope a POST with
+  # resourceNames.
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - update
+    resourceNames:
+      - {{ printf "%s-checkpoints" .Values.config.coordination.lease_name | quote }}
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - create
+{{- end }}

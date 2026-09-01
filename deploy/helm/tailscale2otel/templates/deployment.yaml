@@ -5,17 +5,31 @@ metadata:
   labels:
     {{- include "tailscale2otel.labels" . | nindent 4 }}
 spec:
-  # Singleton poller — do not scale horizontally (would double-emit). The schema
-  # already constrains replicaCount to exactly 1; this is a second, harder-to-miss
-  # guard for --set/--values overrides that bypass schema validation (e.g. `helm
-  # template --skip-schema-validation`, or a values file layered in after schema
-  # checks via some other tooling).
-  {{- if ne (int .Values.replicaCount) 1 }}
-  {{- fail (printf "replicaCount must be 1: tailscale2otel is a singleton poller with no leader election or shared checkpoint coordination — running %d replicas would double-emit every metric and log against the same tailnet" (int .Values.replicaCount)) }}
+  {{- $replicas := int .Values.replicaCount }}
+  {{- /*
+    The schema's minimum/maximum are the first layer for numeric values. This
+    template guard is the second layer for schema-less renders and, critically,
+    for the cross-field rule that replicaCount > 1 requires Kubernetes Lease
+    coordination. Keep both layers: `--skip-schema-validation` must not turn a
+    singleton into a duplicate emitter, and a schema cannot express this guard
+    through the chart's generated value annotations.
+  */}}
+  {{- if lt $replicas 1 }}
+  {{- fail (printf "replicaCount must be at least 1 (got %d)" $replicas) }}
+  {{- end }}
+  {{- if gt $replicas 3 }}
+  {{- fail (printf "replicaCount must be at most 3 (got %d): Kubernetes coordination supports at most three active-passive replicas" $replicas) }}
+  {{- end }}
+  {{- if and (gt $replicas 1) (ne .Values.config.coordination.mode "kubernetes") }}
+  {{- fail (printf "replicaCount must be 1 unless config.coordination.mode=kubernetes (got %d replicas with mode %q): multiple pollers would double-emit every metric and log" $replicas .Values.config.coordination.mode) }}
   {{- end }}
   replicas: {{ .Values.replicaCount }}
   strategy:
+    {{- if eq .Values.config.coordination.mode "kubernetes" }}
+    type: RollingUpdate
+    {{- else }}
     type: Recreate
+    {{- end }}
   selector:
     matchLabels:
       {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}
@@ -82,7 +96,10 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "tailscale2otel.serviceAccountName" . }}
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      # Coordination uses the in-cluster Kubernetes client. Force the token
+      # mount on for that mode; singleton deployments retain the chart's
+      # default of no general-purpose Kubernetes credential.
+      automountServiceAccountToken: {{ if eq .Values.config.coordination.mode "kubernetes" }}true{{ else }}{{ .Values.serviceAccount.automountServiceAccountToken }}{{ end }}
       {{- /*
         The staged drain (receivers -> ingress WAL -> OTLP flush -> flow-store
         close) can run to 40 seconds, and each stage is bounded in Go.

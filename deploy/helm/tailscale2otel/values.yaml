@@ -79,12 +79,12 @@ probes: # @schema additionalProperties:false
     # Kubernetes REJECTS any value other than 1 for a startup probe — enforced here.
     successThreshold: 1 # @schema enum:[1]
 
-# -- Replica count. MUST stay 1 — this is a singleton poller (no leader election
-# or shared checkpoint coordination); scaling up would double-emit every metric
-# and log against the same tailnet. Enforced by the generated values.schema.json
-# AND a template `fail` guard (see templates/deployment.yaml) — any other value
-# is rejected.
-replicaCount: 1 # @schema minimum:1;maximum:1
+# -- Replica count. The default `none` coordination mode is a singleton poller:
+# values above 1 are rejected because they would double-emit every metric and log.
+# Set config.coordination.mode to `kubernetes` to run 2 or 3 active-passive
+# replicas behind a Lease. The template guard enforces the mode relationship;
+# this schema maximum enforces the Kubernetes-coordination ceiling.
+replicaCount: 1 # @schema minimum:1;maximum:3
 
 # -- Override the chart name portion of resource names.
 nameOverride: ""
@@ -1699,10 +1699,27 @@ config: # @schema additionalProperties:false
     # -- Spread initial collector ticks across this window. The existing default is 3s.
     initial_stagger_window: 3s
 
+  coordination: # @schema additionalProperties:false
+    # -- Whole-process active-passive coordination: `none` keeps singleton behavior;
+    # `kubernetes` elects one replica through a coordination.k8s.io Lease.
+    mode: none # @schema enum:["none","kubernetes"]
+    # -- Name of the Lease shared by coordinated replicas. Must be a DNS-1123 label.
+    lease_name: tailscale2otel
+    # -- Namespace containing the coordination Lease. Must be a DNS-1123 label.
+    namespace: default
+    # -- Leader Lease expiry duration. Must be greater than renew_deadline.
+    lease_duration: 15s
+    # -- Time allowed to renew before stepping down. Must be greater than retry_period.
+    renew_deadline: 10s
+    # -- Interval between Lease acquisition and renewal attempts.
+    retry_period: 2s
+
   checkpoint: # @schema additionalProperties:false
-    # -- Poll-cursor store: memory \| file. "memory" loses window cursors on restart (re-does
-    # initial_lookback); "file" persists them atomically (needs a writable volume at file_path).
-    store: file
+    # -- Poll-cursor store: memory \| file \| kubernetes. "memory" loses window cursors on
+    # restart (re-does initial_lookback); "file" persists them atomically (needs a writable
+    # volume at file_path); "kubernetes" stores cursors in a dedicated
+    # <coordination.lease_name>-checkpoints ConfigMap for coordinated failover.
+    store: file # @schema enum:["memory","file","kubernetes"]
     # -- Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to
     # preserve ACL revision/audit provenance across restarts even in streamed deployments.
     evidence_store: file
