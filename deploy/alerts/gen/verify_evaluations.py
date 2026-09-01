@@ -419,10 +419,25 @@ def verify(
         )
         last_error = _field(sources, ("lastError", "last_error", "error"))
         runtime_paused = _field(sources, ("isPaused", "is_paused", "paused"))
+        if last_error is _MISSING and all(
+            key in node for key in ("state", "health", "lastEvaluation", "evaluationTime")
+        ):
+            # Grafana's Prometheus-compatible runtime Rule model declares
+            # lastError with omitempty. Its absence on this otherwise-complete
+            # shape is therefore the serialized empty string, not a missing
+            # status read-back.
+            last_error = ""
         record["state"] = None if state is _MISSING else state
         record["health"] = None if health is _MISSING else health
         record["last_evaluation"] = None if last_evaluation is _MISSING else last_evaluation
-        record["last_error"] = None if last_error is _MISSING else last_error
+        # Grafana's Prometheus-compatible rules endpoint encodes a present
+        # "no evaluation error" value as JSON null. Preserve the distinction
+        # from an absent lastError field by normalizing only the former.
+        record["last_error"] = (
+            None if last_error is _MISSING
+            else "" if last_error is None
+            else last_error
+        )
         record["runtime_paused"] = None if runtime_paused is _MISSING else _bool_value(runtime_paused)
 
         if rule.paused:

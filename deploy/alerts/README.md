@@ -395,12 +395,17 @@ publication boundary and within a bounded freshness window. It records `state`, 
 results.
 
 The root deployment wrapper owns the authenticated read-back and should call
-`wait_for_evaluations` after recording the publication completion time. The read-back endpoint is
-the Grafana ruler API:
+`wait_for_evaluations` after recording the publication completion time. Use Grafana's
+Prometheus-compatible runtime endpoint, not the ruler configuration endpoint (which has no
+evaluation timestamps):
 
 ```text
-/api/ruler/grafana/api/v1/rules
+/api/prometheus/grafana/api/v1/rules
 ```
+
+That runtime model declares `lastError` with `omitempty`, so a complete Prometheus runtime rule
+that omits the field records an empty error. Other response shapes must carry the field explicitly
+and still fail closed when it is missing.
 
 The supported task-surface form verifies one saved JSON response and fails closed when the
 publication boundary is omitted:

@@ -64,6 +64,35 @@ class SnapshotVerificationTest(unittest.TestCase):
         self.assertEqual("2026-09-01T19:00:45Z", record["last_evaluation"])
         self.assertEqual("", record["last_error"])
 
+    def test_null_last_error_is_recorded_as_no_error(self):
+        shipped = {"ts2o-healthy": rule("ts2o-healthy")}
+        payload = ruler(status(
+            "ts2o-healthy",
+            last_evaluation="2026-09-01T19:00:45Z",
+            last_error=None,
+        ))
+
+        report = verify(shipped, payload, now=CHECKED, published_at=PUBLISHED,
+                        max_age=300)
+
+        self.assertTrue(report.ok, report.failures)
+        self.assertEqual("", report.rules["ts2o-healthy"]["last_error"])
+
+    def test_prometheus_runtime_rule_omits_empty_last_error(self):
+        shipped = {"ts2o-healthy": rule("ts2o-healthy")}
+        runtime = status(
+            "ts2o-healthy",
+            last_evaluation="2026-09-01T19:00:45Z",
+        )
+        del runtime["lastError"]
+        runtime["evaluationTime"] = 0.012
+
+        report = verify(shipped, ruler(runtime), now=CHECKED,
+                        published_at=PUBLISHED, max_age=300)
+
+        self.assertTrue(report.ok, report.failures)
+        self.assertEqual("", report.rules["ts2o-healthy"]["last_error"])
+
     def test_recording_rule_status_can_use_app_platform_items(self):
         shipped = {"ts2o-recording": rule("ts2o-recording", kind="RecordingRule")}
         payload = {
