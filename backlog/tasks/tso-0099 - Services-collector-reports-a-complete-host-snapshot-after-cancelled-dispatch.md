@@ -1,9 +1,10 @@
 ---
 id: TSO-0099
 title: Services collector reports a complete host snapshot after cancelled dispatch
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-31 10:55'
+updated_date: '2026-09-01 18:36'
 labels:
   - needs-triage
 milestone: m-9
@@ -36,3 +37,20 @@ The second is the one that matters: a host snapshot that is quietly partial is w
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+- Reproduce the cancelled-dispatch partial host snapshot through emitted telemetry.
+- Fix the services collector to publish only a complete snapshot.
+- Run targeted tests and return changed paths plus evidence without committing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- `fetchHosts` now reports whether dispatch completed; a cancelled partial host enumeration is discarded rather than emitted as a complete `host.info` snapshot.
+- The telemetry regression failed before the fix by emitting one partial snapshot, then passed with no snapshot emitted.
+- Replaced a `runtime.Gosched` hint with explicit cancellation-observation synchronization after CodeRabbit flagged nondeterminism; repeated the regression 20 times under race.
+- Final CodeRabbit services shard completed with 0 findings.
+<!-- SECTION:NOTES:END -->

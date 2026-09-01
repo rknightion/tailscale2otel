@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +25,51 @@ type fakeAPI struct {
 
 	addrs    []tsapi.ServiceAddr
 	addrsErr error
+}
+
+type cancelAfterFirstHostAPI struct {
+	services          []tsapi.VIPService
+	cancel            context.CancelFunc
+	dispatchObserved  <-chan struct{}
+	dispatchConfirmed atomic.Bool
+}
+
+type dispatchObservationContext struct {
+	context.Context
+	observed chan struct{}
+	once     sync.Once
+}
+
+func (c *dispatchObservationContext) Err() error {
+	err := c.Context.Err()
+	if err != nil {
+		c.once.Do(func() { close(c.observed) })
+	}
+	return err
+}
+
+func (a *cancelAfterFirstHostAPI) Services(context.Context) ([]tsapi.VIPService, error) {
+	return a.services, nil
+}
+
+func (a *cancelAfterFirstHostAPI) ServiceHosts(_ context.Context, name string) ([]tsapi.ServiceHost, error) {
+	if name == a.services[0].Name {
+		a.cancel()
+		// Keep the worker in this call until the dispatcher has observed the
+		// canceled context, so the next unbuffered job cannot be sent. The
+		// timeout turns a regression in that synchronization into a test failure
+		// instead of hanging the suite.
+		select {
+		case <-a.dispatchObserved:
+			a.dispatchConfirmed.Store(true)
+		case <-time.After(time.Second):
+		}
+	}
+	return []tsapi.ServiceHost{{NodeID: name, ApprovalLevel: "approved:auto", Configured: "ready"}}, nil
+}
+
+func (a *cancelAfterFirstHostAPI) ServiceAddrs(context.Context) ([]tsapi.ServiceAddr, error) {
+	return nil, nil
 }
 
 func (f *fakeAPI) Services(context.Context) ([]tsapi.VIPService, error) {
@@ -172,6 +219,33 @@ func TestCollectHostInfoClearsRemovedSeries(t *testing.T) {
 	}
 	if got := len(rec.MetricPoints(metricHostInfo)); got != 0 {
 		t.Fatalf("host-info points after removal = %d, want 0", got)
+	}
+}
+
+// TestCollectSkipsHostInfoSnapshotAfterCanceledDispatch prevents a partial
+// host inventory from being published as a complete GaugeSnapshot. The first
+// host request succeeds but cancels the collection before the second request
+// can be dispatched; only a fully dispatched set may replace host.info.
+func TestCollectSkipsHostInfoSnapshotAfterCanceledDispatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dispatchObserved := make(chan struct{})
+	probeCtx := &dispatchObservationContext{Context: ctx, observed: dispatchObserved}
+	api := &cancelAfterFirstHostAPI{
+		services:         []tsapi.VIPService{{Name: "svc:first"}, {Name: "svc:second"}},
+		cancel:           cancel,
+		dispatchObserved: dispatchObserved,
+	}
+	rec := telemetrytest.New()
+	c := New(api, 0, WithCollectHosts(true))
+	if err := c.Collect(probeCtx, rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	if !api.dispatchConfirmed.Load() {
+		t.Fatal("test did not observe the dispatcher cancel before the first host request returned")
+	}
+	if got := rec.MetricPoints(metricHostInfo); len(got) != 0 {
+		t.Fatalf("partial host.info snapshot = %+v, want no snapshot", got)
 	}
 }
 

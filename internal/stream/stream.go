@@ -760,19 +760,35 @@ func (s *Server) phase2DeadlineExceeded(ctx context.Context, w http.ResponseWrit
 // admissionWait for a slot, giving up early if the client goes away. A nil
 // channel disables that layer of the budget.
 func acquireAdmission(ctx context.Context, admit chan struct{}) (release func(), ok bool) {
+	// Check cancellation before the non-blocking send below. A select would
+	// still choose an available slot when ctx is already canceled, charging a
+	// request that cannot be processed against the route's admission budget.
+	if err := ctx.Err(); err != nil {
+		return nil, false
+	}
 	if admit == nil {
 		return func() {}, true
 	}
 	select {
 	case admit <- struct{}{}:
-		return func() { <-admit }, true
+		release := func() { <-admit }
+		if err := ctx.Err(); err != nil {
+			release()
+			return nil, false
+		}
+		return release, true
 	default:
 	}
 	timer := time.NewTimer(admissionWait)
 	defer timer.Stop()
 	select {
 	case admit <- struct{}{}:
-		return func() { <-admit }, true
+		release := func() { <-admit }
+		if err := ctx.Err(); err != nil {
+			release()
+			return nil, false
+		}
+		return release, true
 	case <-ctx.Done():
 		return nil, false
 	case <-timer.C:

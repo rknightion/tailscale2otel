@@ -311,36 +311,20 @@ type Router struct {
 	routes map[string]*Server
 	base   *Server
 	admit  chan struct{}
-	// tokenless is true when any route relies on loopback reachability rather
-	// than a signing secret. Routing requires reading the body, so the shared
-	// listener must apply the browser/Host gate before that read.
-	tokenless bool
-	// invalidAuthMix prevents a shared listener from weakening a tokenless
-	// route's pre-body browser gate or applying that gate to a signed route.
-	// Config validation rejects this shape; the Router repeats the check for
-	// programmatic callers.
-	invalidAuthMix bool
 }
 
 // NewRouter composes per-tailnet webhook servers sharing one listener/path.
 func NewRouter(routes []Route) *Router {
 	r := &Router{routes: make(map[string]*Server, len(routes))}
-	hasSigned := false
 	for _, route := range routes {
 		if route.Tailnet == "" || route.Server == nil {
 			continue
 		}
 		r.routes[route.Tailnet] = route.Server
-		if route.Server.currentSecret() == "" {
-			r.tokenless = true
-		} else {
-			hasSigned = true
-		}
 		if r.base == nil {
 			r.base = route.Server
 		}
 	}
-	r.invalidAuthMix = r.tokenless && hasSigned
 	if r.base == nil {
 		return r
 	}
@@ -370,6 +354,25 @@ func NewRouter(routes []Route) *Router {
 	return r
 }
 
+// authModes snapshots the current authentication mode of every route. Secret
+// providers support hot rotation, including crossing the empty/non-empty
+// boundary, so this decision must be made for each request rather than cached
+// by NewRouter. Routing needs to read the body before it knows the tailnet;
+// reject a current tokenless/signed mix before that read so neither mode's
+// pre-body protections are weakened. Each Server captures its own current
+// secret again when it verifies the selected request.
+func (r *Router) authModes() (tokenless, invalidAuthMix bool) {
+	hasSigned := false
+	for _, server := range r.routes {
+		if server.currentSecret() == "" {
+			tokenless = true
+		} else {
+			hasSigned = true
+		}
+	}
+	return tokenless, tokenless && hasSigned
+}
+
 // Handler reads no more than the existing receiver cap, inspects only each
 // event's tailnet field, then hands the untouched bytes to the selected Server
 // for normal HMAC verification and emission.
@@ -388,11 +391,12 @@ func (r *Router) Handler() http.Handler {
 			http.Error(w, "receiver unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		if r.invalidAuthMix {
+		tokenless, invalidAuthMix := r.authModes()
+		if invalidAuthMix {
 			http.Error(w, "webhook router cannot mix tokenless and signed routes", http.StatusServiceUnavailable)
 			return
 		}
-		if r.tokenless {
+		if tokenless {
 			if reason := httpguard.TokenlessReceiverReason(req); reason != "" {
 				r.base.rejectStatus(w, http.StatusForbidden, "cross_site",
 					"webhook receiver rejected a browser-shaped tokenless request", errors.New(reason))
@@ -545,7 +549,8 @@ func (r *Router) Run(ctx context.Context) error {
 	if r.base == nil {
 		return errors.New("webhook: router has no routes")
 	}
-	if r.invalidAuthMix {
+	_, invalidAuthMix := r.authModes()
+	if invalidAuthMix {
 		return errors.New("webhook: router cannot mix tokenless and signed routes on one listener")
 	}
 	srv := &http.Server{

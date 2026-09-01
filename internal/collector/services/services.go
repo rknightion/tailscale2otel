@@ -194,10 +194,13 @@ type hostResult struct {
 
 // fetchHosts runs the N+1 backing-host requests through a bounded worker pool.
 // Results stay indexed by service so Collect can emit telemetry serially and
-// preserve deterministic first-error behavior.
-func (c *Collector) fetchHosts(ctx context.Context, svcs []tsapi.VIPService) []hostResult {
+// preserve deterministic first-error behavior. complete is false when
+// cancellation stops dispatch before every service has been assigned to a
+// worker; in that case results are only a partial view and must not replace a
+// complete host snapshot.
+func (c *Collector) fetchHosts(ctx context.Context, svcs []tsapi.VIPService) ([]hostResult, bool) {
 	if len(svcs) == 0 {
-		return nil
+		return nil, true
 	}
 	workers := c.subrequestConcurrency
 	if workers <= 0 {
@@ -221,17 +224,22 @@ func (c *Collector) fetchHosts(ctx context.Context, svcs []tsapi.VIPService) []h
 	}
 
 	for i := range svcs {
+		if err := ctx.Err(); err != nil {
+			close(jobs)
+			wg.Wait()
+			return results, false
+		}
 		select {
 		case jobs <- i:
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
-			return results
+			return results, false
 		}
 	}
 	close(jobs)
 	wg.Wait()
-	return results
+	return results, true
 }
 
 // Collect lists Tailscale Services and emits the count plus (per-entity) the
@@ -272,12 +280,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// services to iterate, must leave it unknown rather than claiming a state.
 	var (
 		hostsAttempted bool
+		hostsComplete  bool
 		hostsErr       error
 		hostInfoPoints []telemetry.GaugePoint
 	)
 	var hostResults []hostResult
 	if c.collectHosts {
-		hostResults = c.fetchHosts(ctx, svcs)
+		hostResults, hostsComplete = c.fetchHosts(ctx, svcs)
 	}
 	for i := range svcs {
 		s := &svcs[i]
@@ -300,7 +309,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			}
 		}
 	}
-	if c.collectHosts && hostsErr == nil {
+	if c.collectHosts && hostsComplete && hostsErr == nil {
 		e.GaugeSnapshot(docHostInfo.Name, docHostInfo.Unit, docHostInfo.Description, hostInfoPoints)
 	}
 	if hostsAttempted {
