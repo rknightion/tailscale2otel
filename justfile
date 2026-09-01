@@ -358,6 +358,11 @@ smoke tag="tailscale2otel:dev":
 coverage:
     go test -covermode=atomic -coverprofile=coverage.out ./...
 
+# run CodeRabbit in directory shards; transport-incomplete shards fail closed (see docs/coderabbit-sharded-review.md)
+[group('dev')]
+review-sharded base="main" dirs="cmd internal deploy scripts tools":
+    python3 scripts/shard_coderabbit_review.py --base '{{ base }}' --dirs {{ dirs }}
+
 # THE GATE — everything a pull request must pass, minus the container/goreleaser legs (see `ci`)
 [group('check')]
 check: fmt-check lint vet test test-modules test-python tidy-check vuln gen-check docs-check helm-lint helm-gen-check config-check promql rules-check hygiene compose-check build

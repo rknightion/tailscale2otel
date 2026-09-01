@@ -1,9 +1,10 @@
 ---
 id: TSO-0096
 title: Shard the CodeRabbit pre-commit review so a wave-sized diff can be reviewed
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-31 10:55'
+updated_date: '2026-09-01 18:01'
 labels:
   - needs-triage
 milestone: m-9
@@ -37,3 +38,20 @@ Deliver a just recipe that shards by directory, aggregates the NDJSON, and fails
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add a documented just review recipe backed by a deterministic shard runner. 2. Test clean, finding, and missing-complete outcomes with a fake CodeRabbit command, including a negative test of the completion guard. 3. Run focused checks and return exact evidence; root integrates, reviews, commits, and pushes.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Implemented `just review-sharded` with one CodeRabbit invocation per directory, ordered raw-NDJSON aggregation, a structured completion sentinel, a fail-closed missing-sentinel path, a 15-minute per-shard timeout, and a secure unique default output file.
+- Documented and emitted the `--dir` missing-symbol/missing-wiring false-positive warning.
+- Negative-tested the completion guard by removing it and observing `test_missing_complete_event_fails_the_review` fail, then restored it.
+- Live CodeRabbit review found and drove two initial fixes (predictable `/tmp` output and no timeout), then a third timeout-path fix: `TimeoutExpired` partial output can be bytes despite text mode. Added a failing regression test, observed the TypeError, normalized byte output with replacement-safe UTF-8 decoding, and reran green.
+- Final CodeRabbit shard review completed with 0 findings; aggregate path was ephemeral and remains outside the repository.
+- `just check` passed: 67 repository checks, 0 failed, including 46 script tests.
+<!-- SECTION:NOTES:END -->
