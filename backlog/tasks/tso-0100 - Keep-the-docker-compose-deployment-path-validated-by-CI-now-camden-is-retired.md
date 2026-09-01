@@ -1,10 +1,10 @@
 ---
 id: TSO-0100
 title: Keep the docker-compose deployment path validated by CI now camden is retired
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 10:55'
-updated_date: '2026-09-01 18:44'
+updated_date: '2026-09-01 19:10'
 labels:
   - needs-triage
 milestone: m-9
@@ -23,16 +23,16 @@ A live instance was implicitly validating those assets. Replace that with CI: re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CI exercises the docker-compose path on every relevant change, not just parses it
-- [ ] #2 The check fails when a compose asset drifts from the config contract, proven by a negative test
-- [ ] #3 Docs state that docker-compose is CI-validated rather than run in the lab
+- [x] #1 CI exercises the docker-compose path on every relevant change, not just parses it
+- [x] #2 The check fails when a compose asset drifts from the config contract, proven by a negative test
+- [x] #3 Docs state that docker-compose is CI-validated rather than run in the lab
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -51,3 +51,9 @@ A live instance was implicitly validating those assets. Replace that with CI: re
 - Extended compose validation to render the CI composition. Negative-tested all five guards; CodeRabbit found the stdout mutation was forcing render status and duplicating the production assertion, so it now preserves pipeline status and runs the shared assertion helper.
 - `just compose-check` passed 71 checks with 0 failures; image build/smoke passed and `docker compose ls` was empty afterward. Final CodeRabbit deploy shard completed with 0 findings.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CI now starts and health-checks the real built image through a disposable, external-network-free Compose override, with credential canaries and teardown. Five negative guards fired as intended, 71 Compose checks passed, and documentation states the CI-versus-lab boundary.
+<!-- SECTION:FINAL_SUMMARY:END -->

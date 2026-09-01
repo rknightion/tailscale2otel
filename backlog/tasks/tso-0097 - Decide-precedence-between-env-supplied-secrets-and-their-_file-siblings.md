@@ -1,10 +1,10 @@
 ---
 id: TSO-0097
 title: Decide precedence between env-supplied secrets and their _file siblings
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 10:55'
-updated_date: '2026-09-01 18:44'
+updated_date: '2026-09-01 19:10'
 labels:
   - needs-triage
 milestone: m-9
@@ -25,15 +25,15 @@ Decide and document: either exclude env-overlaid entries from the conflict set s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The precedence between an env-supplied secret and its _file sibling is decided, implemented and documented
-- [ ] #2 Whichever way it resolves, the diagnostic names the specific env var or file that produced the collision
+- [x] #1 The precedence between an env-supplied secret and its _file sibling is decided, implemented and documented
+- [x] #2 Whichever way it resolves, the diagnostic names the specific env var or file that produced the collision
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -52,3 +52,9 @@ Decide and document: either exclude env-overlaid entries from the conflict set s
 - CodeRabbit found a real adjacent coverage gap: global and per-tailnet Kubernetes-audit object-store `access_key_id_file`, `secret_access_key_file`, and `session_token_file` fields were never resolved. Existing/new regressions failed before registration and now pass for all six pairs.
 - Final CodeRabbit config shard completed with 0 findings; the integrated `just check` passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Kept security-preserving value-XOR-file refusal and made collisions name the exact environment variable and file source without exposing values. Added the missing Kubernetes-audit object-store file-secret resolution; focused tests, final review and the full gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

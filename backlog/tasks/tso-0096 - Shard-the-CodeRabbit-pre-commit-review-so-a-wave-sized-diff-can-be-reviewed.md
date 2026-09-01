@@ -1,10 +1,10 @@
 ---
 id: TSO-0096
 title: Shard the CodeRabbit pre-commit review so a wave-sized diff can be reviewed
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 10:55'
-updated_date: '2026-09-01 18:01'
+updated_date: '2026-09-01 19:10'
 labels:
   - needs-triage
 milestone: m-9
@@ -27,16 +27,16 @@ Deliver a just recipe that shards by directory, aggregates the NDJSON, and fails
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A just recipe reviews a wave-sized diff by sharding, and its output distinguishes clean from failed per shard
-- [ ] #2 A shard with no complete line fails the recipe rather than being counted as clean
-- [ ] #3 The false-positive class from --dir scoping is documented where the next agent will read it before triaging findings
+- [x] #1 A just recipe reviews a wave-sized diff by sharding, and its output distinguishes clean from failed per shard
+- [x] #2 A shard with no complete line fails the recipe rather than being counted as clean
+- [x] #3 The false-positive class from --dir scoping is documented where the next agent will read it before triaging findings
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -55,3 +55,9 @@ Deliver a just recipe that shards by directory, aggregates the NDJSON, and fails
 - Final CodeRabbit shard review completed with 0 findings; aggregate path was ephemeral and remains outside the repository.
 - `just check` passed: 67 repository checks, 0 failed, including 46 script tests.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added the sharded CodeRabbit recipe, ordered NDJSON aggregation, timeout, and fail-closed completion sentinel; documented the directory-scope false-positive class. Negative tests proved missing completion and timeout paths fail, and live sharded reviews completed with zero findings.
+<!-- SECTION:FINAL_SUMMARY:END -->

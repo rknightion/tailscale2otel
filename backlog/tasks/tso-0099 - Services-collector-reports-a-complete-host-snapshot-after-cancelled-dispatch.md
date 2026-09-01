@@ -1,10 +1,10 @@
 ---
 id: TSO-0099
 title: Services collector reports a complete host snapshot after cancelled dispatch
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 10:55'
-updated_date: '2026-09-01 18:36'
+updated_date: '2026-09-01 19:10'
 labels:
   - needs-triage
 milestone: m-9
@@ -26,16 +26,16 @@ The second is the one that matters: a host snapshot that is quietly partial is w
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 fetchHosts returns an explicit completion state and Collect emits the host snapshot only when dispatch completed
-- [ ] #2 A regression test cancels after one job completes but before the remainder are dispatched, and asserts no snapshot is emitted
-- [ ] #3 Per-result observation replaces the aggregate record, or the duplicate is shown not to occur
+- [x] #1 fetchHosts returns an explicit completion state and Collect emits the host snapshot only when dispatch completed
+- [x] #2 A regression test cancels after one job completes but before the remainder are dispatched, and asserts no snapshot is emitted
+- [x] #3 Per-result observation replaces the aggregate record, or the duplicate is shown not to occur
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -54,3 +54,9 @@ The second is the one that matters: a host snapshot that is quietly partial is w
 - Replaced a `runtime.Gosched` hint with explicit cancellation-observation synchronization after CodeRabbit flagged nondeterminism; repeated the regression 20 times under race.
 - Final CodeRabbit services shard completed with 0 findings.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Services host collection now returns an explicit dispatch-complete state and suppresses cancelled partial snapshots. The telemetry regression failed before the fix, passed after it, and remained stable across 20 race runs; per-result observation remains nonduplicating.
+<!-- SECTION:FINAL_SUMMARY:END -->

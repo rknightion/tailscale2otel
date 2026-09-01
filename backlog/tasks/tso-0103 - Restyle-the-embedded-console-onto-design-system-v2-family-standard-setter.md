@@ -1,10 +1,10 @@
 ---
 id: TSO-0103
 title: Restyle the embedded console onto design system v2 (family standard-setter)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 12:12'
-updated_date: '2026-09-01 19:07'
+updated_date: '2026-09-01 19:10'
 labels:
   - design-system
 milestone: m-9
@@ -23,19 +23,19 @@ Scope: Go html/template + inline CSS/vanilla JS + go:embed stays; no framework, 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 all three pages (status console, flow explorer, events explorer) render on the family token block, light and dark, light default
-- [ ] #2 the shared token block matches spec section 1 byte-for-byte
-- [ ] #3 tx/rx treatment is lightness+label based per spec; AA pairs hold in both themes
-- [ ] #4 no external network requests; fonts self-hosted; ARIA tab roles intact
-- [ ] #5 diagnostic actions relocated per spec (exports with tables, support bundle in Config)
+- [x] #1 all three pages (status console, flow explorer, events explorer) render on the family token block, light and dark, light default
+- [x] #2 the shared token block matches spec section 1 byte-for-byte
+- [x] #3 tx/rx treatment is lightness+label based per spec; AA pairs hold in both themes
+- [x] #4 no external network requests; fonts self-hosted; ARIA tab roles intact
+- [x] #5 diagnostic actions relocated per spec (exports with tables, support bundle in Config)
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
-- [ ] #4 just check green
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #4 just check green
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -53,3 +53,9 @@ Implemented the v2 family console across status, flow, and events templates with
 
 Negative guards: changing one family token made TestFamilyTokenBlockMatchesTheSpec fail; accepting an unknown font made TestFontAllowsOnlyThePublishedConsoleFiles fail; widening the narrow rollup made TestConsoleV2PagesKeepTheOfflineThemeAndFontContract fail; removing the route/CSP integration made the root route/header tests fail. Each break was restored. Focused race tests passed. CodeRabbit findings for narrow rollup, tx/rx label collision, RX legend distinction, color-scheme, and banner distinction were fixed; two subsequent sharded reviews completed with zero finding events. just check passed. Shared token extension: none.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Restyled all three embedded console pages onto design system v2 with byte-identical shared tokens, self-hosted fonts, offline CSP, retained theme and ARIA contracts, accessible labelled tx/rx treatment, and relocated diagnostics. Negative guards, focused race tests, two clean sharded reviews and just check passed; shared token extension: none.
+<!-- SECTION:FINAL_SUMMARY:END -->

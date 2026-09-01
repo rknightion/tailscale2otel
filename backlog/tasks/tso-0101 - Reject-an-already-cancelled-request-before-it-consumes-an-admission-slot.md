@@ -1,10 +1,10 @@
 ---
 id: TSO-0101
 title: Reject an already-cancelled request before it consumes an admission slot
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-08-31 10:55'
-updated_date: '2026-09-01 18:36'
+updated_date: '2026-09-01 19:10'
 labels:
   - needs-triage
 milestone: m-9
@@ -21,15 +21,15 @@ internal/stream/stream.go around lines 767-768 takes a slot from the admit chann
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An already-cancelled request is rejected without consuming an admission slot, proven by a test
-- [ ] #2 The release callback and the success path for live requests are unchanged
+- [x] #1 An already-cancelled request is rejected without consuming an admission slot, proven by a test
+- [x] #2 The release callback and the success path for live requests are unchanged
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -47,3 +47,9 @@ internal/stream/stream.go around lines 767-768 takes a slot from the admit chann
 - Deterministic regressions failed before the fix for both immediate and timed send branches with `ok=true`, then passed with the slot still available.
 - Final CodeRabbit stream shard completed with 0 findings; the combined focused race gate for stream, services and webhook passed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Admission now rejects pre-cancelled requests and rechecks cancellation after both send branches, releasing any acquired slot. Deterministic regressions failed before the fix and passed after it while preserving live-request release and success behavior.
+<!-- SECTION:FINAL_SUMMARY:END -->
