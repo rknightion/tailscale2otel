@@ -26,6 +26,9 @@ func TestRegistryCoversKnownKeys(t *testing.T) {
 		"tailscale.webhook.actor":            CatEmails,
 		"tailscale.webhook.url":              CatEndpointPaths,
 		"tailscale.webhook.user":             CatEmails,
+		"coordination.lease_name":            CatFreeTextDetails,
+		"coordination.namespace":             CatFreeTextDetails,
+		"coordination.identity":              CatHostnames,
 	}
 	for k, want := range keyCat {
 		got, ok := keyCategory[k]
@@ -42,7 +45,7 @@ func TestRegistryCoversKnownKeys(t *testing.T) {
 			t.Errorf("key %q should be IP-value-classified", k)
 		}
 	}
-	for _, k := range []string{"network.io.direction", "tailscale.key.type", "http.response.status_code", "category", "tailscale.device.change", "tailscale.device.field", "tailscale.lifecycle.transition", "tailscale.user_invite.id"} {
+	for _, k := range []string{"network.io.direction", "tailscale.key.type", "http.response.status_code", "category", "tailscale.device.change", "tailscale.device.field", "tailscale.lifecycle.transition", "tailscale.user_invite.id", "coordination.mode", "coordination.state"} {
 		if !nonIdentifier[k] {
 			t.Errorf("key %q should be in nonIdentifier allowlist", k)
 		}

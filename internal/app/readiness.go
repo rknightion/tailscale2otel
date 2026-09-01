@@ -10,6 +10,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v4/internal/coordination"
 )
 
 // componentHealth tracks terminal failures of the long-running components so
@@ -138,7 +139,9 @@ func (a *App) ingressWALFailure() string {
 func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 	var ready bool
 	var reason string
-	if wal := a.ingressWALFailure(); wal != "" {
+	if a.cfg != nil && a.cfg.Coordination.Mode == "kubernetes" && a.currentCoordination().State != coordination.StateLeader {
+		ready, reason = false, "coordination: "+string(a.currentCoordination().State)
+	} else if wal := a.ingressWALFailure(); wal != "" {
 		ready, reason = false, wal
 	} else {
 		ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())

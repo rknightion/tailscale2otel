@@ -62,6 +62,20 @@ def tab_health_overview(scope):
                transformations=[organize(exclude=TBL_NOISE,
                                          rename={"version": "Version", "go_version": "Go version"})],
                desc="Running version / Go toolchain version (label values)."), 8, 5),
+        (panel("Lease leadership", "table",
+               [prom_t("max by (coordination_identity, coordination_lease_name, "
+                       "coordination_namespace, coordination_state) "
+                       "(tailscale2otel_coordination_leader_ratio)",
+                       instant=True, fmt="table")],
+               transformations=[organize(exclude=TBL_NOISE,
+                                         rename={"coordination_identity": "Pod identity",
+                                                 "coordination_lease_name": "Lease",
+                                                 "coordination_namespace": "Namespace",
+                                                 "coordination_state": "State",
+                                                 "Value": "Leader"})],
+               novalue="No lease-coordination series. Requires coordination.mode: kubernetes.",
+               desc="Current active-passive Lease holder and transition state. Leader=1; standby "
+                    "or stepped-down=0, so an API-server renewal failure remains visible."), 8, 5),
     ]
 
     # --- "is it collecting?" --------------------------------------------------

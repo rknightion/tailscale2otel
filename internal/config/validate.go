@@ -70,6 +70,15 @@ func oneOf(v string, allowed ...string) bool {
 	return slices.Contains(allowed, v)
 }
 
+var kubernetesDNS1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validKubernetesLeasePart accepts the DNS-1123 label form Kubernetes permits
+// for both Lease names and namespaces. Keeping this local avoids importing the
+// Kubernetes API machinery into the configuration package.
+func validKubernetesLeasePart(v string) bool {
+	return len(v) <= 63 && kubernetesDNS1123Label.MatchString(v)
+}
+
 // validateLogStreamingPublicURL validates the endpoint registered with the
 // Tailscale log-streaming API. Tailscale permits plain HTTP only for private
 // tailnet endpoints, and its current contract rejects every IPv4 literal.
@@ -252,6 +261,10 @@ func (c *Config) validateReceiverRoutes() error {
 // steer operators toward the safer choice without removing flexibility.
 func (c *Config) Warnings() []string {
 	var w []string
+	if c.Coordination.Mode == "kubernetes" &&
+		(c.Collectors.Flowlogs.Source == "both" || c.Collectors.Auditlogs.Source == "both") {
+		w = append(w, "coordination.mode=kubernetes with a flowlogs or auditlogs source=both: cross-source de-duplication is process-local and cannot suppress duplicates across replicas. Use one ingestion source per log type when deploying more than one replica.")
+	}
 	if c.OTLP.Protocol == "grpc" && c.OTLP.TLS.CAFile != "" &&
 		c.OTLP.CredentialReload.Enabled && c.OTLP.GRPCReconnectionPeriod.D() <= 0 {
 		w = append(w, "otlp.tls.ca_file is watched with otlp.protocol=grpc, but otlp.grpc_reconnection_period is unset: CA rotation is used only by a new gRPC connection. Set otlp.grpc_reconnection_period so rotated CA material takes effect without waiting for an unrelated reconnect.")
@@ -1596,8 +1609,35 @@ func (c *Config) validationChecks() []configCheck {
 		return c.validateReceiverRoutes()
 	})
 	add("checkpoint.store", oneOfRemediation("checkpoint.store", "memory", "file"), func() error {
-		if !oneOf(c.Checkpoint.Store, "memory", "file") {
-			return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file", c.Checkpoint.Store)
+		if !oneOf(c.Checkpoint.Store, "memory", "file", "kubernetes") {
+			return fmt.Errorf("checkpoint.store %q invalid: must be one of memory, file, kubernetes", c.Checkpoint.Store)
+		}
+		return nil
+	})
+	add("coordination", "Set coordination.mode=none, or configure a valid Kubernetes Lease.", func() error {
+		if !oneOf(c.Coordination.Mode, "none", "kubernetes") {
+			return fmt.Errorf("coordination.mode %q invalid: must be one of none, kubernetes", c.Coordination.Mode)
+		}
+		if c.Checkpoint.Store == "kubernetes" && c.Coordination.Mode != "kubernetes" {
+			return fmt.Errorf("checkpoint.store=kubernetes requires coordination.mode=kubernetes")
+		}
+		if c.Coordination.Mode != "kubernetes" {
+			return nil
+		}
+		if !validKubernetesLeasePart(c.Coordination.LeaseName) {
+			return fmt.Errorf("coordination.lease_name %q invalid: must be a DNS-1123 label", c.Coordination.LeaseName)
+		}
+		if !validKubernetesLeasePart(c.Coordination.Namespace) {
+			return fmt.Errorf("coordination.namespace %q invalid: must be a DNS-1123 label", c.Coordination.Namespace)
+		}
+		leaseDuration := c.Coordination.LeaseDuration.D()
+		renewDeadline := c.Coordination.RenewDeadline.D()
+		retryPeriod := c.Coordination.RetryPeriod.D()
+		if leaseDuration <= 0 || renewDeadline <= 0 || retryPeriod <= 0 {
+			return fmt.Errorf("coordination lease_duration, renew_deadline, and retry_period must all be positive")
+		}
+		if leaseDuration <= renewDeadline || renewDeadline <= retryPeriod {
+			return fmt.Errorf("coordination timings invalid: require lease_duration > renew_deadline > retry_period")
 		}
 		return nil
 	})

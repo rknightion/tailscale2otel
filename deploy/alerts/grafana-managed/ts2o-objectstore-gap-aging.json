@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "63",
+      "__panelId__": "64",
       "description": "gap.oldest.age ages FAILED objects awaiting retry (pending.oldest.age is the different signal: objects merely not yet ingested). An aging gap while the gap COUNT holds steady means the same object is failing repeatedly, not that the backlog is recovering. The threshold is about permanent loss: once an object ages past the bucket's own retention it can never be recovered, so tune 24h to that retention rather than leaving it. Zero when no gaps remain, so this cannot fire on a healthy feed.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#object-store-ingestion",
       "summary": "The oldest unresolved object-store gap is over 24h old"

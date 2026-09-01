@@ -22,6 +22,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v4/internal/coordination"
 	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
 	"github.com/rknightion/tailscale2otel/v4/internal/flowstore/sqlitestore"
@@ -143,6 +144,10 @@ type App struct {
 	// Prometheus listeners (#306). Written by recordComponentStop, read by the
 	// readyz handler.
 	readyState *componentHealth
+
+	coordinationMu     sync.RWMutex
+	coordinationStatus coordination.Status
+	coordinationParent context.Context
 }
 
 // receiver is the small common surface shared by legacy single-tailnet servers
@@ -757,9 +762,20 @@ func newApp(
 	return a
 }
 
-// Run starts the heartbeat and scheduler, blocks until ctx is canceled, then
-// drains and flushes telemetry.
+// Run preserves the historical singleton lifecycle for coordination.mode=none.
+// Kubernetes mode starts only the admin server while standing by, then hands
+// the normal active lifecycle to the Lease holder.
 func (a *App) Run(ctx context.Context) error {
+	if a.cfg.Coordination.Mode == "kubernetes" {
+		return a.runCoordinated(ctx)
+	}
+	return a.runActive(ctx, true)
+}
+
+// runActive starts the leader-only runtime set: heartbeat, schedulers,
+// receivers, WAL replay, rollup flusher and the Prometheus listener. The admin
+// listener is optionally already serving the standby status page.
+func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	if a.restore != nil {
 		defer a.restore()
 	}
@@ -816,7 +832,7 @@ func (a *App) Run(ctx context.Context) error {
 			a.logger.Error("close flow stores", "error", err)
 		}
 	}()
-	if a.adminSrv != nil {
+	if startAdmin && a.adminSrv != nil {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
 	}
 	if a.metricsSrv != nil {
@@ -988,6 +1004,10 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	<-ctx.Done()
+	// client-go cancels the leader callback context before invoking
+	// OnStoppedLeading. Emit the stepped-down transition here, while the OTLP
+	// pipeline is still alive, rather than after its final flush.
+	a.markCoordinationSteppedDown()
 	var schedErr error
 	for range a.runtimes {
 		schedErr = errors.Join(schedErr, <-done)
@@ -1276,6 +1296,18 @@ func semanticEvidenceOutcome(
 func checkpointStoreWithDefault(
 	cfg *config.Config, logger *slog.Logger, defaultPath string,
 ) (collector.CheckpointStore, checkpointOutcome, error) {
+	if cfg.Checkpoint.Store == "kubernetes" {
+		client, err := coordination.NewKubernetesCheckpointClient(cfg.Coordination.Namespace, cfg.Coordination.LeaseName)
+		if err != nil {
+			return nil, checkpointOutcome{}, fmt.Errorf("build Kubernetes checkpoint client: %w", err)
+		}
+		store, err := collector.NewKubernetesCheckpointStore(context.Background(), client,
+			collector.WithKubernetesCheckpointWriteDebounce(cfg.Checkpoint.WriteDebounce.D()))
+		if err != nil {
+			return nil, checkpointOutcome{}, err
+		}
+		return store, checkpointOutcome{Kind: "kubernetes"}, nil
+	}
 	if cfg.Checkpoint.Store != "file" || cfg.Checkpoint.FilePath == "" {
 		return collector.NewMemoryStore(), checkpointOutcome{Kind: "memory"}, nil
 	}

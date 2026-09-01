@@ -123,6 +123,7 @@ func (a *App) buildStatus() statusdata.Status {
 		Flows:         a.flowStoreInfo(),
 		Events:        a.eventStoreInfo(),
 		DurableState:  a.durableStateInfo(),
+		Coordination:  a.coordinationInfo(),
 		Receivers: statusdata.ReceiversInfo{
 			Streaming: a.cfg.Streaming.Enabled,
 			Webhook:   a.cfg.Webhook.Enabled,
@@ -178,6 +179,17 @@ func (a *App) buildStatus() statusdata.Status {
 	healthFailures := slices.Concat(failures, deliveryHealthReasons(s.Delivery), flowStoreHealthReasons(s.Flows))
 	s.Health, s.HealthReasons = deriveHealth(s.Collectors, healthFailures)
 	return s
+}
+
+func (a *App) coordinationInfo() statusdata.CoordinationInfo {
+	s := a.currentCoordination()
+	if a.cfg.Coordination.Mode != "kubernetes" {
+		return statusdata.CoordinationInfo{Mode: "none", State: "singleton"}
+	}
+	return statusdata.CoordinationInfo{
+		Mode: "kubernetes", LeaseName: s.LeaseName, Namespace: s.Namespace,
+		Identity: s.Identity, Leader: s.Leader, State: string(s.State),
+	}
 }
 
 func (a *App) durableStateInfo() statusdata.DurableStateInfo {

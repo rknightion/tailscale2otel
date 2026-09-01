@@ -361,7 +361,13 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_HOST_LABELS` | `true` | `restart` | attach host.name/host.id for joins with tailscale.device.* |
 | `TS2OTEL_COLLECTORS__NODE_METRICS__DISCOVERY__INCLUDE_TAGS_LABEL` | `true` | `restart` | attach tailscale.tags to each target's series |
 | `TS2OTEL_SCHEDULER__INITIAL_STAGGER_WINDOW` | `3s` | `restart` | spread initial collector ticks; current single-runtime default is 3s |
-| `TS2OTEL_CHECKPOINT__STORE` | `file` | `restart` | file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) \| memory (RAM only; cold-starts from initial_lookback after a restart) |
+| `TS2OTEL_COORDINATION__MODE` | `none` | `restart` | none (default singleton behavior) \| kubernetes (Lease-based active-passive) |
+| `TS2OTEL_COORDINATION__LEASE_NAME` | `tailscale2otel` | `restart` | DNS-1123 Lease name; all replicas use the same name |
+| `TS2OTEL_COORDINATION__NAMESPACE` | `default` | `restart` | DNS-1123 namespace containing the Lease |
+| `TS2OTEL_COORDINATION__LEASE_DURATION` | `15s` | `restart` | leader lease expiry; must be > renew_deadline > retry_period |
+| `TS2OTEL_COORDINATION__RENEW_DEADLINE` | `10s` | `restart` | step down when the apiserver cannot renew within this period |
+| `TS2OTEL_COORDINATION__RETRY_PERIOD` | `2s` | `restart` | standby acquire and leader renew retry interval |
+| `TS2OTEL_CHECKPOINT__STORE` | `file` | `restart` | file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) \| memory (RAM only; cold-starts from initial_lookback after a restart) \| kubernetes (ConfigMap data in <coordination.lease_name>-checkpoints) |
 | `TS2OTEL_CHECKPOINT__EVIDENCE_STORE` | `file` | `restart` | file (default; preserves ACL revision/audit provenance across restarts) \| memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file. |
 | `TS2OTEL_CHECKPOINT__FILE_PATH` | `/var/lib/tailscale2otel/checkpoints.json` | `restart` | used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated. |
 | `TS2OTEL_CHECKPOINT__WRITE_DEBOUNCE` | `0s` | `restart` | coalesce nearby file writes; 0 preserves synchronous Set durability |

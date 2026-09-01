@@ -537,6 +537,29 @@
       },
       "type": "object"
     },
+    "coordination": {
+      "properties": {
+        "identity": {
+          "type": "string"
+        },
+        "leader": {
+          "type": "string"
+        },
+        "lease_name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "dedup_sets": {
       "items": {
         "properties": {

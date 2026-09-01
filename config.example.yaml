@@ -538,9 +538,21 @@ collectors:
 scheduler:
   initial_stagger_window: 3s          # spread initial collector ticks; current single-runtime default is 3s
 
+# ── Active-passive coordination (OPTIONAL: Kubernetes only) ───────────────────
+# mode: none keeps the historical singleton lifecycle. kubernetes elects one
+# whole-process leader through a coordination.k8s.io Lease; standby pods remain
+# live but not ready and run no collectors or receivers.
+coordination:
+  mode: none                           # none (default singleton behavior) | kubernetes (Lease-based active-passive)
+  lease_name: tailscale2otel           # DNS-1123 Lease name; all replicas use the same name
+  namespace: default                   # DNS-1123 namespace containing the Lease
+  lease_duration: 15s                  # leader lease expiry; must be > renew_deadline > retry_period
+  renew_deadline: 10s                  # step down when the apiserver cannot renew within this period
+  retry_period: 2s                     # standby acquire and leader renew retry interval
+
 # ── Durable state (poll cursors and semantic evidence) ─────────────────────────
 checkpoint:
-  store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)
+  store: file                         # file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart) | kubernetes (ConfigMap data in <coordination.lease_name>-checkpoints)
   evidence_store: file                # file (default; preserves ACL revision/audit provenance across restarts) | memory (unsafe except disposable runs; produces a specific warning). Independent of store, so streamed deployments may use store: memory with evidence_store: file.
   file_path: /var/lib/tailscale2otel/checkpoints.json   # used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated.
   write_debounce: 0s                  # coalesce nearby file writes; 0 preserves synchronous Set durability

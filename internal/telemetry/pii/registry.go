@@ -36,6 +36,9 @@ var keyCategory = map[string]Category{
 	"tailscale.webhook.actor":            CatEmails,
 	"tailscale.webhook.url":              CatEndpointPaths,
 	"tailscale.webhook.user":             CatEmails,
+	"coordination.lease_name":            CatFreeTextDetails, // operator-chosen Kubernetes object name
+	"coordination.namespace":             CatFreeTextDetails, // operator-chosen Kubernetes namespace
+	"coordination.identity":              CatHostnames,       // pod hostname used by client-go leader election
 
 	// Kubernetes-audit keys (#462), from tsrecorder's API-server-proxy events.
 	// Note tailscale.k8s.path is the QUERY-FREE kubernetes.Path — the raw
@@ -99,6 +102,9 @@ var identityKeys = map[string]bool{
 	"user.id":                          true, // #74: per-user gauge identity (CatUserIDs)
 	"user.name":                        true, // #74: per-user gauge identity (CatEmails)
 	"tailscale.key.owner":              true, // #165: keys.by_owner series identity (CatUserIDs)
+	"coordination.lease_name":          true,
+	"coordination.namespace":           true,
+	"coordination.identity":            true,
 }
 
 // geoNonIdentifier are the GeoIP-enrichment keys (#461). Every one is DERIVED
@@ -152,6 +158,7 @@ var nonIdentifier = map[string]bool{
 	"tailscale.k8s.subresource": true, "tailscale.k8s.api_group": true,
 	"tailscale.k8s.namespace": true, "tailscale.k8s.user_agent": true,
 	"tailscale.k8s.command_class": true, "tailscale.k8s.session_type": true,
+	"coordination.mode": true, "coordination.state": true,
 
 	"network.io.direction": true, "network.transport": true, "network.type": true,
 	"network.protocol.name": true, "source.port": true, "destination.port": true,

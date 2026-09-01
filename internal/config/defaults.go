@@ -317,6 +317,14 @@ func Default() *Config {
 			},
 		},
 		Scheduler: SchedulerConfig{InitialStaggerWindow: dur(3 * time.Second)},
+		Coordination: CoordinationConfig{
+			Mode:          "none",
+			LeaseName:     "tailscale2otel",
+			Namespace:     "default",
+			LeaseDuration: dur(15 * time.Second),
+			RenewDeadline: dur(10 * time.Second),
+			RetryPeriod:   dur(2 * time.Second),
+		},
 		Checkpoint: CheckpointConfig{
 			Store:         "file", // persist window cursors across restarts; falls back to memory + WARN if the path is not writable
 			EvidenceStore: "file", // semantic evidence must survive restarts even when poll cursors are intentionally in memory

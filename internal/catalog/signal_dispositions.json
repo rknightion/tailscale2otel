@@ -2287,6 +2287,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.coordination.leader",
+      "prom_name": "tailscale2otel_coordination_leader_ratio",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.dedup.evictions",
       "prom_name": "tailscale2otel_dedup_evictions_total",
       "surface": "self_obs",

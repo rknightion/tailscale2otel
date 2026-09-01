@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "20",
+      "__panelId__": "21",
       "description": "Sustained admin HTTP auth rejections (>0.2/s) on the status page / pprof endpoint \u2014 possible probing or a misconfigured admin token.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
       "summary": "Elevated admin auth rejections"

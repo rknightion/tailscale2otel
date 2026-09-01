@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "85",
+      "__panelId__": "86",
       "description": "The youngest key evicted from dedup set {{ $labels.dedup_set }} was retained for less than that set's exported configured overlap horizon. Boundary duplicates can therefore be re-admitted and counted twice. Raise that collector's dedup_capacity or reduce its configured overlap. The age gauge reports the smallest capacity-eviction residency age observed since the previous self-observability reporting interval and is absent during intervals with no capacity eviction, allowing the rule to resolve when pressure stops. Confirm the set is genuinely under pressure before changing any capacity. The horizon is a POLL-path quantity and is not exported at all for a stream- or objectstore-fed collector, so on those paths this rule has no denominator and never fires.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
       "summary": "Dedup set {{ $labels.dedup_set }} evicted a key younger than the overlap horizon"

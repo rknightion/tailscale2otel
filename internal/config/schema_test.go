@@ -354,6 +354,7 @@ var ruleApplications = []string{
 	"collectors.node_metrics.discovery.port_overrides.*",
 	"collectors.node_metrics.discovery.scheme",
 	"collectors.services.subrequest_concurrency",
+	"coordination.mode",
 	"delivery.mode",
 	"flows.capacity_profile",
 	"ingress_wal.corruption",

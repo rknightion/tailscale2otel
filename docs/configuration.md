@@ -1327,6 +1327,28 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 |-----|---------|-------------|
 | `scheduler.initial_stagger_window` | `3s` | Window across which initial collector ticks are spread. The default preserves the existing single-runtime behaviour. |
 
+## `coordination` — Kubernetes active-passive operation
+
+Coordination is opt-in and Kubernetes-only. With `mode: kubernetes`, every replica competes for one
+`coordination.k8s.io` Lease. Only the holder starts collectors, receivers, replay workers, and the
+heartbeat; standby replicas keep the admin listener live but remain unready. If the API server cannot
+renew within `renew_deadline`, the leader stops active work and exits successfully so the kubelet can
+restart it. Outside Kubernetes, leave the default `none`: the exporter remains singleton-only.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `coordination.mode` | `none` | `none` \| `kubernetes`. Enables whole-process Lease election only for the Kubernetes mode. |
+| `coordination.lease_name` | `tailscale2otel` | DNS-1123 name of the shared Lease. All replicas in one coordinated deployment use the same value. |
+| `coordination.namespace` | `default` | DNS-1123 namespace containing the Lease and, when selected, the checkpoint ConfigMap. |
+| `coordination.lease_duration` | `15s` | Lease expiry. Must be greater than `renew_deadline`. |
+| `coordination.renew_deadline` | `10s` | Maximum renewal outage before the leader steps down. Must be greater than `retry_period`. |
+| `coordination.retry_period` | `2s` | Standby acquisition and leader renewal retry interval. Must be greater than zero. |
+
+`source: both` remains valid because configuration alone cannot prove a deployment has multiple
+replicas. The exporter emits a loud startup warning when it is combined with Kubernetes coordination:
+cross-source de-duplication is process-local, so coordinated multi-replica deployments should select
+one ingestion source per log type.
+
 ## `checkpoint` — poll cursors and semantic evidence {#checkpoint-poll-high-water-marks}
 
 Checkpoints record how far each **polled** log collector (`flowlogs`/`auditlogs` with
@@ -1337,7 +1359,7 @@ current ACL revision and the newest authoritative ACL-change audit timestamp.
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `checkpoint.store` | `file` | `file` \| `memory`. See below. |
+| `checkpoint.store` | `file` | `file` \| `memory` \| `kubernetes`. See below. |
 | `checkpoint.evidence_store` | `file` | `file` \| `memory`, independently of poll cursors. `memory` resets ACL revision provenance on restart and emits an actionable warning. |
 | `checkpoint.file_path` | `/var/lib/tailscale2otel/checkpoints.json` | Where either file-backed class persists. Both classes share one atomic JSON file, so existing ACL evidence keys remain readable. The parent directory is created automatically; if it cannot be made writable the affected class logs a WARN and falls back to `memory`. |
 | `checkpoint.write_debounce` | `0s` | Coalesce nearby checkpoint writes. `0` preserves synchronous `Set` durability; shutdown always flushes once this is enabled. |
@@ -1352,6 +1374,13 @@ current ACL revision and the newest authoritative ACL-change audit timestamp.
   poller cold-starts from `initial_lookback`, so any **downtime longer than `initial_lookback` leaves
   a gap**. Needs no volume; fine for streamed or stateless deployments where the checkpoint is unused
   or disposable. This setting controls poll cursors only.
+- **`kubernetes`** — the whole cursor map is stored in a dedicated
+  `<coordination.lease_name>-checkpoints` ConfigMap, distinct from the chart's application-config
+  ConfigMap.
+  Writes are coalesced to approximately one update every five seconds and flushed on orderly shutdown.
+  Updates require the last-read `resourceVersion`, so a deposed leader's late write fails visibly
+  instead of overwriting the current leader. This mode requires `coordination.mode: kubernetes` and
+  uses `coordination.namespace`; it is bounded by Kubernetes' ConfigMap object-size limit.
 
 `checkpoint.evidence_store` is deliberately separate. A streamed deployment with no poll cursors
 can set `checkpoint.store: memory` while leaving `checkpoint.evidence_store: file`; the existing

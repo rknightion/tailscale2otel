@@ -104,7 +104,8 @@ var rulesBySuffix = map[string]schemaRule{
 	"otlp.protocol":                     {enum: []string{"grpc", "http", "stdout"}},
 	"otlp.metric_temporality":           {enum: []string{"cumulative", "delta"}},
 	"admin.tls.client_auth":             {enum: []string{"", "require_and_verify", "verify_if_given", "require", "request", "none"}},
-	"checkpoint.store":                  {enum: []string{"memory", "file"}},
+	"coordination.mode":                 {enum: []string{"none", "kubernetes"}},
+	"checkpoint.store":                  {enum: []string{"memory", "file", "kubernetes"}},
 	"checkpoint.evidence_store":         {enum: []string{"memory", "file"}},
 	"source":                            {enum: []string{"poll", "stream", "both", "objectstore"}}, // collectors.flowlogs.source / collectors.auditlogs.source
 	"log_mode":                          {enum: []string{"per_connection", "per_record", "off"}},

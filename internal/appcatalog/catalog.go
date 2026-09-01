@@ -67,6 +67,7 @@ const (
 	// MetricReceiverMisconfigured marks fail-closed ingestion receivers that can
 	// accept no traffic because a network-reachable bind has no credential.
 	MetricReceiverMisconfigured = "tailscale2otel.receiver.misconfigured"
+	MetricCoordinationLeader    = "tailscale2otel.coordination.leader"
 )
 
 // Go runtime self-observability metric names. These expose the exporter's own
@@ -305,6 +306,14 @@ var (
 		Unit:        "1",
 		Instrument:  metricdoc.Gauge,
 		Description: "Liveness flag: `1` while the service is running and reporting.",
+		Group:       GroupSelfObs,
+	}
+	DocCoordinationLeader = metricdoc.Metric{
+		Name:        MetricCoordinationLeader,
+		Unit:        "1",
+		Instrument:  metricdoc.Gauge,
+		Description: "Lease leadership flag: `1` while this pod holds the active-passive Kubernetes Lease, otherwise `0`. A stepped-down value marks a deliberate stop after renewal failure.",
+		Attributes:  []string{"coordination.mode", "coordination.lease_name", "coordination.namespace", "coordination.identity", "coordination.state"},
 		Group:       GroupSelfObs,
 	}
 	DocAPIRequests = metricdoc.Metric{
@@ -797,7 +806,7 @@ var DocPIIFilterCategory = metricdoc.Metric{
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
+		DocUp, DocCoordinationLeader, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,

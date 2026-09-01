@@ -65,6 +65,7 @@ type Status struct {
 	// DurableState consolidates the two restart-state classes so consumers do
 	// not have to correlate parallel fields in Config.
 	DurableState DurableStateInfo `json:"durable_state"`
+	Coordination CoordinationInfo `json:"coordination"`
 	Receivers    ReceiversInfo    `json:"receivers"`
 	// Components is every long-running non-collector subsystem and whether it
 	// has failed, from the same state /readyz reads (#318).
@@ -121,6 +122,16 @@ type DurableStoreInfo struct {
 	State          string `json:"state"` // durable | volatile | degraded | recovered
 	Path           string `json:"path,omitempty"`
 	Reason         string `json:"reason,omitempty"`
+}
+
+// CoordinationInfo describes the whole-process active-passive Lease state.
+type CoordinationInfo struct {
+	Mode      string `json:"mode"`
+	LeaseName string `json:"lease_name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Identity  string `json:"identity,omitempty"`
+	Leader    string `json:"leader,omitempty"`
+	State     string `json:"state"`
 }
 
 // TailnetStatus is one tailnet's section of the status page: its identity, auth

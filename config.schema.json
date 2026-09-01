@@ -256,10 +256,11 @@
         },
         "store": {
           "default": "file",
-          "description": "file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart)",
+          "description": "file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart) | kubernetes (ConfigMap data in \u003ccoordination.lease_name\u003e-checkpoints)",
           "enum": [
             "memory",
-            "file"
+            "file",
+            "kubernetes"
           ],
           "type": "string"
         },
@@ -1562,6 +1563,58 @@
             }
           },
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "coordination": {
+      "additionalProperties": false,
+      "properties": {
+        "lease_duration": {
+          "default": "15s",
+          "description": "leader lease expiry; must be \u003e renew_deadline \u003e retry_period",
+          "examples": [
+            "15s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "lease_name": {
+          "default": "tailscale2otel",
+          "description": "DNS-1123 Lease name; all replicas use the same name",
+          "type": "string"
+        },
+        "mode": {
+          "default": "none",
+          "description": "none (default singleton behavior) | kubernetes (Lease-based active-passive)",
+          "enum": [
+            "none",
+            "kubernetes"
+          ],
+          "type": "string"
+        },
+        "namespace": {
+          "default": "default",
+          "description": "DNS-1123 namespace containing the Lease",
+          "type": "string"
+        },
+        "renew_deadline": {
+          "default": "10s",
+          "description": "step down when the apiserver cannot renew within this period",
+          "examples": [
+            "10s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
+        "retry_period": {
+          "default": "2s",
+          "description": "standby acquire and leader renew retry interval",
+          "examples": [
+            "2s"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
         }
       },
       "type": "object"

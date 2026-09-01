@@ -70,6 +70,7 @@ type Config struct {
 	Cardinality       CardinalityConfig       `yaml:"cardinality"`
 	Collectors        Collectors              `yaml:"collectors"`
 	Scheduler         SchedulerConfig         `yaml:"scheduler"`
+	Coordination      CoordinationConfig      `yaml:"coordination"`
 	Checkpoint        CheckpointConfig        `yaml:"checkpoint"`
 	IngressWAL        IngressWALConfig        `yaml:"ingress_wal"`
 	Streaming         StreamingConfig         `yaml:"streaming"`
@@ -109,6 +110,18 @@ type Config struct {
 	// it to (#310). Populated by Load, before resolveSecretFiles or Validate
 	// run, so both can report a "no such file" error naming both paths.
 	pathResolutions map[string]pathResolution
+}
+
+// CoordinationConfig controls whole-process active-passive coordination. It is
+// deliberately Kubernetes-only: mode none preserves the historical singleton
+// lifecycle, and kubernetes uses a coordination.k8s.io Lease.
+type CoordinationConfig struct {
+	Mode          string   `yaml:"mode" reload:"restart"`
+	LeaseName     string   `yaml:"lease_name" reload:"restart"`
+	Namespace     string   `yaml:"namespace" reload:"restart"`
+	LeaseDuration Duration `yaml:"lease_duration" reload:"restart"`
+	RenewDeadline Duration `yaml:"renew_deadline" reload:"restart"`
+	RetryPeriod   Duration `yaml:"retry_period" reload:"restart"`
 }
 
 // DeliveryConfig selects the process-wide telemetry delivery topology. The
