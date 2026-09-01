@@ -1,9 +1,10 @@
 ---
 id: TSO-0109
 title: Helm chart support for coordinated multi-replica deployment
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-01 20:02'
+updated_date: '2026-09-01 23:37'
 labels: []
 milestone: m-10
 dependencies:
@@ -29,17 +30,35 @@ Do not push anything to a live cluster from this task. Validation here is helm l
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 replicaCount above 1 is rejected unless coordination.mode is kubernetes, and permitted up to 3 when it is
-- [ ] #2 the values.schema.json maximum and the template guard change in one commit and agree
-- [ ] #3 a Role and RoleBinding grant only the lease permissions the coordination client actually needs
-- [ ] #4 the coordination values block reaches the container and a rendered multi-replica release passes configcheck
-- [ ] #5 helm lint, helm template and kubeconform with real schemas all pass on both a single-replica and a coordinated multi-replica values set
-- [ ] #6 the chart README and values.schema.json are regenerated with the pinned tool versions and leave no diff
+- [x] #1 replicaCount above 1 is rejected unless coordination.mode is kubernetes, and permitted up to 3 when it is
+- [x] #2 the values.schema.json maximum and the template guard change in one commit and agree
+- [x] #3 a Role and RoleBinding grant only the lease permissions the coordination client actually needs
+- [x] #4 the coordination values block reaches the container and a rendered multi-replica release passes configcheck
+- [x] #5 helm lint, helm template and kubeconform with real schemas all pass on both a single-replica and a coordinated multi-replica values set
+- [x] #6 the chart README and values.schema.json are regenerated with the pinned tool versions and leave no diff
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+After C freezes config keys, conditionally permit coordinated replicas, add least-privilege Lease RBAC and config plumbing, own the RollingUpdate switch, regenerate Helm artifacts, and validate single and multi-replica renders.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The chart keeps singleton/Recreate defaults unchanged, permits two or three replicas only with coordination.mode=kubernetes, switches that mode to RollingUpdate, derives the dedicated checkpoint ConfigMap name, and grants only Lease plus checkpoint ConfigMap get/create/update permissions. Declarative chart work was validated rather than given application TDD.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented coordinated multi-replica chart support in aea526d, integrated at 48bf65c8bf30c0f77f679728b4b56947bd5df944. Generated README/schema artifacts are in sync; single-replica and coordinated renders pass configcheck, Helm lint/template, kubeconform with real schemas, 464 Helm checks, just fmt-check, full just check, and exact-head CI 33569379997.
+<!-- SECTION:FINAL_SUMMARY:END -->
