@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-08-28 22:24'
+updated_date: '2026-09-01 20:03'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself — run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -132,6 +132,18 @@ Related and recurring: **generated artifacts that embed the release-managed vers
 release PR itself, and they arrive in a queue** — fixing one exposes the next. The sharpest is that
 release-please's version regex has no global flag, so a line carrying the version twice (a
 shields.io badge: label *and* URL) half-updates and still fails the diff.
+
+### The release posture is deliberate, and it is not the wave's to change
+
+Stable is **v4.0.1** while three waves of work sit unreleased as release candidates. That is the
+owner's standing choice, reaffirmed 2026-09-01: validate from the `rc` images, do not tag, do not
+touch release-please, do not merge a release PR. A wave that finds this state does not "fix" it.
+
+The plan for the next major is **one big bang after the board drains** - every open task lands
+first, then v5 is cut once, and **the owner merges that release PR by hand. Never automerge it.**
+Breaking changes therefore have nowhere to go in the meantime: park them in the v5 milestone rather
+than implementing them early. Cutting that major still needs the module path moved to `/v5` first,
+per the section above.
 
 ---
 

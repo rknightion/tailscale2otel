@@ -1,10 +1,10 @@
 ---
 id: TSO-0033
 title: Design and ship an HA / multi-replica deployment story
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-08-30 09:02'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-09-01 20:01'
 labels: []
 milestone: m-8
 dependencies: []
@@ -20,16 +20,16 @@ The exporter is a deliberate singleton today (single-replica Helm chart, file ch
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 An options proposal (3-5 architectures, active-passive lease through sharded multi-pod) with state-handling, duplicate-emission analysis, dependencies, migration path and effort per option is recorded on this task
-- [ ] #2 A comparison table and flat recommendation with suggested phasing is included
-- [ ] #3 A direction is chosen and recorded before any implementation work is split out
+- [x] #1 An options proposal (3-5 architectures, active-passive lease through sharded multi-pod) with state-handling, duplicate-emission analysis, dependencies, migration path and effort per option is recorded on this task
+- [x] #2 A comparison table and flat recommendation with suggested phasing is included
+- [x] #3 A direction is chosen and recorded before any implementation work is split out
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -139,4 +139,29 @@ No documented OTLP-path HA dedup in Mimir (HA tracker is Prometheus remote_write
 6. **Non-k8s posture:** explicitly singleton-only outside k8s, or commit to a generic lock backend later.
 7. **Should any multi-replica mode hard-refuse `source: both`?** (cross-source dedup cannot work across processes; today only discouraged).
 8. **Chart guard evolution:** `replicaCount must be 1` becomes "must be 1 unless coordination.mode=kubernetes" — the values schema max (`values.yaml:87`) must move in the same commit.
+
+## Direction chosen by the owner, 2026-09-01
+
+**Option A, both phases (A1 and A2).** Per-tailnet sharding (option C) stays a demand-gated follow-on and is not being built. Options B, D and E are rejected on the analysis above and should not be re-proposed without a new fact.
+
+Answers to the open decisions in section 6:
+
+1. **Lease client: use client-go leaderelection.** The owner accepted the k8s.io/client-go dependency tree rather than hand-rolling the renew/renew-deadline/steal semantics. Do not reimplement the election algorithm. Keep the dependency confined to the coordination package so nothing else in the binary reaches for client-go, and check what it does to binary size and to govulncheck's surface as part of the work.
+2. **Demote behavior: exit(0) and let the kubelet restart the pod.** Phase 3 would need in-process runtime stop/start, but phase 3 is not being built.
+3. **Apiserver-outage stance: step down.** An emission gap is preferred over any split-brain risk. Make the gap observable rather than mitigating it.
+4. **Checkpoint backend: phase A2 is in scope**, so per-replica-PVC-and-live-with-it is off the table. The ConfigMap-versus-Lease-annotation choice is left to the implementing lane on the evidence.
+5. **Instance identity: per-pod instance ids** stay the default. Series churn on failover is accepted; a stable configured id is not.
+6. **Non-k8s posture: explicitly singleton-only outside Kubernetes** for this work. No generic lock backend.
+7. **source: both under multi-replica:** left to the implementing lane, with the bar being that cross-source dedup provably cannot work across processes, so silence is the wrong answer - either refuse it or warn loudly at startup.
+8. **Chart guard:** replicaCount must be 1 unless coordination.mode=kubernetes, and values.yaml's schema max moves in the same commit.
+
+Release context that bounds the work: stable is v4.0.1, three waves sit unreleased, and the owner is deliberately still holding the release. Nothing here may cut a tag. Separately, the owner's standing plan is to drain the whole board and then cut v5 in one big bang, merging that release PR by hand - so a breaking change is not available to this work either.
+
+Implementation is split into TSO-0107 (coordination core, A1), TSO-0108 (Kubernetes checkpoint store, A2) and TSO-0109 (Helm chart, RBAC and rollout).
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Research and design task. Produced a five-option HA proposal with a state inventory, prior-art digest of Alloy clustering, k8s leader election and the otel target allocator, a comparison table and a flat recommendation. The owner chose Option A phases A1 and A2 with client-go leaderelection, and answered all eight open decisions; those answers are recorded in the notes above. Verified by the decision being recorded before any implementation split, which is what acceptance criterion 3 asks for. No code changed, so the gate is unaffected. Implementation continues as TSO-0107, TSO-0108 and TSO-0109.
+<!-- SECTION:FINAL_SUMMARY:END -->

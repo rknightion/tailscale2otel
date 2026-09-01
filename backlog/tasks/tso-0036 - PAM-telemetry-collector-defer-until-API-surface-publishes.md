@@ -4,7 +4,7 @@ title: PAM telemetry collector (defer until API surface publishes)
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:09'
-updated_date: '2026-08-30 09:48'
+updated_date: '2026-09-01 19:51'
 labels: []
 milestone: m-8
 dependencies: []
@@ -30,3 +30,9 @@ Tailscale PAM went beta 2026-08-26 (Border0 acquisition); PAM service accounts c
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Upstream check 2026-09-01 against the vendored spec/tailscale-api.json (60 paths): zero paths matching pam/border0/session/recording. PAM operations still absent, so this stays correctly blocked on upstream and is excluded from Wave 5. Re-check is free: the daily api-drift lane surfaces new paths, or rerun the same path scan after any spec re-vendor.
+<!-- SECTION:NOTES:END -->

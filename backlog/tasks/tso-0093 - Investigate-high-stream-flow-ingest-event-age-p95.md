@@ -1,13 +1,12 @@
 ---
 id: TSO-0093
 title: Investigate high stream flow ingest-event-age p95
-status: Parked
+status: To Do
 assignee: []
 created_date: '2026-08-31 00:37'
-updated_date: '2026-09-01 19:10'
-labels:
-  - needs-triage
-milestone: m-9
+updated_date: '2026-09-01 20:02'
+labels: []
+milestone: m-10
 dependencies: []
 priority: medium
 type: spike
@@ -46,6 +45,8 @@ A lab observation recorded tailscale2otel_ingest_event_age_seconds for stream fl
 Live re-measurement on the Wave 3 build over 2026-09-01 14:30Z-20:30Z disproved the prior sustained ~20,200s p95. The 15-minute stream/flow event-age p95 was normally about 280-287s. Two isolated samples rose to 2,158.8s at 16:25Z and 1,702.7s at 16:30Z. At those exact samples accepted throughput remained 3.10 and 3.08 records/s and newest-accepted-event freshness remained 122.08s, so neither a receiver stall nor broad delivery lag occurred; the histogram was seeing a minority of older/backfilled records while current records continued arriving. The six-hour accepted rate ranged up to 4.25 records/s and newest-event freshness stayed below 183s.
 
 Capture-delay correlation is not available for stream/flow: the event-age, accepted-record, and newest-event series are present, but the capture-delay histogram is absent for stream/flow while it is present for stream/audit. This prevents separating publisher capture lag from post-capture delivery/retry for the old-record minority. TSO-0106 tracks restoration and is the concrete resume boundary. Classification: intermittent late/backfilled acceptance, not metric timestamp regression and not a sustained stream outage; exact upstream-vs-delivery location remains unproven until TSO-0106 lands.
+
+Wave 5: unparked. TSO-0106 restores stream/flow capture-delay telemetry inside this same wave, so the resume boundary is now reachable. Resume by repeating the same-window correlation once 0106 has landed and its telemetry is live, then classify whether the old-record minority is upstream capture lag or post-capture delivery. Acceptance criterion 2 is the only one still open.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary

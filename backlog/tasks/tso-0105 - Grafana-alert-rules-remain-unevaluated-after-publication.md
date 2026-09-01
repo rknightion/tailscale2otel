@@ -4,9 +4,9 @@ title: Grafana alert rules remain unevaluated after publication
 status: To Do
 assignee: []
 created_date: '2026-09-01 17:46'
-updated_date: '2026-09-01 19:09'
-labels:
-  - needs-triage
+updated_date: '2026-09-01 20:02'
+labels: []
+milestone: m-10
 dependencies: []
 priority: high
 type: bug

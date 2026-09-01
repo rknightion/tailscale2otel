@@ -4,9 +4,9 @@ title: Stream flow capture-delay telemetry is absent
 status: To Do
 assignee: []
 created_date: '2026-09-01 18:55'
-updated_date: '2026-09-01 19:11'
-labels:
-  - needs-triage
+updated_date: '2026-09-01 20:02'
+labels: []
+milestone: m-10
 dependencies: []
 priority: medium
 type: bug

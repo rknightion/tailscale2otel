@@ -4,8 +4,9 @@ title: Fail startup for network receivers missing credentials in the next major
 status: To Do
 assignee: []
 created_date: '2026-08-31 01:09'
-labels:
-  - needs-triage
+updated_date: '2026-09-01 20:02'
+labels: []
+milestone: m-11
 dependencies: []
 priority: medium
 type: enhancement
@@ -31,3 +32,9 @@ Wave 3 intentionally preserved v4 startup compatibility: a network-reachable str
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner decision 2026-09-01: no v5 is scheduled yet. The plan is to drain the whole board first, then cut v5 in one big bang, and the owner merges that release PR by hand - never automerge. Parked into the v5 milestone as a collection point; do not implement the breaking change until the major is actually called and the Go module path has moved to /v5.
+<!-- SECTION:NOTES:END -->
