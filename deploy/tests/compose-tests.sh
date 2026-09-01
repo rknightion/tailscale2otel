@@ -26,6 +26,7 @@ DEPLOY_DIR="${SCRIPT_DIR}/.."
 BASE="${DEPLOY_DIR}/docker-compose.yaml"
 OVERRIDE="${DEPLOY_DIR}/docker-compose.config.yaml"
 PROMETHEUS_OVERRIDE="${DEPLOY_DIR}/docker-compose.prometheus.yaml"
+CI_OVERRIDE="${DEPLOY_DIR}/docker-compose.ci.yaml"
 SERVICE=tailscale2otel
 CHECKPOINT_TARGET=/var/lib/tailscale2otel
 CONFIG_TARGET=/etc/tailscale2otel/config.yaml
@@ -55,6 +56,16 @@ assert_rc0() {
   else
     bad "$1 (docker compose exited $RESOLVED_RC)"
     printf '%s\n' "$RESOLVED" | sed 's/^/       | /' | head -5
+  fi
+}
+
+assert_stdout_delivery() {
+  if [[ $RESOLVED_RC -ne 0 ]]; then
+    bad "$1: Compose render failed (docker compose exited $RESOLVED_RC)"
+  elif [[ "$(svc '.environment.TS2OTEL_OTLP__PROTOCOL // ""')" == "stdout" ]]; then
+    ok "$1: uses stdout delivery (no external backend)"
+  else
+    bad "$1: stdout delivery is not configured"
   fi
 }
 
@@ -260,6 +271,18 @@ assert_rc0 "G: resolves"
   || bad "G: Prometheus port is not published on host loopback"
 
 # --------------------------------------------------------------------------
+case_ "H. CI override starts the built image through the supported Compose path"
+RESOLVED="$(SECRETS_DIR="$sdir" docker compose -f "$BASE" -f "$SECRETS_OVERRIDE" -f "$CI_OVERRIDE" config 2>&1)"; RESOLVED_RC=$?
+assert_rc0 "H: resolves"
+[[ "$(svc '.image')" == "tailscale2otel:ci" ]] \
+  && ok "H: uses the CI-built image by default" \
+  || bad "H: image is $(svc '.image'), want tailscale2otel:ci"
+assert_stdout_delivery "H"
+[[ "$(svc '.healthcheck.test | join(" ")')" == "CMD /usr/local/bin/tailscale2otel -healthcheck" ]] \
+  && ok "H: retains the binary healthcheck" \
+  || bad "H: CI override replaced the binary healthcheck"
+
+# --------------------------------------------------------------------------
 # --self-test mutates the inputs to prove each assertion above can actually
 # fail. Three guard tests in this repository have shipped passing while
 # asserting nothing; a checker that is never shown to fail proves nothing.
@@ -305,6 +328,24 @@ if [[ "${1:-}" == "--self-test" ]]; then
   [[ "$(svc '.environment.TS2OTEL_ADMIN__ENABLED // ""')" == "true" ]] \
     && { printf '  FAIL SELF-TEST: admin-enabled assertion did NOT fire when overridden to false — it asserts nothing\n'; exit 1; } \
     || printf '  ok   SELF-TEST: admin-enabled assertion fires when TS2OTEL_ADMIN__ENABLED=false\n'
+
+  # 5. The CI override must keep a local stdout delivery target: any network
+  # endpoint would make the Compose smoke depend on external infrastructure.
+  RESOLVED="$(SECRETS_DIR="$sdir" docker compose -f "$BASE" -f "$SECRETS_OVERRIDE" -f "$CI_OVERRIDE" config 2>&1 \
+    | yq '.services.'"$SERVICE"'.environment.TS2OTEL_OTLP__PROTOCOL = "grpc"')"; RESOLVED_RC=$?
+  if [[ $RESOLVED_RC -ne 0 ]]; then
+    printf '  FAIL SELF-TEST: could not render the CI delivery mutation (docker compose exited %d)\n' "$RESOLVED_RC"
+    exit 1
+  fi
+  before_fail=$fail
+  assert_stdout_delivery "SELF-TEST[stdout removed]"
+  if [[ $fail -gt $before_fail ]]; then
+    printf '  ok   SELF-TEST: CI delivery assertion fires when stdout is removed\n'
+  else
+    printf '  FAIL SELF-TEST: CI delivery assertion did NOT fire on grpc — it asserts nothing\n'
+    exit 1
+  fi
+  fail=$before_fail
 fi
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

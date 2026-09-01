@@ -72,6 +72,58 @@ func TestResolveSecretFiles_TailnetAuditObjectStore(t *testing.T) {
 	}
 }
 
+// K8sAudit is a third object-store destination with the same static
+// credential-file contract. It is deliberately independent from the audit-log
+// destination, so every one of its pairs must be resolved directly here.
+func TestResolveSecretFiles_K8sAuditObjectStore(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content+"\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return p
+	}
+
+	c := Default()
+	c.Collectors.K8sAudit.ObjectStore.AccessKeyIDFile = write("ak", "K8S_AK")
+	c.Collectors.K8sAudit.ObjectStore.SecretAccessKeyFile = write("sk", "K8S_SK")
+	c.Collectors.K8sAudit.ObjectStore.SessionTokenFile = write("st", "K8S_ST")
+
+	if err := c.resolveSecretFiles(); err != nil {
+		t.Fatalf("resolveSecretFiles: %v", err)
+	}
+	got := c.Collectors.K8sAudit.ObjectStore
+	if got.AccessKeyID != "K8S_AK" || got.SecretAccessKey != "K8S_SK" || got.SessionToken != "K8S_ST" {
+		t.Errorf("k8s_audit credentials = (%q, %q, %q), want resolved file values", got.AccessKeyID, got.SecretAccessKey, got.SessionToken)
+	}
+}
+
+func TestResolveSecretFiles_TailnetK8sAuditObjectStore(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content+"\n"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		return p
+	}
+
+	c := Default()
+	c.Tailnets = []TailnetConfig{{Name: "a.example.com"}}
+	c.Tailnets[0].ObjectStore.K8sAudit.AccessKeyIDFile = write("ak", "TN_K8S_AK")
+	c.Tailnets[0].ObjectStore.K8sAudit.SecretAccessKeyFile = write("sk", "TN_K8S_SK")
+	c.Tailnets[0].ObjectStore.K8sAudit.SessionTokenFile = write("st", "TN_K8S_ST")
+
+	if err := c.resolveSecretFiles(); err != nil {
+		t.Fatalf("resolveSecretFiles: %v", err)
+	}
+	got := c.Tailnets[0].ObjectStore.K8sAudit
+	if got.AccessKeyID != "TN_K8S_AK" || got.SecretAccessKey != "TN_K8S_SK" || got.SessionToken != "TN_K8S_ST" {
+		t.Errorf("tailnets[0].objectstore.k8s_audit credentials = (%q, %q, %q), want resolved file values", got.AccessKeyID, got.SecretAccessKey, got.SessionToken)
+	}
+}
+
 // An unreadable *_file path is a hard Load error everywhere else. The audit
 // paths must not be quietly exempt, or a typo degrades to an empty credential.
 func TestResolveSecretFiles_AuditObjectStoreMissingFileIsAnError(t *testing.T) {

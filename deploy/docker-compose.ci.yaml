@@ -1,0 +1,18 @@
+# CI-only override for the supported Compose deployment. It replaces the
+# published-image reference with the image built in the current CI job, gives
+# the exporter a harmless stdout delivery target, and shortens the existing
+# binary healthcheck so the smoke test can prove a real Compose startup.
+services:
+  tailscale2otel:
+    image: ${TS2OTEL_SMOKE_IMAGE:-tailscale2otel:ci}
+    environment:
+      # Keep every possible collector dial on loopback. The supported secrets
+      # override already mounts the matching headscale API-key file.
+      TS2OTEL_PROVIDER: headscale
+      TS2OTEL_HEADSCALE__URL: http://127.0.0.1:1
+      TS2OTEL_OTLP__PROTOCOL: stdout
+    healthcheck:
+      interval: 1s
+      timeout: 5s
+      start_period: 1s
+      retries: 10

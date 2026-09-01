@@ -61,6 +61,15 @@ entries remain file-only:
 | `profiling.pyroscope.basic_auth_password` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD` |
 | `profiling.pyroscope.basic_auth_password_file` | `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD_FILE` |
 
+### Credential values and `*_file` siblings
+
+Every credential accepts either its value key or the mounted-file `*_file`
+sibling. This is deliberately **not** an exception to the normal environment
+precedence rule: supplying both is refused at startup rather than silently
+choosing one credential source. The diagnostic names the specific `TS2OTEL_*`
+variable when environment supplied a side of the collision, otherwise it names
+the configured secret-file path. It never prints a credential value.
+
 ### Scalar lists
 
 Fields whose type is a list of strings accept a **comma-separated value** as an env var. Examples:

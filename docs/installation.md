@@ -216,12 +216,14 @@ See [Configuration](configuration.md) for the full list of options once you are 
     Each secret is mounted at `/run/secrets/<name>` and the override points the
     matching `TS2OTEL_*_FILE` variable at it. `deploy/secrets/` is git-ignored.
     Delete any entry you do not use — Compose fails if a declared secret's file
-    is missing.
+    is missing. CI renders the supported Compose variants and starts this path
+    against the built image, disposable file secrets, and stdout delivery; the
+    lab deployment is Kubernetes-only.
 
     !!! warning "Value XOR file — setting both is a startup error"
         Supplying a credential *both* inline (via `deploy/.env`) and as a file is
-        rejected at startup and names the conflicting key. It is not a precedence
-        rule. If you use this override, remove those credential lines from
+        rejected at startup and names the environment variable or secret file
+        that caused the conflict. It is not a precedence rule. If you use this override, remove those credential lines from
         `deploy/.env`. The override explicitly clears the variables the base file
         would otherwise pass through, so this only bites when `.env` sets them.
 

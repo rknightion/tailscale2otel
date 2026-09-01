@@ -322,36 +322,43 @@ hygiene:
 compose-check:
     deploy/tests/compose-tests.sh --self-test
 
-# prove the built image reads file-backed secrets and never echoes their value
+# start the supported Compose stack with file-backed secrets and prove it becomes healthy
 [group('check')]
 [script('bash')]
 smoke tag="tailscale2otel:dev":
     set -euo pipefail
     d="$(mktemp -d)"
-    printf '%s' 'tskey-smoke-not-a-real-secret' > "$d/oauth_client_secret"
+    project="tailscale2otel-smoke-$$"
+    cleanup() {
+      SECRETS_DIR="$d" TS2OTEL_SMOKE_IMAGE='{{ tag }}' docker compose -p "$project" -f deploy/docker-compose.yaml -f deploy/docker-compose.secrets.yaml -f deploy/docker-compose.ci.yaml down --volumes --remove-orphans >/dev/null 2>&1 || true
+      rm -rf "$d"
+    }
+    trap cleanup EXIT
+    for name in oauth_client_secret grafana_cloud_token admin_token streaming_token webhook_secret pyroscope_password headscale_api_key objectstore_access_key_id objectstore_secret_access_key objectstore_session_token; do
+      printf '%s' 'tskey-smoke-not-a-real-secret' > "$d/$name"
+    done
     chmod 644 "$d"/*
-    out="$(docker run --rm \
-      -v "$d/oauth_client_secret:/run/secrets/oauth_client_secret:ro" \
-      -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-      -e TS2OTEL_TAILSCALE__AUTH__METHOD=oauth \
-      -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=smoke \
-      -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE=/run/secrets/oauth_client_secret \
-      '{{ tag }}' -validate 2>&1)" || {
-        echo "::error::-validate failed with a file-backed secret:"; echo "$out"; exit 1; }
-    echo "$out"
-    if grep -q 'tskey-smoke-not-a-real-secret' <<<"$out"; then
-      echo "::error::the credential value appeared in -validate output"; exit 1
-    fi
-    if docker run --rm \
-      -e TS2OTEL_TAILSCALE__TAILNET=example.com \
-      -e TS2OTEL_TAILSCALE__AUTH__METHOD=oauth \
-      -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=smoke \
-      -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET_FILE=/run/secrets/absent \
-      '{{ tag }}' -validate >/dev/null 2>&1; then
-      echo "::error::a missing *_FILE path was accepted; the file is not actually being read"
+    if ! SECRETS_DIR="$d" TS2OTEL_SMOKE_IMAGE='{{ tag }}' docker compose -p "$project" -f deploy/docker-compose.yaml -f deploy/docker-compose.secrets.yaml -f deploy/docker-compose.ci.yaml up -d; then
+      echo "::error::Compose stack failed to start"
       exit 1
     fi
-    echo "file-backed secret read, value not echoed, missing path rejected"
+    for _ in $(seq 1 20); do
+      health="$(docker inspect "$(docker compose -p "$project" -f deploy/docker-compose.yaml -f deploy/docker-compose.secrets.yaml -f deploy/docker-compose.ci.yaml ps -q tailscale2otel)" | jq -r '.[0].State.Health.Status')"
+      if [ "$health" = healthy ]; then
+        break
+      fi
+      sleep 1
+    done
+    if [ "$health" != healthy ]; then
+      docker compose -p "$project" -f deploy/docker-compose.yaml -f deploy/docker-compose.secrets.yaml -f deploy/docker-compose.ci.yaml logs
+      echo "::error::Compose stack did not become healthy (status: $health)"
+      exit 1
+    fi
+    if docker compose -p "$project" -f deploy/docker-compose.yaml -f deploy/docker-compose.secrets.yaml -f deploy/docker-compose.ci.yaml logs | grep -q 'tskey-smoke-not-a-real-secret'; then
+      echo "::error::the credential value appeared in Compose logs"
+      exit 1
+    fi
+    echo "Compose stack healthy with file-backed secrets; value not echoed"
 
 # write a root-module coverage profile to coverage.out (informational, not gating)
 [group('check')]

@@ -102,7 +102,7 @@ type Config struct {
 	// Populated by Load before Validate runs, so the conflict is reported as a
 	// normal Validate error (naming the key pair) rather than a special-cased
 	// Load error.
-	secretFileConflicts []string
+	secretFileConflicts []secretFileConflict
 
 	// pathResolutions records, for every path-bearing field (see pathFields,
 	// paths.go), what the operator configured and what this process resolved

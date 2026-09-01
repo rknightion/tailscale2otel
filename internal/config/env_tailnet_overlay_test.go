@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,6 +48,31 @@ tailnets:
 	}
 	if !strings.Contains(err.Error(), envName) || !strings.Contains(err.Error(), "no configured tailnet") {
 		t.Errorf("Load() error = %q, want env name and no-configured-tailnet explanation", err)
+	}
+}
+
+func TestLoad_TailnetOAuthSecretEnvironmentOverlayConflictNamesEnvAndFile(t *testing.T) {
+	const envName = "TS2OTEL_TAILNET_FLEET_A__AUTH__OAUTH__CLIENT_SECRET"
+	t.Setenv(envName, "injected")
+	secretFile := filepath.Join(t.TempDir(), "client-secret")
+	if err := os.WriteFile(secretFile, []byte("from-file\n"), 0o600); err != nil {
+		t.Fatalf("write secret file: %v", err)
+	}
+
+	_, err := config.Load(writeTemp(t, `
+tailnets:
+  - name: fleet-a
+    auth:
+      method: oauth
+      oauth:
+        client_id: client-id
+        client_secret_file: `+secretFile+`
+`))
+	if err == nil {
+		t.Fatal("Load() succeeded, want value-XOR-file conflict")
+	}
+	if !strings.Contains(err.Error(), envName) || !strings.Contains(err.Error(), secretFile) {
+		t.Errorf("Load() error = %q, want both %q and %q", err, envName, secretFile)
 	}
 }
 

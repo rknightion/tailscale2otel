@@ -239,6 +239,26 @@ func TestSecretFile_ValueAndFileConflict(t *testing.T) {
 	}
 }
 
+// TestSecretFile_EnvValueAndFileConflictNamesSources keeps the value-XOR-file
+// guard, while making the common "secret in env, path in YAML" collision
+// actionable without disclosing either credential value.
+func TestSecretFile_EnvValueAndFileConflictNamesSources(t *testing.T) {
+	secretPath := writeSecretFile(t, "unused\n")
+	const envName = "TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET"
+	t.Setenv(envName, "injected-value")
+
+	_, err := config.Load(writeTemp(t, "tailscale:\n  auth:\n    oauth:\n      client_secret_file: "+secretPath+"\n"))
+	if err == nil {
+		t.Fatal("Load: want a value-XOR-file conflict")
+	}
+	if !strings.Contains(err.Error(), envName) {
+		t.Errorf("Load error %q does not name environment source %q", err, envName)
+	}
+	if !strings.Contains(err.Error(), secretPath) {
+		t.Errorf("Load error %q does not name file source %q", err, secretPath)
+	}
+}
+
 // TestSecretFile_SettableViaEnvVar proves a *_file key gets the standard
 // TS2OTEL_* environment-variable convention for free, same as every other
 // plain string config field — no special-casing needed in env.go.

@@ -384,14 +384,12 @@ jobs:
           build-args: |
             VERSION=ci-${{ github.sha }}
 
-      # #334's "startup smoke test" half. compose-tests.sh proves the resolved
-      # config carries only /run/secrets PATHS; only actually starting the
-      # binary proves it READS them. -validate loads the config (which is where
-      # *_file resolution happens) and exits, so this needs no tailnet and no
-      # OTLP backend. It runs against the image just built, in the distroless
-      # runtime with no shell — so it also proves the secret files are readable
-      # by uid 65532.
-      - name: file-based secrets are read by the real image
+      # The render guard above catches Compose-asset drift. This starts the
+      # actual Compose service against the image just built, local stdout
+      # delivery and disposable file secrets, then waits for its binary health
+      # check; it proves the supported deployment path starts rather than only
+      # parsing it.
+      - name: Compose stack starts healthy with file-based secrets
         run: just smoke tailscale2otel:ci
 
   # Test coverage -> Codacy. Deliberately NOT in ci-success's `needs`: coverage reporting is
