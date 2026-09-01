@@ -2,12 +2,181 @@ package statushtml_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statushtml"
 )
+
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+}
+
+func familyTokenBlock(t *testing.T) string {
+	t.Helper()
+	spec, err := os.ReadFile(filepath.Join(repositoryRoot(t), "design", "console-v2", "implementation-spec.md"))
+	if err != nil {
+		t.Fatalf("read family implementation spec: %v", err)
+	}
+	start := strings.Index(string(spec), "```css\n")
+	if start < 0 {
+		t.Fatal("family token block opening fence not found")
+	}
+	start += len("```css\n")
+	end := strings.Index(string(spec[start:]), "\n```")
+	if end < 0 {
+		t.Fatal("family token block closing fence not found")
+	}
+	return string(spec[start : start+end])
+}
+
+func tokenBlockEqual(page, token string) bool {
+	start := strings.Index(page, "<style>\n")
+	if start < 0 {
+		return false
+	}
+	start += len("<style>\n")
+	return len(page) >= start+len(token) && page[start:start+len(token)] == token
+}
+
+// TestFamilyTokenBlockMatchesTheSpec pins the family-wide contract byte for
+// byte. A palette change belongs in implementation-spec.md and must then be
+// copied to every sibling console deliberately, never improvised here.
+func TestFamilyTokenBlockMatchesTheSpec(t *testing.T) {
+	token := familyTokenBlock(t)
+	root := repositoryRoot(t)
+	for _, page := range []string{
+		"internal/app/statushtml/page.html.tmpl",
+		"internal/app/flowhtml/page.html.tmpl",
+		"internal/app/eventshtml/page.html.tmpl",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, page))
+		if err != nil {
+			t.Fatalf("read %s: %v", page, err)
+		}
+		if !tokenBlockEqual(string(raw), token) {
+			t.Errorf("%s family token block differs from design/console-v2/implementation-spec.md", page)
+		}
+	}
+}
+
+// TestFamilyTokenBlockGuardRejectsMutation is the negative case for the
+// byte-identity guard: a superficially plausible local token edit must fail.
+func TestFamilyTokenBlockGuardRejectsMutation(t *testing.T) {
+	token := familyTokenBlock(t)
+	mutated := strings.Replace(token, "--t2o-accent:#1d6a8a", "--t2o-accent:#000000", 1)
+	if tokenBlockEqual("<style>\n"+mutated, token) {
+		t.Fatal("family token guard accepted a mutated token block")
+	}
+}
+
+func TestConsoleV2PagesKeepTheOfflineThemeAndFontContract(t *testing.T) {
+	root := repositoryRoot(t)
+	for _, page := range []string{
+		"internal/app/statushtml/page.html.tmpl",
+		"internal/app/flowhtml/page.html.tmpl",
+		"internal/app/eventshtml/page.html.tmpl",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, page))
+		if err != nil {
+			t.Fatalf("read %s: %v", page, err)
+		}
+		pageText := string(raw)
+		for _, want := range []string{
+			`href="/_static/fonts/hanken-grotesk-latin.woff2"`,
+			`url("/_static/fonts/hanken-grotesk-latin.woff2")`,
+			`url("/_static/fonts/hanken-grotesk-latin-ext.woff2")`,
+			`url("/_static/fonts/JetBrainsMono-Variable.woff2")`,
+			`localStorage.getItem('ts2otel-theme')`,
+			`prefers-color-scheme: dark`,
+		} {
+			if !strings.Contains(pageText, want) {
+				t.Errorf("%s missing console v2 contract %q", page, want)
+			}
+		}
+	}
+
+	status, err := os.ReadFile(filepath.Join(root, "internal", "app", "statushtml", "page.html.tmpl"))
+	if err != nil {
+		t.Fatalf("read status console: %v", err)
+	}
+	for _, want := range []string{
+		`role="tablist"`, `role="tab"`, `id="themeToggle"`,
+		`href="/api/support-bundle.zip"`, `Download support bundle`,
+		`.rollup{grid-template-columns:repeat(2,minmax(0,1fr))}`,
+	} {
+		if !strings.Contains(string(status), want) {
+			t.Errorf("status console missing %q", want)
+		}
+	}
+
+	flow, err := os.ReadFile(filepath.Join(root, "internal", "app", "flowhtml", "page.html.tmpl"))
+	if err != nil {
+		t.Fatalf("read flow console: %v", err)
+	}
+	for _, want := range []string{`tx transmitted`, `rx received`, `"stroke-dasharray"`, `"2 3"`} {
+		if !strings.Contains(string(flow), want) {
+			t.Errorf("flow console missing accessible tx/rx treatment %q", want)
+		}
+	}
+	for _, want := range []string{
+		`border-top:1.5px dashed var(--t2o-rx)`,
+		`"rx", 12`, `"tx", -4`,
+	} {
+		if !strings.Contains(string(flow), want) {
+			t.Errorf("flow console missing collision-safe tx/rx treatment %q", want)
+		}
+	}
+
+	events, err := os.ReadFile(filepath.Join(root, "internal", "app", "eventshtml", "page.html.tmpl"))
+	if err != nil {
+		t.Fatalf("read events console: %v", err)
+	}
+	for _, want := range []string{
+		`#errBanner{border-left:2px solid var(--t2o-fail)}`,
+		`#truncBanner{border-left:2px solid var(--t2o-warn)}`,
+	} {
+		if !strings.Contains(string(events), want) {
+			t.Errorf("events console missing distinct banner severity %q", want)
+		}
+	}
+
+	for _, pageText := range []string{string(status), string(flow), string(events)} {
+		for _, want := range []string{
+			`:root[data-theme="light"]{color-scheme:light}`,
+			`:root[data-theme="dark"]{color-scheme:dark}`,
+		} {
+			if !strings.Contains(pageText, want) {
+				t.Errorf("console missing explicit native control color scheme %q", want)
+			}
+		}
+	}
+}
+
+func TestFontAllowsOnlyThePublishedConsoleFiles(t *testing.T) {
+	for _, name := range []string{
+		"hanken-grotesk-latin.woff2",
+		"hanken-grotesk-latin-ext.woff2",
+		"JetBrainsMono-Variable.woff2",
+	} {
+		font, ok := statushtml.Font(name)
+		if !ok || len(font) == 0 {
+			t.Errorf("Font(%q) did not return the embedded asset", name)
+		}
+	}
+	if font, ok := statushtml.Font("../../page.html.tmpl"); ok || font != nil {
+		t.Fatal("Font accepted a non-published filename")
+	}
+}
 
 // TestRender_ZeroStatus asserts the template executes against a zero value
 // without error (also exercising the //go:embed + parse done at package init).

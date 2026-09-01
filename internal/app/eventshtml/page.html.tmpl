@@ -3,32 +3,136 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preload" href="/_static/fonts/hanken-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
 <title>{{.ServiceName}} — events</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%234493f8'/%3E%3C/svg%3E">
 <style>
-  :root{
-    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
-    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
-    --ok:#3fb950; --warn:#d29922; --err:#f85149;
-    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+/* ─────────────────────────────────────────────────────────────────────────────
+   m7kni Design System v2 - 2otel console family token block.
+   SHARED VERBATIM across tailscale2otel, opnsense2otel, graph2otel,
+   codexlb2otel. Do not edit in one repo only. Generated from
+   packages/tokens (DTCG) - hex values are the resolved sRGB of the oklch
+   sources noted per line.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  /* Type */
+  --t2o-sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --t2o-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --t2o-fs-2xs:10px;   /* uppercase micro labels */
+  --t2o-fs-xs:11px;    /* mono sub-values, notes, badges */
+  --t2o-fs-sm:12.5px;  /* table cells, controls, machine text */
+  --t2o-fs-md:13.5px;  /* body copy */
+  --t2o-fs-lg:15px;    /* page title, card values */
+  --t2o-fs-xl:18px;    /* posture values */
+  --t2o-fs-2xl:24px;   /* rare, one per page at most */
+  --t2o-fw-regular:400;
+  --t2o-fw-medium:500;
+  --t2o-fw-semibold:600;
+  --t2o-tracking-label:0.13em;
+
+  /* Space and shape */
+  --t2o-space-1:4px;  --t2o-space-2:8px;  --t2o-space-3:12px;
+  --t2o-space-4:16px; --t2o-space-5:20px; --t2o-space-6:24px;
+  --t2o-radius-control:3px;    /* buttons, inputs, chips, badges */
+  --t2o-radius-container:0px;  /* panels, cards, tables - square */
+  --t2o-radius-overlay:6px;    /* tooltips, popovers */
+  --t2o-row:36px;              /* table row height */
+  --t2o-dur-fast:120ms; --t2o-dur-base:160ms;
+
+  /* Light theme - the default */
+  --t2o-bg:#eef3f6;            /* oklch(0.962 0.007 227) */
+  --t2o-surface:#f6fafb;       /* oklch(0.982 0.004 227) */
+  --t2o-raised:#ffffff;        /* oklch(1 0 0) - table headers, inputs */
+  --t2o-hover:#e7eef1;         /* oklch(0.945 0.009 227) */
+  --t2o-selected:#dee8ec;      /* oklch(0.925 0.012 227) */
+  --t2o-track:#c7cfd3;         /* oklch(0.85 0.01 227) - bar troughs */
+  --t2o-fg:#192124;            /* oklch(0.24 0.012 227) */
+  --t2o-fg-soft:#384146;       /* oklch(0.37 0.015 227) */
+  --t2o-fg-muted:#59666b;      /* oklch(0.5 0.018 227) */
+  --t2o-fg-faint:#869196;      /* oklch(0.65 0.015 227) - placeholder/disabled ONLY */
+  --t2o-accent:#1d6a8a;        /* petrol */
+  --t2o-accent-hover:#175874;
+  --t2o-accent-soft:#e4eef4;   /* banner and selected-row wash */
+  --t2o-on-accent:#ffffff;
+  --t2o-line:#d9dfe2;          /* oklch(0.9 0.008 227) */
+  --t2o-line-strong:#bec5c9;   /* oklch(0.82 0.01 227) */
+  --t2o-ok:#2f7d4f;
+  --t2o-warn:#8f6410;
+  --t2o-fail:#a83a2e;
+
+  /* Direction pair - see section 7 */
+  --t2o-tx:var(--t2o-accent);
+  --t2o-rx:var(--t2o-fg);
+}
+
+/* No stored preference: follow the OS. Explicit data-theme always wins. */
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme]){
+    --t2o-bg:#101618; --t2o-surface:#161d20; --t2o-raised:#1e2529;
+    --t2o-hover:#1b2225; --t2o-selected:#222a2e; --t2o-track:#373f42;
+    --t2o-fg:#e1e5e8; --t2o-fg-soft:#b7bfc3; --t2o-fg-muted:#95a1a6; --t2o-fg-faint:#697478;
+    --t2o-accent:#66aecb; --t2o-accent-hover:#7cbcd6; --t2o-accent-soft:#1f2f38;
+    --t2o-on-accent:#0e161b;
+    --t2o-line:#2a3235; --t2o-line-strong:#40494e;
+    --t2o-ok:#5fae7f; --t2o-warn:#c9a04a; --t2o-fail:#d97b64;
   }
-  @media (prefers-color-scheme: light){
-    :root:not([data-theme]){
-      --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
-      --fg:#1f2328; --muted:#59636e; --accent:#0969da;
-      --ok:#1a7f37; --warn:#9a6700; --err:#cf222e;
-    }
-  }
-  :root[data-theme="light"]{
-    --bg:#f6f8fa; --panel:#ffffff; --panel2:#f0f3f6; --line:#d0d7de;
-    --fg:#1f2328; --muted:#59636e; --accent:#0969da;
-    --ok:#1a7f37; --warn:#9a6700; --err:#cf222e;
-  }
-  :root[data-theme="dark"]{
-    --bg:#0f1419; --panel:#171c24; --panel2:#1d242e; --line:#2a323d;
-    --fg:#e6edf3; --muted:#8b98a5; --accent:#4493f8;
-    --ok:#3fb950; --warn:#d29922; --err:#f85149;
-  }
+}
+:root[data-theme="light"]{
+  --t2o-bg:#eef3f6; --t2o-surface:#f6fafb; --t2o-raised:#ffffff;
+  --t2o-hover:#e7eef1; --t2o-selected:#dee8ec; --t2o-track:#c7cfd3;
+  --t2o-fg:#192124; --t2o-fg-soft:#384146; --t2o-fg-muted:#59666b; --t2o-fg-faint:#869196;
+  --t2o-accent:#1d6a8a; --t2o-accent-hover:#175874; --t2o-accent-soft:#e4eef4;
+  --t2o-on-accent:#ffffff;
+  --t2o-line:#d9dfe2; --t2o-line-strong:#bec5c9;
+  --t2o-ok:#2f7d4f; --t2o-warn:#8f6410; --t2o-fail:#a83a2e;
+}
+:root[data-theme="dark"]{
+  --t2o-bg:#101618; --t2o-surface:#161d20; --t2o-raised:#1e2529;
+  --t2o-hover:#1b2225; --t2o-selected:#222a2e; --t2o-track:#373f42;
+  --t2o-fg:#e1e5e8; --t2o-fg-soft:#b7bfc3; --t2o-fg-muted:#95a1a6; --t2o-fg-faint:#697478;
+  --t2o-accent:#66aecb; --t2o-accent-hover:#7cbcd6; --t2o-accent-soft:#1f2f38;
+  --t2o-on-accent:#0e161b;
+  --t2o-line:#2a3235; --t2o-line-strong:#40494e;
+  --t2o-ok:#5fae7f; --t2o-warn:#c9a04a; --t2o-fail:#d97b64;
+}
+
+/* ── Compatibility aliases ───────────────────────────────────────────────────
+   The three templates already reference --bg/--panel/--line/... in hundreds of
+   places, including inside JS that writes `fill:"var(--rx)"` into SVG. Keeping
+   these aliases means the restyle lands as a palette swap plus targeted
+   per-page edits, not a rename sweep. New CSS should use the --t2o-* names.
+   ───────────────────────────────────────────────────────────────────────── */
+:root{
+  --bg:var(--t2o-bg);
+  --panel:var(--t2o-surface);
+  --panel2:var(--t2o-raised);
+  --line:var(--t2o-line);
+  --fg:var(--t2o-fg);
+  --muted:var(--t2o-fg-muted);
+  --accent:var(--t2o-accent);
+  --ok:var(--t2o-ok);
+  --warn:var(--t2o-warn);
+  --err:var(--t2o-fail);
+  --pending:var(--t2o-fg-muted);
+  --grid:var(--t2o-line);
+  --tx:var(--t2o-tx);
+  --rx:var(--t2o-rx);
+  --mono:var(--t2o-mono);
+}
+@font-face{
+  font-family:"Hanken Grotesk";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/_static/fonts/hanken-grotesk-latin.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+@font-face{
+  font-family:"Hanken Grotesk";font-style:normal;font-weight:100 900;font-display:swap;
+  src:url("/_static/fonts/hanken-grotesk-latin-ext.woff2") format("woff2");
+  unicode-range:U+0100-024F,U+0259,U+1E00-1EFF,U+2020,U+20A0-20AB,U+20AD-20CF,U+2113,U+2C60-2C7F,U+A720-A7FF;
+}
+@font-face{
+  font-family:"JetBrains Mono";font-style:normal;font-weight:100 800;font-display:swap;
+  src:url("/_static/fonts/JetBrainsMono-Variable.woff2") format("woff2");
+}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--fg);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
@@ -86,7 +190,35 @@
   .src{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-family:var(--mono);
     background:var(--panel2);color:var(--muted)}
   .empty{color:var(--muted);font-size:13px;padding:14px;text-align:center}
+/* Console v2 application layer. The family token block above remains unchanged. */
+body{background:var(--t2o-bg);color:var(--t2o-fg-soft);font:var(--t2o-fs-md)/1.5 var(--t2o-sans)}
+a{color:var(--t2o-accent)}
+header{padding:12px 20px;background:var(--t2o-surface);border-bottom:1px solid var(--t2o-line)}
+header h1{font:var(--t2o-fw-semibold) var(--t2o-fs-lg)/1.2 var(--t2o-sans)}
+header .ver{font:var(--t2o-fs-xs)/1.3 var(--t2o-mono);color:var(--t2o-fg-muted)}
+main{max-width:1320px;padding:18px 24px 60px}
+section>h2,.sub-h,.card .k{font:var(--t2o-fw-semibold) var(--t2o-fs-2xs)/1.2 var(--t2o-sans);letter-spacing:var(--t2o-tracking-label);text-transform:uppercase;color:var(--t2o-fg-muted)}
+.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.card,.panel,.controls,.rollup,details{border-radius:var(--t2o-radius-container);background:var(--t2o-surface);border-color:var(--t2o-line)}
+.card{padding:10px 12px}.card .v{font:var(--t2o-fw-medium) var(--t2o-fs-lg)/1.2 var(--t2o-mono);font-variant-numeric:tabular-nums}.card .sub{font:var(--t2o-fs-xs)/1.4 var(--t2o-mono);color:var(--t2o-fg-muted)}
+table{border-radius:var(--t2o-radius-container);border-color:var(--t2o-line);background:var(--t2o-surface)}
+th{position:sticky;top:0;z-index:1;background:var(--t2o-raised);border-bottom-color:var(--t2o-line-strong);font:var(--t2o-fw-semibold) var(--t2o-fs-2xs)/1.2 var(--t2o-sans);letter-spacing:var(--t2o-tracking-label);text-transform:uppercase;color:var(--t2o-fg-muted)}
+td{height:var(--t2o-row);padding:8px 12px;border-bottom-color:var(--t2o-line);font:var(--t2o-fs-sm)/1.4 var(--t2o-mono);font-variant-numeric:tabular-nums}
+tbody tr:hover{background:var(--t2o-raised)}tr.bad>td{background:transparent}tr.bad{box-shadow:inset 2px 0 0 var(--t2o-fail)}
+td.num{text-align:right}.mono,code{font-family:var(--t2o-mono)}
+button.ctl,select.ctl,input.ctl,.filter,.seg{border-radius:var(--t2o-radius-control);background:var(--t2o-raised);border-color:var(--t2o-line-strong);font:var(--t2o-fs-sm)/1.3 var(--t2o-sans)}
+button.ctl:hover,select.ctl:hover,.filter:hover{background:var(--t2o-hover);border-color:var(--t2o-accent)}
+.badge{border:1px solid currentColor;border-radius:var(--t2o-radius-control);background:transparent!important;font:var(--t2o-fw-semibold) var(--t2o-fs-xs)/1.4 var(--t2o-sans);letter-spacing:.06em;text-transform:uppercase}
+.badge.ok{color:var(--t2o-ok)}.badge.err,.badge.critical,.badge.degraded{color:var(--t2o-fail)}.badge.warn,.badge.warning{color:var(--t2o-warn)}.badge.pending,.badge.stale,.badge.none{color:var(--t2o-fg-muted)}
+:focus-visible{outline:2px solid var(--t2o-accent);outline-offset:2px}
+@media (max-width:760px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+:root[data-theme="light"]{color-scheme:light}:root[data-theme="dark"]{color-scheme:dark}@media (prefers-color-scheme: dark){:root:not([data-theme]){color-scheme:dark}}
+.cards{grid-template-columns:repeat(5,minmax(0,1fr))}.controls{border-radius:var(--t2o-radius-container)}#btnApply{border-color:var(--t2o-accent);color:var(--t2o-accent)}.sev,.src{border:1px solid currentColor;border-radius:var(--t2o-radius-control);background:transparent!important;font-family:var(--t2o-mono)}.sev-info{color:var(--t2o-fg-muted)}.sev-warn{color:var(--t2o-warn)}#errBanner,#truncBanner{display:flex;align-items:center;gap:8px;background:var(--t2o-accent-soft);color:var(--t2o-fg-soft)}#errBanner{border-left:2px solid var(--t2o-fail)}#truncBanner{border-left:2px solid var(--t2o-warn)}#errBanner::before,#truncBanner::before{content:"!";display:inline-grid;place-items:center;width:14px;height:14px;font:var(--t2o-fw-semibold) var(--t2o-fs-xs)/1 var(--t2o-sans)}#errBanner::before{border:1px solid var(--t2o-fail);border-radius:50%;color:var(--t2o-fail)}#truncBanner::before{border:1px solid var(--t2o-warn);color:var(--t2o-warn)}@media (max-width:760px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
+<script>
+  // Apply the persisted theme before first paint. This shares the console family's key.
+  (function(){try{var t=localStorage.getItem('ts2otel-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();
+</script>
 </head>
 <body>
 <header>
@@ -94,6 +226,7 @@
   <span class="ver">{{.Version}}</span>
   <span class="spacer"></span>
   <a href="/">status &rarr;</a>
+  <button class="ctl" id="themeToggle" title="Toggle light/dark theme" aria-label="Toggle theme">&#9686;</button>
 </header>
 <div id="errBanner" class="banner" role="alert"></div>
 <div id="truncBanner" class="banner" role="status"></div>
@@ -400,6 +533,14 @@ function createPoller(opts){
     qs("fType").value = "";
     qs("fErrors").checked = false;
     poll();
+  });
+
+  qs("themeToggle").addEventListener("click", function(){
+    var current = document.documentElement.getAttribute("data-theme");
+    if (!current) current = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    var next = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("ts2otel-theme", next); } catch(e) {}
   });
 
   eventsPoller.kick();

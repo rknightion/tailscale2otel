@@ -446,6 +446,9 @@ func (a *App) buildAdminServer() *http.Server {
 	registerProbes(mux, a.readyz)
 	if a.cfg.Admin.LandingPage {
 		mux.HandleFunc("/", auth(a.handleIndex))
+		// Font bytes contain no operator or tailnet data and must be fetchable by
+		// the browser independently of the page's Authorization request.
+		mux.HandleFunc("/_static/fonts/", a.handleConsoleFont)
 		mux.HandleFunc("/api/status.json", auth(a.handleStatusJSON))
 		mux.HandleFunc("/api/cardinality.json", auth(a.handleCardinalityJSON))
 		mux.HandleFunc("/api/config.json", auth(a.handleConfigJSON))

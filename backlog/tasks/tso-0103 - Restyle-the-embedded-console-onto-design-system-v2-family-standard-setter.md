@@ -1,10 +1,10 @@
 ---
 id: TSO-0103
 title: Restyle the embedded console onto design system v2 (family standard-setter)
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-08-31 12:12'
-updated_date: '2026-08-31 14:08'
+updated_date: '2026-09-01 19:07'
 labels:
   - design-system
 milestone: m-9
@@ -37,3 +37,19 @@ Scope: Go html/template + inline CSS/vanilla JS + go:embed stays; no framework, 
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 - [ ] #4 just check green
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+- Preserve the family-spec shared token block byte-for-byte while adapting the reference design to the real embedded console templates.
+- Restyle every embedded console page with self-hosted fonts, retained theme/storage behavior and ARIA tabs, and accessible tx/rx labels.
+- Add contract tests, negative-test guards, run targeted render checks, and report any shared-token extension explicitly without committing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented the v2 family console across status, flow, and events templates with the shared token block byte-identical to design/console-v2/implementation-spec.md section 1. Embedded Hanken Grotesk latin/latin-ext and JetBrains Mono WOFF2 assets are served through a fixed-name allowlist at /_static/fonts/, with font/woff2, CSP font-src self, no external requests, retained theme/localStorage precedence, ARIA tabs, and labelled lightness-distinct tx/rx treatment. Diagnostic actions remain page-scoped and support bundle remains under Config.
+
+Negative guards: changing one family token made TestFamilyTokenBlockMatchesTheSpec fail; accepting an unknown font made TestFontAllowsOnlyThePublishedConsoleFiles fail; widening the narrow rollup made TestConsoleV2PagesKeepTheOfflineThemeAndFontContract fail; removing the route/CSP integration made the root route/header tests fail. Each break was restored. Focused race tests passed. CodeRabbit findings for narrow rollup, tx/rx label collision, RX legend distinction, color-scheme, and banner distinction were fixed; two subsequent sharded reviews completed with zero finding events. just check passed. Shared token extension: none.
+<!-- SECTION:NOTES:END -->

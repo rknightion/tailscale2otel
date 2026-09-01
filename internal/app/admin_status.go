@@ -1,12 +1,34 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/app/statushtml"
 	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
 )
+
+const consoleFontPrefix = "/_static/fonts/"
+
+// handleConsoleFont serves the three fixed, embedded font files used by every
+// console page. Font performs the filename allowlist; request paths can never
+// select another embedded or repository file.
+func (a *App) handleConsoleFont(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, consoleFontPrefix)
+	font, ok := statushtml.Font(name)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "font/woff2")
+	http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(font))
+}
 
 // handleIndex renders the HTML admin status/landing page. Because "/" is the
 // ServeMux catch-all, any unknown path that falls through to here returns 404

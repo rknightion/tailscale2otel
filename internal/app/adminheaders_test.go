@@ -62,6 +62,9 @@ func TestAdminResponsesCarryDefensiveHeaders(t *testing.T) {
 // air-gapped tailnet. Nothing enforced that; a CSP does.
 func TestAdminCSPForbidsEveryExternalOrigin(t *testing.T) {
 	csp := adminHeaders(t, headerApp(t), "/").Get("Content-Security-Policy")
+	if !strings.Contains(csp, "font-src 'self'") {
+		t.Errorf("CSP = %q, want font-src 'self' for the embedded console fonts", csp)
+	}
 	for _, directive := range strings.Split(csp, ";") {
 		directive = strings.TrimSpace(directive)
 		if directive == "" {

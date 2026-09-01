@@ -29,6 +29,7 @@ import "net/http"
 const adminCSP = "default-src 'none'; " +
 	"script-src 'unsafe-inline'; " +
 	"style-src 'unsafe-inline'; " +
+	"font-src 'self'; " +
 	"img-src data:; " +
 	"connect-src 'self'; " +
 	"base-uri 'none'; " +

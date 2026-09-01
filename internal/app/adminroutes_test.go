@@ -55,6 +55,7 @@ func TestAdminRoutes_AreActuallyRegistered(t *testing.T) {
 		"/api/cardinality.json",
 		"/api/config.json",
 		"/api/support-bundle.zip",
+		"/_static/fonts/hanken-grotesk-latin.woff2",
 		"/flows",
 		"/api/flows.json",
 		"/api/flows/export.csv",
@@ -70,5 +71,35 @@ func TestAdminRoutes_AreActuallyRegistered(t *testing.T) {
 			t.Errorf("GET %s = 404: the route is not registered in buildAdminServer, so it does not exist "+
 				"in a running process however well its handler is tested", path)
 		}
+	}
+}
+
+func TestAdminFontRouteServesOnlyTheEmbeddedBundle(t *testing.T) {
+	cfg := config.Default()
+	cfg.Admin.Listen = "127.0.0.1:9091"
+	cfg.Tailscale.Tailnet = "example.com"
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+	srv := a.buildAdminServer()
+
+	for _, tc := range []struct {
+		path        string
+		wantStatus  int
+		contentType string
+	}{
+		{"/_static/fonts/hanken-grotesk-latin.woff2", http.StatusOK, "font/woff2"},
+		{"/_static/fonts/unknown.woff2", http.StatusNotFound, "text/plain; charset=utf-8"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Host = adminLoopbackHost
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, req)
+			if w.Code != tc.wantStatus {
+				t.Fatalf("GET %s = %d, want %d", tc.path, w.Code, tc.wantStatus)
+			}
+			if got := w.Header().Get("Content-Type"); got != tc.contentType {
+				t.Errorf("GET %s Content-Type = %q, want %q", tc.path, got, tc.contentType)
+			}
+		})
 	}
 }
