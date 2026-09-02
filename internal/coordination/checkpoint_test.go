@@ -3,6 +3,7 @@ package coordination
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,69 +17,143 @@ import (
 	"github.com/rknightion/tailscale2otel/v4/internal/collector"
 )
 
-func TestKubernetesCheckpointClientUsesDedicatedConfigMap(t *testing.T) {
-	client := fake.NewSimpleClientset(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "tailscale2otel", Namespace: "default"},
-		Data:       map[string]string{"config.yaml": "coordination:\n  mode: kubernetes\n"},
-	})
-	adapter, err := NewKubernetesCheckpointClientForClient(client, "default", "tailscale2otel")
-	if err != nil {
-		t.Fatalf("NewKubernetesCheckpointClientForClient: %v", err)
+func TestCheckpointConfigMapNameIsValidAndShardSpecific(t *testing.T) {
+	legacy := CheckpointConfigMapName("tailscale2otel", "")
+	firstLease := strings.Repeat("a", 63)
+	secondLease := strings.Repeat("a", 62) + "b"
+	first := CheckpointConfigMapName(firstLease, "objectstore/v1/dA/s3/flow/feed")
+	second := CheckpointConfigMapName(firstLease, "objectstore/v1/dA/s3/audit/feed")
+	otherLease := CheckpointConfigMapName(secondLease, "objectstore/v1/dA/s3/flow/feed")
+	if legacy == first || first == second {
+		t.Fatalf("names not shard-specific: %q %q %q", legacy, first, second)
 	}
-	if _, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Data: "{}"}); err != nil {
-		t.Fatalf("CreateCheckpoint: %v", err)
+	if first == otherLease {
+		t.Fatalf("two Lease names collided on shard name %q", first)
 	}
-
-	config, err := client.CoreV1().ConfigMaps("default").Get(context.Background(), "tailscale2otel", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("Get application config ConfigMap: %v", err)
+	if legacy != "tailscale2otel-checkpoints" {
+		t.Fatalf("legacy name = %q, want exact former name", legacy)
 	}
-	if got := config.Data["config.yaml"]; got == "" {
-		t.Fatal("application config ConfigMap was overwritten by checkpoint creation")
-	}
-	checkpoint, err := client.CoreV1().ConfigMaps("default").Get(context.Background(), "tailscale2otel-checkpoints", metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("Get dedicated checkpoint ConfigMap: %v", err)
-	}
-	if got := checkpoint.Data[collector.KubernetesCheckpointDataKey]; got != "{}" {
-		t.Fatalf("checkpoint data = %q, want {}", got)
+	for _, name := range []string{legacy, first, second, otherLease} {
+		if len(name) > 63 || strings.Trim(name, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
+			t.Fatalf("invalid ConfigMap name %q", name)
+		}
 	}
 }
 
-func TestKubernetesCheckpointClientMapsErrorsAndPreservesResourceVersion(t *testing.T) {
+func TestKubernetesCheckpointClientListsOnlyItsLeaseShards(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	first, err := NewKubernetesCheckpointClientForClient(client, "default", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := NewKubernetesCheckpointClientForClient(client, "default", "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, adapter := range []*KubernetesCheckpointClient{first, second} {
+		if _, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Shard: "flowlogs", Data: []byte{1}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, adapter := range map[string]*KubernetesCheckpointClient{"first": first, "second": second} {
+		listed, err := adapter.ListCheckpoints(context.Background())
+		if err != nil || len(listed) != 1 {
+			t.Fatalf("%s ListCheckpoints = %+v, %v; want exactly its own shard", name, listed, err)
+		}
+	}
+}
+
+func TestKubernetesCheckpointClientMarksLegacyMigrationWithoutChangingData(t *testing.T) {
+	legacy := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "tailscale2otel-checkpoints", Namespace: "default", ResourceVersion: "7"},
+		Data:       map[string]string{"checkpoints.json": `{"flowlogs":"2026-09-02T12:00:00Z"}`},
+	}
+	client := fake.NewSimpleClientset(legacy)
+	adapter, err := NewKubernetesCheckpointClientForClient(client, "default", "tailscale2otel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := adapter.GetLegacyCheckpoint(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := adapter.MarkLegacyCheckpointMigrated(context.Background(), before.ResourceVersion); err != nil {
+		t.Fatal(err)
+	}
+	after, err := adapter.GetLegacyCheckpoint(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.LegacyMigrated || string(after.Data) != string(before.Data) {
+		t.Fatalf("marked legacy = migrated=%v data=%q; want unchanged %q", after.LegacyMigrated, after.Data, before.Data)
+	}
+}
+
+func TestKubernetesCheckpointClientUsesDedicatedBinaryShards(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "tailscale2otel", Namespace: "default"}, Data: map[string]string{"config.yaml": "safe"}})
+	adapter, err := NewKubernetesCheckpointClientForClient(client, "default", "tailscale2otel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	object, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Shard: "flowlogs", Data: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = object // real apis assign resourceVersion; client-go fake deliberately does not.
+	cm, err := client.CoreV1().ConfigMaps("default").Get(context.Background(), CheckpointConfigMapName("tailscale2otel", "flowlogs"), metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cm.BinaryData[collector.KubernetesCheckpointDataKey]; string(got) != string([]byte{1, 2, 3}) {
+		t.Fatalf("binary data = %v", got)
+	}
+	if got := cm.Annotations[checkpointShardAnnotation]; got != "flowlogs" {
+		t.Fatalf("shard annotation = %q, want flowlogs", got)
+	}
+	listed, err := adapter.ListCheckpoints(context.Background())
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("ListCheckpoints = %+v, %v", listed, err)
+	}
+}
+
+func TestKubernetesCheckpointClientRejectsMisnamedShard(t *testing.T) {
+	leaseName := "tailscale2otel"
+	client := fake.NewSimpleClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "misplaced-checkpoint",
+			Namespace: "default",
+			Labels: map[string]string{
+				checkpointShardLabel: "true",
+				checkpointOwnerLabel: checkpointOwner(leaseName),
+			},
+			Annotations: map[string]string{checkpointShardAnnotation: "flowlogs"},
+		},
+		BinaryData: map[string][]byte{collector.KubernetesCheckpointDataKey: {1, 2, 3}},
+	})
+	adapter, err := NewKubernetesCheckpointClientForClient(client, "default", leaseName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.ListCheckpoints(context.Background()); err == nil || !strings.Contains(err.Error(), "misplaced-checkpoint") {
+		t.Fatalf("ListCheckpoints error = %v, want misplaced object rejection", err)
+	}
+}
+
+func TestKubernetesCheckpointClientMapsConflictAndPreservesShardResourceVersion(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	adapter, err := NewKubernetesCheckpointClientForClient(client, "default", "tailscale2otel")
 	if err != nil {
-		t.Fatalf("NewKubernetesCheckpointClientForClient: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := adapter.GetCheckpoint(context.Background()); !errors.Is(err, collector.ErrKubernetesCheckpointNotFound) {
-		t.Fatalf("Get missing error = %v, want ErrKubernetesCheckpointNotFound", err)
-	}
-	created, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Data: "{}"})
-	if err != nil {
-		t.Fatalf("CreateCheckpoint: %v", err)
-	}
-	if created.Data != "{}" {
-		t.Fatalf("created data = %q, want {}", created.Data)
-	}
-
 	client.PrependReactor("update", "configmaps", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		update := action.(clienttesting.UpdateAction).GetObject().(*corev1.ConfigMap)
 		if update.ResourceVersion != "rv-before" {
-			t.Fatalf("Update resourceVersion = %q, want preserved rv-before", update.ResourceVersion)
+			t.Fatalf("resourceVersion = %q", update.ResourceVersion)
 		}
 		return true, nil, apierrors.NewConflict(schema.GroupResource{Resource: "configmaps"}, update.Name, errors.New("stale"))
 	})
-	_, err = adapter.UpdateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{ResourceVersion: "rv-before", Data: `{"cursor":"value"}`})
+	_, err = adapter.UpdateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Shard: "flowlogs", ResourceVersion: "rv-before", Data: []byte("x")})
 	if !errors.Is(err, collector.ErrKubernetesCheckpointConflict) {
-		t.Fatalf("Update conflict = %v, want ErrKubernetesCheckpointConflict", err)
-	}
-
-	client.PrependReactor("create", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewAlreadyExists(schema.GroupResource{Resource: "configmaps"}, "tailscale2otel")
-	})
-	_, err = adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Data: "{}"})
-	if !errors.Is(err, collector.ErrKubernetesCheckpointAlreadyExists) {
-		t.Fatalf("Create conflict = %v, want ErrKubernetesCheckpointAlreadyExists", err)
+		t.Fatalf("Update conflict = %v", err)
 	}
 }

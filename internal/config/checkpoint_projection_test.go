@@ -20,13 +20,22 @@ func kubernetesCheckpointObjectStoreConfig(t *testing.T) *Config {
 	return c
 }
 
-func TestValidateRejectsOversizedKubernetesCheckpointProjection(t *testing.T) {
+func TestValidateAllowsCompressedKubernetesCheckpointProjection(t *testing.T) {
 	c := kubernetesCheckpointObjectStoreConfig(t)
 	c.Collectors.Flowlogs.ObjectStore.MaxSeenKeys = 10000
 
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate rejected compressed shard: %v", err)
+	}
+}
+
+func TestValidateRejectsOversizedCompressedKubernetesCheckpointProjection(t *testing.T) {
+	c := kubernetesCheckpointObjectStoreConfig(t)
+	c.Collectors.Flowlogs.ObjectStore.MaxSeenKeys = 400000
+
 	err := c.Validate()
 	if err == nil {
-		t.Fatal("Validate accepted an oversized Kubernetes checkpoint projection")
+		t.Fatal("Validate accepted an oversized compressed Kubernetes checkpoint projection")
 	}
 	for _, want := range []string{"projected", "1048576", "collectors.flowlogs.objectstore.max_seen_keys"} {
 		if !strings.Contains(err.Error(), want) {
@@ -42,7 +51,7 @@ func TestValidateAllowsSingleFeedDefaultKubernetesCheckpointProjection(t *testin
 	}
 }
 
-func TestValidateKubernetesCheckpointProjectionCountsEnabledFeeds(t *testing.T) {
+func TestValidateKubernetesCheckpointProjectionSplitsEnabledFeeds(t *testing.T) {
 	c := kubernetesCheckpointObjectStoreConfig(t)
 	c.Collectors.Auditlogs.Source = "objectstore"
 	c.Collectors.Auditlogs.ObjectStore.Endpoint = "https://s3.eu-west-2.amazonaws.com"
@@ -53,22 +62,12 @@ func TestValidateKubernetesCheckpointProjectionCountsEnabledFeeds(t *testing.T) 
 	c.Collectors.K8sAudit.ObjectStore.Region = "eu-west-2"
 	c.Collectors.K8sAudit.ObjectStore.Bucket = "k8s-audit"
 
-	err := c.Validate()
-	if err == nil {
-		t.Fatal("Validate accepted three default-sized object-store feeds in one Kubernetes checkpoint shard")
-	}
-	for _, want := range []string{
-		"collectors.flowlogs.objectstore.max_seen_keys",
-		"collectors.auditlogs.objectstore.max_seen_keys",
-		"collectors.k8s_audit.objectstore.max_seen_keys",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Validate error = %q, want it to contain %q", err, want)
-		}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate rejected separate compressed feed shards: %v", err)
 	}
 }
 
-func TestValidateKubernetesCheckpointProjectionCountsMultiTailnetDestinations(t *testing.T) {
+func TestValidateKubernetesCheckpointProjectionSplitsMultiTailnetDestinations(t *testing.T) {
 	c := Default()
 	c.Tailscale.Tailnet = ""
 	c.Checkpoint.Store = "kubernetes"
@@ -87,18 +86,8 @@ func TestValidateKubernetesCheckpointProjectionCountsMultiTailnetDestinations(t 
 		}
 	}
 
-	err := c.Validate()
-	if err == nil {
-		t.Fatal("Validate accepted three multi-tailnet default-sized object-store feeds in one Kubernetes checkpoint shard")
-	}
-	for _, want := range []string{
-		"tailnets[0].objectstore.flow.max_seen_keys",
-		"tailnets[1].objectstore.flow.max_seen_keys",
-		"tailnets[2].objectstore.flow.max_seen_keys",
-	} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("Validate error = %q, want it to contain %q", err, want)
-		}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate rejected separate multi-tailnet shards: %v", err)
 	}
 }
 

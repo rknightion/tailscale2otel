@@ -1679,9 +1679,20 @@ assert_rc0 "AC: coordinated replicas render"
 [[ "$(docs_of Role | yq '.rules[] | select(.resources[] == "leases" and .verbs[] == "get") | .resourceNames[]')" == "$FULLNAME" ]] \
   && ok "AC: Lease renewal RBAC is scoped to the configured Lease" \
   || bad "AC: Lease renewal RBAC is not scoped to the configured Lease"
-[[ "$(docs_of Role | yq '.rules[] | select(.resources[] == "configmaps" and .verbs[] == "get") | .resourceNames[]')" == "${FULLNAME}-checkpoints" ]] \
-  && ok "AC: checkpoint RBAC targets a dedicated ConfigMap" \
-  || bad "AC: checkpoint RBAC can collide with the application config ConfigMap"
+checkpoint_role="$(docs_of Role | yq '.rules[] | select(.resources[] == "configmaps")')"
+grep -q -- '- list' <<<"$checkpoint_role" \
+  && ok "AC: checkpoint RBAC can discover dynamic shards" \
+  || bad "AC: checkpoint RBAC omits list needed to discover shards"
+if [[ "$(docs_of Role | yq '[.rules[] | select(.resources[] == "configmaps") | has("resourceNames")] | any')" == "true" ]]; then
+  bad "AC: checkpoint RBAC incorrectly claims to scope dynamic shard names"
+else
+  ok "AC: checkpoint RBAC documents namespace-scoped dynamic-name limitation"
+fi
+if grep -qE -- '- (delete|patch|watch)' <<<"$checkpoint_role"; then
+  bad "AC: checkpoint RBAC grants an unneeded ConfigMap verb"
+else
+  ok "AC: checkpoint RBAC keeps dynamic ConfigMap verbs minimal"
+fi
 [[ "$(docs_of ConfigMap | yq '.metadata.name')" == "$FULLNAME" ]] \
   && ok "AC: application configuration keeps its existing ConfigMap name" \
   || bad "AC: application configuration ConfigMap unexpectedly moved"

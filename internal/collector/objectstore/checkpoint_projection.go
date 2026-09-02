@@ -1,7 +1,6 @@
 package objectstore
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -27,7 +26,7 @@ type CheckpointProjectionFeed struct {
 	MaxSeenKeysPath string
 }
 
-// CheckpointProjection is the exact JSON size of the projected seen rows,
+// CheckpointProjection is the gzip-compressed JSON size of the projected seen rows,
 // grouped by the supplied shard function. The limit is retained in the result
 // so callers can report the same per-shard contract they passed in.
 type CheckpointProjection struct {
@@ -144,19 +143,19 @@ func ProjectCheckpointSize(
 	}
 
 	for shard, rows := range rowsByShard {
-		data, err := json.Marshal(rows)
-		if err != nil {
-			return projection, fmt.Errorf("objectstore: checkpoint projection shard %q: marshal: %w", shard, err)
-		}
 		paths := make([]string, 0, len(pathsByShard[shard]))
 		for path := range pathsByShard[shard] {
 			paths = append(paths, path)
 		}
 		sort.Strings(paths)
+		compressed, _, err := collector.EncodeKubernetesCheckpointShard(shard, rows)
+		if err != nil {
+			return projection, fmt.Errorf("objectstore: checkpoint projection shard %q: gzip: %w", shard, err)
+		}
 		projection.Shards[shard] = CheckpointProjectionShard{
-			Bytes:            len(data),
+			Bytes:            len(compressed),
 			Entries:          len(rows),
-			OverLimit:        len(data) > perShardLimit,
+			OverLimit:        len(compressed) > perShardLimit,
 			MaxSeenKeysPaths: paths,
 		}
 	}

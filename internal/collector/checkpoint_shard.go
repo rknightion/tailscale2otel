@@ -1,13 +1,36 @@
 package collector
 
-// defaultCheckpointShard is the temporary single-shard identity used while the
-// Kubernetes checkpoint store still writes one shared map. TSO-0110 replaces
-// ShardKey's body with the collector-namespace mapping while keeping this seam
-// shared by storage and configuration projection.
-const defaultCheckpointShard = "default"
+import "strings"
 
-// ShardKey returns the checkpoint shard identity for a fully constructed
-// checkpoint key. The first sharded-store increment deliberately maps every
-// key to one shard so the projection and the existing backend agree exactly;
-// the function is the seam TSO-0110 will replace when storage is sharded.
-func ShardKey(_ string) string { return defaultCheckpointShard }
+// ShardKey returns the collector-owned namespace for a fully constructed
+// checkpoint key. Object-store state has a multi-row namespace (including a
+// feed identity); ordinary scheduler cursors are already one key per collector.
+// Keeping every seen, scan and gap row of one feed together preserves the
+// transaction boundary their collector relies on.
+func ShardKey(key string) string {
+	parts := strings.Split(key, "/")
+	for i := 0; i+5 < len(parts); i++ {
+		if parts[i] == "objectstore" && parts[i+1] == "v1" {
+			return strings.Join(parts[:i+6], "/")
+		}
+	}
+	// Multi-tailnet state puts the tailnet before the collector namespace.
+	// Check this before the single-tailnet form so a tailnet whose name happens
+	// to equal a collector name remains unambiguous.
+	if len(parts) >= 2 && isCheckpointCollectorNamespace(parts[1]) {
+		return strings.Join(parts[:2], "/")
+	}
+	if len(parts) >= 1 && isCheckpointCollectorNamespace(parts[0]) {
+		return parts[0]
+	}
+	return key
+}
+
+func isCheckpointCollectorNamespace(part string) bool {
+	switch part {
+	case "flowlogs", "auditlogs", "acl":
+		return true
+	default:
+		return false
+	}
+}

@@ -28,20 +28,19 @@ rules:
       - leases
     verbs:
       - create
-  # The checkpoint store keeps its cursor and replay state in a dedicated
-  # <Lease>-checkpoints ConfigMap, never the chart's application-config
-  # ConfigMap. Reads and updates are scoped to that object; create is
-  # necessarily separate because Kubernetes cannot scope a POST with
-  # resourceNames.
+  # The checkpoint store creates a gzip ConfigMap for each dynamic collector
+  # namespace, all named from the Lease plus a shard hash. Kubernetes RBAC has
+  # no prefix/label restriction for resourceNames and list is never name
+  # filtered, so get/list/update must cover ConfigMaps in this namespace; this
+  # is the narrowest portable permission for discovering and updating shards.
   - apiGroups:
       - ""
     resources:
       - configmaps
     verbs:
       - get
+      - list
       - update
-    resourceNames:
-      - {{ printf "%s-checkpoints" .Values.config.coordination.lease_name | quote }}
   - apiGroups:
       - ""
     resources:
