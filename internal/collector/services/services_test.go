@@ -31,21 +31,41 @@ type cancelAfterFirstHostAPI struct {
 	services          []tsapi.VIPService
 	cancel            context.CancelFunc
 	dispatchObserved  <-chan struct{}
+	dispatchAttempted <-chan struct{}
 	dispatchConfirmed atomic.Bool
 }
 
 type dispatchObservationContext struct {
 	context.Context
-	observed chan struct{}
-	once     sync.Once
+	observed          chan struct{}
+	dispatchAttempted chan struct{}
+	errCalls          atomic.Int32
+	doneCalls         atomic.Int32
+	observedOnce      sync.Once
+	attemptedOnce     sync.Once
 }
 
 func (c *dispatchObservationContext) Err() error {
-	err := c.Context.Err()
-	if err != nil {
-		c.once.Do(func() { close(c.observed) })
+	if c.errCalls.Add(1) == 1 {
+		return c.Context.Err()
 	}
+	// fetchHosts checks Err before each dispatch. Hold its second check until
+	// the first host request cancels, then record that the dispatcher observed
+	// cancellation before the worker can return its result.
+	<-c.Context.Done()
+	err := c.Context.Err()
+	c.observedOnce.Do(func() { close(c.observed) })
 	return err
+}
+
+func (c *dispatchObservationContext) Done() <-chan struct{} {
+	// Done is evaluated once for the first dispatch. Reaching it again means a
+	// regression bypassed the required pre-dispatch Err check, which releases
+	// the fake without a scheduling timeout so the test can fail normally.
+	if c.doneCalls.Add(1) == 2 {
+		c.attemptedOnce.Do(func() { close(c.dispatchAttempted) })
+	}
+	return c.Context.Done()
 }
 
 func (a *cancelAfterFirstHostAPI) Services(context.Context) ([]tsapi.VIPService, error) {
@@ -55,14 +75,13 @@ func (a *cancelAfterFirstHostAPI) Services(context.Context) ([]tsapi.VIPService,
 func (a *cancelAfterFirstHostAPI) ServiceHosts(_ context.Context, name string) ([]tsapi.ServiceHost, error) {
 	if name == a.services[0].Name {
 		a.cancel()
-		// Keep the worker in this call until the dispatcher has observed the
-		// canceled context, so the next unbuffered job cannot be sent. The
-		// timeout turns a regression in that synchronization into a test failure
-		// instead of hanging the suite.
+		// The context records either the required cancellation observation or a
+		// second dispatch attempt. The latter releases this call so a regression
+		// fails the assertion below rather than hanging the suite.
 		select {
 		case <-a.dispatchObserved:
 			a.dispatchConfirmed.Store(true)
-		case <-time.After(time.Second):
+		case <-a.dispatchAttempted:
 		}
 	}
 	return []tsapi.ServiceHost{{NodeID: name, ApprovalLevel: "approved:auto", Configured: "ready"}}, nil
@@ -230,11 +249,17 @@ func TestCollectSkipsHostInfoSnapshotAfterCanceledDispatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	dispatchObserved := make(chan struct{})
-	probeCtx := &dispatchObservationContext{Context: ctx, observed: dispatchObserved}
+	dispatchAttempted := make(chan struct{})
+	probeCtx := &dispatchObservationContext{
+		Context:           ctx,
+		observed:          dispatchObserved,
+		dispatchAttempted: dispatchAttempted,
+	}
 	api := &cancelAfterFirstHostAPI{
-		services:         []tsapi.VIPService{{Name: "svc:first"}, {Name: "svc:second"}},
-		cancel:           cancel,
-		dispatchObserved: dispatchObserved,
+		services:          []tsapi.VIPService{{Name: "svc:first"}, {Name: "svc:second"}},
+		cancel:            cancel,
+		dispatchObserved:  dispatchObserved,
+		dispatchAttempted: dispatchAttempted,
 	}
 	rec := telemetrytest.New()
 	c := New(api, 0, WithCollectHosts(true))

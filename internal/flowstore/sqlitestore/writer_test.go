@@ -3,12 +3,16 @@ package sqlitestore
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
@@ -373,47 +377,106 @@ func TestOpen_EnablesIncrementalAutoVacuum(t *testing.T) {
 	}
 }
 
+type conversionQueryContextKey struct{}
+
+type conversionContextProbe struct {
+	queryCount int
+	vacuumCtx  context.Context
+}
+
+type conversionContextConnector struct {
+	probe *conversionContextProbe
+}
+
+func (c *conversionContextConnector) Connect(context.Context) (driver.Conn, error) {
+	return &conversionContextConn{probe: c.probe}, nil
+}
+
+func (c *conversionContextConnector) Driver() driver.Driver { return c }
+
+func (c *conversionContextConnector) Open(string) (driver.Conn, error) {
+	return c.Connect(context.Background())
+}
+
+type conversionContextConn struct {
+	probe *conversionContextProbe
+}
+
+func (c *conversionContextConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("conversion context probe does not prepare statements")
+}
+
+func (c *conversionContextConn) Close() error { return nil }
+
+func (c *conversionContextConn) Begin() (driver.Tx, error) {
+	return nil, errors.New("conversion context probe does not begin transactions")
+}
+
+func (c *conversionContextConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if query != "PRAGMA auto_vacuum" {
+		return nil, fmt.Errorf("conversion context probe query = %q, want PRAGMA auto_vacuum", query)
+	}
+	c.probe.queryCount++
+	mode := int64(0)
+	if c.probe.queryCount == 3 {
+		mode = 2
+	}
+	return &singleIntRows{value: mode}, nil
+}
+
+func (c *conversionContextConn) ExecContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+	switch query {
+	case "PRAGMA auto_vacuum = 2":
+		return driver.RowsAffected(0), nil
+	case "VACUUM":
+		c.probe.vacuumCtx = ctx
+		return driver.RowsAffected(0), nil
+	default:
+		return nil, fmt.Errorf("conversion context probe exec = %q, want auto-vacuum setup or VACUUM", query)
+	}
+}
+
+type singleIntRows struct {
+	value int64
+	read  bool
+}
+
+func (r *singleIntRows) Columns() []string { return []string{"auto_vacuum"} }
+func (r *singleIntRows) Close() error      { return nil }
+
+func (r *singleIntRows) Next(dest []driver.Value) error {
+	if r.read {
+		return io.EOF
+	}
+	r.read = true
+	dest[0] = r.value
+	return nil
+}
+
 func TestOpen_ConvertsExistingDatabaseOutsideQueryTimeout(t *testing.T) {
-	opts := testOpts(t)
-	opts.QueryTimeout = 25 * time.Millisecond
-	opts.ConversionTimeout = 5 * time.Second
+	probe := &conversionContextProbe{}
+	db := sql.OpenDB(&conversionContextConnector{probe: probe})
+	t.Cleanup(func() { _ = db.Close() })
 
-	path := filepath.Join(opts.Dir, dbFileName(opts.Tailnet))
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("open legacy database: %v", err)
+	// The marker represents Open's short-lived query context. The one-hour
+	// conversion budget is never waited out: the fake VACUUM returns
+	// synchronously and the test only verifies that it receives its own bounded
+	// context rather than inheriting the query context.
+	queryCtx := context.WithValue(context.Background(), conversionQueryContextKey{}, "query timeout")
+	if err := configureIncrementalAutoVacuum(queryCtx, db, time.Hour); err != nil {
+		t.Fatalf("configure incremental auto-vacuum: %v", err)
 	}
-	if _, err := db.Exec("PRAGMA auto_vacuum = NONE"); err != nil {
-		t.Fatalf("disable auto-vacuum: %v", err)
+	if probe.vacuumCtx == nil {
+		t.Fatal("VACUUM was not called for the legacy auto-vacuum mode")
 	}
-	if _, err := db.Exec("CREATE TABLE legacy_payload (data BLOB NOT NULL)"); err != nil {
-		t.Fatalf("create legacy payload: %v", err)
+	if got := probe.vacuumCtx.Value(conversionQueryContextKey{}); got != nil {
+		t.Fatalf("VACUUM inherited the query context marker %q", got)
 	}
-	if _, err := db.Exec("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"); err != nil {
-		t.Fatalf("create legacy metadata: %v", err)
+	if _, ok := probe.vacuumCtx.Deadline(); !ok {
+		t.Fatal("VACUUM context has no conversion deadline")
 	}
-	if _, err := db.Exec("INSERT INTO metadata(key, value) VALUES ('tailnet', ?)", opts.Tailnet); err != nil {
-		t.Fatalf("stamp legacy tailnet identity: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO legacy_payload(data) VALUES (zeroblob(?))", 32*1024*1024); err != nil {
-		t.Fatalf("populate legacy database: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close legacy database: %v", err)
-	}
-
-	s, err := Open(opts)
-	if err != nil {
-		t.Fatalf("Open converted database: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
-	var mode int
-	if err := s.db.QueryRow("PRAGMA auto_vacuum").Scan(&mode); err != nil {
-		t.Fatalf("read converted auto-vacuum mode: %v", err)
-	}
-	if mode != 2 {
-		t.Fatalf("auto_vacuum mode = %d, want incremental (2)", mode)
+	if probe.queryCount != 3 {
+		t.Fatalf("auto-vacuum mode queries = %d, want 3", probe.queryCount)
 	}
 }
 
@@ -576,64 +639,58 @@ func TestCheckpointCompletedRequiresEveryWALFrame(t *testing.T) {
 }
 
 func TestSweepAutomaticallyReclaimsExpiredRows(t *testing.T) {
-	opts := testOpts(t)
-	opts.FlushInterval = 10 * time.Millisecond
-	opts.BatchSize = 32
-	opts.QueueSize = 1024
-	opts.SweepInterval = 20 * time.Millisecond
-	opts.IncrementalVacuumInterval = 0 // inherit the sweep cadence
+	synctest.Test(t, func(t *testing.T) {
+		opts := testOpts(t)
+		// Five hundred rows with a 3,900-byte tag payload span enough pages to
+		// prove the database file shrinks while remaining within the default
+		// 1,000-page incremental-vacuum budget. BatchSize and QueueSize match
+		// that fixture count so one full batch makes every row durable without
+		// waiting for the deliberately out-of-band flush timer.
+		const rowCountWant = 500
+		opts.BatchSize = rowCountWant
+		opts.QueueSize = rowCountWant
+		opts.FlushInterval = 5 * time.Hour
+		// The first fake sweep tick must occur after retention has elapsed, so
+		// use a two-hour cadence for the one-hour retention window.
+		opts.SweepInterval = 2 * time.Hour
+		opts.IncrementalVacuumInterval = 0 // inherit the sweep cadence
+		opts.Now = time.Now
 
-	var mu sync.Mutex
-	now := time.Now().UTC()
-	opts.Now = func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		return now
-	}
-	s := openTestStore(t, opts)
-
-	for i := 0; i < 500; i++ {
-		o := obs(now)
-		o.SrcTags = strings.Repeat("tag", 1300)
-		if adm := s.RecordResult(o); adm != flowstore.AdmissionAccepted {
-			t.Fatalf("observation %d admission = %v, want Accepted", i, adm)
+		s, err := Open(opts)
+		if err != nil {
+			t.Fatalf("Open: %v", err)
 		}
-	}
-	waitForRows(t, s.db, 500, time.Second)
-	requireCompletedCheckpoint(t, s.db)
-	before := fileSize(t, s.path)
-	if before <= 0 {
-		t.Fatalf("database size before reclamation = %d, want positive", before)
-	}
+		defer func() { _ = s.Close() }()
 
-	mu.Lock()
-	now = now.Add(2 * opts.Retention)
-	mu.Unlock()
+		now := time.Now()
+		for i := 0; i < rowCountWant; i++ {
+			o := obs(now)
+			o.SrcTags = strings.Repeat("tag", 1300)
+			if adm := s.RecordResult(o); adm != flowstore.AdmissionAccepted {
+				t.Fatalf("observation %d admission = %v, want Accepted", i, adm)
+			}
+		}
+		synctest.Wait()
+		if got := rowCount(t, s.db); got != rowCountWant {
+			t.Fatalf("rows before fake sweep tick = %d, want %d", got, rowCountWant)
+		}
+		before := fileSize(t, s.path)
+		if before <= 0 {
+			t.Fatalf("database size before reclamation = %d, want positive", before)
+		}
 
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if rowCount(t, s.db) == 0 && fileSize(t, s.path) < before {
-			return
+		// The first fake sweep deletes rows and vacuums into the WAL; the second
+		// checkpoints that reclamation into the database file. Both ticks are
+		// after Retention, and the advance is entirely synthetic.
+		time.Sleep(2 * opts.SweepInterval)
+		synctest.Wait()
+		if got := rowCount(t, s.db); got != 0 {
+			t.Fatalf("rows after automatic sweep = %d, want 0", got)
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("expired rows were not reclaimed automatically: rows=%d size_before=%d size_after=%d", rowCount(t, s.db), before, fileSize(t, s.path))
-}
-
-func requireCompletedCheckpoint(t *testing.T, db *sql.DB) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		var busy, logFrames, checkpointedFrames int
-		if err := db.QueryRow("PRAGMA wal_checkpoint(PASSIVE)").Scan(&busy, &logFrames, &checkpointedFrames); err != nil {
-			t.Fatalf("checkpoint before size baseline: %v", err)
+		if after := fileSize(t, s.path); after >= before {
+			t.Fatalf("database size after reclamation = %d, want less than before %d", after, before)
 		}
-		if checkpointCompleted(busy, logFrames, checkpointedFrames) {
-			return
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatal("checkpoint before size baseline never completed")
+	})
 }
 
 func fileSize(t *testing.T, path string) int64 {

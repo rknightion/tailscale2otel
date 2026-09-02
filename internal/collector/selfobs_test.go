@@ -68,12 +68,14 @@ func TestSelfObs_SuccessfulSnapshotEmitsScrapeMetrics(t *testing.T) {
 	}}, time.Millisecond)
 
 	rec := telemetrytest.New()
-	runRecorderScheduler(t, r, rec, now)
-
-	waitFor(t, func() bool {
-		_, ok := findPoint(rec, collector.MetricScrapeSuccess, "ok")
-		return ok
-	}, 2*time.Second)
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0),
+		collector.WithClock(func() time.Time { return now }),
+	)
+	lastSuccess := now
+	// RunTick is synchronous, so the assertion below cannot observe the
+	// intermediate state between the three scrape gauges being emitted.
+	s.RunTick(context.Background(), r.Entries()[0], &lastSuccess)
 
 	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "ok")
 	if !ok {
