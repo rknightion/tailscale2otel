@@ -56,8 +56,8 @@
 # install. Run `just gen-tools` to install exactly those.
 #
 #   helm-docs            v1.14.2  <- losisin/helm-docs-github-action@v2
-#   helm-values-schema-json v2.5.0 <- losisin/helm-values-schema-json-action@v3.1.0
-#                                     (action v3.1.0 pins TOOL v2.5.0 — the action
+#   helm-values-schema-json v2.6.0 <- losisin/helm-values-schema-json-action@v3.2.0
+#                                     (action v3.2.0 pins TOOL v2.6.0 — the action
 #                                      and tool versions deliberately differ; the
 #                                      tool version is baked into the action's
 #                                      dist/index.js as `version$1`.)
@@ -82,7 +82,7 @@ CHART_DIR="$ROOT/deploy/helm/tailscale2otel"
 # Pinned tool versions — keep in sync with .github/workflows/helm.yml (see above).
 HELM_DOCS_VERSION="v1.14.2"
 HELM_DOCS_PKG="github.com/norwoodj/helm-docs/cmd/helm-docs"
-HELM_SCHEMA_VERSION="v2.5.0"
+HELM_SCHEMA_VERSION="v2.6.0"
 HELM_SCHEMA_PKG="github.com/losisin/helm-values-schema-json/v2"
 
 note() { printf '  regen: %s\n' "$1"; }

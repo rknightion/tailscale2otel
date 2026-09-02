@@ -53,13 +53,13 @@ jobs:
       # Regenerate values.schema.json (draft-07; Helm only validates draft-07) and
       # fail if the committed copy drifts. The committed file is the baseline.
       #
-      # NOTE: this action installs helm-values-schema-json v2.5.0 (the tool version
+      # NOTE: this action installs helm-values-schema-json v2.6.0 (the tool version
       # is baked into the action's dist/index.js and is NOT the action's own
       # version). scripts/regen-generated.sh pins the same tool version so local
       # regeneration is byte-identical. If you bump this action, re-check the tool
       # version it installs and update HELM_SCHEMA_VERSION in that script to match.
       - name: values.schema.json is in sync (losisin/helm-values-schema-json)
-        uses: losisin/helm-values-schema-json-action@9f555986124362af978a9861cf0f81e1956300ad # v3.1.0
+        uses: losisin/helm-values-schema-json-action@9ed68d9d464a5e6f7f5fc1f3dc071828cf7d13a2 # v3.2.0
         with:
           values: ${{ env.CHART_DIR }}/values.yaml
           output: ${{ env.CHART_DIR }}/values.schema.json

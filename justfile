@@ -34,7 +34,7 @@ setup:
     go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{ golangci_version }}
     go install golang.org/x/vuln/cmd/govulncheck@{{ govulncheck_version }}
     # Installs helm-docs v1.14.2 (with the version ldflag) and
-    # helm-values-schema-json v2.5.0 — the exact versions the helm.yml actions use.
+    # helm-values-schema-json v2.6.0 — the exact versions the helm.yml actions use.
     just gen-tools
     for m in {{ modules }}; do
       echo "== go mod download ($m)"
