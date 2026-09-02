@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-02 05:19'
+updated_date: '2026-09-02 15:55'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself — run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -104,6 +104,26 @@ These have each shipped at least once. Treat them as things to check for, not th
   and **all 19 advisory rules failed at push** with `Invalid value: "OK"` (it is `"Ok"`). `gcx
   resources validate` says outright that it does not validate the spec. **Only a real
   `gcx resources push` proves a rule is deployable**, and pushing here is pre-authorized.
+
+### A test with a wall-clock margin will eventually fail on a loaded runner
+
+Five CI runs on 2026-09-02 produced **four different** failing tests, on commits that could not have
+caused them — a backlog-markdown-only commit, a merge commit, a dependency bump and a workflow-pin
+bump. None reproduced locally under `-race -count=8` or `GOMAXPROCS=1`. The shared cause is CI I/O and
+scheduling pressure across 26 concurrent jobs, not a logic race.
+
+The damage is not the individual failures. **A gate that fails about half the time on unrelated
+changes trains everyone to retry rather than read**, so a real regression is dismissed as noise and a
+green run stops being evidence. Wave 5 retried past one of these; Wave 6 retried past another.
+
+**The fix is to remove the timing dependency, never to widen the margin.** A longer timeout is a
+guess about a runner you do not control, and it postpones the failure instead of ending it. A test
+that has no wall-clock margin cannot flake on timing, which also makes "is it fixed?" answerable
+without a statistical argument. Where a test genuinely needs time to pass, use `testing/synctest`, as
+`internal/app/heartbeat_test.go` does.
+
+**Do not merge past a flake, and do not keep rerunning until green.** Both are the same reflex, and
+it is the reflex that hides regressions.
 
 ### Guard tests over `.github/workflows` that pass while asserting nothing
 
