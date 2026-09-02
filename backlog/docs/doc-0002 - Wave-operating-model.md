@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-01 20:03'
+updated_date: '2026-09-02 05:19'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself — run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -39,6 +39,14 @@ Lanes may make local checkpoint commits. Before pushing, the root agent squashes
 one commit per feature with `git reset --soft origin/main`. `rebase -i` is not available in this
 environment. Conventional Commits (`type(scope): subject`) is not a style preference — Renovate and
 release-please parse it.
+
+**A squash must not separate a symbol from the code that calls it.** Wave 5's wiring lived in
+`internal/app/app.go`, which the wiring pass owns, so its Kubernetes checkpoint calls were squashed
+into `feat(coordination): add Kubernetes Lease leadership` (`1195f4b`) while the functions they call
+landed in the next commit. **That commit does not compile**, and nothing can fix it now — the history
+is pushed and carries rc tags. CI only ever builds the tip, so no gate saw it. When the wiring pass
+edits a file on behalf of a feature that lands later, that hunk belongs in the later commit.
+Build-check every squashed commit before pushing, not only the tip.
 
 ### A dispatch brief must forbid destructive git, not just `commit` and `push`
 
@@ -144,6 +152,24 @@ first, then v5 is cut once, and **the owner merges that release PR by hand. Neve
 Breaking changes therefore have nowhere to go in the meantime: park them in the v5 milestone rather
 than implementing them early. Cutting that major still needs the module path moved to `/v5` first,
 per the section above.
+
+**The drain trigger was reached on 2026-09-02 and v5 still waits.** What is left is TSO-0111 and
+TSO-0110 — the Kubernetes checkpoint backend cannot hold its own default configuration — plus
+TSO-0094, which is the breaking change collected for the major, and TSO-0036, which is blocked on
+Tailscale publishing PAM endpoints and so cannot be drained by any wave. Cutting v5 while the HA path
+it advertises fails at stock defaults would ship that defect into the major. v5 is called once
+TSO-0111 and TSO-0110 land.
+
+### The client-go binary cost is settled, at +117%
+
+Wave 5 made `k8s.io/client-go` a direct dependency of the root module for Lease coordination and
+ConfigMap checkpoints. Measured identically on both sides — `-trimpath -s -w`, `CGO_ENABLED=0` — the
+shipped binary went from **28,323,154 to 61,461,650 bytes**. The owner accepted that on 2026-09-02:
+no build tag, no second image variant, no hand-rolled API client. Do not re-open it.
+
+Do not quote the number from a plain `go build` either. Unstripped it reads about 90 MB, which makes
+the increase look far larger than it is; Wave 5's report did exactly that. Any before-and-after must
+use the release flags, because that is the binary that ships.
 
 ---
 
