@@ -1,11 +1,11 @@
 ---
 id: TSO-0111
 title: Reject a Kubernetes checkpoint configuration that cannot fit its ConfigMap
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-02 05:17'
-updated_date: '2026-09-02 06:44'
+updated_date: '2026-09-02 09:21'
 labels: []
 dependencies:
   - TSO-0108
@@ -34,19 +34,19 @@ Convert this from a runtime failure into a startup one: project the worst-case s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Config validation rejects a coordinated Kubernetes-checkpoint configuration whose projected worst-case checkpoint payload exceeds the ConfigMap data limit, before any collector starts
-- [ ] #2 The rejection message states the projected size, the limit, and which configuration key to lower
-- [ ] #3 The projection accounts for enabled object-store destinations, their configured max_seen_keys, and the per-tailnet key namespacing that multi-tailnet runtimes add
-- [ ] #4 The projection is derived from the same key-construction code paths the store actually writes, so it cannot drift from them silently
-- [ ] #5 Tests pin the three measured configurations above and a passing single-feed default, driving the real key construction rather than a hand-copied byte estimate
-- [ ] #6 The guard applies only to the Kubernetes checkpoint backend; file and memory backends are unaffected
+- [x] #1 Config validation rejects a coordinated Kubernetes-checkpoint configuration whose projected worst-case checkpoint payload exceeds the ConfigMap data limit, before any collector starts
+- [x] #2 The rejection message states the projected size, the limit, and which configuration key to lower
+- [x] #3 The projection accounts for enabled object-store destinations, their configured max_seen_keys, and the per-tailnet key namespacing that multi-tailnet runtimes add
+- [x] #4 The projection is derived from the same key-construction code paths the store actually writes, so it cannot drift from them silently
+- [x] #5 Tests pin the three measured configurations above and a passing single-feed default, driving the real key construction rather than a hand-copied byte estimate
+- [x] #6 The guard applies only to the Kubernetes checkpoint backend; file and memory backends are unaffected
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -74,4 +74,12 @@ Negative-test evidence: all new guard seams were broken one at a time and restor
 CodeRabbit major finding fixed test-first: the projection timestamp now has nine non-zero fractional digits so time.Time.MarshalJSON uses maximum-width RFC3339Nano. The final real-path worst-case measurements are 935,001 bytes for 5,000 rows, 2,835,001 bytes for 15,000 rows, and 8,850,001 bytes for 45,000 rows; these supersede the earlier zero-fraction reproduction while the commissioned 785,001 / 2,355,001 / 7,065,001 claims remain recorded above for comparison. The updated measured test failed at the old 885,001 / 2,685,001 / 8,400,001 output before the production fixture changed, then the full focused selector passed.
 
 Integration evidence before commit: CodeRabbit first pass reported one valid major timestamp-width finding and one intentionally left minor tracker-table suggestion; the valid finding was fixed and the second CodeRabbit pass returned zero findings. just check passed after tools/configcheck/go.mod was tidied for the config package new production dependency. just gen regenerated all eleven artifact families and left no unstaged diff; just build passed against the exact staged tree.
+
+Final integrated verification: just check passed at 976cc00c1f004922d1cec5936987abfa01f6f67b, including root and all tool modules, vulnerability scans, generated-artifact checks and 466 passing Helm assertions. just gen left no diff, just --fmt --check passed through the gate, and exact-head CI run 33611867414 completed success with all 26 jobs successful. Auto-RC run 33612619093 cut v4.1.0-rc.57 at the same SHA and published immutable image digest sha256:700279e397ba94edeb3eec1bb16242522c15fd554030e98cd2a01e3ddcd1e3b4. The image-only lab cycle reached 1/1 ready with health and readiness HTTP 200, then restored the prior immutable digest. Live Kubernetes-checkpoint behavior was not exercised: preflight found the deployment configured for checkpoint.store=file with zero legacy or shard ConfigMaps, and the authorised boundary permitted only an image rollout and rollback.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the pre-start Kubernetes checkpoint capacity guard in b0eb87ab89d8d97fb2c3f2ff84736b9ca3990227 and carried its shared ShardKey seam through final integrated SHA 976cc00c1f004922d1cec5936987abfa01f6f67b. Real production-key measurements and deliberate red/restore checks prove the three configurations, backend scoping, shared key construction and actionable arithmetic; just check, generation/fmt checks and exact-head CI 33611867414 passed. The exact RC image was healthy in the bounded lab image cycle, while Kubernetes-checkpoint live proof remains explicitly unproven because the lab is configured for the file store.
+<!-- SECTION:FINAL_SUMMARY:END -->

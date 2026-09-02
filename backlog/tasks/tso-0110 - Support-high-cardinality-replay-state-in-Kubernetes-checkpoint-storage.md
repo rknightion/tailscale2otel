@@ -1,11 +1,11 @@
 ---
 id: TSO-0110
 title: Shard and compress Kubernetes checkpoint storage to remove the 1 MiB ceiling
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-01 21:38'
-updated_date: '2026-09-02 08:29'
+updated_date: '2026-09-02 09:21'
 labels: []
 dependencies:
   - TSO-0111
@@ -30,20 +30,20 @@ Oversize handling must keep the Wave 5 property that a payload which still canno
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Checkpoint state is sharded across one ConfigMap per collector key namespace, and each shard's payload is gzip-compressed into binaryData
-- [ ] #2 Every shard write is guarded by that shard's own resourceVersion, so a deposed leader cannot overwrite a current shard, and a conflict is surfaced rather than retried into an overwrite
-- [ ] #3 The three measured configurations in TSO-0111 persist successfully, and a shard that still exceeds the limit fails visibly without truncating or dropping keys
-- [ ] #4 A store opened over checkpoint state written by the single-ConfigMap backend continues to work, and the migration path is exercised by a test rather than assumed
-- [ ] #5 Shard count, per-shard compressed size and the compression ratio are observable, so an operator can see headroom before it is exhausted
-- [ ] #6 The Helm chart's checkpoint RBAC covers every ConfigMap the sharded store creates, and no rule is broader than the objects it needs
-- [ ] #7 Tests cover ordinary poll cursors, the high-cardinality seen-set and gap state, and the deposed-leader conflict path per shard
+- [x] #1 Checkpoint state is sharded across one ConfigMap per collector key namespace, and each shard's payload is gzip-compressed into binaryData
+- [x] #2 Every shard write is guarded by that shard's own resourceVersion, so a deposed leader cannot overwrite a current shard, and a conflict is surfaced rather than retried into an overwrite
+- [x] #3 The three measured configurations in TSO-0111 persist successfully, and a shard that still exceeds the limit fails visibly without truncating or dropping keys
+- [x] #4 A store opened over checkpoint state written by the single-ConfigMap backend continues to work, and the migration path is exercised by a test rather than assumed
+- [x] #5 Shard count, per-shard compressed size and the compression ratio are observable, so an operator can see headroom before it is exhausted
+- [x] #6 The Helm chart's checkpoint RBAC covers every ConfigMap the sharded store creates, and no rule is broader than the objects it needs
+- [x] #7 Tests cover ordinary poll cursors, the high-cardinality seen-set and gap state, and the deposed-leader conflict path per shard
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -70,4 +70,12 @@ Final review size finding rejected against the current Kubernetes API-server imp
 Final coverage review: ShardKey now has explicit production-format cursor, scan, seen and gap row cases, all resolving to the same feed namespace. A request for a new collector-level Collect harness was rejected as duplicate coverage: atomicity_test.go already invokes Collect and asserts durable seen/gap behavior, layout_test.go invokes Collect and asserts scan-row persistence, and objectstore_test.go exercises durable cursor advancement and restart behavior. The new projection test owns only the shared row-to-shard mapping.
 
 Correction to the earlier per-write timeout wording: it is superseded. The implementation has one shared 30-second parent deadline for the complete store open, synchronous multi-shard batch, debounced persist, or shutdown flush; it is not 30 seconds per shard. Decompression hardening choice: gzip-shards-v1 has a symmetric 128 MiB decoded-envelope ceiling enforced by both the shared encoder and limited decoder, preventing an admitted compressed shard from expanding without bound or becoming state the writer cannot reopen. Tests inject a small limit and prove both decode rejection and encode symmetry. The namespace-wide ConfigMap RBAC boundary still requires Robs explicit acceptance in the final mandatory question; this run does not manufacture that approval. The implemented grant remains get, list, update and create only in the configured coordination namespace, excluding delete, watch and patch.
+
+Lane D adversarial review at the integrated head proved deposed-leader conflict rejection, independent sibling-shard persistence, initial and interrupted migration resumption, compressed oversize refusal, symmetric bounded decompression and the shared operation deadline. It found one valid ambiguity: a ConfigMap API commit followed by a lost response could leave persistence uncertain. The fix landed test-first in 976cc00c1f004922d1cec5936987abfa01f6f67b: non-definitive create/update errors now surface ErrKubernetesCheckpointWriteUncertain and end the active app lifecycle so Kubernetes restarts from authoritative API state; Conflict and AlreadyExists stay definitive and are never reloaded into an overwrite. CodeRabbit returned zero findings on the ten-file fix. Final just check passed, just gen left no diff, just --fmt --check passed, and exact-head CI run 33611867414 completed success with all 26 jobs successful. Auto-RC run 33612619093 cut v4.1.0-rc.57 at the same SHA and published immutable image digest sha256:700279e397ba94edeb3eec1bb16242522c15fd554030e98cd2a01e3ddcd1e3b4. The authorised lab image cycle ran that digest 1/1 ready with health and readiness HTTP 200 and no checkpoint/coordination error or fatal, then restored the prior immutable digest with the same checks. Preflight found checkpoint.store=file and zero legacy or shard ConfigMaps, so migration, shard count/size, annotations and legacy reopen are not live-proven. No helper objects were created. The unresolved rollback-era write policy remains: if an old release writes the retained legacy object after migration, a later re-upgrade currently ignores that write; dual-write was not invented because it recreates the ceiling and requires an explicit reconciliation policy.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Sharded and compressed Kubernetes checkpoint persistence landed in 2901c12e4ba66ab386335aa20008ed3d5d92acec and the adversarial uncertain-write fix landed in 976cc00c1f004922d1cec5936987abfa01f6f67b. Tests prove per-shard resourceVersion safety, all measured high-cardinality configurations, visible no-truncation oversize handling, restart-safe legacy migration, observability, minimal dynamic-shard RBAC and ordinary/replay/gap paths; CodeRabbit, just check, generation/fmt checks and exact-head CI 33611867414 passed. RC.57 was healthy during the bounded lab image cycle and the previous digest was restored; live shard/migration proof remains explicitly unproven because the lab uses checkpoint.store=file.
+<!-- SECTION:FINAL_SUMMARY:END -->
