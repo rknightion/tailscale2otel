@@ -1,10 +1,11 @@
 ---
 id: TSO-0111
 title: Reject a Kubernetes checkpoint configuration that cannot fit its ConfigMap
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-02 05:17'
-updated_date: '2026-09-02 05:17'
+updated_date: '2026-09-02 06:44'
 labels: []
 dependencies:
   - TSO-0108
@@ -47,3 +48,30 @@ Convert this from a runtime failure into a startup one: project the worst-case s
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 6 execution plan (32e0fa2 preflight):
+1. Lane A inventories every checkpoint writer, exact key shape, growth bound, ConfigMap name and RBAC reference.
+2. Lane B adds a test-first startup projection guard against the frozen ShardKey/per-shard-limit seam, negative-tests every guard, reproduces the three measured configurations from real key construction, and leaves storage unchanged.
+3. Root integrates owned schema/Helm/generated surfaces, runs CodeRabbit and the full gate, build-checks the feature commit, then commits and pushes TSO-0111 before TSO-0110 starts.
+4. Lane C implements test-first per-namespace gzip binaryData shards, migration, conflict/oversize semantics, observability and narrow RBAC; lane D then performs the adversarial durability review.
+5. Root fixes any findings with a fresh review, runs the final gate/generation checks, commits and pushes, verifies exact-head CI, rolls the lab through the published rc and back, then finalizes both tasks in one edit each.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Frozen implementation seam declared before Lane B: KubernetesCheckpointDataLimit remains 1<<20 and is interpreted per shard; ShardKey(key string) is shared by projection and storage; Lane B ships a single constant shard and a projection parameterized by shard function plus limit; Lane C replaces ShardKey with collector-namespace derivation and uses one shared Lease-name/shard-to-ConfigMap-name function.
+
+Lane A completed the checkpoint consumer/key inventory with no unclassified production writer. Bounded keys: scheduler window cursors, flow replay seen-set, object-store cursor/scan/seen state, ACL revision/current audit timestamp, and migration rows. Traffic/time-bounded without a hard cardinality cap: unresolved object-store gap rows and annotation dedupe. The configuration-only startup guard therefore sizes enabled object-store seen rows as specified; unprojectable runtime growth remains protected by the visible no-truncation oversize path and is an explicit Lane C review input. ConfigMap/RBAC source currently names one `<lease>-checkpoints` object. Starting-head CI run 33594447451 failed only in the unrelated timing-sensitive services cancellation test; build, vet, all other packages/modules and heavy lanes passed.
+
+Lane B implementation evidence: the real-key projection measured 885,001 bytes for 1 feed / 1 tailnet / 5,000 keys, 2,685,001 bytes for 3 feeds / 1 tailnet / 15,000 keys, and 8,400,001 bytes for 3 feeds / 3 tailnets / 45,000 keys. The commissioned table claimed 785,001 / 2,355,001 / 7,065,001 bytes. The reproduction wins per the run contract: the real CheckpointScope namespace includes the base64url tailnet, provider, signal and 24-hex feed digest, so row widths vary and are larger than the table assumed. The single-feed default remains below 1,048,576 bytes; the two larger cases exceed it.
+
+Negative-test evidence: all new guard seams were broken one at a time and restored. Tests went red when ShardKey stopped returning one shard; Namespaced was omitted; the supplied shard function was ignored; projected feeds were suppressed; the Kubernetes-only backend condition was removed; disabled feeds were counted; and the passing single-feed limit was temporarily lowered to 800,000 bytes. The restored focused selector just test Test(ShardKeyInitiallyUsesOneShard|ProjectCheckpointSize|Validate.*CheckpointProjection|ValidateCheckpointProjection) passed across the root module.
+
+CodeRabbit major finding fixed test-first: the projection timestamp now has nine non-zero fractional digits so time.Time.MarshalJSON uses maximum-width RFC3339Nano. The final real-path worst-case measurements are 935,001 bytes for 5,000 rows, 2,835,001 bytes for 15,000 rows, and 8,850,001 bytes for 45,000 rows; these supersede the earlier zero-fraction reproduction while the commissioned 785,001 / 2,355,001 / 7,065,001 claims remain recorded above for comparison. The updated measured test failed at the old 885,001 / 2,685,001 / 8,400,001 output before the production fixture changed, then the full focused selector passed.
+
+Integration evidence before commit: CodeRabbit first pass reported one valid major timestamp-width finding and one intentionally left minor tracker-table suggestion; the valid finding was fixed and the second CodeRabbit pass returned zero findings. just check passed after tools/configcheck/go.mod was tidied for the config package new production dependency. just gen regenerated all eleven artifact families and left no unstaged diff; just build passed against the exact staged tree.
+<!-- SECTION:NOTES:END -->

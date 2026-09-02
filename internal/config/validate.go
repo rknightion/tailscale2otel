@@ -1830,6 +1830,9 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return c.validateObjectStoreFeeds(inUse...)
 	})
+	add("checkpoint.store", "Lower one or more enabled object-store max_seen_keys values so the Kubernetes checkpoint shard fits.", func() error {
+		return c.validateKubernetesCheckpointProjection()
+	})
 
 	add("collectors.flowlogs.log_mode", oneOfRemediation("collectors.flowlogs.log_mode", "per_connection", "per_record", "off"), func() error {
 		if !oneOf(c.Collectors.Flowlogs.LogMode, "per_connection", "per_record", "off") {
