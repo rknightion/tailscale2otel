@@ -34,6 +34,7 @@ var (
 	ErrKubernetesCheckpointConflict        = errors.New("kubernetes checkpoint resource version conflict")
 	ErrKubernetesCheckpointTooLarge        = errors.New("kubernetes checkpoint ConfigMap data exceeds 1 MiB")
 	ErrKubernetesCheckpointDecodedTooLarge = errors.New("kubernetes checkpoint decoded data exceeds 128 MiB")
+	ErrKubernetesCheckpointWriteUncertain  = errors.New("kubernetes checkpoint write result is uncertain")
 )
 
 // KubernetesCheckpointObject is one checkpoint ConfigMap. Data is its binaryData payload.
@@ -61,6 +62,13 @@ func WithKubernetesCheckpointWriteDebounce(d time.Duration) KubernetesCheckpoint
 	return func(s *kubernetesCheckpointStore) { s.writeDebounce = d }
 }
 
+// WithKubernetesCheckpointFatalWrite reports a write whose server-side result
+// cannot be known. A coordinated caller uses it to relinquish leadership and
+// restart from the API server's authoritative resourceVersion.
+func WithKubernetesCheckpointFatalWrite(report func(error)) KubernetesCheckpointStoreOption {
+	return func(s *kubernetesCheckpointStore) { s.fatalWrite = report }
+}
+
 type kubernetesCheckpointShard struct {
 	resourceVersion string
 	m               map[string]time.Time
@@ -76,6 +84,7 @@ type kubernetesCheckpointStore struct {
 	timer         *time.Timer
 	dirty         map[string]bool
 	persistErr    error
+	fatalWrite    func(error)
 }
 
 const (
@@ -346,7 +355,19 @@ func (s *kubernetesCheckpointStore) persistShardLocked(ctx context.Context, shar
 		object, err = s.client.UpdateCheckpoint(ctx, object)
 	}
 	if err != nil {
-		return fmt.Errorf("persist Kubernetes checkpoint shard %q at resourceVersion %q: %w", shard, state.resourceVersion, err)
+		persistErr := fmt.Errorf("persist Kubernetes checkpoint shard %q at resourceVersion %q: %w", shard, state.resourceVersion, err)
+		// Conflict and AlreadyExists prove that this request did not win. Any
+		// other Create/Update error can be an accepted write whose response was
+		// lost; retrying from the old resourceVersion then wedges forever, while
+		// reloading could let a deposed leader overwrite its successor. Exit the
+		// active lifecycle and reopen from authoritative state instead.
+		if !errors.Is(err, ErrKubernetesCheckpointConflict) && !errors.Is(err, ErrKubernetesCheckpointAlreadyExists) {
+			persistErr = fmt.Errorf("%w: %w", ErrKubernetesCheckpointWriteUncertain, persistErr)
+			if s.fatalWrite != nil {
+				s.fatalWrite(persistErr)
+			}
+		}
+		return persistErr
 	}
 	if object.ResourceVersion == "" {
 		return fmt.Errorf("persist Kubernetes checkpoint shard %q returned an empty resourceVersion", shard)

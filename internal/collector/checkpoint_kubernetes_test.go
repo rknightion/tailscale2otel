@@ -402,6 +402,52 @@ func TestKubernetesCheckpointStore_BatchSharesOneWriteDeadline(t *testing.T) {
 	}
 }
 
+func TestKubernetesCheckpointStore_AmbiguousWriteRequestsRestart(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		seed bool
+	}{
+		{name: "create"},
+		{name: "update", seed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := &fakeKubernetesCheckpointClient{}
+			if tc.seed {
+				seed, err := NewKubernetesCheckpointStore(context.Background(), client, WithKubernetesCheckpointWriteDebounce(0))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := seed.Set("flowlogs", time.Unix(1, 0).UTC()); err != nil {
+					t.Fatal(err)
+				}
+				client.commitUpdateThenFail = "flowlogs"
+			} else {
+				client.commitCreateThenFail = "flowlogs"
+			}
+			fatal := make(chan error, 1)
+			store, err := NewKubernetesCheckpointStore(context.Background(), client,
+				WithKubernetesCheckpointWriteDebounce(0),
+				WithKubernetesCheckpointFatalWrite(func(err error) { fatal <- err }),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = store.Set("flowlogs", time.Unix(2, 0).UTC())
+			if !errors.Is(err, ErrKubernetesCheckpointWriteUncertain) {
+				t.Fatalf("ambiguous %s = %v, want ErrKubernetesCheckpointWriteUncertain", tc.name, err)
+			}
+			select {
+			case got := <-fatal:
+				if !errors.Is(got, ErrKubernetesCheckpointWriteUncertain) {
+					t.Fatalf("fatal %s = %v, want ErrKubernetesCheckpointWriteUncertain", tc.name, got)
+				}
+			default:
+				t.Fatalf("ambiguous %s did not request a process restart", tc.name)
+			}
+		})
+	}
+}
+
 func TestKubernetesCheckpointStore_RejectsOversizeCompressedShardWithoutWrite(t *testing.T) {
 	client := &fakeKubernetesCheckpointClient{}
 	store, err := NewKubernetesCheckpointStore(context.Background(), client, WithKubernetesCheckpointWriteDebounce(0))
@@ -473,6 +519,8 @@ type fakeKubernetesCheckpointClient struct {
 	writeDeadlines       []time.Time
 	creates              int
 	updates              int
+	commitCreateThenFail string
+	commitUpdateThenFail string
 }
 
 func (c *fakeKubernetesCheckpointClient) ListCheckpoints(context.Context) ([]KubernetesCheckpointObject, error) {
@@ -527,6 +575,9 @@ func (c *fakeKubernetesCheckpointClient) CreateCheckpoint(ctx context.Context, o
 	o.ResourceVersion = "1"
 	c.shards[o.Shard] = o
 	c.creates++
+	if o.Shard == c.commitCreateThenFail {
+		return KubernetesCheckpointObject{}, context.DeadlineExceeded
+	}
 	return o, nil
 }
 func (c *fakeKubernetesCheckpointClient) UpdateCheckpoint(ctx context.Context, o KubernetesCheckpointObject) (KubernetesCheckpointObject, error) {
@@ -550,6 +601,9 @@ func (c *fakeKubernetesCheckpointClient) UpdateCheckpoint(ctx context.Context, o
 	c.updates++
 	o.ResourceVersion = fmt.Sprintf("%d", c.updates+1)
 	c.shards[o.Shard] = o
+	if o.Shard == c.commitUpdateThenFail {
+		return KubernetesCheckpointObject{}, context.DeadlineExceeded
+	}
 	return o, nil
 }
 func (c *fakeKubernetesCheckpointClient) shardCount() int {

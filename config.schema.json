@@ -256,7 +256,7 @@
         },
         "store": {
           "default": "file",
-          "description": "file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart) | kubernetes (ConfigMap data in \u003ccoordination.lease_name\u003e-checkpoints)",
+          "description": "file (persists window cursors across restarts; falls back to memory + WARN if the path isn't writable) | memory (RAM only; cold-starts from initial_lookback after a restart) | kubernetes (one gzip binaryData ConfigMap per collector namespace, owned by coordination.lease_name)",
           "enum": [
             "memory",
             "file",

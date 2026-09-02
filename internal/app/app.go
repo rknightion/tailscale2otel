@@ -148,6 +148,7 @@ type App struct {
 	coordinationMu     sync.RWMutex
 	coordinationStatus coordination.Status
 	coordinationParent context.Context
+	checkpointFatal    <-chan error
 }
 
 // receiver is the small common surface shared by legacy single-tailnet servers
@@ -272,7 +273,13 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if err != nil {
 		return nil, err
 	}
-	stores, err := stateStores(cfg, withComponent(logger, compCheckpoint))
+	checkpointFatal := make(chan error, 1)
+	stores, err := stateStoresWithFatal(cfg, withComponent(logger, compCheckpoint), func(err error) {
+		select {
+		case checkpointFatal <- err:
+		default:
+		}
+	})
 	if err != nil {
 		_ = ps.Shutdown(ctx)
 		return nil, err
@@ -287,6 +294,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	a.evidenceEffective = stores.Evidence.Outcome.Kind
 	a.evidencePath = stores.Evidence.Outcome.Path
 	a.evidenceReason = stores.Evidence.Outcome.Reason
+	a.checkpointFatal = checkpointFatal
 	a.procCard = ps.Process().Cardinality()
 	if q := ps.Process().BatchQueues(); q != nil {
 		a.batchQueues = append(a.batchQueues, batchQueueReport{emitter: a.procEmitter, tracker: q})
@@ -776,6 +784,20 @@ func (a *App) Run(ctx context.Context) error {
 // receivers, WAL replay, rollup flusher and the Prometheus listener. The admin
 // listener is optionally already serving the standby status page.
 func (a *App) runActive(ctx context.Context, startAdmin bool) error {
+	activeCtx, cancelActive := context.WithCancelCause(ctx)
+	defer cancelActive(nil)
+	ctx = activeCtx
+	if a.checkpointFatal != nil {
+		go func() {
+			select {
+			case err := <-a.checkpointFatal:
+				if err != nil {
+					cancelActive(err)
+				}
+			case <-ctx.Done():
+			}
+		}()
+	}
 	if a.restore != nil {
 		defer a.restore()
 	}
@@ -1058,7 +1080,11 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	if a.ingressWAL != nil {
 		closeErr = a.ingressWAL.Close()
 	}
-	return errors.Join(schedErr, shutdownErr, closeErr, checkpointErr)
+	var checkpointFatalErr error
+	if cause := context.Cause(ctx); errors.Is(cause, collector.ErrKubernetesCheckpointWriteUncertain) {
+		checkpointFatalErr = cause
+	}
+	return errors.Join(schedErr, shutdownErr, closeErr, checkpointErr, checkpointFatalErr)
 }
 
 // Close flushes and tears down everything New() built, for a caller that
@@ -1183,7 +1209,11 @@ func newReleaseHTTPClient(timeout time.Duration) *http.Client {
 // non-fatal: it is renamed aside and the store starts empty (a cold start),
 // instead of crash-looping startup.
 func checkpointStore(cfg *config.Config, logger *slog.Logger) (collector.CheckpointStore, checkpointOutcome, error) {
-	return checkpointStoreWithDefault(cfg, logger, config.LegacyCheckpointPath)
+	return checkpointStoreWithFatal(cfg, logger, nil)
+}
+
+func checkpointStoreWithFatal(cfg *config.Config, logger *slog.Logger, fatalWrite func(error)) (collector.CheckpointStore, checkpointOutcome, error) {
+	return checkpointStoreWithDefaultAndFatal(cfg, logger, config.LegacyCheckpointPath, fatalWrite)
 }
 
 // checkpointOutcome is what the store ACTUALLY resolved to, which can differ
@@ -1211,7 +1241,11 @@ type resolvedStateStores struct {
 // backed they share the same store, preserving existing mixed checkpoint files
 // and ensuring a write from one class cannot clobber keys written by the other.
 func stateStores(cfg *config.Config, logger *slog.Logger) (resolvedStateStores, error) {
-	cursorStore, cursorOutcome, err := checkpointStore(cfg, logger)
+	return stateStoresWithFatal(cfg, logger, nil)
+}
+
+func stateStoresWithFatal(cfg *config.Config, logger *slog.Logger, fatalWrite func(error)) (resolvedStateStores, error) {
+	cursorStore, cursorOutcome, err := checkpointStoreWithFatal(cfg, logger, fatalWrite)
 	if err != nil {
 		return resolvedStateStores{}, err
 	}
@@ -1239,7 +1273,7 @@ func stateStores(cfg *config.Config, logger *slog.Logger) (resolvedStateStores, 
 	evidenceCfg := *cfg
 	evidenceCfg.Checkpoint = cfg.Checkpoint
 	evidenceCfg.Checkpoint.Store = "file"
-	evidenceStore, evidenceOutcome, err := checkpointStore(&evidenceCfg, logger)
+	evidenceStore, evidenceOutcome, err := checkpointStoreWithFatal(&evidenceCfg, logger, fatalWrite)
 	if err != nil {
 		return resolvedStateStores{}, err
 	}
@@ -1296,13 +1330,20 @@ func semanticEvidenceOutcome(
 func checkpointStoreWithDefault(
 	cfg *config.Config, logger *slog.Logger, defaultPath string,
 ) (collector.CheckpointStore, checkpointOutcome, error) {
+	return checkpointStoreWithDefaultAndFatal(cfg, logger, defaultPath, nil)
+}
+
+func checkpointStoreWithDefaultAndFatal(
+	cfg *config.Config, logger *slog.Logger, defaultPath string, fatalWrite func(error),
+) (collector.CheckpointStore, checkpointOutcome, error) {
 	if cfg.Checkpoint.Store == "kubernetes" {
 		client, err := coordination.NewKubernetesCheckpointClient(cfg.Coordination.Namespace, cfg.Coordination.LeaseName)
 		if err != nil {
 			return nil, checkpointOutcome{}, fmt.Errorf("build Kubernetes checkpoint client: %w", err)
 		}
 		store, err := collector.NewKubernetesCheckpointStore(context.Background(), client,
-			collector.WithKubernetesCheckpointWriteDebounce(cfg.Checkpoint.WriteDebounce.D()))
+			collector.WithKubernetesCheckpointWriteDebounce(cfg.Checkpoint.WriteDebounce.D()),
+			collector.WithKubernetesCheckpointFatalWrite(fatalWrite))
 		if err != nil {
 			return nil, checkpointOutcome{}, err
 		}

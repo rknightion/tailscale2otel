@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -775,5 +776,35 @@ func TestApp_RunGracefulShutdown(t *testing.T) {
 	// The dedup reporter must have been started by Run and reported the flow set.
 	if !hasPointForSet(rec, "tailscale2otel.dedup.size", "flow") {
 		t.Fatal("tailscale2otel.dedup.size{flow} not emitted; dedup reporter not wired into Run")
+	}
+}
+
+func TestApp_RunStopsOnUncertainCheckpointWrite(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer ts.Close()
+
+	cfg := config.Default()
+	cfg.Tailscale.Tailnet = "example.com"
+	cfg.Tailscale.Auth.Method = "apikey"
+	cfg.Tailscale.Auth.APIKey = "tskey-test"
+
+	rec := telemetrytest.New()
+	a := newApp(cfg, "v9.9.9", nil, rec.Emitter(), tracenoop.NewTracerProvider().Tracer("test"),
+		func(context.Context) error { return nil },
+		provider.Tailscale(newTestClient(t, ts.URL)), collector.NewMemoryStore(), NewAPIStats())
+	checkpointFatal := make(chan error, 1)
+	a.checkpointFatal = checkpointFatal
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- a.Run(ctx) }()
+	checkpointFatal <- fmt.Errorf("%w: lost update response", collector.ErrKubernetesCheckpointWriteUncertain)
+
+	if err := <-done; !errors.Is(err, collector.ErrKubernetesCheckpointWriteUncertain) {
+		t.Fatalf("Run after uncertain checkpoint write = %v, want restart error", err)
 	}
 }

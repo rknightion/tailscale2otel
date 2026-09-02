@@ -79,8 +79,9 @@ config:
 
 Use `checkpoint.store: kubernetes` when the coordinated deployment also needs
 poll cursors to survive leader hand-off without replaying the initial lookback.
-It stores them in a dedicated `<lease_name>-checkpoints` ConfigMap so checkpoint
-updates can never overwrite the chart's application-configuration ConfigMap.
+It stores one gzip `binaryData` ConfigMap per collector namespace, owned by the
+configured Lease, so checkpoint updates can never overwrite the chart's
+application-configuration ConfigMap.
 
 ### Receiver WAL durability and storage
 

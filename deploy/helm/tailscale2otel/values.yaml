@@ -1717,8 +1717,8 @@ config: # @schema additionalProperties:false
   checkpoint: # @schema additionalProperties:false
     # -- Poll-cursor store: memory \| file \| kubernetes. "memory" loses window cursors on
     # restart (re-does initial_lookback); "file" persists them atomically (needs a writable
-    # volume at file_path); "kubernetes" stores cursors in a dedicated
-    # <coordination.lease_name>-checkpoints ConfigMap for coordinated failover.
+    # volume at file_path); "kubernetes" stores one gzip binaryData ConfigMap per
+    # collector namespace, owned by coordination.lease_name, for coordinated failover.
     store: file # @schema enum:["memory","file","kubernetes"]
     # -- Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to
     # preserve ACL revision/audit provenance across restarts even in streamed deployments.

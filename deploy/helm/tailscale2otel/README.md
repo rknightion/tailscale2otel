@@ -67,8 +67,9 @@ config:
 
 Use `checkpoint.store: kubernetes` when the coordinated deployment also needs
 poll cursors to survive leader hand-off without replaying the initial lookback.
-It stores them in a dedicated `<lease_name>-checkpoints` ConfigMap so checkpoint
-updates can never overwrite the chart's application-configuration ConfigMap.
+It stores one gzip `binaryData` ConfigMap per collector namespace, owned by the
+configured Lease, so checkpoint updates can never overwrite the chart's
+application-configuration ConfigMap.
 
 ### Receiver WAL durability and storage
 
@@ -265,7 +266,7 @@ extraVolumeMounts:
 | config.cardinality.warning_threshold | int | `2000` | Status-page cardinality view flags a metric at/above this active-series count (self-obs only; 0 disables). |
 | config.checkpoint.evidence_store | string | `"file"` | Semantic-evidence store: memory \| file. Independent of poll cursors; keep file to preserve ACL revision/audit provenance across restarts even in streamed deployments. |
 | config.checkpoint.file_path | string | `"/var/lib/tailscale2otel/checkpoints.json"` | Shared state path when either store is file (mount a writable persistent volume here). |
-| config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file \| kubernetes. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path); "kubernetes" stores cursors in a dedicated <coordination.lease_name>-checkpoints ConfigMap for coordinated failover. |
+| config.checkpoint.store | string | `"file"` | Poll-cursor store: memory \| file \| kubernetes. "memory" loses window cursors on restart (re-does initial_lookback); "file" persists them atomically (needs a writable volume at file_path); "kubernetes" stores one gzip binaryData ConfigMap per collector namespace, owned by coordination.lease_name, for coordinated failover. |
 | config.checkpoint.write_debounce | string | `"0s"` | Coalesce nearby checkpoint writes; 0 preserves synchronous Set durability. |
 | config.collectors.acl.enabled | bool | `true` | Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section). |
 | config.collectors.acl.interval | string | `"600s"` | Poll interval. |
