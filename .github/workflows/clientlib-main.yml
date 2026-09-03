@@ -55,54 +55,102 @@ jobs:
           REF: ${{ matrix.ref }}
         run: |
           set +e
-          # Fold go get + tidy into the measured group: a non-resolving @main/@latest ref
-          # must surface as a failure, not silently fall through to a build against the
-          # unchanged pinned version (which would look like a false "no drift").
-          { go get "github.com/tailscale/tailscale-client-go/v2@${REF}" \
-              && go mod tidy \
-              && go build ./... && go vet ./... && go test -race ./...; } > /tmp/cl.log 2>&1
-          echo "code=$?" >> "$GITHUB_OUTPUT"
+          baseline=$(go list -m -f '{{.Version}}' github.com/tailscale/tailscale-client-go/v2 2>/dev/null)
+          baseline_code=$?
+          if [ "$baseline_code" -ne 0 ]; then
+            baseline=unresolved
+          fi
 
-      # Captured as named fields rather than left to chance. Previously the only
-      # record of which toolchain and which resolved pseudo-version failed was
-      # whatever happened to survive inside the last 8000 bytes of the combined
-      # build log — which is to say, usually nothing. "It broke on main" is not
-      # actionable six weeks later; "it broke on v2.0.0-20260726... under go1.26.0"
-      # is.
-      - name: Capture failing identity
-        if: steps.bump.outputs.code != '0'
+          # A non-resolving @main/@latest ref must surface as a failure, not silently
+          # fall through to a build against the unchanged pinned version.
+          go get "github.com/tailscale/tailscale-client-go/v2@${REF}" > /tmp/cl.log 2>&1
+          get_code=$?
+          code=$get_code
+          {
+            if [ "$get_code" -eq 0 ]; then
+              go mod tidy
+              code=$?
+            fi
+            if [ "$code" -eq 0 ]; then
+              go build ./...
+              code=$?
+            fi
+            if [ "$code" -eq 0 ]; then
+              go vet ./...
+              code=$?
+            fi
+            if [ "$code" -eq 0 ]; then
+              go test -race ./...
+              code=$?
+            fi
+          } >> /tmp/cl.log 2>&1
+
+          candidate=$(go list -m -f '{{.Version}}' github.com/tailscale/tailscale-client-go/v2 2>/dev/null)
+          candidate_code=$?
+          if [ "$candidate_code" -ne 0 ]; then
+            candidate=unresolved
+          fi
+          {
+            echo "code=${code}"
+            echo "get_code=${get_code}"
+            echo "baseline=${baseline}"
+            echo "candidate=${candidate}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Every completed leg publishes an explicit verdict. Artifact absence is
+      # therefore inconclusive, rather than an implicit pass. This is important
+      # when checkout, setup, or artifact publication itself fails before a
+      # measured build can produce its result.
+      - name: Capture verdict
         run: |
           set -uo pipefail
           mkdir -p /tmp/verdict
           {
+            if [ "${CODE}" = "0" ]; then
+              echo "verdict=pass"
+            elif [ "${GET_CODE}" = "0" ] && [ "${BASELINE}" = "${CANDIDATE}" ]; then
+              # The requested ref resolved to what this checkout already pins.
+              # A failing test still needs attention, but cannot prove a client-lib
+              # regression, so fail closed without filing a false drift issue.
+              echo "verdict=inconclusive"
+            else
+              echo "verdict=fail"
+            fi
             echo "### \`${REF}\`"
             echo
             echo "| field | value |"
             echo "| --- | --- |"
             echo "| requested ref | \`${REF}\` |"
-            echo "| resolved module | \`$(go list -m github.com/tailscale/tailscale-client-go/v2 2>/dev/null || echo 'unresolved')\` |"
+            echo "| baseline module | \`${BASELINE}\` |"
+            echo "| candidate module | \`${CANDIDATE}\` |"
+            echo "| go get exit code | \`${GET_CODE}\` |"
             echo "| toolchain | \`$(go version)\` |"
             echo "| runner | \`${RUNNER_OS}/${RUNNER_ARCH}\` |"
             echo "| exit code | \`${CODE}\` |"
-            echo
-            echo "<details><summary>Last 8000 bytes of the build log</summary>"
-            echo
-            echo '```'
-            tail -c 8000 /tmp/cl.log
-            echo '```'
-            echo
-            echo "</details>"
+            if [ "${CODE}" != "0" ]; then
+              echo
+              echo "<details><summary>Last 8000 bytes of the build log</summary>"
+              echo
+              echo '```'
+              tail -c 8000 /tmp/cl.log
+              echo '```'
+              echo
+              echo "</details>"
+            fi
           } > "/tmp/verdict/${REF}.md"
         env:
           REF: ${{ matrix.ref }}
           CODE: ${{ steps.bump.outputs.code }}
+          GET_CODE: ${{ steps.bump.outputs.get_code }}
+          BASELINE: ${{ steps.bump.outputs.baseline }}
+          CANDIDATE: ${{ steps.bump.outputs.candidate }}
 
       - name: Publish verdict
-        if: steps.bump.outputs.code != '0'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: clientlib-verdict-${{ matrix.ref }}
-          path: /tmp/verdict/
+          path: /tmp/verdict/${{ matrix.ref }}.md
+          if-no-files-found: error
           retention-days: 14
 
   # The single writer. `if: always()` so it runs whatever the legs did, because
@@ -132,42 +180,19 @@ jobs:
           path: /tmp/verdicts
           pattern: clientlib-verdict-*
           merge-multiple: true
-        continue-on-error: true # no artifacts at all is the green case, not an error
+        # download-artifact exits non-zero when an earlier job died before it
+        # could publish. The assembler classifies the missing verdict as
+        # inconclusive; letting collection continue is not a green decision.
+        continue-on-error: true
 
       - name: Assemble one report
         id: assemble
         run: |
-          set -euo pipefail
-          shopt -s nullglob
-          files=(/tmp/verdicts/*.md)
-          if [ ${#files[@]} -eq 0 ]; then
-            # No verdicts can mean two very different things. Either every leg
-            # passed, or a leg died before it could write one (checkout failed,
-            # the runner was cancelled, setup-go could not reach the proxy). Only
-            # the first is a clean run. Treating the second as clean would close
-            # the tracking issue on the strength of a run that proved nothing —
-            # the exact failure this job exists to avoid, in the other direction.
-            if [ "${LEGS_RESULT}" != "success" ]; then
-              echo "matrix legs reported '${LEGS_RESULT}' and produced no verdict:" \
-                   "treating as inconclusive, not as green" >&2
-              echo "failed=inconclusive" >> "$GITHUB_OUTPUT"
-              exit 1
-            fi
-            echo "failed=0" >> "$GITHUB_OUTPUT"
-            echo "every matrix leg is green"
-            exit 0
-          fi
-          echo "failed=${#files[@]}" >> "$GITHUB_OUTPUT"
-          {
-            echo "## tailscale-client-go/v2 breaks our build"
-            echo
-            echo "${#files[@]} of 2 matrix legs failed in [this run](${RUN_URL})."
-            echo
-            for f in "${files[@]}"; do
-              cat "$f"
-              echo
-            done
-          } > /tmp/cl.md
+          bash .github/actions/report-drift/scripts/assemble-clientlib-verdicts.sh \
+            --verdict-dir /tmp/verdicts \
+            --legs-result "${LEGS_RESULT}" \
+            --report-path /tmp/cl.md \
+            --run-url "${RUN_URL}"
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           LEGS_RESULT: ${{ needs.build-against.result }}
@@ -175,7 +200,7 @@ jobs:
       # One call, one issue, whichever legs failed — so the title no longer varies
       # per leg and the dedup label always has exactly one issue to find.
       - name: Report + fail
-        if: steps.assemble.outputs.failed != '0'
+        if: steps.assemble.outputs.outcome == 'failure'
         uses: ./.github/actions/report-drift
         with:
           lane-label: clientlib-drift
@@ -185,7 +210,7 @@ jobs:
       # Only close when EVERY leg is green, which is now a property of this job's
       # own view rather than of `needs` + a default success() condition.
       - name: Resolve tracking issue on clean run
-        if: steps.assemble.outputs.failed == '0'
+        if: steps.assemble.outputs.outcome == 'green'
         uses: ./.github/actions/resolve-drift
         with:
           lane-label: clientlib-drift

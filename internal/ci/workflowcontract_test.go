@@ -273,6 +273,84 @@ func TestReadmeAPIDriftCadenceMatchesTheCrons(t *testing.T) {
 	}
 }
 
+// The client-library drift lane can close its tracking issue only after BOTH
+// matrix legs explicitly report pass. Its assembler is executable policy: a
+// missing or malformed artifact must be inconclusive, never inferred green.
+// Exercise that policy here and also prove the workflow invokes the tested
+// script from its single-writer job, so the regression suite cannot become a
+// green but unreachable side file.
+func TestClientlibVerdictAssemblerIsFailClosedAndInvoked(t *testing.T) {
+	const workflow = "clientlib-main.yml"
+	doc := readWorkflow(t, workflow)
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no jobs mapping", workflow)
+	}
+	report, ok := jobs["report"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s has no report job; the matrix must have one issue-writing aggregator", workflow)
+	}
+	steps, ok := report["steps"].([]any)
+	if !ok {
+		t.Fatalf("%s/report has no steps list", workflow)
+	}
+
+	const invocation = "bash .github/actions/report-drift/scripts/assemble-clientlib-verdicts.sh"
+	invoked := false
+	for _, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok || step["id"] != "assemble" {
+			continue
+		}
+		run, ok := step["run"].(string)
+		if !ok {
+			t.Fatalf("%s/report assemble step has no run script", workflow)
+		}
+		for line := range strings.SplitSeq(run, "\n") {
+			if strings.TrimSpace(line) == invocation+" \\" {
+				invoked = true
+				break
+			}
+		}
+	}
+	if !invoked {
+		t.Fatalf("%s/report does not invoke %q as a command; its fail-closed tests would be unreachable", workflow, invocation)
+	}
+
+	assembler, err := filepath.Abs(filepath.Join(repoDir,
+		".github", "actions", "report-drift", "scripts", "assemble-clientlib-verdicts.sh"))
+	if err != nil {
+		t.Fatalf("resolve client-lib assembler: %v", err)
+	}
+	testScript, err := filepath.Abs(filepath.Join(repoDir,
+		".github", "actions", "report-drift", "test", "assemble-clientlib-verdicts_test.sh"))
+	if err != nil {
+		t.Fatalf("resolve client-lib assembler test: %v", err)
+	}
+	// Read both shell files in this process before starting the subprocess. The
+	// Go test cache tracks files opened by the test binary, not files opened only
+	// by a child process; without these reads, an assembler edit can reuse a stale
+	// green result and make the guard look active while executing nothing.
+	for _, path := range []string{assembler, testScript} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read client-lib assembler dependency %s: %v", path, err)
+		}
+		if len(body) == 0 {
+			t.Fatalf("client-lib assembler dependency %s is empty", path)
+		}
+	}
+	cmd := exec.Command("bash", testScript)
+	cmd.Dir = repoDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("client-lib assembler regression test failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "assemble-clientlib-verdicts tests passed") {
+		t.Fatalf("client-lib assembler regression test did not report completion; it may assert nothing:\n%s", out)
+	}
+}
+
 // tableRow returns the README markdown table row beginning with cell.
 func tableRow(t *testing.T, body, cell string) string {
 	t.Helper()
