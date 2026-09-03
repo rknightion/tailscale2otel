@@ -66,30 +66,21 @@ type capturedRequest struct {
 	traces  *collectortracepb.ExportTraceServiceRequest
 }
 
-// wireRecorder captures requests under a mutex and additionally publishes each
-// one on a buffered channel so tests can block deterministically instead of
-// polling.
+// wireRecorder captures requests under a mutex so callers can inspect a stable
+// snapshot after the exporter completion barrier.
 type wireRecorder struct {
 	mu   sync.Mutex
 	reqs []capturedRequest
-	ch   chan capturedRequest
 }
 
 func newWireRecorder() *wireRecorder {
-	return &wireRecorder{ch: make(chan capturedRequest, 64)}
+	return &wireRecorder{}
 }
 
 func (r *wireRecorder) record(cr capturedRequest) {
 	r.mu.Lock()
 	r.reqs = append(r.reqs, cr)
 	r.mu.Unlock()
-	select {
-	case r.ch <- cr:
-	default:
-		// Channel full: every test in this suite reads at least one request per
-		// export, so this only happens if a test genuinely doesn't care — the
-		// mutex-guarded slice below still has it.
-	}
 }
 
 func (r *wireRecorder) all() []capturedRequest {
@@ -913,9 +904,9 @@ const (
 	wiretestServiceVersion = "9.9.9-wiretest"
 )
 
-// driveWirePipeline drives the pipeline and blocks (deterministically, via
-// wireRecorder's channel — no sleeps or polling) until all three signals have
-// been captured, or fails the test. configure may override any Options field
+// driveWirePipeline drives the pipeline and uses ForceFlush/Shutdown as
+// deterministic exporter completion barriers before inspecting the recorder
+// snapshot (no sleeps or polling). configure may override any Options field
 // (TLS, headers, protocol-specific endpoint quirks) before NewProvider runs.
 func driveWirePipeline(t *testing.T, rec *wireRecorder, protocol, endpoint string, configure func(*telemetry.Options)) map[string]capturedRequest {
 	t.Helper()
@@ -975,37 +966,31 @@ func driveWirePipeline(t *testing.T, rec *wireRecorder, protocol, endpoint strin
 	// requests before Shutdown triggers their second collection; delta sums are
 	// intentionally empty on that second collection while cumulative gauges and
 	// UpDownCounters remain present.
-	got["metrics"] = waitForSignal(t, rec, "metrics", 5*time.Second, got)
-	got["logs"] = waitForSignal(t, rec, "logs", 5*time.Second, got)
+	got["metrics"] = waitForSignal(t, rec, "metrics", got)
+	got["logs"] = waitForSignal(t, rec, "logs", got)
 
 	// Provider.ForceFlush deliberately excludes traces (see its doc comment in
 	// provider.go); only Shutdown flushes the span processor.
 	shutdown()
-	got["traces"] = waitForSignal(t, rec, "traces", 5*time.Second, got)
+	got["traces"] = waitForSignal(t, rec, "traces", got)
 
 	return got
 }
 
-// waitForSignal drains rec's channel until a request for the wanted signal
-// arrives, stashing any other-signal requests it sees along the way into
-// already so a later call for that signal returns immediately instead of
-// re-blocking. Blocks on the channel; never polls.
-func waitForSignal(t *testing.T, rec *wireRecorder, signal string, timeout time.Duration, already map[string]capturedRequest) capturedRequest {
+// waitForSignal checks rec's completed-export snapshot for the wanted signal,
+// stashing other signals into already so a later call can return immediately.
+// The caller has already crossed the signal's synchronous exporter barrier.
+func waitForSignal(t *testing.T, rec *wireRecorder, signal string, already map[string]capturedRequest) capturedRequest {
 	t.Helper()
 	if cr, ok := already[signal]; ok {
 		return cr
 	}
-	deadline := time.After(timeout)
-	for {
-		select {
-		case cr := <-rec.ch:
-			if cr.signal == signal {
-				return cr
-			}
-			already[cr.signal] = cr
-		case <-deadline:
-			t.Fatalf("timed out after %s waiting for a %s wire request", timeout, signal)
-			return capturedRequest{}
+	for _, cr := range rec.all() {
+		if cr.signal == signal {
+			return cr
 		}
+		already[cr.signal] = cr
 	}
+	t.Fatalf("export completion barrier passed without a %s wire request", signal)
+	return capturedRequest{}
 }

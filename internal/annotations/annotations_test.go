@@ -816,7 +816,21 @@ func TestStartWritesTheLifecycleMarker(t *testing.T) {
 // TestPublishNeverBlocks: the caller is a collector goroutine mid-poll. A full
 // queue must drop and count, never wait on Grafana.
 func TestPublishNeverBlocks(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	workerStarted := make(chan struct{})
+	release := make(chan struct{})
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Start's first request is the synchronous lifecycle preflight. Hold the
+		// first worker request after that until the test has a full queue, giving
+		// the Publish calls a deterministic stalled-worker barrier.
+		if requests.Add(1) == 2 {
+			close(workerStarted)
+			select {
+			case <-release:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -829,18 +843,15 @@ func TestPublishNeverBlocks(t *testing.T) {
 	}
 	defer func() { _ = a.Close(context.Background()) }()
 
-	done := make(chan struct{})
-	go func() {
-		for range 10_000 {
-			a.Publish(annotations.Annotation{RuleID: "r", Time: time.Unix(1, 0)})
-		}
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("Publish blocked on a full queue")
+	a.Publish(annotations.Annotation{RuleID: "r", Time: time.Unix(1, 0)})
+	<-workerStarted
+	// The worker owns the first item and is blocked in the server; QueueSize=1
+	// therefore makes the next item fill the queue. Calling Publish directly is
+	// the completion barrier: every call must return without waiting on Grafana.
+	for range 10_000 {
+		a.Publish(annotations.Annotation{RuleID: "r", Time: time.Unix(1, 0)})
 	}
+	close(release)
 }
 
 func testOptions(t *testing.T, url string) annotations.Options {

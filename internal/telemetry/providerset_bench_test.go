@@ -187,13 +187,23 @@ func TestProviderSetResourceFootprint(t *testing.T) {
 // provider (and therefore starts every PeriodicReader ticker) back-to-back
 // with the same MetricInterval.
 type timestampWriter struct {
-	mu sync.Mutex
-	ts []time.Time
+	mu      sync.Mutex
+	ts      []time.Time
+	readyAt int
+	ready   chan struct{}
+	once    sync.Once
+}
+
+func newTimestampWriter(readyAt int) *timestampWriter {
+	return &timestampWriter{readyAt: readyAt, ready: make(chan struct{})}
 }
 
 func (w *timestampWriter) Write(p []byte) (int, error) {
 	w.mu.Lock()
 	w.ts = append(w.ts, time.Now())
+	if len(w.ts) >= w.readyAt {
+		w.once.Do(func() { close(w.ready) })
+	}
 	w.mu.Unlock()
 	return len(p), nil
 }
@@ -209,8 +219,8 @@ func (w *timestampWriter) snapshot() []time.Time {
 // TestProviderSetExportBurstAlignment gathers evidence for whether the
 // process + N tailnet providers' independent PeriodicReaders actually export
 // in a synchronized burst, as #364 hypothesizes. It emits one data point per
-// provider, lets the shared short interval tick at least twice, then measures
-// how tightly the FIRST tick's writes (one per provider, since each Provider
+// provider, waits for one write from every provider, then measures how tightly
+// the FIRST tick's writes (one per provider, since each Provider
 // wraps the same shared writer in its own lockedWriter — see NewProvider's
 // stdout branch) cluster in wall-clock time.
 //
@@ -225,8 +235,9 @@ func TestProviderSetExportBurstAlignment(t *testing.T) {
 	}
 	const n = 10
 	const interval = 50 * time.Millisecond
+	const wantProviders = n + 1 // process + n tailnets
 
-	w := &timestampWriter{}
+	w := newTimestampWriter(wantProviders)
 	base := telemetry.Options{
 		ServiceName:    "tailscale2otel",
 		Protocol:       "stdout",
@@ -245,15 +256,15 @@ func TestProviderSetExportBurstAlignment(t *testing.T) {
 		ps.Tailnet(name).Emitter().Counter("tailscale2otel.bench.counter", "1", "bench counter", 1, nil)
 	}
 
-	// Let at least two ticks land, with slack for CI scheduling jitter.
-	time.Sleep(3*interval + 100*time.Millisecond)
+	// The writer closes ready after the first wantProviders writes. This waits
+	// for the observed exports themselves, with no scheduler or interval margin.
+	<-w.ready
 
 	if err := ps.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown: %v", err)
 	}
 
 	ts := w.snapshot()
-	const wantProviders = n + 1 // process + n tailnets
 	if len(ts) < wantProviders {
 		t.Fatalf("got %d stdout writes, want at least %d (one per provider's first export)",
 			len(ts), wantProviders)

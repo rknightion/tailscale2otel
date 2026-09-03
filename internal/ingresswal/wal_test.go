@@ -1697,27 +1697,44 @@ func TestConcurrentReplayInvokesHandlerOncePerEntry(t *testing.T) {
 		t.Fatalf("Append: %v", err)
 	}
 
-	entered := make(chan struct{}, 2)
+	firstEntered := make(chan struct{})
 	release := make(chan struct{})
 	errs := make(chan error, 2)
-	handler := func(context.Context, Envelope) error {
-		entered <- struct{}{}
+	var firstCalls, secondCalls int
+	var firstEnteredOnce sync.Once
+	firstHandler := func(context.Context, Envelope) error {
+		firstCalls++
+		firstEnteredOnce.Do(func() { close(firstEntered) })
 		<-release
 		return nil
 	}
-	go func() { errs <- store.Replay(context.Background(), handler, nil) }()
-	<-entered
-	go func() { errs <- store.Replay(context.Background(), handler, nil) }()
-	select {
-	case <-entered:
-		t.Fatal("concurrent Replay invoked the handler twice for one entry")
-	case <-time.After(100 * time.Millisecond):
+	secondHandler := func(context.Context, Envelope) error {
+		secondCalls++
+		<-release
+		return nil
 	}
+	go func() { errs <- store.Replay(context.Background(), firstHandler, nil) }()
+	<-firstEntered
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		errs <- store.Replay(context.Background(), secondHandler, nil)
+	}()
+	// The competing Replay has been launched while the first handler is held.
+	// Release is the explicit barrier; joining both calls below then proves the
+	// first entry was handled once and the serialized second call saw no entry.
+	<-secondStarted
 	close(release)
 	for range 2 {
 		if err := <-errs; err != nil {
 			t.Fatalf("Replay: %v", err)
 		}
+	}
+	if firstCalls != 1 {
+		t.Fatalf("first Replay handler calls = %d, want 1", firstCalls)
+	}
+	if secondCalls != 0 {
+		t.Fatalf("concurrent Replay invoked the handler %d extra times for one entry", secondCalls)
 	}
 }
 
