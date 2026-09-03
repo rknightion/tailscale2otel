@@ -16,9 +16,9 @@
       "automerge": false
     },
     {
-      "description": "Ignore the self-module reference: the tools/* modules require github.com/rknightion/tailscale2otel but replace ../.. makes Go always build from local code, so the require version is cosmetic.",
+      "description": "Ignore the self-module reference: the tools/* modules require github.com/rknightion/tailscale2otel/v5 but replace ../.. makes Go always build from local code, so the require version is cosmetic.",
       "matchManagers": ["gomod"],
-      "matchPackageNames": ["github.com/rknightion/tailscale2otel"],
+      "matchPackageNames": ["github.com/rknightion/tailscale2otel/v5"],
       "enabled": false
     },
     {
