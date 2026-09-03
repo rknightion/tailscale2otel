@@ -77,7 +77,8 @@ func TestKubernetesCheckpointClientMarksLegacyMigrationWithoutChangingData(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := adapter.MarkLegacyCheckpointMigrated(context.Background(), before.ResourceVersion); err != nil {
+	markedResourceVersion, err := adapter.MarkLegacyCheckpointMigrated(context.Background(), before.ResourceVersion)
+	if err != nil {
 		t.Fatal(err)
 	}
 	after, err := adapter.GetLegacyCheckpoint(context.Background())
@@ -87,6 +88,9 @@ func TestKubernetesCheckpointClientMarksLegacyMigrationWithoutChangingData(t *te
 	if !after.LegacyMigrated || string(after.Data) != string(before.Data) {
 		t.Fatalf("marked legacy = migrated=%v data=%q; want unchanged %q", after.LegacyMigrated, after.Data, before.Data)
 	}
+	if markedResourceVersion != after.ResourceVersion {
+		t.Fatalf("marked resourceVersion = %q, want %q", markedResourceVersion, after.ResourceVersion)
+	}
 }
 
 func TestKubernetesCheckpointClientUsesDedicatedBinaryShards(t *testing.T) {
@@ -95,7 +99,7 @@ func TestKubernetesCheckpointClientUsesDedicatedBinaryShards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	object, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Shard: "flowlogs", Data: []byte{1, 2, 3}})
+	object, err := adapter.CreateCheckpoint(context.Background(), collector.KubernetesCheckpointObject{Shard: "flowlogs", Data: []byte{1, 2, 3}, LegacyMigrationResourceVersion: "legacy-7"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,9 +114,15 @@ func TestKubernetesCheckpointClientUsesDedicatedBinaryShards(t *testing.T) {
 	if got := cm.Annotations[checkpointShardAnnotation]; got != "flowlogs" {
 		t.Fatalf("shard annotation = %q, want flowlogs", got)
 	}
+	if got := cm.Annotations[checkpointLegacyMigrationResourceVersionAnnotation]; got != "legacy-7" {
+		t.Fatalf("migration resourceVersion annotation = %q, want legacy-7", got)
+	}
 	listed, err := adapter.ListCheckpoints(context.Background())
 	if err != nil || len(listed) != 1 {
 		t.Fatalf("ListCheckpoints = %+v, %v", listed, err)
+	}
+	if got := listed[0].LegacyMigrationResourceVersion; got != "legacy-7" {
+		t.Fatalf("listed migration resourceVersion = %q, want legacy-7", got)
 	}
 }
 

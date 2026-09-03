@@ -94,6 +94,111 @@ func TestKubernetesCheckpointStore_MigratesLegacySingleConfigMap(t *testing.T) {
 	if !client.legacy.LegacyMigrated {
 		t.Fatal("legacy ConfigMap was not marked after every shard persisted")
 	}
+	assertLegacyMigrationResourceVersion(t, client, client.legacy.ResourceVersion)
+}
+
+func TestKubernetesCheckpointStore_ReconcilesRollbackEraLegacyWrites(t *testing.T) {
+	initial := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	rollback := initial.Add(time.Minute)
+	shardNewer := rollback.Add(time.Minute)
+	legacy, err := json.Marshal(map[string]time.Time{
+		"auditlogs": initial,
+		"flowlogs":  initial,
+		"pruned":    initial,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeKubernetesCheckpointClient{
+		legacy:       KubernetesCheckpointObject{ResourceVersion: "legacy-1", Data: legacy},
+		legacyExists: true,
+	}
+
+	// First migrate the legacy release, then let the new release advance and
+	// prune shard state before an operator rolls back.
+	store, err := NewKubernetesCheckpointStore(context.Background(), client, WithKubernetesCheckpointWriteDebounce(0))
+	if err != nil {
+		t.Fatalf("initial migration: %v", err)
+	}
+	if err := store.Set("flowlogs", shardNewer); err != nil {
+		t.Fatalf("advance shard cursor: %v", err)
+	}
+	if err := store.Delete("pruned"); err != nil {
+		t.Fatalf("prune shard key: %v", err)
+	}
+	assertLegacyMigrationResourceVersion(t, client, client.legacy.ResourceVersion)
+
+	// An unchanged legacy ConfigMap must still be ignored on a normal restart.
+	writesBeforeUnchangedOpen := client.writeCalls()
+	unchanged, err := NewKubernetesCheckpointStore(context.Background(), client)
+	if err != nil {
+		t.Fatalf("reopen with unchanged legacy ConfigMap: %v", err)
+	}
+	if _, ok := unchanged.Get("pruned"); ok {
+		t.Fatal("unchanged legacy ConfigMap resurrected a pruned key")
+	}
+	if got := client.writeCalls(); got != writesBeforeUnchangedOpen {
+		t.Fatalf("unchanged legacy ConfigMap caused %d writes, want %d", got, writesBeforeUnchangedOpen)
+	}
+
+	// Simulate the former single-ConfigMap release writing during the rollback.
+	rollbackLegacy, err := json.Marshal(map[string]time.Time{
+		"auditlogs": rollback,
+		"flowlogs":  rollback,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.writeLegacyForRollback(rollbackLegacy)
+
+	reupgraded, err := NewKubernetesCheckpointStore(context.Background(), client)
+	if err != nil {
+		t.Fatalf("re-upgrade after rollback write: %v", err)
+	}
+	if got, ok := reupgraded.Get("auditlogs"); !ok || !got.Equal(rollback) {
+		t.Fatalf("rollback-era cursor = %v/%v, want %v/true", got, ok, rollback)
+	}
+	if got, ok := reupgraded.Get("flowlogs"); !ok || !got.Equal(shardNewer) {
+		t.Fatalf("newer shard cursor regressed to %v/%v, want %v/true", got, ok, shardNewer)
+	}
+	if _, ok := reupgraded.Get("pruned"); ok {
+		t.Fatal("rollback-era legacy ConfigMap without the key resurrected a pruned key")
+	}
+	assertLegacyMigrationResourceVersion(t, client, client.legacy.ResourceVersion)
+}
+
+func TestKubernetesCheckpointStore_RepairsInterruptedMigrationBaseline(t *testing.T) {
+	at := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
+	legacy, err := json.Marshal(map[string]time.Time{"flowlogs": at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeKubernetesCheckpointClient{
+		legacy:       KubernetesCheckpointObject{ResourceVersion: "legacy-1", Data: legacy},
+		legacyExists: true,
+		failUpdate:   "flowlogs",
+	}
+	if _, err := NewKubernetesCheckpointStore(context.Background(), client); !errors.Is(err, ErrKubernetesCheckpointConflict) {
+		t.Fatalf("initial migration with interrupted baseline = %v, want conflict", err)
+	}
+	if !client.legacy.LegacyMigrated {
+		t.Fatal("legacy ConfigMap marker was not persisted before interrupted baseline write")
+	}
+	for _, object := range client.objects() {
+		if object.LegacyMigrationResourceVersion != "" {
+			t.Fatalf("interrupted shard baseline = %q, want empty", object.LegacyMigrationResourceVersion)
+		}
+	}
+
+	client.failUpdate = ""
+	reopened, err := NewKubernetesCheckpointStore(context.Background(), client)
+	if err != nil {
+		t.Fatalf("reopen after interrupted baseline: %v", err)
+	}
+	if got, ok := reopened.Get("flowlogs"); !ok || !got.Equal(at) {
+		t.Fatalf("recovered cursor = %v/%v, want %v/true", got, ok, at)
+	}
+	assertLegacyMigrationResourceVersion(t, client, client.legacy.ResourceVersion)
 }
 
 func TestKubernetesCheckpointStore_ResumesInterruptedLegacyMigration(t *testing.T) {
@@ -540,17 +645,28 @@ func (c *fakeKubernetesCheckpointClient) GetLegacyCheckpoint(context.Context) (K
 	}
 	return c.legacy, nil
 }
-func (c *fakeKubernetesCheckpointClient) MarkLegacyCheckpointMigrated(_ context.Context, resourceVersion string) error {
+func (c *fakeKubernetesCheckpointClient) MarkLegacyCheckpointMigrated(_ context.Context, resourceVersion string) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.legacyExists {
-		return ErrKubernetesCheckpointNotFound
+		return "", ErrKubernetesCheckpointNotFound
 	}
 	if resourceVersion != "" && c.legacy.ResourceVersion != resourceVersion {
-		return ErrKubernetesCheckpointConflict
+		return "", ErrKubernetesCheckpointConflict
 	}
 	c.legacy.LegacyMigrated = true
-	return nil
+	if c.legacy.ResourceVersion == "" {
+		c.legacy.ResourceVersion = "legacy-marked"
+	} else {
+		c.legacy.ResourceVersion += "-marked"
+	}
+	return c.legacy.ResourceVersion, nil
+}
+func (c *fakeKubernetesCheckpointClient) writeLegacyForRollback(data []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.legacy.Data = data
+	c.legacy.ResourceVersion += "-rollback"
 }
 func (c *fakeKubernetesCheckpointClient) CreateCheckpoint(ctx context.Context, o KubernetesCheckpointObject) (KubernetesCheckpointObject, error) {
 	c.mu.Lock()
@@ -624,6 +740,15 @@ func (c *fakeKubernetesCheckpointClient) writeCalls() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.creates + c.updates
+}
+
+func assertLegacyMigrationResourceVersion(t *testing.T, client *fakeKubernetesCheckpointClient, want string) {
+	t.Helper()
+	for _, object := range client.objects() {
+		if object.LegacyMigrationResourceVersion != want {
+			t.Fatalf("shard %q migration resourceVersion = %q, want %q", object.Shard, object.LegacyMigrationResourceVersion, want)
+		}
+	}
 }
 
 func (c *fakeKubernetesCheckpointClient) deadlines() []time.Time {

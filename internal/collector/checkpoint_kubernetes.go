@@ -39,17 +39,18 @@ var (
 
 // KubernetesCheckpointObject is one checkpoint ConfigMap. Data is its binaryData payload.
 type KubernetesCheckpointObject struct {
-	Shard           string
-	ResourceVersion string
-	Data            []byte
-	LegacyMigrated  bool
+	Shard                          string
+	ResourceVersion                string
+	Data                           []byte
+	LegacyMigrated                 bool
+	LegacyMigrationResourceVersion string
 }
 
 // KubernetesCheckpointClient exposes current gzip shards and the former single JSON ConfigMap.
 type KubernetesCheckpointClient interface {
 	ListCheckpoints(context.Context) ([]KubernetesCheckpointObject, error)
 	GetLegacyCheckpoint(context.Context) (KubernetesCheckpointObject, error)
-	MarkLegacyCheckpointMigrated(context.Context, string) error
+	MarkLegacyCheckpointMigrated(context.Context, string) (string, error)
 	CreateCheckpoint(context.Context, KubernetesCheckpointObject) (KubernetesCheckpointObject, error)
 	UpdateCheckpoint(context.Context, KubernetesCheckpointObject) (KubernetesCheckpointObject, error)
 }
@@ -70,21 +71,23 @@ func WithKubernetesCheckpointFatalWrite(report func(error)) KubernetesCheckpoint
 }
 
 type kubernetesCheckpointShard struct {
-	resourceVersion string
-	m               map[string]time.Time
+	resourceVersion                string
+	legacyMigrationResourceVersion string
+	m                              map[string]time.Time
 }
 
 // kubernetesCheckpointStore persists collector namespaces independently. A conflict
 // is not retried: a deposed leader must never reload then overwrite the winner.
 type kubernetesCheckpointStore struct {
-	mu            sync.Mutex
-	client        KubernetesCheckpointClient
-	shards        map[string]*kubernetesCheckpointShard
-	writeDebounce time.Duration
-	timer         *time.Timer
-	dirty         map[string]bool
-	persistErr    error
-	fatalWrite    func(error)
+	mu                             sync.Mutex
+	client                         KubernetesCheckpointClient
+	shards                         map[string]*kubernetesCheckpointShard
+	legacyMigrationResourceVersion string
+	writeDebounce                  time.Duration
+	timer                          *time.Timer
+	dirty                          map[string]bool
+	persistErr                     error
+	fatalWrite                     func(error)
 }
 
 const (
@@ -129,7 +132,10 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 				return nil, fmt.Errorf("kubernetes checkpoint shard %q contains key %q owned by shard %q", shard, key, want)
 			}
 		}
-		s.shards[shard] = &kubernetesCheckpointShard{resourceVersion: object.ResourceVersion, m: rows}
+		s.shards[shard] = &kubernetesCheckpointShard{resourceVersion: object.ResourceVersion, legacyMigrationResourceVersion: object.LegacyMigrationResourceVersion, m: rows}
+	}
+	if baseline, ok := s.legacyMigrationBaseline(); ok {
+		s.legacyMigrationResourceVersion = baseline
 	}
 	// A marker on the intact legacy object distinguishes a completed migration
 	// from an interrupted multi-shard write. Until it is present, merge only
@@ -159,8 +165,37 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 		if err := s.persistDirtyLocked(ctx); err != nil {
 			return nil, fmt.Errorf("migrate legacy Kubernetes checkpoint ConfigMap: %w", err)
 		}
-		if err := client.MarkLegacyCheckpointMigrated(ctx, legacy.ResourceVersion); err != nil {
+		legacyResourceVersion, err := client.MarkLegacyCheckpointMigrated(ctx, legacy.ResourceVersion)
+		if err != nil {
 			return nil, fmt.Errorf("mark legacy Kubernetes checkpoint migration complete: %w", err)
+		}
+		if err := s.persistLegacyMigrationResourceVersionLocked(ctx, legacyResourceVersion); err != nil {
+			return nil, fmt.Errorf("persist legacy Kubernetes checkpoint migration resourceVersion: %w", err)
+		}
+	} else if legacyErr == nil {
+		baseline, baselineOK := s.legacyMigrationBaseline()
+		if !baselineOK || baseline != legacy.ResourceVersion {
+			rows := map[string]time.Time{}
+			if len(legacy.Data) > 0 {
+				if err := json.Unmarshal(legacy.Data, &rows); err != nil {
+					return nil, fmt.Errorf("decode rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
+				}
+			}
+			for key, value := range rows {
+				shard := ShardKey(key)
+				state := s.shardForLocked(shard)
+				if current, exists := state.m[key]; exists && !value.After(current) {
+					continue
+				}
+				state.m[key] = value
+				s.dirty[shard] = true
+			}
+			if err := s.persistDirtyLocked(ctx); err != nil {
+				return nil, fmt.Errorf("reconcile rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
+			}
+			if err := s.persistLegacyMigrationResourceVersionLocked(ctx, legacy.ResourceVersion); err != nil {
+				return nil, fmt.Errorf("persist reconciled legacy Kubernetes checkpoint resourceVersion: %w", err)
+			}
 		}
 	}
 	return s, nil
@@ -169,10 +204,49 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 func (s *kubernetesCheckpointStore) shardForLocked(shard string) *kubernetesCheckpointShard {
 	state := s.shards[shard]
 	if state == nil {
-		state = &kubernetesCheckpointShard{m: map[string]time.Time{}}
+		state = &kubernetesCheckpointShard{legacyMigrationResourceVersion: s.legacyMigrationResourceVersion, m: map[string]time.Time{}}
 		s.shards[shard] = state
 	}
 	return state
+}
+
+// legacyMigrationBaseline returns a durable baseline only when every shard
+// agrees. A missing or partial baseline is treated as an interrupted metadata
+// write, so the next open re-merges rather than losing rollback-era cursor
+// advances.
+func (s *kubernetesCheckpointStore) legacyMigrationBaseline() (string, bool) {
+	baseline := ""
+	for _, state := range s.shards {
+		if state.legacyMigrationResourceVersion == "" {
+			return "", false
+		}
+		if baseline == "" {
+			baseline = state.legacyMigrationResourceVersion
+			continue
+		}
+		if baseline != state.legacyMigrationResourceVersion {
+			return "", false
+		}
+	}
+	return baseline, baseline != ""
+}
+
+func (s *kubernetesCheckpointStore) persistLegacyMigrationResourceVersionLocked(ctx context.Context, resourceVersion string) error {
+	if resourceVersion == "" {
+		return errors.New("legacy Kubernetes checkpoint migration returned an empty resourceVersion")
+	}
+	for shard, state := range s.shards {
+		if state.legacyMigrationResourceVersion == resourceVersion {
+			continue
+		}
+		state.legacyMigrationResourceVersion = resourceVersion
+		s.dirty[shard] = true
+	}
+	if err := s.persistDirtyLocked(ctx); err != nil {
+		return err
+	}
+	s.legacyMigrationResourceVersion = resourceVersion
+	return nil
 }
 
 func (s *kubernetesCheckpointStore) Get(name string) (time.Time, bool) {
@@ -348,7 +422,7 @@ func (s *kubernetesCheckpointStore) persistShardLocked(ctx context.Context, shar
 	if len(compressed) > KubernetesCheckpointDataLimit {
 		return fmt.Errorf("%w: shard %q is %d bytes", ErrKubernetesCheckpointTooLarge, shard, len(compressed))
 	}
-	object := KubernetesCheckpointObject{Shard: shard, ResourceVersion: state.resourceVersion, Data: compressed}
+	object := KubernetesCheckpointObject{Shard: shard, ResourceVersion: state.resourceVersion, Data: compressed, LegacyMigrationResourceVersion: state.legacyMigrationResourceVersion}
 	if state.resourceVersion == "" {
 		object, err = s.client.CreateCheckpoint(ctx, object)
 	} else {

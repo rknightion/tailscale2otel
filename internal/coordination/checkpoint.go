@@ -19,10 +19,11 @@ import (
 )
 
 const (
-	checkpointShardLabel                = "tailscale2otel.com/checkpoint-shard"
-	checkpointOwnerLabel                = "tailscale2otel.com/checkpoint-owner"
-	checkpointShardAnnotation           = "tailscale2otel.com/checkpoint-shard-key"
-	checkpointLegacyMigrationAnnotation = "tailscale2otel.com/checkpoint-migrated"
+	checkpointShardLabel                               = "tailscale2otel.com/checkpoint-shard"
+	checkpointOwnerLabel                               = "tailscale2otel.com/checkpoint-owner"
+	checkpointShardAnnotation                          = "tailscale2otel.com/checkpoint-shard-key"
+	checkpointLegacyMigrationAnnotation                = "tailscale2otel.com/checkpoint-migrated"
+	checkpointLegacyMigrationResourceVersionAnnotation = "tailscale2otel.com/checkpoint-migrated-resource-version"
 )
 
 type KubernetesCheckpointClient struct {
@@ -119,23 +120,27 @@ func (c *KubernetesCheckpointClient) GetLegacyCheckpoint(ctx context.Context) (c
 	}, nil
 }
 
-func (c *KubernetesCheckpointClient) MarkLegacyCheckpointMigrated(ctx context.Context, resourceVersion string) error {
+func (c *KubernetesCheckpointClient) MarkLegacyCheckpointMigrated(ctx context.Context, resourceVersion string) (string, error) {
 	name := CheckpointConfigMapName(c.leaseName, "")
 	cm, err := c.configMaps.Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return mapCheckpointError(err)
+		return "", mapCheckpointError(err)
 	}
 	if resourceVersion != "" && cm.ResourceVersion != resourceVersion {
-		return fmt.Errorf("%w: legacy checkpoint resourceVersion changed from %q to %q", collector.ErrKubernetesCheckpointConflict, resourceVersion, cm.ResourceVersion)
+		return "", fmt.Errorf("%w: legacy checkpoint resourceVersion changed from %q to %q", collector.ErrKubernetesCheckpointConflict, resourceVersion, cm.ResourceVersion)
 	}
 	if cm.Annotations == nil {
 		cm.Annotations = map[string]string{}
 	}
 	cm.Annotations[checkpointLegacyMigrationAnnotation] = "gzip-shards-v1"
-	if _, err := c.configMaps.Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-		return mapCheckpointError(err)
+	updated, err := c.configMaps.Update(ctx, cm, metav1.UpdateOptions{})
+	if err != nil {
+		return "", mapCheckpointError(err)
 	}
-	return nil
+	if updated.ResourceVersion == "" {
+		return "", errors.New("marked legacy checkpoint ConfigMap returned an empty resourceVersion")
+	}
+	return updated.ResourceVersion, nil
 }
 
 func (c *KubernetesCheckpointClient) CreateCheckpoint(ctx context.Context, object collector.KubernetesCheckpointObject) (collector.KubernetesCheckpointObject, error) {
@@ -146,7 +151,7 @@ func (c *KubernetesCheckpointClient) CreateCheckpoint(ctx context.Context, objec
 				checkpointShardLabel: "true",
 				checkpointOwnerLabel: checkpointOwner(c.leaseName),
 			},
-			Annotations: map[string]string{checkpointShardAnnotation: object.Shard},
+			Annotations: checkpointAnnotations(object),
 		},
 		BinaryData: map[string][]byte{collector.KubernetesCheckpointDataKey: object.Data},
 	}, metav1.CreateOptions{})
@@ -165,7 +170,7 @@ func (c *KubernetesCheckpointClient) UpdateCheckpoint(ctx context.Context, objec
 				checkpointShardLabel: "true",
 				checkpointOwnerLabel: checkpointOwner(c.leaseName),
 			},
-			Annotations: map[string]string{checkpointShardAnnotation: object.Shard},
+			Annotations: checkpointAnnotations(object),
 		},
 		BinaryData: map[string][]byte{collector.KubernetesCheckpointDataKey: object.Data},
 	}, metav1.UpdateOptions{})
@@ -176,7 +181,15 @@ func (c *KubernetesCheckpointClient) UpdateCheckpoint(ctx context.Context, objec
 }
 
 func checkpointObject(cm *corev1.ConfigMap, shard string) collector.KubernetesCheckpointObject {
-	return collector.KubernetesCheckpointObject{Shard: shard, ResourceVersion: cm.ResourceVersion, Data: cm.BinaryData[collector.KubernetesCheckpointDataKey]}
+	return collector.KubernetesCheckpointObject{Shard: shard, ResourceVersion: cm.ResourceVersion, Data: cm.BinaryData[collector.KubernetesCheckpointDataKey], LegacyMigrationResourceVersion: cm.Annotations[checkpointLegacyMigrationResourceVersionAnnotation]}
+}
+
+func checkpointAnnotations(object collector.KubernetesCheckpointObject) map[string]string {
+	annotations := map[string]string{checkpointShardAnnotation: object.Shard}
+	if object.LegacyMigrationResourceVersion != "" {
+		annotations[checkpointLegacyMigrationResourceVersionAnnotation] = object.LegacyMigrationResourceVersion
+	}
+	return annotations
 }
 
 func mapCheckpointError(err error) error {
