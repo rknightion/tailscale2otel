@@ -24,7 +24,7 @@ main is RED at 1dd76a9 with a clean worktree: `just check` fails its `test` leg 
     taxonomy_test.go:53: vendored ConfigurationAuditLog.origin enum "BORDER0_API" lacks a classification
     taxonomy_test.go:53: vendored ConfigurationAuditLog.actor_type enum "PAM_CONNECTOR" lacks a classification
     taxonomy_test.go:53: vendored ConfigurationAuditLog.actor_type enum "PAM_SERVICE_ACCOUNT" lacks a classification
-FAIL	github.com/rknightion/tailscale2otel/v4/internal/audit	0.628s
+FAIL	github.com/rknightion/tailscale2otel/v5/internal/audit	0.628s
 ```
 
 Root cause: commit 2b47172 `chore(spec): re-vendor Tailscale OpenAPI spec (58->60 paths)` (2026-08-30 09:44) landed three new `ConfigurationAuditLog` enum values in `spec/tailscale-api.json` without updating the hand-maintained vocabulary maps in `internal/audit/classify.go` — `knownOrigins` (classify.go:92) and `knownActorTypes` (classify.go:139). `TestAuditVocabularyCoversVendoredSchema` (internal/audit/taxonomy_test.go:35) exists precisely to catch that and did.

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/annotations"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/annotations"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 func TestWave2CategoriesAreInTheClosedSet(t *testing.T) {

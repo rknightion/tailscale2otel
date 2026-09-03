@@ -52,15 +52,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
-	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
-	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
-	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v5/internal/certreload"
+	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v5/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v5/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 // requestDurationBucketsSeconds are the explicit histogram bucket boundaries

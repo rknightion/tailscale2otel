@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
 )
 
 // GrafanaAnnotationsConfig configures the opt-in Grafana annotation writer:

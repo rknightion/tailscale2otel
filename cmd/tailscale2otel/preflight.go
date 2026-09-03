@@ -15,10 +15,10 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/app"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Exit codes for -preflight/-once (issue #311). Distinct on purpose: the

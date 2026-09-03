@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // -----------------------------------------------------------------------------

@@ -6,10 +6,10 @@ import (
 
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/provider"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/provider"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // twoTailnetApp builds an App fanned out over two tailnets ("acme"/"beta"), each

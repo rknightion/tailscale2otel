@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // The ambient environment the container credential provider reads. AWS sets these

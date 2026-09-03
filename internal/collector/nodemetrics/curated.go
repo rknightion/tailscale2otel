@@ -3,8 +3,8 @@ package nodemetrics
 import (
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Curation emits a small set of first-class, catalog-documented metrics DERIVED

@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/release"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/release"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // emitUpdateCheck emits tailscale2otel.update_available once: 1 if a newer

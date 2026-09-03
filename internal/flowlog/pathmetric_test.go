@@ -3,9 +3,9 @@ package flowlog_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // The underlay path is the one dimension that answers "how much of this tailnet

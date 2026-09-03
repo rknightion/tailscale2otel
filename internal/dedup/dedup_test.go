@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
 )
 
 func TestAdd_NewKeyReturnsTrue(t *testing.T) {

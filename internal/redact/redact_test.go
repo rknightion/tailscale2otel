@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
 )
 
 func TestURL(t *testing.T) {

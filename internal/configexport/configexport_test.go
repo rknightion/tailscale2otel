@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/configexport"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/configexport"
 	"gopkg.in/yaml.v3"
 )
 

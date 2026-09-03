@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // testPolicy is a minimal non-blank HuJSON policy for call sites that only care

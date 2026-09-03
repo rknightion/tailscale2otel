@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/stream"
+	"github.com/rknightion/tailscale2otel/v5/internal/stream"
 )
 
 const reasonTooLarge = "too_large"

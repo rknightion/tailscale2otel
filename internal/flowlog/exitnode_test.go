@@ -4,10 +4,10 @@ import (
 	"net/netip"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // Exit-traffic fixtures here use the shape real records take: a src that is the

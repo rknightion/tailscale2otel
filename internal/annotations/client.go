@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
 )
 
 // annotationsPath is the ONLY Grafana path this package ever calls. It is a

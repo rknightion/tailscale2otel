@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Rule is one curated annotatable event: which emitted signal it reads, which

@@ -248,7 +248,7 @@ profile; the two harnesses differ in kind, not just in model names.
 
 ## Module / package layout
 
-Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v4`) plus four
+Five modules, **no `go.work`**: the root module (`github.com/rknightion/tailscale2otel/v5`) plus four
 CI-only tool modules. `go build ./...` and `go test ./...` only cover the root module — the tools
 are linted/run separately (CI uses a matrix over `.`, `tools/configcheck`, `tools/metricscatalog`,
 `tools/apidrift`, `tools/promqlcheck`).

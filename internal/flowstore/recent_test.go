@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 // conn returns an observation carrying the raw endpoints a flow record supplies,

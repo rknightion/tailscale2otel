@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/geoip"
 )
 
 // testLogger discards output: these tests assert behavior, and buildGeoIP is

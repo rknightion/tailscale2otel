@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi/contract"
 )
 
 type leaf struct {

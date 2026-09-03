@@ -3,9 +3,9 @@ package app
 import (
 	"context"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 type organizationTailnetLister interface {

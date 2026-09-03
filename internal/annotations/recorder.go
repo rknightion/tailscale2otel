@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 // Sink accepts annotations the Recorder decided to publish. Publisher is the

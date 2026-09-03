@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
 )
 
 // A configured prefix with a LEADING slash must keep its durable listing

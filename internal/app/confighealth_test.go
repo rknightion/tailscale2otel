@@ -6,8 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // validCfg returns a *config.Config that passes Validate() and has zero Warnings().

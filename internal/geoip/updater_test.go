@@ -11,7 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // fetchFunc adapts a closure to the Fetcher interface the updater depends on, so

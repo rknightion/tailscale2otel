@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // newTestEmitter wires an Emitter to an in-memory metric reader so tests can

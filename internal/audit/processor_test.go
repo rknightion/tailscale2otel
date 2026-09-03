@@ -11,10 +11,10 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
-	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v5/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func sampleEvent() audit.Event {

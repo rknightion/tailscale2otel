@@ -13,15 +13,15 @@ import (
 
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/provider"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/provider"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // twoTailnetFlowApp builds an App fanned out over two tailnets with the flow

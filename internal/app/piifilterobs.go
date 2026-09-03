@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 // piiCategoryEnabled reports whether cat is enabled (emitted) in f.

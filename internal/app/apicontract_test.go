@@ -9,12 +9,12 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/apicontract"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/apicontract"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // updateExportSchema/-update-baseline mirror internal/app/apicontract's own

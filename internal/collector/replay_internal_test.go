@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 type replayWindow struct {

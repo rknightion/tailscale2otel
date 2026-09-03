@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // ran is a small helper mirroring health_test.go's synthetic collector-status

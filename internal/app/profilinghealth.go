@@ -12,12 +12,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/credreload"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Profile-upload error classes. A CLOSED set, declared as the single source of

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 func TestWave1ConfigDefaultsPreserveExistingCapacities(t *testing.T) {

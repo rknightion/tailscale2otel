@@ -9,14 +9,14 @@ import (
 
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/provider"
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/provider"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // stubWindowCollector is a minimal WindowCollector for exercising checkpoint

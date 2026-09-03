@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // ErrCorruptCheckpoint reports that a checkpoint file exists but its content

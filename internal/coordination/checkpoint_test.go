@@ -14,7 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 )
 
 func TestCheckpointConfigMapNameIsValidAndShardSpecific(t *testing.T) {

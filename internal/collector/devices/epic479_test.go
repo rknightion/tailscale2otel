@@ -6,12 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/devices"
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/devices"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // day is the fixture's day-in-seconds constant, matching entityage's bucket unit.

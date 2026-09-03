@@ -3,8 +3,8 @@ package app
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 const ownerGrant = `{"grants":[{"src":["autogroup:owner"],"dst":["tag:prod"],"ip":["*"]}]}`

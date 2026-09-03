@@ -16,15 +16,15 @@ import (
 
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/hsapi"
-	"github.com/rknightion/tailscale2otel/v4/internal/provider"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/provider"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // TestApiObserver_RecordsRequestsAndRetries verifies the self-observability

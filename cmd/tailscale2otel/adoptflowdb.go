@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore/sqlitestore"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore/sqlitestore"
 )
 
 // adoptFlowDBTimeout bounds the whole adoption. It is generous because the

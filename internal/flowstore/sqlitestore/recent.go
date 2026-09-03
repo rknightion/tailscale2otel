@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 // likeEscaper escapes SQLite's two LIKE wildcard characters, and the escape

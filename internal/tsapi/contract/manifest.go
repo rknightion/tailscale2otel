@@ -32,7 +32,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // t0/t1 are the fixed log-window times used for Invoke closures on log-polling

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/eventstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/eventstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // eventsTestApp builds an App with the event explorer enabled on a loopback

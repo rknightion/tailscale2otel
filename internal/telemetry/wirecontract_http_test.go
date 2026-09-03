@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // TestWireHTTP_RequestPathsPerSignal guards otlpHTTPURL's whole reason for

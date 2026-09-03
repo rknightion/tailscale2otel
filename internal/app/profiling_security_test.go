@@ -8,7 +8,7 @@ import (
 
 	"github.com/grafana/pyroscope-go"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 func TestStartProfilingRefusesTLSFallback(t *testing.T) {

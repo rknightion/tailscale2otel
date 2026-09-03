@@ -15,7 +15,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 // testOpts returns a fresh Options pointed at a scratch directory, with the

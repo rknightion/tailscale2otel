@@ -8,12 +8,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
-	"github.com/rknightion/tailscale2otel/v4/internal/dedup"
-	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
+	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 const (

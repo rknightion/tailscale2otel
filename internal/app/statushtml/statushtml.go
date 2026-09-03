@@ -9,8 +9,8 @@ import (
 	"html/template"
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
 )
 
 //go:embed page.html.tmpl

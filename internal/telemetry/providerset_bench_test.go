@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // tailnetFanoutCounts is the set of fan-out sizes #364 asks to benchmark:

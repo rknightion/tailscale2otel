@@ -5,7 +5,7 @@
 // without either importing the other — mirrors internal/app/flowsdata.
 package eventsdata
 
-import "github.com/rknightion/tailscale2otel/v4/internal/eventstore"
+import "github.com/rknightion/tailscale2otel/v5/internal/eventstore"
 
 // SchemaVersion is Response's contract version (#323): a stable integer an
 // external consumer can branch on, bumped only for a deliberate breaking

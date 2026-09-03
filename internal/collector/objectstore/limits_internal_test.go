@@ -10,9 +10,9 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	storeapi "github.com/rknightion/tailscale2otel/v5/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func TestDecompress_ZstdWindowLimitTracksObjectLimit(t *testing.T) {

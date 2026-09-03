@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // opValidate is the upstream OpenAPI operationId for the validate endpoint,

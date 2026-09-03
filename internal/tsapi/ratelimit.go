@@ -3,7 +3,7 @@ package tsapi
 import (
 	"net/http"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/httpretry"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpretry"
 )
 
 // Compatibility aliases keep retryTransport and its unchanged tests on their

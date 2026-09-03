@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 // at is a fixed instant inside one bucket, so these tests never depend on the

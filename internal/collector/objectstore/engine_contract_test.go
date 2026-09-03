@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
-	storeapi "github.com/rknightion/tailscale2otel/v4/internal/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
+	storeapi "github.com/rknightion/tailscale2otel/v5/internal/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 type contractBackend struct {

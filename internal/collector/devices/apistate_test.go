@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/devices"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/devices"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // availabilityStates returns, per operation, the single state whose gauge is 1.

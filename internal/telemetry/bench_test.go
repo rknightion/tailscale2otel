@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // BenchmarkCardinalityTracker_Observe drives Observe under two distinct-

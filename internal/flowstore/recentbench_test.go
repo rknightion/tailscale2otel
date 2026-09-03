@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 // Record runs on the emit path, under the store lock, once per connection — and

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/coordination"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func TestCoordinationStandbyGatesReadinessAndEmitsLeaderState(t *testing.T) {

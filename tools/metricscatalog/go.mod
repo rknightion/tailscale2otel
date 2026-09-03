@@ -2,11 +2,11 @@
 // It regenerates (with -write) or verifies (with -check) the generated metric/log
 // tables in docs/metrics.md from the in-code telemetry catalog (internal/catalog),
 // keeping the docs derived from code rather than hand-maintained.
-module github.com/rknightion/tailscale2otel/v4/tools/metricscatalog
+module github.com/rknightion/tailscale2otel/v5/tools/metricscatalog
 
 go 1.27.0
 
-require github.com/rknightion/tailscale2otel/v4 v4.0.1
+require github.com/rknightion/tailscale2otel/v5 v5.0.0
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -57,4 +57,4 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 )
 
-replace github.com/rknightion/tailscale2otel/v4 => ../..
+replace github.com/rknightion/tailscale2otel/v5 => ../..

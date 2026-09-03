@@ -15,12 +15,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/hsapi"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 func TestRunPrometheusOnceReturnsProcessGathererWithoutStartingAListener(t *testing.T) {

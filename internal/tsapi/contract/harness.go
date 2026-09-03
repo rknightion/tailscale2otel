@@ -12,7 +12,7 @@ import (
 	"net/http/httptest"
 	"sort"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // Op describes one GET operation from the Tailscale API that tailscale2otel

@@ -4,7 +4,7 @@ import (
 	"io"
 	"log/slog"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // discardLogger keeps the collector's WARN and ERROR lines out of test output.

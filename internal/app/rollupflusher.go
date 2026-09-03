@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // runRollupFlusher drains the flow processor's rollup accumulator once per export

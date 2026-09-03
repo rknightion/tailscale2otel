@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/stream"
-	"github.com/rknightion/tailscale2otel/v4/internal/webhook"
+	"github.com/rknightion/tailscale2otel/v5/internal/stream"
+	"github.com/rknightion/tailscale2otel/v5/internal/webhook"
 )
 
 // closeFlowStores closes every runtime's flow store concurrently under one

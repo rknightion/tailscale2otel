@@ -1,4 +1,4 @@
-module github.com/rknightion/tailscale2otel/v4
+module github.com/rknightion/tailscale2otel/v5
 
 go 1.27.0
 

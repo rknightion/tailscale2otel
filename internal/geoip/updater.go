@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Fetcher is the narrow view of the MaxMind downloader the updater needs, so the

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 )
 
 // CheckpointProjectionFeed describes one enabled object-store destination for

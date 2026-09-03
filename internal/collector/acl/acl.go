@@ -17,12 +17,12 @@ import (
 	"github.com/tailscale/hujson"
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/snapshot"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/snapshot"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 const defaultInterval = 600 * time.Second

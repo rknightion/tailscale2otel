@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowlog"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // framingMismatchBody is what an object looks like when the export is not

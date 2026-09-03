@@ -1,8 +1,8 @@
 package audit
 
 import (
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 )
 
 // Catalog declarations are the SINGLE SOURCE OF TRUTH for this package's metric

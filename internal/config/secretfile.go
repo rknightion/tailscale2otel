@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // secretFileField pairs a Secret-valued config field with its "*_file" sibling

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/annotations"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/annotations"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
 )
 
 // defaultAnnotationStateFile is the dedupe set's filename when the operator did

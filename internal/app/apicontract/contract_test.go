@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
 )
 
 // updateSchemas regenerates the committed docs/api/schemas/*.schema.json

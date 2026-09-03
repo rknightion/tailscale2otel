@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 func TestObjectStoreOptionsMapsEveryConfigFieldExactly(t *testing.T) {

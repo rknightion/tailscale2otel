@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/configexport"
-	"github.com/rknightion/tailscale2otel/v4/internal/supportbundle"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/configexport"
+	"github.com/rknightion/tailscale2otel/v5/internal/supportbundle"
 )
 
 func sampleInput() supportbundle.Input {

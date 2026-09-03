@@ -3,8 +3,8 @@ package flowlog
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 )
 
 // The processor must stamp every verdict with the version of the policy that

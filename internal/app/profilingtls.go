@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // pyroscopeTransportOptions is the TLS + extra-header material for the Pyroscope

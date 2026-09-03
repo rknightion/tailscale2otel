@@ -16,8 +16,8 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // writeCertKeyPair writes a throwaway self-signed cert/key pair to certFile/

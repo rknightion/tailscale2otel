@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
 )
 
 // Sample shaped per the Tailscale GET /tailnet/{tailnet}/logging/configuration response.

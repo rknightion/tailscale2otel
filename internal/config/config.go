@@ -25,7 +25,7 @@ import (
 	"github.com/knadh/koanf/providers/structs"
 	"github.com/knadh/koanf/v2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // EnvPrefix is the prefix for every configuration environment variable.

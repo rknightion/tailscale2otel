@@ -1,8 +1,8 @@
 package appcatalog
 
 import (
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 )
 
 // Pyroscope upload-health metric names (#374). Continuous profiling used to be

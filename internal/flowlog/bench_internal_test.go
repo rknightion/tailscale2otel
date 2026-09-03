@@ -5,9 +5,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // benchLiveRecordJSON mirrors the shared liveRecordJSON fixture in

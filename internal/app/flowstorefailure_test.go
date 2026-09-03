@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 // A persistent flow store that never opened used to be one ERROR line at

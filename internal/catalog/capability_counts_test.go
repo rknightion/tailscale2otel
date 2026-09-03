@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 var writeCapabilityCounts = flag.Bool("write-capability-counts", false, "rewrite internal/catalog/capability_counts.json")

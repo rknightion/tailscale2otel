@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 func newClient(t *testing.T, srvURL string) *tsapi.Client {

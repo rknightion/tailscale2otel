@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // TestStatusCode is the guard for the one shared status-code accessor (#420).

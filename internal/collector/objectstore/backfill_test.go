@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
 )
 
 // dayOffsetsFetched maps each fetched object back to how many whole days before

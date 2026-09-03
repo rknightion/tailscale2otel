@@ -3,7 +3,7 @@ package tsapi
 import (
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
+	"github.com/rknightion/tailscale2otel/v5/internal/jsonbudget"
 )
 
 // Byte budgets for a single successful (2xx) Tailscale API JSON response body,

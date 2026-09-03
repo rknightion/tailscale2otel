@@ -9,9 +9,9 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/aclpolicy"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/acl"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/acl"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func TestPolicySnapshotAndDiffAreChangeDrivenAndPersisted(t *testing.T) {

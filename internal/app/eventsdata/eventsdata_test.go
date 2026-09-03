@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/eventsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/eventsdata"
 )
 
 // TestPageDTOCannotCarryACredential mirrors flowhtml's

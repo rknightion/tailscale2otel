@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 )
 
 var base = time.Date(2026, 7, 24, 9, 0, 0, 0, time.UTC)

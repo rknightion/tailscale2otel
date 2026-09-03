@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 // loadErr loads the YAML and returns the error (or nil) for assertion.

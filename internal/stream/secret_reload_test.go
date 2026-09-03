@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/stream"
+	"github.com/rknightion/tailscale2otel/v5/internal/stream"
 )
 
 // A receiver's token provider is sampled for each request. Rotating the

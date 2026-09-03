@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
+	"github.com/rknightion/tailscale2otel/v5/internal/boundedtext"
 )
 
 // Resolution is the fixed bucket width. Everything is aggregated to the minute

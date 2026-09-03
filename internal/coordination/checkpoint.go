@@ -15,7 +15,7 @@ import (
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 )
 
 const (

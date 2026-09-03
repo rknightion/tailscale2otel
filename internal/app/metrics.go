@@ -13,14 +13,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statusdata"
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/certreload"
-	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
-	"github.com/rknightion/tailscale2otel/v4/internal/listenaddr"
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
-	"github.com/rknightion/tailscale2otel/v4/internal/semconv"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/certreload"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // buildMetricsServer builds the dedicated Prometheus pull-endpoint server. Only

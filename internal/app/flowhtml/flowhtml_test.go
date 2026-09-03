@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/flowhtml"
-	"github.com/rknightion/tailscale2otel/v4/internal/app/flowsdata"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/flowhtml"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/flowsdata"
 )
 
 func render(t *testing.T, p flowsdata.Page) string {

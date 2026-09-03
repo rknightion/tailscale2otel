@@ -1,6 +1,6 @@
 package app
 
-import "github.com/rknightion/tailscale2otel/v4/internal/ingresswal"
+import "github.com/rknightion/tailscale2otel/v5/internal/ingresswal"
 
 func (a *App) buildIngressWAL(routes []ingressWALRoute) error {
 	if !a.cfg.IngressWAL.Enabled {

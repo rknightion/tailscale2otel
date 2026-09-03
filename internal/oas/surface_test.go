@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/oas"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v5/internal/oas"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi/contract"
 )
 
 // Drift detection stopped at the response body: the parser modeled the 200

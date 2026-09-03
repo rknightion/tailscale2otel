@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
 )
 
 // StatusError is returned by the JSON helpers when the Tailscale API responds

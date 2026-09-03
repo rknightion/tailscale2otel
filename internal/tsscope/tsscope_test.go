@@ -3,7 +3,7 @@ package tsscope_test
 import (
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsscope"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsscope"
 )
 
 func TestClassify(t *testing.T) {

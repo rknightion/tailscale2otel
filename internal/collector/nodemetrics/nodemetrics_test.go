@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/apistate"
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/nodemetrics"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // availabilityStates returns, per operation, the single state whose gauge is 1.

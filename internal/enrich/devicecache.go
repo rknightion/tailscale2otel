@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
+	"github.com/rknightion/tailscale2otel/v5/internal/boundedtext"
 )
 
 // DeviceMeta is the normalized subset of a Tailscale device used for enrichment.

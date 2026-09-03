@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi/contract"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi/contract"
 )
 
 func TestDecode_DevicesRich_Clean(t *testing.T) {

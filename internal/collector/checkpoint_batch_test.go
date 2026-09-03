@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 )
 
 func TestUpdateCheckpointBatchPersistsNamespacedUpdatesAndDeletes(t *testing.T) {

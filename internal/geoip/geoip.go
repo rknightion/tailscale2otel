@@ -47,10 +47,10 @@ import (
 
 	"github.com/oschwald/maxminddb-golang/v2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/enrich"
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // Lookup is the narrow, fakeable interface consumers depend on. A nil *DB

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/coordination"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // runCoordinated keeps the admin listener live while it campaigns. Every

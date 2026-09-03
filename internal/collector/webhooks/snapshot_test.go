@@ -8,7 +8,7 @@ import (
 
 	tsclient "github.com/tailscale/tailscale-client-go/v2"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func TestSnapshotIsOptInChangeDrivenAndHeartbeatRefreshed(t *testing.T) {

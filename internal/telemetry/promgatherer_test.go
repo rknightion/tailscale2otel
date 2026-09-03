@@ -8,8 +8,8 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 // promProviderSet builds a ProviderSet with the Prometheus pull reader enabled

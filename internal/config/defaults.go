@@ -3,8 +3,8 @@ package config
 import (
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/flowstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/geoip"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/geoip"
 )
 
 // dur is a small helper to express a Duration default from a time.Duration.

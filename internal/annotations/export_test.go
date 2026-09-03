@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 )
 
 // NewDedupeStoreForTest exposes the dedupe set to the external test package. A

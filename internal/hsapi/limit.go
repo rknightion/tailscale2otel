@@ -3,7 +3,7 @@ package hsapi
 import (
 	"io"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
+	"github.com/rknightion/tailscale2otel/v5/internal/jsonbudget"
 )
 
 // Byte budget for a single successful (200) Headscale API JSON response body,

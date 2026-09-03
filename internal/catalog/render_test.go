@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
 )
 
 // synthetic catalog used to exercise the marker engine in isolation.

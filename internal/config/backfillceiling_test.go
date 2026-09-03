@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/collector/objectstore"
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
 // The partitioned layout can never reach further back than objectstore's

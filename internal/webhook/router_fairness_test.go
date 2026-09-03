@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/ingest"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // TestRouterAutomaticFairShareKeepsOneRouteFromExhaustingGlobalBudget pins

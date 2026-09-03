@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 func TestDeliveryDeduperRetainsOnlyFixedSizeDigest(t *testing.T) {

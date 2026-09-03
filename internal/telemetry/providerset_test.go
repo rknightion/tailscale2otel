@@ -7,7 +7,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 func TestProviderSetPerTailnetResource(t *testing.T) {

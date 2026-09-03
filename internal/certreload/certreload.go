@@ -23,9 +23,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/safefile"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // MinRecheckInterval bounds how often a TLS handshake triggers a stat(2) of

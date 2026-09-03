@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/catalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/catalog"
 )
 
 // The catalog -> panel direction (#526).

@@ -14,8 +14,8 @@ import (
 	"go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/metricdoc"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry/pii"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 // collisionSeenCap is the maximum number of distinct (metric, dropped-key) pairs

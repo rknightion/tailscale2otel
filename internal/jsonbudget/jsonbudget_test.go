@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/hsapi"
-	"github.com/rknightion/tailscale2otel/v4/internal/jsonbudget"
-	"github.com/rknightion/tailscale2otel/v4/internal/tsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/jsonbudget"
+	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // TestSharedSentinelsReachBothClients is the anti-drift guard that is the whole

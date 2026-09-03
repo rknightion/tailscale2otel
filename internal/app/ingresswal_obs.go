@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/appcatalog"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 func emitIngressWALHealth(e telemetry.Emitter, coordinator *ingressWALCoordinator) {

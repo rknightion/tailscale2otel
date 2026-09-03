@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/app/statushtml"
-	"github.com/rknightion/tailscale2otel/v4/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/app/statushtml"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
 )
 
 const consoleFontPrefix = "/_static/fonts/"

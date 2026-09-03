@@ -12,10 +12,10 @@ import (
 
 	"github.com/grafana/pyroscope-go"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/config"
-	"github.com/rknightion/tailscale2otel/v4/internal/credreload"
-	"github.com/rknightion/tailscale2otel/v4/internal/redact"
-	"github.com/rknightion/tailscale2otel/v4/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/credreload"
+	"github.com/rknightion/tailscale2otel/v5/internal/redact"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 // goroutineLeakAvailable reports whether the runtime exposes the goroutineleak

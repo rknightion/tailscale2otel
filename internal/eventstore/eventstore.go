@@ -29,7 +29,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v4/internal/boundedtext"
+	"github.com/rknightion/tailscale2otel/v5/internal/boundedtext"
 )
 
 // DefaultCapacity is used when NewMemory is given a non-positive capacity.

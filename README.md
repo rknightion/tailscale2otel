@@ -4,7 +4,7 @@
 [![CI](https://github.com/rknightion/tailscale2otel/actions/workflows/ci.yml/badge.svg)](https://github.com/rknightion/tailscale2otel/actions/workflows/ci.yml)
 [![Container](https://img.shields.io/badge/ghcr.io-tailscale2otel-2496ED?logo=docker&logoColor=white)](https://github.com/rknightion/tailscale2otel/pkgs/container/tailscale2otel)
 [![Helm chart](https://img.shields.io/badge/helm-OCI%20chart-0F1689?logo=helm&logoColor=white)](https://github.com/rknightion/tailscale2otel/pkgs/container/charts%2Ftailscale2otel)
-[![Go Reference](https://pkg.go.dev/badge/github.com/rknightion/tailscale2otel/v4.svg)](https://pkg.go.dev/github.com/rknightion/tailscale2otel/v4)
+[![Go Reference](https://pkg.go.dev/badge/github.com/rknightion/tailscale2otel/v5.svg)](https://pkg.go.dev/github.com/rknightion/tailscale2otel/v5)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/rknightion/tailscale2otel/badge)](https://scorecard.dev/viewer/?uri=github.com/rknightion/tailscale2otel)
 [![License](https://img.shields.io/github/license/rknightion/tailscale2otel)](./LICENSE)
 
