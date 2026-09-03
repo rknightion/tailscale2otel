@@ -127,6 +127,21 @@ Args: (dict "path" <dotted values path for messages, e.g. "probes.liveness">
 {{- end -}}
 {{- end -}}
 
+{{/*
+Resolve the one namespace shared by the coordination Lease and Kubernetes
+checkpoint ConfigMaps. An empty value deliberately means the Helm release
+namespace; an explicit value remains an operator-selected DNS-1123 label.
+The schema checks the value on normal Helm paths, while this guard also covers
+schema-less renders and validates the effective release namespace.
+*/}}
+{{- define "tailscale2otel.coordinationNamespace" -}}
+{{- $namespace := .Values.config.coordination.namespace | default .Release.Namespace | toString -}}
+{{- if or (gt (len $namespace) 63) (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $namespace)) -}}
+{{- fail (printf "config.coordination.namespace must be a DNS-1123 label (lowercase alphanumeric characters and '-' only, 1-63 characters; got %q)" $namespace) -}}
+{{- end -}}
+{{- $namespace -}}
+{{- end -}}
+
 {{- define "tailscale2otel.secretName" -}}
 {{- if .Values.existingSecret -}}
 {{- .Values.existingSecret -}}
@@ -146,7 +161,11 @@ A credential set inline anyway does NOT land in a ConfigMap: see
 tailscale2otel.configStoresSecret below.
 */}}
 {{- define "tailscale2otel.config" -}}
-{{ .Values.config | toYaml }}
+{{- $config := deepCopy .Values.config -}}
+{{- $coordination := deepCopy (index $config "coordination") -}}
+{{- $_ := set $coordination "namespace" (include "tailscale2otel.coordinationNamespace" .) -}}
+{{- $_ := set $config "coordination" $coordination -}}
+{{ $config | toYaml }}
 {{- end -}}
 
 {{/*

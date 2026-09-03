@@ -62,9 +62,15 @@ The chart is a singleton by default. `replicaCount` values above one fail unless
 active-passive replicas sharing a Kubernetes `coordination.k8s.io` Lease. The
 chart renders the Lease Role and RoleBinding only in that mode, scopes `get` and
 `update` to the configured `coordination.lease_name`, and mounts the
-ServiceAccount token needed by the in-cluster Kubernetes client. Kubernetes
-cannot scope a `create` request by `resourceNames`, so that one verb is granted
-separately at namespace scope.
+ServiceAccount token needed by the in-cluster Kubernetes client. The single
+`config.coordination.namespace` value is shared by the Lease and checkpoint
+ConfigMaps: leave it empty (the default) to use the Helm release namespace, or
+set an explicit DNS-1123 label when those objects belong elsewhere. The Role
+grants ConfigMap `get`, `list`, `update`, and `create` namespace-wide. This is
+intentional because checkpoint shard names are discovered dynamically;
+Kubernetes RBAC has no prefix or label matching for `resourceNames`, and `list`
+requests are never name-filtered, so a name-scoped grant would prevent shard
+discovery. The Role and RoleBinding use that same effective namespace.
 
 ```yaml
 replicaCount: 2
@@ -72,7 +78,7 @@ config:
   coordination:
     mode: kubernetes
     lease_name: tailscale2otel
-    namespace: default
+    # namespace: coordination
   checkpoint:
     store: kubernetes
 ```

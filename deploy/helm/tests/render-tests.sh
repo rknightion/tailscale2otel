@@ -75,6 +75,9 @@ assert_no_configmap() {
 }
 
 dep_field() { docs_of Deployment | yq "$1"; }
+config_field() {
+  docs_of ConfigMap | yq -r '.data."config.yaml"' | yq -r "$1"
+}
 
 # --------------------------------------------------------------------------
 case_ "A. credential-free config keeps the ConfigMap path"
@@ -1696,6 +1699,58 @@ fi
 [[ "$(docs_of ConfigMap | yq '.metadata.name')" == "$FULLNAME" ]] \
   && ok "AC: application configuration keeps its existing ConfigMap name" \
   || bad "AC: application configuration ConfigMap unexpectedly moved"
+
+case_ "AD. coordination namespace follows the release namespace and stays aligned"
+
+RELEASE_NAMESPACE="coordination-release"
+render --namespace "$RELEASE_NAMESPACE" \
+       --set replicaCount=2 \
+       --set config.coordination.mode=kubernetes \
+       --set config.checkpoint.store=kubernetes
+assert_rc0 "AD: coordinated replicas default to the release namespace"
+default_config_namespace="$(config_field '.coordination.namespace')"
+default_role_namespace="$(docs_of Role | yq -r '.metadata.namespace')"
+default_binding_namespace="$(docs_of RoleBinding | yq -r '.metadata.namespace')"
+if [[ "$default_config_namespace" == "$RELEASE_NAMESPACE" &&
+      "$default_role_namespace" == "$RELEASE_NAMESPACE" &&
+      "$default_binding_namespace" == "$RELEASE_NAMESPACE" ]]; then
+  ok "AD: Lease/checkpoint config and Role/RoleBinding share the release namespace"
+else
+  bad "AD: default namespaces differ (config=$default_config_namespace role=$default_role_namespace rolebinding=$default_binding_namespace release=$RELEASE_NAMESPACE)"
+fi
+
+OVERRIDE_NAMESPACE="coordination-override"
+render --namespace "$RELEASE_NAMESPACE" \
+       --set replicaCount=2 \
+       --set config.coordination.mode=kubernetes \
+       --set config.checkpoint.store=kubernetes \
+       --set config.coordination.namespace="$OVERRIDE_NAMESPACE"
+assert_rc0 "AD: an explicit coordination namespace override renders"
+override_config_namespace="$(config_field '.coordination.namespace')"
+override_role_namespace="$(docs_of Role | yq -r '.metadata.namespace')"
+override_binding_namespace="$(docs_of RoleBinding | yq -r '.metadata.namespace')"
+if [[ "$override_config_namespace" == "$OVERRIDE_NAMESPACE" &&
+      "$override_role_namespace" == "$OVERRIDE_NAMESPACE" &&
+      "$override_binding_namespace" == "$OVERRIDE_NAMESPACE" ]]; then
+  ok "AD: explicit override applies to the Lease/checkpoint config and both RBAC objects"
+else
+  bad "AD: explicit namespaces differ (config=$override_config_namespace role=$override_role_namespace rolebinding=$override_binding_namespace override=$OVERRIDE_NAMESPACE)"
+fi
+
+render --namespace "$RELEASE_NAMESPACE" --set config.coordination.namespace=Bad_Name
+[[ $RENDER_RC -ne 0 ]] \
+  && ok "AD: schema rejects a non-DNS-1123 coordination namespace" \
+  || bad "AD: schema accepted a non-DNS-1123 coordination namespace"
+grep -q 'config.coordination.namespace' <<<"$RENDER" \
+  && ok "AD: invalid namespace rejection names config.coordination.namespace" \
+  || bad "AD: invalid namespace rejection did not name config.coordination.namespace"
+
+render --namespace "$RELEASE_NAMESPACE" --set config.coordination.namespace=Bad_Name --skip-schema-validation
+if [[ $RENDER_RC -ne 0 ]] && grep -q 'DNS-1123 label' <<<"$RENDER"; then
+  ok "AD: template guard also rejects an invalid namespace without schema validation"
+else
+  bad "AD: schema-less render accepted an invalid coordination namespace (rc=$RENDER_RC)"
+fi
 
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

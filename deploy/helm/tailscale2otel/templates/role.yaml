@@ -3,7 +3,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: {{ include "tailscale2otel.coordinationRoleName" . }}
-  namespace: {{ .Values.config.coordination.namespace | quote }}
+  namespace: {{ include "tailscale2otel.coordinationNamespace" . | quote }}
   labels:
     {{- include "tailscale2otel.labels" . | nindent 4 }}
 rules:

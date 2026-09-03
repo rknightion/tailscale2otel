@@ -1705,8 +1705,12 @@ config: # @schema additionalProperties:false
     mode: none # @schema enum:["none","kubernetes"]
     # -- Name of the Lease shared by coordinated replicas. Must be a DNS-1123 label.
     lease_name: tailscale2otel
-    # -- Namespace containing the coordination Lease. Must be a DNS-1123 label.
-    namespace: default
+    # -- Namespace containing the coordination Lease and checkpoint ConfigMaps. Empty uses the Helm
+    # release namespace. An explicit override must be a DNS-1123 label. The coordination Role's
+    # ConfigMap get/list/update/create grant is namespace-wide: checkpoint shard names are dynamic,
+    # and Kubernetes RBAC has no prefix/label matching for resourceNames while list is never
+    # name-filtered, so a name-scoped grant would prevent shard discovery.
+    namespace: "" # @schema maxLength:63;pattern:^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$
     # -- Leader Lease expiry duration. Must be greater than renew_deadline.
     lease_duration: 15s
     # -- Time allowed to renew before stepping down. Must be greater than retry_period.

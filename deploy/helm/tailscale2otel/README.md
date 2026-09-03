@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.33.0](https://img.shields.io/badge/Version-0.33.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.33.1](https://img.shields.io/badge/Version-0.33.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -50,9 +50,15 @@ The chart is a singleton by default. `replicaCount` values above one fail unless
 active-passive replicas sharing a Kubernetes `coordination.k8s.io` Lease. The
 chart renders the Lease Role and RoleBinding only in that mode, scopes `get` and
 `update` to the configured `coordination.lease_name`, and mounts the
-ServiceAccount token needed by the in-cluster Kubernetes client. Kubernetes
-cannot scope a `create` request by `resourceNames`, so that one verb is granted
-separately at namespace scope.
+ServiceAccount token needed by the in-cluster Kubernetes client. The single
+`config.coordination.namespace` value is shared by the Lease and checkpoint
+ConfigMaps: leave it empty (the default) to use the Helm release namespace, or
+set an explicit DNS-1123 label when those objects belong elsewhere. The Role
+grants ConfigMap `get`, `list`, `update`, and `create` namespace-wide. This is
+intentional because checkpoint shard names are discovered dynamically;
+Kubernetes RBAC has no prefix or label matching for `resourceNames`, and `list`
+requests are never name-filtered, so a name-scoped grant would prevent shard
+discovery. The Role and RoleBinding use that same effective namespace.
 
 ```yaml
 replicaCount: 2
@@ -60,7 +66,7 @@ config:
   coordination:
     mode: kubernetes
     lease_name: tailscale2otel
-    namespace: default
+    # namespace: coordination
   checkpoint:
     store: kubernetes
 ```
@@ -443,7 +449,7 @@ extraVolumeMounts:
 | config.coordination.lease_duration | string | `"15s"` | Leader Lease expiry duration. Must be greater than renew_deadline. |
 | config.coordination.lease_name | string | `"tailscale2otel"` | Name of the Lease shared by coordinated replicas. Must be a DNS-1123 label. |
 | config.coordination.mode | string | `"none"` | Whole-process active-passive coordination: `none` keeps singleton behavior; `kubernetes` elects one replica through a coordination.k8s.io Lease. |
-| config.coordination.namespace | string | `"default"` | Namespace containing the coordination Lease. Must be a DNS-1123 label. |
+| config.coordination.namespace | string | `""` | Namespace containing the coordination Lease and checkpoint ConfigMaps. Empty uses the Helm release namespace. An explicit override must be a DNS-1123 label. The coordination Role's ConfigMap get/list/update/create grant is namespace-wide: checkpoint shard names are dynamic, and Kubernetes RBAC has no prefix/label matching for resourceNames while list is never name-filtered, so a name-scoped grant would prevent shard discovery. |
 | config.coordination.renew_deadline | string | `"10s"` | Time allowed to renew before stepping down. Must be greater than retry_period. |
 | config.coordination.retry_period | string | `"2s"` | Interval between Lease acquisition and renewal attempts. |
 | config.delivery | object | `{"mode":"otlp"}` | Process-wide telemetry topology. otlp preserves historical push-only delivery; prometheus serves /metrics while suppressing inherited OTLP metrics, logs, and traces; dual enables both. An explicit otlp.<signal>.endpoint opts only that signal back in under prometheus. |
