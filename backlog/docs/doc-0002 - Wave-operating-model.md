@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-03 05:19'
+updated_date: '2026-09-03 19:35'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -162,6 +162,21 @@ was renamed into a pair, both new filenames were untracked, the check read "alre
 **three consecutive successful runs published nothing** (fixed in `f167a1c`: stage first, then diff
 the index). Verify the far side by listing the GitSync repo tree, not by the workflow's conclusion.
 
+### The tailnet Kubernetes proxy answers `auth can-i --as` as the operator
+
+An RBAC negative test run through the tailnet API proxy context is a **false negative every time**.
+The proxy authenticates the operator and the impersonation header does not change the answer, so a
+denied verb comes back `yes`. Verified against a ServiceAccount that does not exist:
+
+```
+kubectl --context <tailnet-proxy> auth can-i delete secrets -n <ns> --as=system:serviceaccount:<ns>:nonexistent   -> yes
+kubectl --context <direct-cluster-endpoint> ... same probe                                                        -> no
+```
+
+**Every RBAC proof, positive or negative, goes through the direct cluster endpoint.** A wave that
+verifies a chart's Role through the proxy has proved nothing, and the failure mode is the dangerous
+direction: over-permissive answers that look like the Role working.
+
 ### A renamed metric leaves a panel silently empty
 
 It still loads; it just shows "No data". `internal/catalog/dashboardrefs_test.go` is the only thing
@@ -184,6 +199,21 @@ Related and recurring: **generated artifacts that embed the release-managed vers
 release PR itself, and they arrive in a queue** - fixing one exposes the next. The sharpest is that
 release-please's version regex has no global flag, so a line carrying the version twice (a
 shields.io badge: label *and* URL) half-updates and still fails the diff.
+
+### A marker on a shared object is not a durable migration signal
+
+The Kubernetes checkpoint migration marked the legacy ConfigMap to record that migration had
+completed, then chose its merge semantics from that marker. **The pre-sharding release removes the
+marker when it writes**, so after a rollback and re-upgrade the store took the interrupted-migration
+path and merged only keys absent from the shards - silently discarding the cursors the older release
+had advanced. The newest-wins path shipped for exactly this case was unreachable in it.
+
+Offline tests all passed, because every one of them modelled the older client as a reader. Only the
+live rollback cycle wrote through it.
+
+**A signal about the current release's state must live where only the current release writes.** When
+a design puts one on a shared object, the test that matters is not "can we read it back" but "what
+does the other release do to it while writing". Model the older client's writes, not just its reads.
 
 ### The release posture is deliberate, and it is not the wave's to change
 
