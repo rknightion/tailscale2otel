@@ -1,9 +1,11 @@
 ---
 id: TSO-0114
 title: Reconcile rollback-era legacy checkpoint writes on re-upgrade
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@codex'
 created_date: '2026-09-02 15:48'
+updated_date: '2026-09-03 13:57'
 labels: []
 dependencies:
   - TSO-0110
@@ -26,16 +28,36 @@ Rejected, with reasons: merging unconditionally on every open resurrects seen-ke
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The legacy resourceVersion observed at migration is persisted alongside the migrated marker
-- [ ] #2 On open, an unchanged legacy resourceVersion skips the merge as today, and a changed one re-merges newest-timestamp-wins
-- [ ] #3 A re-merge advances cursors that moved during rollback and never regresses one that the shards already advanced further
-- [ ] #4 A re-merge does not resurrect a key the shards deliberately pruned unless the rollback-era release itself still held it
-- [ ] #5 A test drives the full migrate, roll back and write, re-upgrade cycle rather than asserting the resourceVersion comparison in isolation
+- [x] #1 The legacy resourceVersion observed at migration is persisted alongside the migrated marker
+- [x] #2 On open, an unchanged legacy resourceVersion skips the merge as today, and a changed one re-merges newest-timestamp-wins
+- [x] #3 A re-merge advances cursors that moved during rollback and never regresses one that the shards already advanced further
+- [x] #4 A re-merge does not resurrect a key the shards deliberately pruned unless the rollback-era release itself still held it
+- [x] #5 A test drives the full migrate, roll back and write, re-upgrade cycle rather than asserting the resourceVersion comparison in isolation
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 8 Lane B: test-first, persist the legacy resourceVersion observed during migration; on reopen skip an unchanged legacy object and newest-timestamp-wins re-merge only a changed one; drive the full migrate, rollback-write, and re-upgrade cycle including cursor non-regression and pruned-key behavior; return focused race-test evidence without committing or pushing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Wave 8 Lane B implemented rollback-era reconciliation in local commit 47f16b8. The adapter returns the post-marker legacy resourceVersion and shards persist it as migration metadata; unchanged baselines skip, while changed/absent/inconsistent baselines conservatively re-merge newest-timestamp-wins and repair metadata. The full-cycle failing-first test initially left the rollback cursor at 12:00 instead of 12:01, then focused race tests passed for internal/collector and internal/coordination. Empty legacy state creates no permanent metadata-only object and safely re-inspects until rows exist. Two directory-sharded CodeRabbit reviews completed; their cross-directory missing-type/interface findings were false positives against the combined four-file seam. just build passed before commit. The initial push was rejected because origin/main concurrently advanced to the independent shared-workflow v1.18.1 repin; integration is deferred until active lanes finish, without rebase/reset/stash.
+
+Final integration at 1c088cea1dbdd9fbcd0d59086953bada2a9ff69f: just check passed; just gen left no diff; just --fmt --check passed; exact-head CI 33762639276 succeeded on attempt 1. CodeRabbit completed; its directory-scoped missing-type findings were checked against the combined seam and were false positives.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Commit 47f16b8 persists the post-migration legacy resourceVersion on every shard and conditionally reconciles a changed legacy object newest-timestamp-wins. The failing-first full migrate, rollback-write, re-upgrade test proved advances, non-regression, and the intentional retained-key behavior; focused race tests and the integrated gate passed.
+<!-- SECTION:FINAL_SUMMARY:END -->

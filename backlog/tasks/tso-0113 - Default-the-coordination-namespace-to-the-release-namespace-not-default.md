@@ -1,9 +1,11 @@
 ---
 id: TSO-0113
 title: 'Default the coordination namespace to the release namespace, not default'
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - '@codex'
 created_date: '2026-09-02 15:48'
+updated_date: '2026-09-03 13:57'
 labels: []
 dependencies:
   - TSO-0107
@@ -24,15 +26,35 @@ The Lease namespace and the checkpoint ConfigMap namespace are the same value to
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A chart installed with coordination.mode=kubernetes and no namespace override places its Lease and checkpoint ConfigMaps in the release namespace
-- [ ] #2 The rendered Role and RoleBinding target that same namespace, and a rendered-manifest assertion pins it
-- [ ] #3 An explicit coordination.namespace override still works and is still validated as a DNS-1123 label
-- [ ] #4 The values documentation and generated chart README state that the grant is namespace-wide for ConfigMaps and why, so the choice is visible to an operator overriding it
+- [x] #1 A chart installed with coordination.mode=kubernetes and no namespace override places its Lease and checkpoint ConfigMaps in the release namespace
+- [x] #2 The rendered Role and RoleBinding target that same namespace, and a rendered-manifest assertion pins it
+- [x] #3 An explicit coordination.namespace override still works and is still validated as a DNS-1123 label
+- [x] #4 The values documentation and generated chart README state that the grant is namespace-wide for ConfigMaps and why, so the choice is visible to an operator overriding it
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Wave 8 Lane A: change the Helm coordination namespace default to the release namespace while preserving one key for Lease and checkpoint objects; pin default and override rendering, DNS-1123 validation, namespace-scoped RBAC, and operator-visible grant documentation; regenerate the chart README and values schema with the pinned tools; return focused render/check evidence without committing or pushing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Wave 8 Lane A implemented the single effective namespace seam in local commit ff444ba: an empty chart value renders the release namespace into config.yaml, Role and RoleBinding; explicit DNS-1123 overrides remain supported; the namespace-wide ConfigMap grant rationale is operator-visible. just helm-lint passed 473/473 render cases, just gen-helm was idempotent, and just --fmt --check passed. Validation replaced a unit test for this declarative template change. CodeRabbit was skipped because this commit is Helm/declarative config plus generated documentation, with no branching application logic.
+
+Final integration at 1c088cea1dbdd9fbcd0d59086953bada2a9ff69f: just check passed; just gen left no diff; just --fmt --check passed; exact-head CI 33762639276 succeeded on attempt 1.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Commit ff444ba defaults the effective coordination namespace to the Helm release namespace across config, Lease/checkpoint access, Role, and RoleBinding while preserving a validated explicit override. The 473-case Helm render gate, idempotent generated artifacts, the integrated local gate, and exact-head CI all passed.
+<!-- SECTION:FINAL_SUMMARY:END -->
