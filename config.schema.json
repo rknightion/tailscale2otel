@@ -3441,7 +3441,7 @@
           "type": "object"
         },
         "token": {
-          "description": "shared secret; Tailscale sends HTTP Basic auth (base64 user:token), \"Authorization: Splunk \u003ctoken\u003e\" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind)",
+          "description": "shared secret; Tailscale sends HTTP Basic auth (base64 user:token), \"Authorization: Splunk \u003ctoken\u003e\" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use)",
           "type": "string"
         },
         "token_file": {
@@ -4254,7 +4254,7 @@
           "type": "array"
         },
         "secret": {
-          "description": "HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read",
+          "description": "HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use)",
           "type": "string"
         },
         "secret_file": {

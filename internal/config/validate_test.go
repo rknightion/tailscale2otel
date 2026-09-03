@@ -162,13 +162,10 @@ func TestWarnings_AdminExposedWithoutToken(t *testing.T) {
 	}
 }
 
-// TestWarnings_ReceiverAuthDisabled pins the advisories that steer operators away
-// from running an ingestion receiver that cannot authenticate any request. Both
-// receivers fail closed with HTTP 403 when their required credential is empty, so
-// an enabled receiver with an empty credential ingests nothing. A credential left
-// empty (unset, or a mistyped TS2OTEL_* env var name) lands here.
-// A disabled receiver, or a credential that is set, must NOT warn.
-func TestWarnings_ReceiverAuthDisabled(t *testing.T) {
+// TestWarnings_ReceiverCredentialFreeLoopback pins the explicit local-only
+// credential-free posture. Network-reachable listeners now fail validation;
+// loopback remains supported but warns because local processes can inject data.
+func TestWarnings_ReceiverCredentialFreeLoopback(t *testing.T) {
 	// Disabled receivers => no auth advisory.
 	c := config.Default()
 	for _, w := range c.Warnings() {
@@ -177,38 +174,33 @@ func TestWarnings_ReceiverAuthDisabled(t *testing.T) {
 		}
 	}
 
-	// webhook enabled with an empty secret => advisory naming webhook.secret + fail-closed outcome.
+	// Network-reachable credential-free receivers fail validation rather than
+	// merely warning that their requests will be refused.
 	c = config.Default()
 	c.Webhook.Enabled = true
-	w := strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "webhook.secret") {
-		t.Fatalf("webhook enabled with empty secret should advise webhook.secret; got %q", w)
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "webhook.secret") {
+		t.Fatalf("network webhook Validate() = %v, want webhook.secret error", err)
 	}
-	if !strings.Contains(w, "HTTP 403") || !strings.Contains(w, "NO events will be ingested") {
-		t.Errorf("webhook advisory should explain the fail-closed ingestion outcome; got %q", w)
-	}
-
-	// webhook secret set => no webhook advisory.
-	c.Webhook.Secret = "whsec"
-	for _, msg := range c.Warnings() {
-		if strings.Contains(msg, "webhook.secret") {
-			t.Errorf("a configured webhook.secret should clear the advisory; got %q", msg)
-		}
-	}
-
-	// streaming enabled with an empty token => advisory naming streaming.token.
 	c = config.Default()
 	c.Streaming.Enabled = true
-	w = strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "streaming.token") {
-		t.Fatalf("streaming enabled with empty token should advise streaming.token; got %q", w)
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "streaming.token") {
+		t.Fatalf("network stream Validate() = %v, want streaming.token error", err)
 	}
 
-	// streaming token set => no streaming-auth advisory.
-	c.Streaming.Token = "hec-token"
-	for _, msg := range c.Warnings() {
-		if strings.Contains(msg, "streaming.token") {
-			t.Errorf("a configured streaming.token should clear the advisory; got %q", msg)
+	// Loopback credential-free receivers remain valid, but the warning names the
+	// injection risk rather than pretending this is authentication.
+	c = config.Default()
+	c.Webhook.Enabled = true
+	c.Webhook.Listen = "127.0.0.1:8089"
+	c.Streaming.Enabled = true
+	c.Streaming.Listen = "127.0.0.1:8088"
+	if err := c.Validate(); err != nil {
+		t.Fatalf("loopback credential-free receivers Validate() = %v, want nil", err)
+	}
+	w := strings.Join(c.Warnings(), "\n")
+	for _, want := range []string{"webhook.secret", "streaming.token", "local process can inject"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("loopback warning = %q, want %q", w, want)
 		}
 	}
 }

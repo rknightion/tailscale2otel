@@ -379,7 +379,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_STREAMING__ENABLED` | `false` | `restart` | run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream) |
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | `restart` | bind address for the Splunk-HEC-compatible receiver |
 | `TS2OTEL_STREAMING__PATH` | `/services/collector/event` | `restart` | HEC endpoint path Tailscale POSTs to |
-| `TS2OTEL_STREAMING__TOKEN` | `""` | `restart` | shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind) |
+| `TS2OTEL_STREAMING__TOKEN` | `""` | `restart` | shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use) |
 | `TS2OTEL_STREAMING__TOKEN_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_STREAMING__PUBLIC_URL` | `""` | `restart` | externally reachable receiver URL; REQUIRED only when auto_configure: true |
 | `TS2OTEL_STREAMING__TLS__CERT_FILE` | `""` | `file_content` | HTTPS cert (Tailscale requires HTTPS; a `tailscale cert` works for private endpoints) |
@@ -392,7 +392,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_WEBHOOK__ENABLED` | `false` | `restart` | run the receiver for real-time Tailscale webhook events |
 | `TS2OTEL_WEBHOOK__LISTEN` | `:8089` | `restart` | bind address for the webhook receiver |
 | `TS2OTEL_WEBHOOK__PATH` | `/tailscale/webhook` | `restart` | endpoint path Tailscale POSTs events to |
-| `TS2OTEL_WEBHOOK__SECRET` | `""` | `restart` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read |
+| `TS2OTEL_WEBHOOK__SECRET` | `""` | `restart` | HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use) |
 | `TS2OTEL_WEBHOOK__SECRET_FILE` | `""` | `file_content` | read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed |
 | `TS2OTEL_WEBHOOK__TLS__CERT_FILE` | `""` | `file_content` | serve native HTTPS when paired with key_file; leave both empty behind an HTTPS reverse proxy |
 | `TS2OTEL_WEBHOOK__TLS__KEY_FILE` | `""` | `file_content` | private key paired with cert_file; both paths are validated as readable at startup |

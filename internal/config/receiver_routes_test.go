@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -77,6 +79,89 @@ func TestValidateReceiverRoutes(t *testing.T) {
 			err := c.Validate()
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Validate() = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateReceiverCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*config.Config)
+		want string
+	}{
+		{"network stream legacy", func(c *config.Config) {
+			c.Streaming.Enabled = true
+			c.Streaming.Listen = "0.0.0.0:8088"
+		}, "streaming.token"},
+		{"network stream route", func(c *config.Config) {
+			c.Tailnets = []config.TailnetConfig{{Name: "alpha.example.com", Auth: config.TailscaleAuth{Method: "oauth"}}}
+			c.Streaming.Enabled = true
+			c.Streaming.Listen = "0.0.0.0:8088"
+			c.Streaming.Routes = []config.StreamingRoute{{Tailnet: "alpha.example.com", Path: "/hec/alpha"}}
+		}, "streaming.routes[0].token"},
+		{"network webhook legacy", func(c *config.Config) {
+			c.Webhook.Enabled = true
+			c.Webhook.Listen = "0.0.0.0:8089"
+		}, "webhook.secret"},
+		{"network webhook route", func(c *config.Config) {
+			c.Tailnets = []config.TailnetConfig{{Name: "alpha.example.com", Auth: config.TailscaleAuth{Method: "oauth"}}}
+			c.Webhook.Enabled = true
+			c.Webhook.Listen = "0.0.0.0:8089"
+			c.Webhook.Routes = []config.WebhookRoute{{Tailnet: "alpha.example.com"}}
+		}, "webhook.routes[0].secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := config.Default()
+			tc.edit(c)
+			err := c.Validate()
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate() = %v, want an error mentioning %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateReceiverCredentialsAllowsLoopback(t *testing.T) {
+	c := multiReceiverConfig()
+	c.Streaming.Enabled = true
+	c.Streaming.Listen = "127.0.0.1:8088"
+	c.Streaming.Routes = []config.StreamingRoute{
+		{Tailnet: "alpha.example.com", Path: "/hec/alpha"},
+		{Tailnet: "beta.example.com", Path: "/hec/beta"},
+	}
+	c.Webhook.Enabled = true
+	c.Webhook.Listen = "127.0.0.1:8089"
+	c.Webhook.Routes = []config.WebhookRoute{
+		{Tailnet: "alpha.example.com"},
+		{Tailnet: "beta.example.com"},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate() = %v, want credential-free loopback receivers to remain valid", err)
+	}
+}
+
+func TestLoadRejectsEmptyNetworkReceiverCredentialFiles(t *testing.T) {
+	emptyFile := filepath.Join(t.TempDir(), "empty-secret")
+	if err := os.WriteFile(emptyFile, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want string
+	}{
+		{"streaming", "streaming:\n  enabled: true\n  listen: 0.0.0.0:8088\n  token_file: " + emptyFile + "\n", "streaming.token"},
+		{"webhook", "webhook:\n  enabled: true\n  listen: 0.0.0.0:8089\n  secret_file: " + emptyFile + "\n", "webhook.secret"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := config.Load(path)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() = %v, want an error mentioning %q", err, tc.want)
 			}
 		})
 	}

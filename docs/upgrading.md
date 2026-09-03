@@ -193,6 +193,30 @@ to the pre-v4 artifact requires stopping the target and restoring the untouched 
 including its legacy filename, before starting the old artifact; that is a deliberate state restore,
 not a rollback of the migrated file in place.
 
+## Upgrading to v5.0.0
+
+Before applying the version-specific changes in this section, follow the
+[upgrade and rollback checklist](#upgrade-and-rollback-checklist).
+
+### Network receivers now require credentials at startup
+
+An enabled streaming or webhook receiver on a non-loopback listener must now have its required
+credential before the process starts. This applies to the legacy receiver fields and every
+multi-tailnet route: set `streaming.token` (or `streaming.token_file`) for streaming, and
+`webhook.secret` (or `webhook.secret_file`) for webhooks. In v4, an empty credential on a
+network-reachable listener started the process but made the receiver refuse every request with
+HTTP `403`; v5 rejects that configuration during `Config.Validate` instead.
+
+Credential-free loopback listeners remain intentionally supported for local development or a
+trusted local proxy. They still warn because any process on the host can inject records or events;
+use a credential when that is not an acceptable trust boundary.
+
+**Action:** before deploying v5, run `tailscale2otel -validate -config <file>` with the target
+binary. Set the corresponding secret via `TS2OTEL_STREAMING__TOKEN` or
+`TS2OTEL_WEBHOOK__SECRET` (or their `*_FILE` forms) for every non-loopback receiver route. Go
+consumers must also update their module requirement and imports to
+`github.com/rknightion/tailscale2otel/v5`.
+
 ## Upgrading to v4.0.0
 
 Before applying the version-specific changes in this section, follow the

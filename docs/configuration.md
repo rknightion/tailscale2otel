@@ -1470,7 +1470,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.enabled` | `false` | Run the HEC receiver. |
 | `streaming.listen` | `:8088` | Listen address. |
 | `streaming.path` | `/services/collector/event` | HEC event path. |
-| `streaming.token` | `""` | Shared secret for the receiver. Tailscale's log-streaming sender authenticates with **HTTP Basic auth** — `Authorization: Basic base64(<user>:<token>)`, where the password is this token (any username is accepted). The `Authorization: Splunk <token>` scheme is also accepted, as a fallback for other Splunk-HEC-compatible senders, but is not what Tailscale itself sends. Set via `TS2OTEL_STREAMING__TOKEN`. |
+| `streaming.token` | `""` | Shared secret for the receiver. Required at startup when the enabled listener is network-reachable; credential-free loopback remains supported for local-only use. Tailscale's log-streaming sender authenticates with **HTTP Basic auth** — `Authorization: Basic base64(<user>:<token>)`, where the password is this token (any username is accepted). The `Authorization: Splunk <token>` scheme is also accepted, as a fallback for other Splunk-HEC-compatible senders, but is not what Tailscale itself sends. Set via `TS2OTEL_STREAMING__TOKEN`. |
 | `streaming.token_file` | `""` | Read `streaming.token` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `streaming.public_url` | `""` | Externally reachable receiver URL. **Required when `auto_configure: true`**. Must be an absolute HTTP(S) URL with a valid host and port. HTTPS may use a public endpoint. Tailscale's private-HTTP contract accepts a shared-node hostname/FQDN or IPv6 literal but rejects every IPv4 literal; such HTTP URLs receive a startup warning because local validation cannot prove node sharing or policy. The configured path and query are preserved exactly. |
 | `streaming.tls.cert_file` / `.key_file` | `""` | HTTPS is required by Tailscale; a `tailscale cert` works for private tailnet endpoints. |
@@ -1479,7 +1479,7 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 | `streaming.max_body_bytes` | `0` | Cap on the **decompressed** request body. `0` selects a 64 MiB default; a negative value disables the cap. An over-cap POST is rejected with HTTP 413. When `ingress_wal.enabled=true` and this receiver is enabled, set an explicit value `> 0` and `<= 67108864` (64 MiB). |
 | `streaming.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**. `max_body_bytes` caps one body; this caps their sum, so N simultaneous in-limit POSTs cannot exceed the process memory budget. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1`. Raise it only alongside the container/process memory limit — worst-case buffering is roughly this × `max_body_bytes`. |
 | `streaming.per_route_max_concurrent_requests` | `0` | Maximum concurrent requests admitted for one multi-tailnet route. `0` selects an automatic fair share of the global budget. |
-| `streaming.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, exact rooted `path`, `token` or `token_file`, optional `public_url`, and per-route `auto_configure`. Every route tailnet must match one configured `tailnets[]` runtime; paths and tailnets are unique. Non-empty routes replace legacy `path`/token/public-url/auto-configure identity. |
+| `streaming.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, exact rooted `path`, `token` or `token_file`, optional `public_url`, and per-route `auto_configure`. Every route tailnet must match one configured `tailnets[]` runtime; paths and tailnets are unique. Every route requires its own effective credential when the enabled listener is network-reachable. Non-empty routes replace legacy `path`/token/public-url/auto-configure identity. |
 
 > **Validation:** `auto_configure: true` errors at startup unless both `streaming.enabled: true` and
 > a non-empty `streaming.public_url` are set. Running the poller and this receiver for the same log
@@ -1489,13 +1489,13 @@ relevant log collector(s) to `source: stream` so each log type is ingested by ex
 > policy access for `logstream@tailscale`, and OAuth authority covering `device_invites` and
 > `policy_file`. The exporter warns because it cannot prove those control-plane prerequisites.
 
-> **The receiver fails closed without a token.** An empty `streaming.token` is accepted only when
+> **Startup fails closed without a token.** An empty `streaming.token` is accepted only when
 > `streaming.listen` is a **loopback** address (`127.0.0.1`, `::1`, `localhost`). On any other bind —
-> including the `:8088` default and any tailnet address — every request is refused with **HTTP 403**
-> and `rejected{reason=auth_required}`, and a loud `ERROR` is logged at startup. An unauthenticated
-> receiver on a reachable port lets anyone inject arbitrary flow/audit records, so it is refused
-> rather than silently accepted. A tailnet address counts as reachable: every peer on the tailnet can
-> connect to it. To run without a token, bind to loopback and put an authenticating proxy in front.
+> including the `:8088` default and any tailnet address — configuration validation fails before the
+> receiver starts. An unauthenticated receiver on a reachable port lets anyone inject arbitrary
+> flow/audit records, so it is rejected rather than silently accepted. A tailnet address counts as
+> reachable: every peer on the tailnet can connect to it. To run without a token, bind to loopback
+> and put an authenticating proxy in front.
 
 > **Resource limits.** Three internal, non-configurable caps bound what one request can cost, on top
 > of `max_body_bytes` and `max_concurrent_requests`: at most **500,000 records** per request (a body of
@@ -1526,7 +1526,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.enabled` | `false` | Run the webhook receiver. |
 | `webhook.listen` | `:8089` | Listen address. |
 | `webhook.path` | `/tailscale/webhook` | Webhook path. |
-| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Empty is accepted only on a loopback `webhook.listen`; any network-reachable bind refuses requests with HTTP 403 before reading their bodies. Set via `TS2OTEL_WEBHOOK__SECRET`. |
+| `webhook.secret` | `""` | Shared secret for HMAC-SHA256 verification. Empty is accepted only on a loopback `webhook.listen`; an enabled network-reachable listener without a secret fails configuration validation at startup. Set via `TS2OTEL_WEBHOOK__SECRET`. |
 | `webhook.secret_file` | `""` | Read `webhook.secret` from a file at startup instead of a literal value (Docker-secrets style). Setting both the value and the file is a config error. File content is whitespace-trimmed. |
 | `webhook.tls.cert_file` / `.key_file` | `""` | Serve the webhook listener over native HTTPS when both readable files are set. Tailscale webhook endpoints require HTTPS. Leave both empty for an HTTPS reverse proxy; setting only one is a startup error. Certificate issuance/ACME is out of scope. |
 | `webhook.tolerance` | `5m` | Allowed clock skew in **both** directions: a signed timestamp older than `now - tolerance` **or** newer than `now + tolerance` is rejected (the boundary itself is allowed). The two-sided check matters because a correctly signed but future-dated request would otherwise stay replayable until its future timestamp plus this window — turning a short skew allowance into a much longer one. `0` disables the timestamp check. |
@@ -1534,7 +1534,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 | `webhook.max_concurrent_requests` | `0` | How many requests may buffer a body **at once**, before the HMAC is verified. The signature covers the whole body, so buffering necessarily precedes authentication; `max_body_bytes` caps one body and this caps their sum, so unauthenticated senders cannot multiply it. `0` selects a default of `4`; a negative value disables the limit. An over-limit POST is rejected with HTTP 503 + `Retry-After: 1` and counted into `tailscale.webhook.rejected{reason="overloaded"}`. Worst-case buffering is roughly this × `max_body_bytes`. |
 | `webhook.per_route_max_concurrent_requests` | `0` | Maximum concurrent requests admitted for one multi-tailnet route. `0` selects an automatic fair share of the global budget. |
 | `webhook.dedup_audit_events` | `false` | Best-effort: drop a webhook event already counted via the audit logs (shares a cross-source de-dup set with the audit processor). |
-| `webhook.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, `secret` or `secret_file`. Every route tailnet must match one configured `tailnets[]` runtime and is unique. A delivery is routed only when every event carries the same non-empty matching tailnet, before that route's HMAC is verified; non-empty routes replace legacy `path`/secret identity. |
+| `webhook.routes` | `[]` | File-only multi-tailnet routes: `tailnet`, `secret` or `secret_file`. Every route tailnet must match one configured `tailnets[]` runtime and is unique, and every route requires its own effective secret when the enabled listener is network-reachable. A delivery is routed only when every event carries the same non-empty matching tailnet, before that route's HMAC is verified; non-empty routes replace legacy `path`/secret identity. |
 
 ---
 

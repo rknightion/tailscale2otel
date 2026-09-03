@@ -256,6 +256,50 @@ func (c *Config) validateReceiverRoutes() error {
 	return nil
 }
 
+// validateStreamingCredentials refuses a listener that is reachable beyond the
+// local host but has a route that cannot authenticate its sender. Loopback is
+// intentionally exempt: a local reverse proxy or development sender can still
+// be credential-free, with the usual warning that any local process may inject
+// records.
+func (c *Config) validateStreamingCredentials() error {
+	if !c.Streaming.Enabled || listenaddr.IsLoopback(c.Streaming.Listen) {
+		return nil
+	}
+	if len(c.Streaming.Routes) == 0 {
+		if c.Streaming.Token == "" {
+			return fmt.Errorf("streaming.token: required when streaming.enabled=true on network-reachable streaming.listen %q; set streaming.token (or streaming.token_file), or bind streaming.listen to loopback", c.Streaming.Listen)
+		}
+		return nil
+	}
+	for i, route := range c.Streaming.Routes {
+		if route.Token == "" {
+			return fmt.Errorf("streaming.routes[%d].token: required when streaming.enabled=true on network-reachable streaming.listen %q; set the route token (or token_file), or bind streaming.listen to loopback", i, c.Streaming.Listen)
+		}
+	}
+	return nil
+}
+
+// validateWebhookCredentials applies the same boundary as streaming: a
+// network-reachable receiver must verify every enabled route, while loopback
+// remains the explicit credential-free local-only escape hatch.
+func (c *Config) validateWebhookCredentials() error {
+	if !c.Webhook.Enabled || listenaddr.IsLoopback(c.Webhook.Listen) {
+		return nil
+	}
+	if len(c.Webhook.Routes) == 0 {
+		if c.Webhook.Secret == "" {
+			return fmt.Errorf("webhook.secret: required when webhook.enabled=true on network-reachable webhook.listen %q; set webhook.secret (or webhook.secret_file), or bind webhook.listen to loopback", c.Webhook.Listen)
+		}
+		return nil
+	}
+	for i, route := range c.Webhook.Routes {
+		if route.Secret == "" {
+			return fmt.Errorf("webhook.routes[%d].secret: required when webhook.enabled=true on network-reachable webhook.listen %q; set the route secret (or secret_file), or bind webhook.listen to loopback", i, c.Webhook.Listen)
+		}
+	}
+	return nil
+}
+
 // Warnings returns non-fatal configuration advisories. They never block startup
 // (Validate handles hard errors); the caller logs them at WARN. The goal is to
 // steer operators toward the safer choice without removing flexibility.
@@ -500,14 +544,12 @@ func (c *Config) Warnings() []string {
 			"admin.listen to loopback (e.g. 127.0.0.1:9091).")
 	}
 
-	// An enabled ingestion receiver with no credential accepts UNAUTHENTICATED
-	// input. The webhook receiver still skips HMAC verification entirely when
-	// webhook.secret is empty (internal/webhook: an empty Secret bypasses verify),
-	// so anyone who can reach the port can post forged events. A credential left
-	// empty — whether unset in the file or via a mistyped TS2OTEL_* env var name —
-	// lands here, so flag it rather than fail open quietly. (Unlike pprof, this is
-	// not hard-errored: a trusted-network or local-testing deployment behind an
-	// authenticating proxy is a legitimate use.)
+	// Config.Validate rejects a network-reachable receiver without a credential,
+	// so this advisory is reachable only on loopback. The webhook receiver skips
+	// HMAC verification entirely when webhook.secret is empty
+	// (internal/webhook: an empty Secret bypasses verify), which remains useful
+	// for local testing or a trusted local proxy but lets any local process post
+	// forged events.
 	webhookCredentialMissing := c.Webhook.Secret == ""
 	if len(c.Webhook.Routes) > 0 {
 		webhookCredentialMissing = false
@@ -524,19 +566,11 @@ func (c *Config) Warnings() []string {
 				c.Webhook.Listen+": HMAC verification is skipped. Only the local host can reach it, "+
 				"so this is accepted, but any local process can inject webhook events. Set webhook.secret "+
 				"if that matters.")
-		} else {
-			w = append(w, "webhook.enabled=true with an empty webhook.secret on the network-reachable bind "+
-				c.Webhook.Listen+": the webhook receiver REFUSES every request with HTTP 403, so NO "+
-				"events will be ingested. Set webhook.secret (for example TS2OTEL_WEBHOOK__SECRET), or "+
-				"bind webhook.listen to loopback and put an authenticating proxy in front.")
 		}
 	}
-	// The HEC streaming receiver no longer fails OPEN on an empty token (#228): on
-	// a network-reachable bind it now REFUSES every request with 403 rather than
-	// accepting forged flow/audit records. That turns a silent security hole into
-	// a loud functional one, so the warning has to tell the operator ingestion is
-	// broken, not merely unauthenticated. A loopback bind stays open — only the
-	// local host can reach it — and is the supported credential-free setup.
+	// Config.Validate applies the same network-reachable requirement to HEC. A
+	// loopback bind remains the supported credential-free setup, but an empty
+	// token means any local process can inject arbitrary flow/audit records.
 	streamCredentialMissing := c.Streaming.Token == ""
 	if len(c.Streaming.Routes) > 0 {
 		streamCredentialMissing = false
@@ -554,12 +588,6 @@ func (c *Config) Warnings() []string {
 				"local host can reach it, so this is accepted, but any local process can inject "+
 				"arbitrary flow/audit records. Set streaming.token (e.g. TS2OTEL_STREAMING__TOKEN) "+
 				"if that matters.")
-		} else {
-			w = append(w, "streaming.enabled=true with an empty streaming.token on the "+
-				"network-reachable bind "+c.Streaming.Listen+": the HEC receiver REFUSES every "+
-				"request with HTTP 403, so NO logs will be ingested. Set streaming.token (e.g. "+
-				"TS2OTEL_STREAMING__TOKEN — check the env var name), or bind streaming.listen to "+
-				"loopback and put an authenticating proxy in front.")
 		}
 	}
 
@@ -1607,6 +1635,12 @@ func (c *Config) validationChecks() []configCheck {
 
 	add("streaming.routes", "See the error text: routes conflicts vary by field.", func() error {
 		return c.validateReceiverRoutes()
+	})
+	add("streaming.token", "Set streaming.token (or streaming.token_file) for a network-reachable listener, or bind streaming.listen to loopback.", func() error {
+		return c.validateStreamingCredentials()
+	})
+	add("webhook.secret", "Set webhook.secret (or webhook.secret_file) for a network-reachable listener, or bind webhook.listen to loopback.", func() error {
+		return c.validateWebhookCredentials()
 	})
 	add("checkpoint.store", oneOfRemediation("checkpoint.store", "memory", "file"), func() error {
 		if !oneOf(c.Checkpoint.Store, "memory", "file", "kubernetes") {

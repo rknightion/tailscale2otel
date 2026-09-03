@@ -579,7 +579,7 @@ streaming:
   enabled: false                      # run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream)
   listen: ":8088"                     # bind address for the Splunk-HEC-compatible receiver
   path: /services/collector/event     # HEC endpoint path Tailscale POSTs to
-  token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); empty on a NON-loopback listen = every request REFUSED with 403 (empty is allowed only on a loopback bind)
+  token: ""                           # shared secret; Tailscale sends HTTP Basic auth (base64 user:token), "Authorization: Splunk <token>" also accepted as a fallback (set via TS2OTEL_STREAMING__TOKEN); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use)
   token_file: ""                      # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   public_url: ""                      # externally reachable receiver URL; REQUIRED only when auto_configure: true
   tls:
@@ -591,7 +591,8 @@ streaming:
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
   per_route_max_concurrent_requests: 0 # per-tailnet admission cap; 0 selects an automatic fair share of the global budget
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/token/public_url/
-  # auto_configure above. Every route selects exactly one tailnets[].name.
+  # auto_configure above. Every route selects exactly one tailnets[].name and needs
+  # its own token on a non-loopback bind (credential-free loopback stays supported).
   routes: []
 
 # ── Webhook receiver (OPTIONAL: real-time Tailscale events) ─────────────────────
@@ -599,7 +600,7 @@ webhook:
   enabled: false                      # run the receiver for real-time Tailscale webhook events
   listen: ":8089"                     # bind address for the webhook receiver
   path: /tailscale/webhook            # endpoint path Tailscale POSTs events to
-  secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); empty is accepted only on loopback, otherwise every request is refused with 403 before body read
+  secret: ""                          # HMAC-SHA256 verification secret (set via TS2OTEL_WEBHOOK__SECRET); REQUIRED when enabled on a non-loopback bind (loopback may remain credential-free for local-only use)
   secret_file: ""                     # read the value from this file instead (Docker secrets); set the value or the file, not both; content is whitespace-trimmed
   tls:
     cert_file: ""                     # serve native HTTPS when paired with key_file; leave both empty behind an HTTPS reverse proxy
@@ -610,7 +611,8 @@ webhook:
   max_concurrent_requests: 0          # how many requests may buffer a body AT ONCE, BEFORE the HMAC is checked (max_body_bytes caps one body, this caps their sum); 0 = 4 default, negative = unlimited (over-limit = 503 + Retry-After)
   per_route_max_concurrent_requests: 0 # per-tailnet admission cap; 0 selects an automatic fair share of the global budget
   # FILE-ONLY multi-tailnet routes. When non-empty, replace path/secret above.
-  # A delivery is accepted only when every event names one matching tailnet.
+  # Every route needs its own secret on a non-loopback bind; credential-free
+  # loopback stays supported. A delivery is accepted only when every event names one matching tailnet.
   routes: []
 
 # ── PII / identifier redaction (opt-out, all categories default true) ───────────

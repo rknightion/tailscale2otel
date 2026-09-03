@@ -261,11 +261,11 @@ separate from the optional audit/webhook cross-source deduplication.
 
 !!! danger "Empty receiver credentials are loopback-only"
     An empty `webhook.secret` skips HMAC verification only on a loopback `webhook.listen`. On any
-    other bind the receiver refuses every request with HTTP 403 before reading its body. The HEC
-    receiver applies the same fail-closed boundary to an empty `streaming.token`. Use an
-    authenticating proxy if either receiver must listen on loopback without its native credential.
+    other bind configuration validation fails before the receiver starts. The HEC receiver applies
+    the same fail-closed startup boundary to an empty `streaming.token`. Use an authenticating proxy
+    if either receiver must listen on loopback without its native credential.
 
-    These values are set most safely via environment variables (`TS2OTEL_STREAMING__TOKEN`, `TS2OTEL_WEBHOOK__SECRET`). A mistyped variable name (e.g. `TS2OTEL_WEBHOOK__SECRT`) leaves the value empty rather than failing loudly — the startup log WARNs on any `TS2OTEL_*` variable that matches no config key, so double-check that the credentials are actually set.
+    These values are set most safely via environment variables (`TS2OTEL_STREAMING__TOKEN`, `TS2OTEL_WEBHOOK__SECRET`). A mistyped variable name (e.g. `TS2OTEL_WEBHOOK__SECRT`) leaves the value empty; a network-reachable receiver then fails startup validation, while a loopback receiver remains valid and warns about local injection risk. The startup log also WARNs on any `TS2OTEL_*` variable that matches no config key.
 
 **TLS.** Tailscale requires HTTPS for public log-streaming sinks and for webhook destinations. Use
 the paired `streaming.tls.*` or `webhook.tls.*` files for native TLS, or put the corresponding
