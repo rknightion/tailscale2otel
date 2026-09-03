@@ -1,10 +1,10 @@
 ---
 id: TSO-0094
 title: Fail startup for network receivers missing credentials in the next major
-status: Parked
+status: Done
 assignee: []
 created_date: '2026-08-31 01:09'
-updated_date: '2026-09-03 21:07'
+updated_date: '2026-09-03 21:41'
 labels: []
 milestone: m-11
 dependencies: []
@@ -49,10 +49,16 @@ Owner decision 2026-09-01: no v5 is scheduled yet. The plan is to drain the whol
 Implementation 399b67a0 plus fixture follow-up b1ed7823: Config validation now rejects enabled network-reachable legacy and routed streaming/webhook listeners when their effective token or secret is empty, including empty credential files and every configured route. Credential-free loopback receivers remain supported as the narrowest compatible v5 choice for local development and trusted local proxies; warnings retain the local-process injection risk. Migration documentation, configuration documentation, generated schema and environment reference all describe the startup failure and /v5 requirement. Failing-first credential cases returned nil under the old code. Focused race tests, generation/config/docs checks, exact-commit builds, regeneration drift check, and full just check passed. The integrated gate first exposed older fixtures that enabled wildcard listeners without credentials; b1ed7823 supplies explicit test credentials or loopback intent. CodeRabbit completed for config and the follow-up config/app fixtures with no unresolved valid findings; its /v4 claims were shard-context false positives.
 
 Wave integration stop: pushed code head b1ed782322fc66cc9c14a5a6be09d00fe3071c68 passed exact-head CI run 33805396385 attempt 1. Release workflow 33805397230 ran release-please and updated PR #585, but the PR remains open as release 4.1.0 rather than retargeting to 5.0.0. The pushed header is feat!(config): require credentials for network receivers; the Conventional Commits breaking form is feat(config)!:, so release-please did not classify it as breaking. Goal section 8 requires stopping and reporting rather than editing release configuration. Resume only with the owner's choice of an additive, parseable breaking-metadata commit or another safe non-history-rewriting correction; then confirm PR #585 reads 5.0.0 before any lab work or task closure.
+
+Wave 9 resumed: root applied the narrow additive metadata correction 69ca5279 with the parseable header feat(config)!: and the existing BREAKING CHANGE body. Release-please run 33807354845 then retargeted PR #585 to 5.0.0 without rewriting main or changing release configuration. The release-retarget blocker is cleared; the task remains active until the Wave 9 live cycle and final exact-head closeout complete.
+
+Final integration proof: the release PR remained open and retargeted to 5.0.0 after the additive parseable breaking-metadata correction. The live final image also started successfully with the commissioned credential-free loopback streaming listener, exercising the frozen local-only exception while network-reachable credentialless routes remain startup errors. The isolated live resources were completely removed and the managed workload remained unchanged.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 The v5 receiver validation and documentation are implemented at 399b67a0 with test-fixture integration at b1ed7823, and all task acceptance criteria and gates are proven. The task remains Parked because PR #585 did not retarget from 4.1.0 to 5.0.0 after the malformed breaking header, triggering the mandatory Wave 9 stop.
+
+Completion: Done at 399b67a0 with fixture integration at b1ed7823 and additive breaking-metadata correction at 69ca5279. Network-reachable streaming and webhook routes now require effective credentials, credential-free loopback remains supported and documented, generated artifacts are in sync, just check and exact-head CI passed, and the open release PR retargeted to 5.0.0 without a release configuration edit.
 <!-- SECTION:FINAL_SUMMARY:END -->

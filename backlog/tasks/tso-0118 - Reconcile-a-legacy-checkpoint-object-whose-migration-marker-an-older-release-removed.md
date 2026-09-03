@@ -3,10 +3,10 @@ id: TSO-0118
 title: >-
   Reconcile a legacy checkpoint object whose migration marker an older release
   removed
-status: Parked
+status: Done
 assignee: []
 created_date: '2026-09-03 19:35'
-updated_date: '2026-09-03 21:07'
+updated_date: '2026-09-03 21:41'
 labels: []
 dependencies: []
 priority: high
@@ -56,10 +56,16 @@ The generalizable defect is that a marker stored on a shared object is not a dur
 Implementation 0513e636: changed markerless reopen selection to use the complete shard-owned migration baseline as the durable completed-migration signal. A complete matching baseline now selects newest-wins even when a pre-sharding writer removed the legacy marker; a genuinely incomplete migration with no complete baseline remains missing-only. The re-upgrade deliberately does not restore the legacy marker because no current release needs it once the shard baseline exists, and restoring shared-object metadata would add writes without correctness value. The failing-first writer-shaped test migrated, removed the marker, advanced both legacy cursors, and failed under the old code with the audit cursor still at 12:00 instead of 12:01. Focused collector tests, idempotent reopen with no shard write, exact-commit build, regeneration drift check, and full just check passed. CodeRabbit completed for internal/collector; two major findings asserting /v4 were shard-context false positives against the verified /v5 tree.
 
 Wave integration stop: pushed code head b1ed782322fc66cc9c14a5a6be09d00fe3071c68 passed exact-head CI run 33805396385 attempt 1, but release-please updated PR #585 while leaving it open at 4.1.0. The pushed breaking header is malformed as feat!(config): rather than the Conventional Commits form feat(config)!:, so the breaking change was not classified. Goal section 8 requires an immediate stop on non-retarget and forbids forcing release configuration. Phase 3 was therefore not started and no lab object was created or mutated. Resume only after an owner-approved, non-history-rewriting metadata correction makes PR #585 target 5.0.0; then obtain the immutable final-head image, run the full direct-endpoint rollback cycle, record both cursor pairs and idempotency, and delete/read-back every temporary object before moving this task to Done.
+
+Wave 9 resumed: root applied the narrow additive metadata correction 69ca5279 with the parseable header feat(config)!: and the existing BREAKING CHANGE body. Release-please run 33807354845 then retargeted PR #585 to 5.0.0 without rewriting main or changing release configuration. Proceeding to exact-head CI, immutable-image discovery, and the mandatory live rollback cycle.
+
+Live rollback verification on the final image: a pre-sharding release acquired the Lease, removed the shared migration marker, changed the legacy object revision, and advanced both real polling cursors (audit by 1h37m33.948047286s from the seed; flowlogs by 1h). Re-upgrade with polling disabled reconciled both shard cursors exactly to those legacy-writer values and moved both shard-owned baselines to the new legacy revision. A second reopen with unchanged legacy state left both shard revisions unchanged. Direct-endpoint ServiceAccount RBAC proof allowed the seven intended Lease/ConfigMap operations and denied all nine list/watch/patch/delete or unrelated-resource checks. All eight exact temporary resource names were deleted and read back absent; the managed workload remained 1/1 ready on its original image/configuration with exporter restart count zero.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Implementation is complete at 0513e636 and all task acceptance criteria and local gates are proven, but the task is Parked at the campaign hard stop because the mandatory Wave 9 live rollback cycle could not start before PR #585 retargeted to 5.0.0. No lab mutation occurred.
+
+Completion: Done at 0513e636. Complete shard-owned baselines now select newest-wins for markerless rollback writes, interrupted migration remains missing-only, the writer-shaped failing-first test and idempotent reopen pass, just check and exact-head CI passed, and the real rollback/re-upgrade cycle reconciled both cursors before complete cleanup.
 <!-- SECTION:FINAL_SUMMARY:END -->
