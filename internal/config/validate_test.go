@@ -388,7 +388,7 @@ func TestValidateAcceptsAllCollectorSources(t *testing.T) {
 	for _, src := range []string{"poll", "stream", "both"} {
 		// source=stream needs a live ingestion path (#52a), so enable the receiver
 		// for all three (poll/both just warn about dual ingestion, not error).
-		y := "streaming:\n  enabled: true\ncollectors:\n  flowlogs:\n    source: " + src + "\n"
+		y := "streaming:\n  enabled: true\n  token: test-token\ncollectors:\n  flowlogs:\n    source: " + src + "\n"
 		if err := loadErr(t, y); err != nil {
 			t.Errorf("source %q should be valid: %v", src, err)
 		}
@@ -506,7 +506,7 @@ func TestValidateAutoConfigureRequiresEnabled(t *testing.T) {
 }
 
 func TestValidateAutoConfigureRequiresPublicURL(t *testing.T) {
-	const y = "streaming:\n  enabled: true\n  auto_configure: true\n"
+	const y = "streaming:\n  enabled: true\n  auto_configure: true\n  token: test-token\n"
 	err := loadErr(t, y)
 	if err == nil {
 		t.Fatal("expected error: auto_configure without public_url")
@@ -548,6 +548,7 @@ func TestValidateAutoConfigurePublicURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := config.Default()
 			c.Streaming.Enabled = true
+			c.Streaming.Token = "test-token"
 			c.Streaming.AutoConfigure = true
 			c.Streaming.PublicURL = tc.publicURL
 
@@ -1257,6 +1258,7 @@ func TestValidate_StreamSourceNeedsStreaming(t *testing.T) {
 	}
 	// With streaming enabled it is valid.
 	c.Streaming.Enabled = true
+	c.Streaming.Token = "test-token"
 	if err := c.Validate(); err != nil {
 		t.Errorf("source=stream + streaming enabled: unexpected error %v", err)
 	}
@@ -1369,6 +1371,7 @@ func TestValidate_MaxWindowLEInterval(t *testing.T) {
 	// apply even with a guaranteed-bad max_window/interval pair.
 	c := config.Default()
 	c.Streaming.Enabled = true
+	c.Streaming.Token = "test-token"
 	c.Collectors.Flowlogs.Source = "stream"
 	c.Collectors.Flowlogs.Interval = config.Duration(time.Hour)
 	c.Collectors.Flowlogs.MaxWindow = config.Duration(time.Hour)
@@ -1410,6 +1413,7 @@ func TestValidate_FlowlogsReplayBounds(t *testing.T) {
 			c.Collectors.Flowlogs.Source = tc.source
 			if tc.source == "stream" {
 				c.Streaming.Enabled = true
+				c.Streaming.Token = "test-token"
 			}
 			c.Collectors.Flowlogs.ReplayOverlap = config.Duration(tc.overlap)
 			c.Collectors.Flowlogs.ReplaySeenCapacity = tc.capacity
@@ -1612,9 +1616,11 @@ func TestWarnings_HeadscaleReceiversUnsupported(t *testing.T) {
 	c.Headscale.URL = "https://hs.example.com"
 	c.Headscale.APIKey = "hs-key"
 	c.Streaming.Enabled = true
+	c.Streaming.Token = "test-token"
 	c.Streaming.AutoConfigure = true
 	c.Streaming.PublicURL = "https://public.example.com" // auto_configure needs it to pass Validate
 	c.Webhook.Enabled = true
+	c.Webhook.Secret = "test-secret"
 	if err := c.Validate(); err != nil {
 		t.Fatalf("headscale + receivers should validate (warn, not error): %v", err)
 	}

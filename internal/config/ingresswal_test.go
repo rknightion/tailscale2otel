@@ -248,8 +248,10 @@ func TestValidateIngressWALAcceptsReceiverBodyCapBounds(t *testing.T) {
 			cfg := config.Default()
 			cfg.IngressWAL.Enabled = true
 			cfg.Streaming.Enabled = true
+			cfg.Streaming.Token = "test-token"
 			cfg.Streaming.MaxBodyBytes = value
 			cfg.Webhook.Enabled = true
+			cfg.Webhook.Secret = "test-secret"
 			cfg.Webhook.MaxBodyBytes = value
 			if err := cfg.Validate(); err != nil {
 				t.Fatalf("Validate body cap %d: %v", value, err)

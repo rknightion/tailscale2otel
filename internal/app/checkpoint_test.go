@@ -92,6 +92,7 @@ func TestStateStores_MemoryCursorsFileEvidenceReopensExistingACLKeys(t *testing.
 	cfg.Collectors.Flowlogs.Source = "stream"
 	cfg.Collectors.Auditlogs.Source = "stream"
 	cfg.Streaming.Enabled = true
+	cfg.Streaming.Token = "test-token"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("streamed deployment config must validate: %v", err)
 	}
