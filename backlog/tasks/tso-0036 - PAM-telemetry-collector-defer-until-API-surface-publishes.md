@@ -1,10 +1,10 @@
 ---
 id: TSO-0036
 title: PAM telemetry collector (defer until API surface publishes)
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-08-30 09:09'
-updated_date: '2026-09-01 19:51'
+updated_date: '2026-09-03 19:55'
 labels: []
 milestone: m-8
 dependencies: []
@@ -35,4 +35,6 @@ Tailscale PAM went beta 2026-08-26 (Border0 acquisition); PAM service accounts c
 
 <!-- SECTION:NOTES:BEGIN -->
 Upstream check 2026-09-01 against the vendored spec/tailscale-api.json (60 paths): zero paths matching pam/border0/session/recording. PAM operations still absent, so this stays correctly blocked on upstream and is excluded from Wave 5. Re-check is free: the daily api-drift lane surfaces new paths, or rerun the same path scan after any spec re-vendor.
+
+Parked 2026-09-03 by owner decision. Blocked on Tailscale publishing a PAM telemetry API surface; no wave can drain it. Resume boundary: when the Tailscale API spec re-vendor (spec/tailscale-api.json) first carries PAM endpoints, move back to To Do and scope a collector against them. Parked rather than left in To Do so the board reads as genuinely drained, which is what the v5 trigger keys on.
 <!-- SECTION:NOTES:END -->
