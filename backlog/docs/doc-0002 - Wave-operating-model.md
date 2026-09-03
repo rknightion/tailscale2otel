@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-03 19:35'
+updated_date: '2026-09-03 23:03'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -184,6 +184,18 @@ connecting the shipped artifacts to the in-code catalog. It has to subtract labe
 names too, because labels share the `tailscale_` prefix and a text scan cannot tell a metric from a
 label by shape.
 
+### `scripts/verify-modules.sh` does not exist, and four goal files told a wave to run it
+
+It was absorbed into the justfile by TSO-0025. `just check` runs the module legs through
+`just test-modules`, and `internal/ci`'s coverage contract keeps the module list complete. Every
+wave goal from Wave 6 onward repeated the stale instruction, and each run discovered it independently
+at the moment it mattered.
+
+The durable point is not the filename. **A command copied forward from one goal file to the next is
+never re-verified**, so a task-surface change silently invalidates every future goal at once. Check
+each command a goal file names against `just --list` before the goal is written, not while the run is
+in flight.
+
 ### The tool modules do not run the way their own help text says
 
 `go run ./tools/metricscatalog` from the repo root **fails** - separate `go.mod`. Use
@@ -217,22 +229,32 @@ does the other release do to it while writing". Model the older client's writes,
 
 ### The release posture is deliberate, and it is not the wave's to change
 
-Stable is **v4.0.1** while three waves of work sit unreleased as release candidates. That is the
-owner's standing choice, reaffirmed 2026-09-01: validate from the `rc` images, do not tag, do not
-touch release-please, do not merge a release PR. A wave that finds this state does not "fix" it.
+The owner merges the release PR **by hand. Never automerge it, and no wave may merge it.** Waves
+validate from the `rc` images, do not tag, and do not touch release-please configuration. A wave that
+finds an unreleased backlog of work does not "fix" it by releasing.
 
-The plan for the next major is **one big bang after the board drains** - every open task lands
-first, then v5 is cut once, and **the owner merges that release PR by hand. Never automerge it.**
-Breaking changes therefore have nowhere to go in the meantime: park them in the v5 milestone rather
-than implementing them early. Cutting that major still needs the module path moved to `/v5` first,
-per the section above.
+**The board drained on 2026-09-04 and the repository is on `/v5`.** Wave 9 landed TSO-0118 and
+TSO-0094 and moved the module path; TSO-0036 is Parked on upstream and cannot be drained by any wave.
+PR #585 now reads `chore(main): release 5.0.0` with the receiver-credential break as its single
+`BREAKING CHANGES` entry. The call to merge it is the owner's and nobody else's.
 
-**The drain trigger was reached on 2026-09-02 and v5 still waits.** What is left is TSO-0111 and
-TSO-0110 - the Kubernetes checkpoint backend cannot hold its own default configuration - plus
-TSO-0094, which is the breaking change collected for the major, and TSO-0036, which is blocked on
-Tailscale publishing PAM endpoints and so cannot be drained by any wave. Cutting v5 while the HA path
-it advertises fails at stock defaults would ship that defect into the major. v5 is called once
-TSO-0111 and TSO-0110 land.
+**The `/v5` path is proven end to end, so the #174 cliff cannot recur at 5.0.0.** `v5.0.0-rc.2`
+published **17 assets** including archives for all five platforms, `SHA256SUMS`, the sigstore
+signature, the in-toto attestation, per-archive SBOMs and the Helm chart. That is exactly the set
+v2.0.0 lost. GoReleaser builds with `gomod.proxy: true`, so the tagged module really was fetched from
+the proxy under the new path. A snapshot build would not have proved this; a real rc tag did.
+
+### `feat!(scope):` is not Conventional Commits and release-please silently drops it
+
+The bang goes **after** the scope: `feat(config)!:`, never `feat!(config):`. The malformed form does
+not error and does not warn. release-please simply does not recognise it, so the commit contributes
+nothing: no changelog entry, no major bump, and the work looks unreleased while sitting on `main`.
+Verified at `399b67a0`, which is invisible in the 5.0.0 changelog while the empty follow-up commit
+that carried the correct header appears in its place.
+
+Repair it **additively**, with a second commit carrying the correct header. Never rewrite published
+history to fix a commit message; the wrong header costs a slightly odd provenance line in the
+changelog, and a force-push costs every consumer that already fetched.
 
 ### The client-go binary cost is settled, at +117%
 
