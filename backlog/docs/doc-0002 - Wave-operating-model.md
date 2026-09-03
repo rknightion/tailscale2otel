@@ -3,19 +3,19 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-02 15:55'
+updated_date: '2026-09-03 05:19'
 ---
-This document carries **only what is true of tailscale2otel**. The campaign model itself — run
+This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
 external-contract freezing, the blocker contract, the goal-file template, the run-end protocol and
-the pre-flight checklist — is the *Agent fan-out protocol (canonical)* doc, and that doc wins on any
+the pre-flight checklist - is the *Agent fan-out protocol (canonical)* doc, and that doc wins on any
 specific. Nothing here restates it. If a section below could be pasted into another repo unchanged,
 it is in the wrong document.
 
 That protocol is harness-neutral and names no model: it describes lanes by **role**, and its
 Appendix A (Codex) or Appendix B (Claude Code) resolves a role into a concrete route. Waves on this
 repo have historically been written by Claude and executed by Codex, so **name the harness in the
-run contract and resolve every lane's route from that harness's profile** — a lane brief carrying a
+run contract and resolve every lane's route from that harness's profile** - a lane brief carrying a
 role name alone is not routed. Appendix B defers Claude routing to the always-loaded global rules
 and carries only the structural differences; read it for those, not for model tiers.
 
@@ -30,20 +30,20 @@ its reason gets argued away by the next session.
 
 This repo has no PR flow for its own work. Lanes commit to the shared checkout on `main`; the root
 agent owns the push. The usual "branch first" reflex is overridden here, and so is any tooling
-default that creates a worktree — including `/fork`, which since Claude Code 2.1.221 makes a *new
+default that creates a worktree - including `/fork`, which since Claude Code 2.1.221 makes a *new
 worktree* rather than sharing the checkout.
 
 ### One commit per feature on `origin/main`
 
 Lanes may make local checkpoint commits. Before pushing, the root agent squashes them into exactly
 one commit per feature with `git reset --soft origin/main`. `rebase -i` is not available in this
-environment. Conventional Commits (`type(scope): subject`) is not a style preference — Renovate and
+environment. Conventional Commits (`type(scope): subject`) is not a style preference - Renovate and
 release-please parse it.
 
 **A squash must not separate a symbol from the code that calls it.** Wave 5's wiring lived in
 `internal/app/app.go`, which the wiring pass owns, so its Kubernetes checkpoint calls were squashed
 into `feat(coordination): add Kubernetes Lease leadership` (`1195f4b`) while the functions they call
-landed in the next commit. **That commit does not compile**, and nothing can fix it now — the history
+landed in the next commit. **That commit does not compile**, and nothing can fix it now - the history
 is pushed and carries rc tags. CI only ever builds the tip, so no gate saw it. When the wiring pass
 edits a file on behalf of a feature that lands later, that hunk belongs in the later commit.
 Build-check every squashed commit before pushing, not only the tip.
@@ -57,12 +57,12 @@ prohibited on the shared tree.
 
 The signature is distinctive: **tracked changes gone, untracked files still present.** Recovery is
 `git fsck --lost-found`, and the first action is to **tag the dangling `WIP on main:` commit** before
-anything else touches the object store — then restore only the lost files.
+anything else touches the object store - then restore only the lost files.
 
 ### A lane that hits a decision its brief does not cover stops and returns the question
 
 It does not invent an answer. One round trip is cheaper than the rewrite. This is the escape hatch
-for an ownership map that turns out to be wrong — a boundary with no escape hatch is a stop
+for an ownership map that turns out to be wrong - a boundary with no escape hatch is a stop
 condition wearing a safety label.
 
 ### Work that touches a live system stays on the root agent
@@ -76,7 +76,7 @@ explicitly refused as consent. A blocked lane must be run by the root agent, nev
 ### Specs and plans are never committed
 
 They live in gitignored `docs/superpowers/`. Since the tracker landed, the queue is
-`backlog task list --plain` and acceptance criteria live on the task — a plan file that re-enumerates
+`backlog task list --plain` and acceptance criteria live on the task - a plan file that re-enumerates
 either one is a second source of truth that drifts.
 
 ---
@@ -85,12 +85,12 @@ either one is a second source of truth that drifts.
 
 These have each shipped at least once. Treat them as things to check for, not things to hope about.
 
-### A local gate passing is not the same question as CI passing — four distinct instances
+### A local gate passing is not the same question as CI passing - four distinct instances
 
 - **actionlint.** It shells out to whatever `shellcheck` is on `PATH`. Local shellcheck 0.11.0 does
   not emit SC2015 at all; the runner's older one does. A workflow edit passed locally on two
   actionlint versions and failed CI (`live-contract.yml`, 2026-07-28). The version gap runs the
-  *wrong* way — local is newer and reports less — so "my tooling is current" is not reassurance.
+  *wrong* way - local is newer and reports less - so "my tooling is current" is not reassurance.
   Prefer a plain `if` over `A && B || C` in any `run:` block.
 - **`go test -race ./...` at the root is not the test suite.** There is no `go.work`, so it stops at
   the root module and never reaches the four tool modules. `tools/configcheck/go.sum` drifted 82
@@ -100,7 +100,7 @@ These have each shipped at least once. Treat them as things to check for, not th
   #526 landed **65 real failures in CI with every local gate green** for exactly this reason.
 - **An offline validator written from the same assumption as its generator cannot catch that
   assumption being wrong.** `execErrState` was believed to spell its OK state `"OK"` in five places
-  at once — the generator, two validators and three docs — so every offline gate agreed with itself
+  at once - the generator, two validators and three docs - so every offline gate agreed with itself
   and **all 19 advisory rules failed at push** with `Invalid value: "OK"` (it is `"Ok"`). `gcx
   resources validate` says outright that it does not validate the spec. **Only a real
   `gcx resources push` proves a rule is deployable**, and pushing here is pre-authorized.
@@ -108,7 +108,7 @@ These have each shipped at least once. Treat them as things to check for, not th
 ### A test with a wall-clock margin will eventually fail on a loaded runner
 
 Five CI runs on 2026-09-02 produced **four different** failing tests, on commits that could not have
-caused them — a backlog-markdown-only commit, a merge commit, a dependency bump and a workflow-pin
+caused them - a backlog-markdown-only commit, a merge commit, a dependency bump and a workflow-pin
 bump. None reproduced locally under `-race -count=8` or `GOMAXPROCS=1`. The shared cause is CI I/O and
 scheduling pressure across 26 concurrent jobs, not a logic race.
 
@@ -125,11 +125,35 @@ without a statistical argument. Where a test genuinely needs time to pass, use `
 **Do not merge past a flake, and do not keep rerunning until green.** Both are the same reflex, and
 it is the reflex that hides regressions.
 
+**Assert the invariant, not its side effect on the clock.** Wave 7's four fixes all took the same
+shape once diagnosed. The sqlite conversion test inferred "the VACUUM ran outside the query timeout"
+from a 32 MiB blob taking longer than 25 ms; the real invariant is context lineage, and a fake SQL
+driver observes which context the VACUUM inherited with no disk in the loop. The self-observation
+test synchronised on `scrape.success` and then read two metrics emitted after it; calling `RunTick`
+synchronously makes completion the barrier. **The fake-driver context probe is the standard pattern
+here** for anything asserting which context an operation inherited - owner decision 2026-09-03. Reach
+for it before reaching for a duration.
+
+### `gh run rerun` can never pick up a new base commit
+
+A pull-request CI run is built from a **merge commit GitHub froze when the run was created**. Rerunning
+replays that same commit, so a fix landed on `main` afterwards is not in it, however many attempts you
+burn. Wave 7 parked on exactly this: PR #605's run was pinned to merge commit `53eac5a`, whose base
+parent was the pre-fix `56c046e`, and the reachability check could not have passed at any attempt
+count.
+
+The symptom is a rerun failing on the very thing you just fixed, which reads as "the fix did not
+work" rather than "the fix was not present". **Check the run's merge commit parents before believing
+a rerun.** To get a run that contains current `main`, move the PR head - `gh pr update-branch <n>` -
+which creates a new head and a genuinely fresh run. A rerun is only valid evidence when nothing the
+run depends on has changed outside it, which is what makes it the right tool for a *reusable*
+workflow fix and the wrong one here.
+
 ### Guard tests over `.github/workflows` that pass while asserting nothing
 
 Roughly three per campaign phase. A substring assertion matches an unrelated line or a filename; a
 regression the test was written to catch gets deleted by the compiler. **Every guard test must be
-negative-tested** — break the thing on purpose, watch the test go red, put it back.
+negative-tested** - break the thing on purpose, watch the test go red, put it back.
 
 ### A green workflow run is not proof it published anything
 
@@ -147,17 +171,17 @@ label by shape.
 
 ### The tool modules do not run the way their own help text says
 
-`go run ./tools/metricscatalog` from the repo root **fails** — separate `go.mod`. Use
+`go run ./tools/metricscatalog` from the repo root **fails** - separate `go.mod`. Use
 `go run -C tools/metricscatalog .` with an absolute `-file`.
 
 ### A major release breaks unless the module path moves first
 
 release-please does not maintain the Go module path. A `vN` tag against a stale `/vN` path kills the
-GoReleaser binaries job — it ate every archive at v2.0.0 (#174). Run `scripts/bump-module-major.sh`
+GoReleaser binaries job - it ate every archive at v2.0.0 (#174). Run `scripts/bump-module-major.sh`
 and land it on `main` *before* merging the release PR.
 
 Related and recurring: **generated artifacts that embed the release-managed version break the
-release PR itself, and they arrive in a queue** — fixing one exposes the next. The sharpest is that
+release PR itself, and they arrive in a queue** - fixing one exposes the next. The sharpest is that
 release-please's version regex has no global flag, so a line carrying the version twice (a
 shields.io badge: label *and* URL) half-updates and still fails the diff.
 
@@ -174,7 +198,7 @@ than implementing them early. Cutting that major still needs the module path mov
 per the section above.
 
 **The drain trigger was reached on 2026-09-02 and v5 still waits.** What is left is TSO-0111 and
-TSO-0110 — the Kubernetes checkpoint backend cannot hold its own default configuration — plus
+TSO-0110 - the Kubernetes checkpoint backend cannot hold its own default configuration - plus
 TSO-0094, which is the breaking change collected for the major, and TSO-0036, which is blocked on
 Tailscale publishing PAM endpoints and so cannot be drained by any wave. Cutting v5 while the HA path
 it advertises fails at stock defaults would ship that defect into the major. v5 is called once
@@ -183,7 +207,7 @@ TSO-0111 and TSO-0110 land.
 ### The client-go binary cost is settled, at +117%
 
 Wave 5 made `k8s.io/client-go` a direct dependency of the root module for Lease coordination and
-ConfigMap checkpoints. Measured identically on both sides — `-trimpath -s -w`, `CGO_ENABLED=0` — the
+ConfigMap checkpoints. Measured identically on both sides - `-trimpath -s -w`, `CGO_ENABLED=0` - the
 shipped binary went from **28,323,154 to 61,461,650 bytes**. The owner accepted that on 2026-09-02:
 no build tag, no second image variant, no hand-rolled API client. Do not re-open it.
 
@@ -195,26 +219,26 @@ use the release flags, because that is the binary that ships.
 
 ## 3. Lane conventions
 
-### Single-owner files — never two lanes, never concurrently
+### Single-owner files - never two lanes, never concurrently
 
-- `deploy/grafana/gen/build.py` and `deploy/alerts/gen/build_rules.py` — the generators. Serialize.
-- `internal/app/collectors.go` and the rest of the composition root — wiring pass only.
-- `internal/config/` and `config.example.yaml` — one owner; `docs/env-vars.md` is generated from the
+- `deploy/grafana/gen/build.py` and `deploy/alerts/gen/build_rules.py` - the generators. Serialize.
+- `internal/app/collectors.go` and the rest of the composition root - wiring pass only.
+- `internal/config/` and `config.example.yaml` - one owner; `docs/env-vars.md` is generated from the
   latter, so two lanes editing it produce a conflicting regeneration.
-- `internal/catalog/` — descriptors. Note the one-way import rule: `internal/catalog` must not import
+- `internal/catalog/` - descriptors. Note the one-way import rule: `internal/catalog` must not import
   `internal/app`, which is why app-layer descriptors live in the leaf `internal/appcatalog`.
 
 ### A new config shape has four seams, and a goal that names one commissions a lane that finds three
 
 A lane told to add a config key touches `internal/config/` and `config.example.yaml`. A lane told to
 add a **map or list** config shape also touches `config.schema.json`, the Helm chart's `values.yaml`
-and `values.schema.json`, and the `TS2OTEL_*` environment loader — which has to *reject* a child-key
+and `values.schema.json`, and the `TS2OTEL_*` environment loader - which has to *reject* a child-key
 encoding for a shape the env convention cannot express, rather than silently ignoring it. TSO-0024's
 `port_overrides` hit all four; only the first was in its ownership table, so the root inherited the
 rest at wiring.
 
 Assign the schema, Helm and env-loader seams explicitly whenever a lane introduces a structured
-shape, or state that the root owns them. Leaving them unassigned does not protect them — it just
+shape, or state that the root owns them. Leaving them unassigned does not protect them - it just
 moves the work to whoever notices, after the lane has reported done.
 
 ### Generated files are never edited, and one of them is never blindly regenerated
@@ -226,20 +250,20 @@ input regenerates in the same commit.
 **`internal/catalog/signal_dispositions.json` is the exception.** Its dispositions are all *derived*
 from the real dashboard and rule artifacts, so a new signal's disposition comes back empty and an
 empty disposition always fails the gate. **There is no value a human may assign.** A signal on no
-surface is settled by giving it a panel, not by editing the manifest — regenerating to turn a red
+surface is settled by giving it a panel, not by editing the manifest - regenerating to turn a red
 gate green does not work, and the three escape hatches that used to make it look like it did were
 deliberately deleted (#526).
 
-### Exclusive resources — one lane at a time, and only from the root agent
+### Exclusive resources - one lane at a time, and only from the root agent
 
 - **The m7kni Grafana stack.** Pushing rules and dashboards is pre-authorized and needs no asking.
-  But `gcx resources push` is **additive** — it creates and updates, never deletes — so a rule
+  But `gcx resources push` is **additive** - it creates and updates, never deletes - so a rule
   dropped from the repo evaluates forever until removed by hand. Run
   `python3 scripts/verify_deployment.py` after any push (0 in sync, 1 drift, 2 unreachable).
 - **Dashboards are delivered by GitSync, not by `gcx`.** Grafana writes UI saves back into the
   GitSync repo, so an API push is an out-of-band edit that leaves both sides disagreeing with no way
   to tell which is right. Rules go via `gcx`; dashboards go via `deploy/grafana/` and the workflow.
-  Retire a dashboard by deleting the file, not through the API — the next sync recreates it.
+  Retire a dashboard by deleting the file, not through the API - the next sync recreates it.
 - **The live lab tailnet is read-only.** `auto_configure` must never target a real tailnet. Lab
   names, addresses, identifiers, credentials and raw captures stay in ignored local paths.
 - **The live deployment host.** Root agent only; it is named only in ignored local config.
@@ -253,7 +277,7 @@ The tracker *is* the report. There is no run-end file.
 - Landed work: `backlog task edit <id> --check-ac N -s Done` **in one call**, with the commit SHA in
   the final summary. Splitting the criteria check from the status change lets an interrupted run
   leave finished work looking unfinished.
-- Attempted and blocked: `-s Parked` with a concrete resume boundary — what was tried, what the next
+- Attempted and blocked: `-s Parked` with a concrete resume boundary - what was tried, what the next
   action is, what would unblock it. Parked is the status that exists to stop a long run's most
   valuable output from being flattened into "To Do".
 - Untouched work needs no action; it is still `To Do` and self-evidently so.
@@ -265,5 +289,5 @@ The run's closing terminal message carries only what no single task can: what th
 whole. Nothing durable may live only there.
 
 Before any task goes to `Done`, the definition-of-done gate in `backlog/config.yml` must have
-actually been run and its output seen — plus `scripts/verify-modules.sh` when a tool module changed,
+actually been run and its output seen - plus `scripts/verify-modules.sh` when a tool module changed,
 and a real `gcx resources push` when an alert rule changed.

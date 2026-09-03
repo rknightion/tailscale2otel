@@ -1,11 +1,11 @@
 ---
 id: TSO-0112
 title: Eliminate the load-dependent CI test flakes that make the gate unreliable
-status: Parked
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-02 15:48'
-updated_date: '2026-09-02 16:57'
+updated_date: '2026-09-03 05:17'
 labels: []
 dependencies: []
 priority: high
@@ -240,6 +240,18 @@ The attempt did not exercise the fix: checkout fetched merge commit `53eac5a136d
 1. Should the generic timeout-only deadlock guards inventoried by Lane A be commissioned as a future remediation set, or remain accepted safety bounds unless one is tied to a real flake?
 2. Lane B returned partial, so root took the narrowest reversible option and used a fake SQL-driver context probe for the conversion invariant. Should that probe remain the preferred pattern for similar context-lineage tests?
 3. PR #605 reruns preserve its stale pre-fix merge commit. Which separately authorized refresh mechanism should be used to obtain a genuinely fresh PR run containing current main: update the Renovate branch, recreate the PR merge ref another way, or replace the reachability check?
+
+Resume boundary discharged 2026-09-03 by the root session, not by another wave.
+
+The parked reason was correct and could not be cleared by any rerun: 'gh run rerun' replays a frozen merge commit, and PR #605's was 53eac5a, whose base parent is the pre-fix 56c046e. No number of attempts on run 33621590202 could ever contain 231d435.
+
+The mechanism that does work is 'gh pr update-branch 605', which rebuilds the PR head against current main. Head moved 7d972f3 -> 2bafaed, and GitHub started a genuinely fresh CI run 33683276610 on it.
+
+Result: 26 checks pass, 2 skipping, zero failures, on the FIRST attempt, with 231d435 present. 'build / vet / test' passed in 8m36s - the job that had failed on three previous attempts across two different tests.
+
+That satisfies the reachability criterion as written: a fresh first-attempt green PR run containing the fix. Combined with exact-head main CI 33656063229 (success, attempt 1) at 231d435, the gate is evidence again.
+
+DoD #2 stays unchecked deliberately: no generated artifact's inputs changed, so 'just gen' was correctly not run. That is a conditional skip, recorded as a skip rather than a pass.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
