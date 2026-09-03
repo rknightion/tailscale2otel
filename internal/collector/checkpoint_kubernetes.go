@@ -134,19 +134,19 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 		}
 		s.shards[shard] = &kubernetesCheckpointShard{resourceVersion: object.ResourceVersion, legacyMigrationResourceVersion: object.LegacyMigrationResourceVersion, m: rows}
 	}
-	if baseline, ok := s.legacyMigrationBaseline(); ok {
+	baseline, baselineOK := s.legacyMigrationBaseline()
+	if baselineOK {
 		s.legacyMigrationResourceVersion = baseline
 	}
-	// A marker on the intact legacy object distinguishes a completed migration
-	// from an interrupted multi-shard write. Until it is present, merge only
-	// missing legacy rows into any shards already written, finish the remaining
-	// writes, then mark completion. The old JSON is deliberately retained so a
-	// rollback to the single-ConfigMap release can still reopen its state.
+	// A complete, shard-owned baseline is the durable completion signal. Without
+	// one, a partial migration must merge only missing legacy rows so it cannot
+	// replace a newer row already written to a shard. The old JSON is retained so
+	// a rollback to the single-ConfigMap release can still reopen its state.
 	legacy, legacyErr := client.GetLegacyCheckpoint(ctx)
 	if legacyErr != nil && !errors.Is(legacyErr, ErrKubernetesCheckpointNotFound) {
 		return nil, fmt.Errorf("open legacy Kubernetes checkpoint ConfigMap: %w", legacyErr)
 	}
-	if legacyErr == nil && !legacy.LegacyMigrated {
+	if legacyErr == nil && !baselineOK {
 		rows := map[string]time.Time{}
 		if len(legacy.Data) > 0 {
 			if err := json.Unmarshal(legacy.Data, &rows); err != nil {
@@ -172,30 +172,32 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 		if err := s.persistLegacyMigrationResourceVersionLocked(ctx, legacyResourceVersion); err != nil {
 			return nil, fmt.Errorf("persist legacy Kubernetes checkpoint migration resourceVersion: %w", err)
 		}
-	} else if legacyErr == nil {
-		baseline, baselineOK := s.legacyMigrationBaseline()
-		if !baselineOK || baseline != legacy.ResourceVersion {
-			rows := map[string]time.Time{}
-			if len(legacy.Data) > 0 {
-				if err := json.Unmarshal(legacy.Data, &rows); err != nil {
-					return nil, fmt.Errorf("decode rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
-				}
+	} else if legacyErr == nil && baseline != legacy.ResourceVersion {
+		// Once every shard agrees on a baseline, an older release can remove
+		// the legacy marker while advancing its cursors. Reconcile that writer's
+		// newer rows, then advance the shard-owned baseline. Do not restore the
+		// marker: it is not read to establish completion and an old writer can
+		// remove it again.
+		rows := map[string]time.Time{}
+		if len(legacy.Data) > 0 {
+			if err := json.Unmarshal(legacy.Data, &rows); err != nil {
+				return nil, fmt.Errorf("decode rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
 			}
-			for key, value := range rows {
-				shard := ShardKey(key)
-				state := s.shardForLocked(shard)
-				if current, exists := state.m[key]; exists && !value.After(current) {
-					continue
-				}
-				state.m[key] = value
-				s.dirty[shard] = true
+		}
+		for key, value := range rows {
+			shard := ShardKey(key)
+			state := s.shardForLocked(shard)
+			if current, exists := state.m[key]; exists && !value.After(current) {
+				continue
 			}
-			if err := s.persistDirtyLocked(ctx); err != nil {
-				return nil, fmt.Errorf("reconcile rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
-			}
-			if err := s.persistLegacyMigrationResourceVersionLocked(ctx, legacy.ResourceVersion); err != nil {
-				return nil, fmt.Errorf("persist reconciled legacy Kubernetes checkpoint resourceVersion: %w", err)
-			}
+			state.m[key] = value
+			s.dirty[shard] = true
+		}
+		if err := s.persistDirtyLocked(ctx); err != nil {
+			return nil, fmt.Errorf("reconcile rollback-era legacy Kubernetes checkpoint ConfigMap: %w", err)
+		}
+		if err := s.persistLegacyMigrationResourceVersionLocked(ctx, legacy.ResourceVersion); err != nil {
+			return nil, fmt.Errorf("persist reconciled legacy Kubernetes checkpoint resourceVersion: %w", err)
 		}
 	}
 	return s, nil
