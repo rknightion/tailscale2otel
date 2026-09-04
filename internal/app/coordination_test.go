@@ -75,10 +75,10 @@ func TestRunCoordinatedServesProcessMetricsWhileStandby(t *testing.T) {
 
 	metricsStarted := false
 	a := &App{
-		cfg:         cfg,
-		logger:      slog.New(slog.DiscardHandler),
-		readyState:  newComponentHealth(),
-		metricsRun:  func(context.Context) { metricsStarted = true },
+		cfg:        cfg,
+		logger:     slog.New(slog.DiscardHandler),
+		readyState: newComponentHealth(),
+		metricsRun: func(context.Context) { metricsStarted = true },
 	}
 	a.metricsSrv = a.buildMetricsServer(process)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,9 +118,9 @@ func TestCoordinationPromGathererHidesActiveSeriesOutsideLeadership(t *testing.T
 	collectorMetric.Set(7)
 
 	a := &App{
-		cfg:                  cfg,
-		promGatherer:         prometheus.Gatherers{process, active},
-		processPromGatherer:  process,
+		cfg:                 cfg,
+		promGatherer:        prometheus.Gatherers{process, active},
+		processPromGatherer: process,
 	}
 	gatherer := a.coordinationPromGatherer()
 	hasMetric := func(name string) bool {

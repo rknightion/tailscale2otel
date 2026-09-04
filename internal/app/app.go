@@ -113,9 +113,9 @@ type App struct {
 	webhookDedup  *dedup.Set            // shared cross-source set (webhook<->audit); nil unless enabled
 	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
 	adminSrv      *http.Server
-	metricsSrv    *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
+	metricsSrv    *http.Server          // prometheus pull endpoint; nil unless prometheus.enabled
 	metricsRun    func(context.Context) // test-only override for starting metricsSrv without a wall-clock race
-	promGatherer  prometheus.Gatherer // process-wide gatherer behind metricsSrv; nil when pull is unavailable
+	promGatherer  prometheus.Gatherer   // process-wide gatherer behind metricsSrv; nil when pull is unavailable
 	// processPromGatherer contains only process-level metrics. Kubernetes standbys
 	// serve it while the full gatherer stays leader-only, so a former leader's
 	// collector series can never remain scrapeable after it steps down.

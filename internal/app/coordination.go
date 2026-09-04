@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
