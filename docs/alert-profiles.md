@@ -40,21 +40,21 @@ materializing another profile is a command, not a checked-in directory.
 
 The smallest set worth waking someone up to. Enables only coverage_critical (the exporter itself is down) and core-policy rules (a signal every running exporter always emits, so its absence is always abnormal) — nothing that needs an optional collector or feature turned on, and nothing that needs a site-specific threshold tuned first. Recording rules keep their recommended paused state; they never page on their own.
 
-- Alert rules: **11 enabled**, 94 paused
+- Alert rules: **11 enabled**, 99 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `recommended`
 
 Preserves every rule's authored paused state from the current catalogue. An explicit recommended render is byte-identical to what `--out` produces with no `--profile` flag.
 
-- Alert rules: **39 enabled**, 66 paused
+- Alert rules: **43 enabled**, 67 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `strict`
 
 Enables every alert and every recording rule EXCEPT the explicit exceptions below, which stay paused because enabling them blind is actively misleading rather than merely noisy — a documented placeholder threshold, a per-plan ingest-cost budget, or a signal that is legitimately absent on a healthy, idle deployment.
 
-- Alert rules: **102 enabled**, 3 paused
+- Alert rules: **107 enabled**, 3 paused
 - Recording rules: **23 enabled**, 0 paused
 
 Explicit exceptions (stay paused, with a reason):

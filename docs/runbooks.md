@@ -200,7 +200,8 @@ have completed a successful scrape.
 
 ## OTLP export health {#otlp-export-health}
 
-**Rules:** `ts2o-export-latency-high`, `ts2o-export-failures`, `ts2o-otlp-export-failures`
+**Rules:** `ts2o-export-latency-high`, `ts2o-export-failures`, `ts2o-otlp-export-failures`,
+`ts2o-processor-queue-drops`
 
 **What it means.** Data is being collected but is not reaching the OTLP backend, or is reaching it
 slowly enough to back up. Everything upstream can look perfectly healthy while this is broken.
@@ -310,7 +311,7 @@ zero.
 ## Exporter internal errors {#exporter-internal-errors}
 
 **Rules:** `ts2o-component-errors`, `ts2o-dedup-set-saturated`, `ts2o-gc-cpu-fraction-high`,
-`ts2o-admin-auth-rejections-high`
+`ts2o-admin-auth-rejections-high`, `ts2o-pull-gather-errors`
 
 **What it means.** A non-collector subsystem — receivers, the admin server, streaming
 auto-configure — is logging errors, or a runtime/hygiene threshold has been crossed.
@@ -336,6 +337,32 @@ Overview tab, **Dedup set fill** is on the **Ingestion** tab, and **GC CPU fract
 
 **Resolved when.** The component error rate returns to zero. The other three are `advisory` and are
 tuning signals, not incidents.
+
+## Profiling upload health {#profiling-upload-health}
+
+**Rules:** `ts2o-profiling-upload-failing`
+
+**What it means.** The Pyroscope push agent has failed to upload profiles several times in a row.
+`tailscale2otel_profiling_upload_consecutive_failures_ratio` is a streak counter, not a rate: any
+successful upload resets it to zero, so a non-zero value means the failures are consecutive and
+current rather than historical. That is what makes a low threshold safe here.
+
+**Legitimate causes.** A backend deploy or a network blip breaks a couple of uploads and the streak
+resets on its own. Profiling is opt-in, so a deployment with `profiling.pyroscope` unset emits no
+such series at all and the rule stays quiet through absence.
+
+**Not legitimate.** A streak that keeps climbing. Nothing retries around it and no profile data is
+reaching the backend for as long as it lasts, so continuous profiling is silently off while the
+exporter looks healthy in every other respect.
+
+**First step.** **Profile upload consecutive failures** on the **Runtime** tab of
+`tailscale2otel-health`, then the process logs for the upload error. The four causes worth checking in
+order: `profiling.pyroscope.server_address` pointing somewhere that no longer resolves; a
+`grafana.net` target missing its `basic_auth_password`, which must be a `profiles:write` access-policy
+token; TLS failing against the endpoint; and the backend rate-limiting the agent, which shows as a
+sustained streak rather than a spike.
+
+**Resolved when.** The streak returns to zero, which one successful upload does immediately.
 
 ## Enrichment and discovery {#enrichment-and-discovery}
 
@@ -622,6 +649,36 @@ the unclassified field — that log line is what you feed into the contract refr
 **Resolved when.** The change is confirmed authorized (or reverted), the leaked credential is rotated,
 or the vendored spec is refreshed for a drift finding.
 
+## Kubernetes audit schema drift {#kubernetes-audit-schema-drift}
+
+**Rules:** `ts2o-k8s-audit-schema-drift`
+
+**What it means.** The Kubernetes audit stream contains field values this collector version does not
+classify. The feature is explicitly beta and unversioned upstream, so an unexpected event type or enum
+value increments `tailscale_k8s_schema_drift_total{status="unknown"}` rather than being silently
+dropped or guessed at. Metrics stay bounded and the raw values never become labels, so the cost of
+drift is lost *meaning*, not lost cardinality control.
+
+**Why it ships paused.** Nobody has yet watched how this behaves across a Tailscale upgrade. A
+control-plane release that adds one enum value will light it up for every deployment at once, and a
+rule that fires on every upgrade is a rule people learn to ignore. Unpause it once you have seen one
+upgrade go past and know what its normal looks like.
+
+**Legitimate causes.** A Tailscale control-plane upgrade that adds vocabulary ahead of this exporter.
+That is the expected case and it is what the once-per-value digest warning in the logs is for.
+
+**Not legitimate.** Sustained drift on a field that was previously clean with no upgrade behind it.
+That points at a parser fault rather than upstream vocabulary.
+
+**First step.** **Schema drift events/s by field** on the **Kubernetes Audit** tab of
+`tailscale2otel-tailnet`, then the once-per-value digest warning in the process logs to see the actual
+value that failed to classify. Refresh the parser by re-vendoring `spec/tailscale-api.json` and
+classifying the new values; the vendored spec is the acknowledgement that drift was seen, so
+regenerating it is how the alert clears rather than a workaround for it.
+
+**Resolved when.** The drift rate returns to zero after the new values are classified. Expect to do
+this as part of reviewing a Tailscale upgrade, not as an incident.
+
 ## Tailnet settings drift {#tailnet-settings-drift}
 
 **Rules:** `ts2o-flow-logging-disabled`, `ts2o-device-approval-disabled`,
@@ -770,11 +827,18 @@ cadence.
 ## Ingest receivers {#ingest-receivers}
 
 **Rules:** `ts2o-receiver-rejections`, `ts2o-receiver-latency-high`, `ts2o-ingest-data-stale`,
-`ts2o-stream-records-skipped`, `ts2o-webhook-schema-drift`
+`ts2o-stream-records-skipped`, `ts2o-webhook-schema-drift`, `ts2o-receiver-fail-closed`
 
 **What it means.** The exporter's own inbound paths — the Splunk-HEC stream receiver and the
 HMAC-verified webhook receiver — are rejecting events, responding slowly, accepting nothing recent,
-skipping records it cannot classify, or seeing a payload field drift out from under its schema.
+skipping records it cannot classify, seeing a payload field drift out from under its schema, or
+refusing every request outright because a network-reachable listener has no credential.
+
+`ts2o-receiver-fail-closed` is the last of those and it is the one that looks least like a fault.
+The exporter is healthy, polling still works, and only that ingestion route is dead: an enabled
+receiver bound to a network-reachable address without its token or signing secret answers HTTP 403
+to everything by design. Supply the credential, or bind the listener to loopback, which is supported
+without one.
 
 `ts2o-stream-records-skipped` counts stream records skipped by reason. The two documented reasons
 are `unclassified` (the record matched neither the flow-log nor the audit-log shape) and

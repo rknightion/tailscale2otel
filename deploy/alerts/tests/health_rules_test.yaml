@@ -392,3 +392,167 @@ tests:
             exp_annotations:
               summary: "API requests are waiting on the client-side rate limiter"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+
+  # --- ReceiverFailClosed: a gauge, so no rate window to wait out -------------
+  # The whole point of the signal is that the exporter is healthy while one
+  # ingestion route accepts nothing, so the healthy case here is a receiver
+  # reporting 0 rather than a receiver that is absent.
+  - name: receiver configured correctly does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_receiver_misconfigured_ratio{receiver="webhook"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ReceiverFailClosed
+        exp_alerts: []
+
+  - name: fail-closed receiver fires after 10m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_receiver_misconfigured_ratio{receiver="webhook"}'
+        values: '1+0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ReceiverFailClosed
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: ReceiverFailClosed
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              receiver: webhook
+            exp_annotations:
+              summary: "Receiver webhook is refusing every request"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+
+  # --- PullEndpointGatherErrors ----------------------------------------------
+  # A flat counter is the healthy case, not an absent one: the handler returns
+  # HTTP 200 either way, so "no errors" and "endpoint disabled" look identical
+  # from outside and only the flat series distinguishes them here.
+  - name: gatherer with no errors does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_metrics_scrape_gather_errors_total'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: PullEndpointGatherErrors
+        exp_alerts: []
+
+  - name: sustained gather errors fire after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_metrics_scrape_gather_errors_total'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: PullEndpointGatherErrors
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: PullEndpointGatherErrors
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "The Prometheus pull endpoint is dropping series from every scrape"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+
+  # --- ProcessorQueueDrops: signal and reason must stay separate -------------
+  # Two series dropping at once must produce two alerts. Collapsing them would
+  # hide which of deliberate shedding and a saturated queue is happening, and
+  # those need different answers.
+  - name: processor with no drops does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_processor_dropped_total{signal="logs",reason="queue_full"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: ProcessorQueueDrops
+        exp_alerts: []
+
+  - name: drops fire per signal and reason after 10m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_processor_dropped_total{signal="logs",reason="queue_full"}'
+        values: '0+3x40'
+      - series: 'tailscale2otel_processor_dropped_total{signal="traces",reason="queue_full"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: ProcessorQueueDrops
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ProcessorQueueDrops
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              signal: logs
+              reason: queue_full
+            exp_annotations:
+              summary: "logs records are being dropped (queue_full)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              signal: traces
+              reason: queue_full
+            exp_annotations:
+              summary: "traces records are being dropped (queue_full)"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+
+  # --- ProfileUploadFailing: a streak, so a reset must silence it -------------
+  # The recovery case is the one that matters. Any success zeroes the streak, so
+  # a rule reading this as a rate would keep firing after the outage cleared.
+  - name: two consecutive failures do not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_profiling_upload_consecutive_failures_ratio'
+        values: '2+0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: ProfileUploadFailing
+        exp_alerts: []
+
+  - name: a successful upload resets the streak and silences the rule
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_profiling_upload_consecutive_failures_ratio'
+        values: '5+0x10 0+0x30'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: ProfileUploadFailing
+        exp_alerts: []
+
+  - name: a sustained failure streak fires after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_profiling_upload_consecutive_failures_ratio'
+        values: '3+1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: ProfileUploadFailing
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: ProfileUploadFailing
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Pyroscope profile uploads have failed more than twice in a row"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#profiling-upload-health"

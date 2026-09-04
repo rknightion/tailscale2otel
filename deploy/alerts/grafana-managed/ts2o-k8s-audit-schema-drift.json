@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-k8s-audit-schema-drift"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel-tailnet",
+      "__panelId__": "245",
+      "description": "The Kubernetes audit stream carries values for {{ $labels.field }} that this collector version does not classify. The feature is beta and unversioned upstream, so an unexpected event type or enum value increments this counter rather than being silently dropped or guessed at. Metrics stay bounded and raw values never become labels, so what drift costs is meaning, not cardinality control. Read the once-per-value digest warning in the logs for the actual value, then re-vendor spec/tailscale-api.json and classify it. Absence stays OK: the Kubernetes audit collector is optional.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#kubernetes-audit-schema-drift",
+      "summary": "Unknown Kubernetes-audit {{ $labels.field }} values are arriving"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (field) (rate(tailscale_k8s_schema_drift_total{status=\"unknown\"}[10m]))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "15m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "advisory",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": true,
+    "title": "Kubernetes audit schema drift",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

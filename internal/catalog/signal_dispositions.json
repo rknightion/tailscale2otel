@@ -1134,6 +1134,7 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
+        "alertable",
         "drives_a_variable"
       ],
       "note": "Guards an explicitly BETA upstream schema with no version field. Charted as a rate plus a range stat whose thresholds treat any drift as red, since a healthy feed reports nothing at all. Watch it after upgrading the operator or the recorder."
@@ -2611,7 +2612,8 @@
       "prom_name": "tailscale2otel_metrics_scrape_gather_errors_total",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Collection (metrics endpoint)."
     },
@@ -2848,7 +2850,8 @@
       "prom_name": "tailscale2otel_processor_dropped_total",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Ingestion (processor queue)."
     },
@@ -2888,7 +2891,8 @@
       "prom_name": "tailscale2otel_profiling_upload_consecutive_failures_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ],
       "note": "#526 wave 2/3: panel scheduled on health/Runtime (profiling upload)."
     },
@@ -2928,7 +2932,8 @@
       "prom_name": "tailscale2otel_receiver_misconfigured_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {

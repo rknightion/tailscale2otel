@@ -1,9 +1,9 @@
 {
-  "alert_rules": 105,
+  "alert_rules": 110,
   "collectors": 16,
   "dashboards": 2,
   "log_events": 28,
   "metrics": 309,
-  "panel_linked_alert_rules": 101,
+  "panel_linked_alert_rules": 106,
   "recording_rules": 23
 }

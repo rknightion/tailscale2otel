@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-receiver-fail-closed"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "97",
+      "description": "The {{ $labels.receiver }} receiver is enabled and bound to a network-reachable address without its required token or signing secret, so it answers every request with HTTP 403 and accepts nothing. This is fail-closed by design and it is not a crash: the exporter is healthy, the poller path still works, and only this ingestion route is dead, which is why nothing else in the pack notices. Supply the credential (streaming token or webhook secret) or bind the listener to loopback, which is supported without one. A 10m window keeps a rolling restart quiet. Absence stays OK: receivers are optional and a disabled one emits nothing.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
+      "summary": "Receiver {{ $labels.receiver }} is refusing every request"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "10m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "advisory",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Receiver fail closed",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

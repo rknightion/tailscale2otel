@@ -609,6 +609,67 @@ def groups():
               "OK: coordination.mode=kubernetes is optional.",
               domain="observability", paused=False,
               policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
+        # Four signals the health dashboard already panels and nothing watched.
+        # All four are `optional`: each is gated on an opt-in subsystem, so
+        # absence means "not configured" rather than a fault, while a datasource
+        # error still has to surface as an error rather than as silence.
+        alert("ts2o-receiver-fail-closed", "Receiver fail closed",
+              "max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)",
+              "gt", 0, "10m", "advisory",
+              "Receiver {{ $labels.receiver }} is refusing every request",
+              "The {{ $labels.receiver }} receiver is enabled and bound to a network-reachable "
+              "address without its required token or signing secret, so it answers every request "
+              "with HTTP 403 and accepts nothing. This is fail-closed by design and it is not a "
+              "crash: the exporter is healthy, the poller path still works, and only this ingestion "
+              "route is dead, which is why nothing else in the pack notices. Supply the credential "
+              "(streaming token or webhook secret) or bind the listener to loopback, which is "
+              "supported without one. A 10m window keeps a rolling restart quiet. Absence stays OK: "
+              "receivers are optional and a disabled one emits nothing.",
+              domain="observability", paused=False,
+              policy="optional", runbook="ingest-receivers",
+              panel="Fail-closed receiver misconfiguration"),
+        alert("ts2o-pull-gather-errors", "Pull endpoint gather errors",
+              "sum (rate(tailscale2otel_metrics_scrape_gather_errors_total[10m]))",
+              "gt", 0, "15m", "advisory",
+              "The Prometheus pull endpoint is dropping series from every scrape",
+              "The /metrics handler runs with ContinueOnError (#103), so a registry Gather error "
+              "returns HTTP 200 carrying the REMAINING series. The scrape looks healthy from the "
+              "outside and some series are silently missing from every single one, which is why "
+              "this needs its own rule rather than showing up as a scrape failure. The usual cause "
+              "is a duplicate-series collision after pii_filter.tailnet_name removed the label that "
+              "distinguished them. Absence stays OK: the pull endpoint is opt-in and most "
+              "deployments export over OTLP only.",
+              domain="observability", paused=False,
+              policy="optional", runbook="exporter-internal-errors",
+              panel="Pull-endpoint gather errors/s"),
+        alert("ts2o-processor-queue-drops", "Processor queue drops",
+              "sum by (signal, reason) (rate(tailscale2otel_processor_dropped_total[10m]))",
+              "gt", 0, "10m", "advisory",
+              "{{ $labels.signal }} records are being dropped ({{ $labels.reason }})",
+              "This app's own log/trace batch processor queue was full when records or spans were "
+              "offered, so they were dropped before any export was attempted. Nothing downstream "
+              "sees them and no export-failure rule fires, because the loss happens upstream of the "
+              "exporter. Split by signal and reason on purpose: deliberate load-shedding and a "
+              "saturated queue need different answers, and collapsing them would hide which one is "
+              "happening. Fix by raising the processor's capacity or by accepting the shedding "
+              "policy as intended. Absence stays OK.",
+              domain="observability", paused=False,
+              policy="optional", runbook="otlp-export-health",
+              panel="Processor queue drops/s by signal & reason"),
+        alert("ts2o-profiling-upload-failing", "Profile upload failing",
+              "max (tailscale2otel_profiling_upload_consecutive_failures_ratio)",
+              "gt", 2, "15m", "advisory",
+              "Pyroscope profile uploads have failed more than twice in a row",
+              "The consecutive-failure streak is above two for 15m. This is a streak, not a rate: "
+              "any successful upload resets it to zero, so a sustained non-zero value means the "
+              "failures are current and consecutive rather than historical, and that is what makes "
+              "a threshold this low safe. Continuous profiling is off for as long as it lasts while "
+              "everything else about the exporter looks healthy. Check the server address, the "
+              "profiles:write access-policy token a hosted target needs, TLS, and backend rate "
+              "limiting. Absence stays OK: profiling is opt-in.",
+              domain="observability", paused=False,
+              policy="optional", runbook="profiling-upload-health",
+              panel="Profile upload consecutive failures"),
         # TLS certificate health (#316). Both are `optional`: a listener without
         # TLS emits nothing, and absence there means "not configured", not a
         # fault. A datasource error is still an error.
@@ -1628,6 +1689,28 @@ def groups():
               "once-per-value digest warning and update the vendored API contract.",
               domain="observability", paused=True,
               policy="optional", runbook="audit-events", panel="Audit schema drift"),
+        # The Kubernetes-audit twin of ts2o-audit-schema-drift above. Separate
+        # signal, separate feature: that one watches the configuration audit
+        # stream, this one the Kubernetes audit stream, and a single rule over
+        # both would lose the field breakdown that says which parser to refresh.
+        # Ships paused for the reason its runbook section gives: nobody has
+        # watched it across a Tailscale upgrade yet, and a control-plane release
+        # that adds one enum value lights it up everywhere at once.
+        alert("ts2o-k8s-audit-schema-drift", "Kubernetes audit schema drift",
+              'sum by (field) (rate(tailscale_k8s_schema_drift_total{status="unknown"}[10m]))',
+              "gt", 0, "15m", "advisory",
+              "Unknown Kubernetes-audit {{ $labels.field }} values are arriving",
+              "The Kubernetes audit stream carries values for {{ $labels.field }} that this "
+              "collector version does not classify. The feature is beta and unversioned upstream, so "
+              "an unexpected event type or enum value increments this counter rather than being "
+              "silently dropped or guessed at. Metrics stay bounded and raw values never become "
+              "labels, so what drift costs is meaning, not cardinality control. Read the "
+              "once-per-value digest warning in the logs for the actual value, then re-vendor "
+              "spec/tailscale-api.json and classify it. Absence stays OK: the Kubernetes audit "
+              "collector is optional.",
+              domain="observability", paused=True,
+              policy="optional", runbook="kubernetes-audit-schema-drift",
+              panel="Schema drift events/s by field"),
         alert("ts2o-high-derp-relay-usage", "High DERP relay usage",
               _derp_byte_fraction(),
               "gt", 0.5, "30m", "warning",

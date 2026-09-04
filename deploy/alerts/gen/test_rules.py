@@ -354,7 +354,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(105, len(alert_rules()))
+        self.assertEqual(110, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_readme_policy_counts_match_the_catalogue(self):

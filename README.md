@@ -23,7 +23,7 @@ Grafana Cloud or any OTEL backend. [Headscale](https://headscale.net/) is suppor
 |---|---|
 | **309** metrics + **28** log-event types | across **16** collectors |
 | **18** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
-| **128** shipped rules | **105** alert + **23** recording, Grafana-managed |
+| **133** shipped rules | **110** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
 
@@ -193,10 +193,10 @@ receiver auth, object-gap handling, and `auto_configure` are in
   nothing, and 11.5 rejects it with the misleading `Dashboard title cannot be empty`. This
   repository publishes them through GitSync; other deployments can import or provision the two JSON
   resources. See [Dashboards](https://m7kni.io/tailscale2otel/dashboards/).
-- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **105 alert
+- **Alerts** — [`deploy/alerts/grafana-managed/`](./deploy/alerts/grafana-managed/) ships **110 alert
   rules and 23 recording rules** (128 total) as `rules.alerting.grafana.app` manifests, one JSON per
   rule. Push them with `gcx resources push -p deploy/alerts/grafana-managed`. Every alert carries a
-  `runbook_url`, and 101 of 105 link a canonical dashboard panel. See
+  `runbook_url`, and 106 of 110 link a canonical dashboard panel. See
   [Alerts](https://m7kni.io/tailscale2otel/alerts/) and
   [Runbooks](https://m7kni.io/tailscale2otel/runbooks/).
 - **Admin status page** — on by default at `127.0.0.1:9091`. Liveness/readiness probes at `/healthz` and

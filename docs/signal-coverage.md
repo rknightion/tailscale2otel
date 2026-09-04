@@ -80,8 +80,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 236 | 235 | 57 | 11 | 44 |
-| self_obs | 101 | 101 | 34 | 9 | 10 |
+| operational | 236 | 235 | 58 | 11 | 44 |
+| self_obs | 101 | 101 | 38 | 9 | 10 |
 
 ## Operational signals
 
@@ -202,7 +202,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.k8s.api.rbac_probes` | metric | `tailscale_k8s_api_rbac_probes_total` | visualized, drives_a_variable | SelfSubjectRulesReview/SelfSubjectAccessReview volume, the signature of permission enumeration. Charted by resource and namespace. Deliberately not alerted: it is normal for UI clients such as Freelens, so the interesting pattern is a burst from an unexpected user agent, which needs a cluster-specific baseline. |
 | `tailscale.k8s.api.requests` | metric | `tailscale_k8s_api_requests_total` | visualized, drives_a_variable | Baseline Kubernetes API request volume, broken down by verb, namespace, resource and user agent on the Kubernetes Audit tab. Counts ATTEMPTS: the source carries no response status, so this is request volume, never a success or failure rate. |
 | `tailscale.k8s.api.sensitive_reads` | metric | `tailscale_k8s_api_sensitive_reads_total` | visualized, drives_a_variable | Reads of secrets, service accounts and RBAC objects, charted by resource, namespace and user agent. A strong alerting candidate, but deliberately NOT wired to a rule: a useful threshold depends on the cluster's own baseline, and an arbitrary one would page on normal operator traffic. |
-| `tailscale.k8s.schema_drift` | metric | `tailscale_k8s_schema_drift_total` | visualized, drives_a_variable | Guards an explicitly BETA upstream schema with no version field. Charted as a rate plus a range stat whose thresholds treat any drift as red, since a healthy feed reports nothing at all. Watch it after upgrading the operator or the recorder. |
+| `tailscale.k8s.schema_drift` | metric | `tailscale_k8s_schema_drift_total` | visualized, alertable, drives_a_variable | Guards an explicitly BETA upstream schema with no version field. Charted as a rate plus a range stat whose thresholds treat any drift as red, since a healthy feed reports nothing at all. Watch it after upgrading the operator or the recorder. |
 | `tailscale.k8s.session.started` | metric | `tailscale_k8s_session_started_total` | visualized, drives_a_variable | Terminal sessions derived from .cast headers. Fires once at session start; session completeness is not observable from the bucket, so there is no duration metric to visualize alongside it. |
 | `tailscale.key.allowed_tags` | metric | `tailscale_key_allowed_tags_ratio` | visualized |  |
 | `tailscale.key.expiry` | metric | `tailscale_key_expiry_seconds` | visualized, alertable, drives_a_variable |  |
@@ -383,19 +383,19 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
 | `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.metrics.scrape.duration` | metric | `tailscale2otel_metrics_scrape_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
-| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
+| `tailscale2otel.metrics.scrape.gather_errors` | metric | `tailscale2otel_metrics_scrape_gather_errors_total` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.metrics.scrape.in_flight` | metric | `tailscale2otel_metrics_scrape_in_flight` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.metrics.scrape.requests` | metric | `tailscale2otel_metrics_scrape_requests_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |
 | `tailscale2otel.pii_filter.category` | metric | `tailscale2otel_pii_filter_category_ratio` | visualized, drives_a_variable |  |
-| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
+| `tailscale2otel.processor.dropped` | metric | `tailscale2otel_processor_dropped_total` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
 | `tailscale2otel.processor.queue.capacity` | metric | `tailscale2otel_processor_queue_capacity_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
 | `tailscale2otel.processor.queue.size` | metric | `tailscale2otel_processor_queue_size_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (processor queue). |
 | `tailscale2otel.profiling.upload.attempts` | metric | `tailscale2otel_profiling_upload_attempts_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
+| `tailscale2otel.profiling.upload.consecutive_failures` | metric | `tailscale2otel_profiling_upload_consecutive_failures_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.receiver.misconfigured` | metric | `tailscale2otel_receiver_misconfigured_ratio` | visualized |  |
+| `tailscale2otel.receiver.misconfigured` | metric | `tailscale2otel_receiver_misconfigured_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.count` | metric | `tailscale2otel_runtime_gc_count_total` | visualized |  |
 | `tailscale2otel.runtime.gc.cpu_fraction` | metric | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.next_target` | metric | `tailscale2otel_runtime_gc_next_target_bytes` | visualized |  |

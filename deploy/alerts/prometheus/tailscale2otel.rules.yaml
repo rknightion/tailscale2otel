@@ -56,6 +56,50 @@ groups:
         annotations:
           summary: "Lease {{ $labels.coordination_lease_name }} has no standby"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "ReceiverFailClosed"
+        expr: "(max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)) > 0"
+        for: "10m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Receiver {{ $labels.receiver }} is refusing every request"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
+      - alert: "PullEndpointGatherErrors"
+        expr: "(sum (rate(tailscale2otel_metrics_scrape_gather_errors_total[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "The Prometheus pull endpoint is dropping series from every scrape"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "ProcessorQueueDrops"
+        expr: "(sum by (signal, reason) (rate(tailscale2otel_processor_dropped_total[10m]))) > 0"
+        for: "10m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "{{ $labels.signal }} records are being dropped ({{ $labels.reason }})"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health"
+      - alert: "ProfileUploadFailing"
+        expr: "(max (tailscale2otel_profiling_upload_consecutive_failures_ratio)) > 2"
+        for: "15m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Pyroscope profile uploads have failed more than twice in a row"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#profiling-upload-health"
       - alert: "TLSCertificateExpiring"
         expr: "(min by (component) (tailscale2otel_tls_cert_not_after_seconds - time())) < 1209600"
         for: "1h"
@@ -973,6 +1017,17 @@ groups:
         annotations:
           summary: "Unknown configuration-audit {{ $labels.field }} values are arriving"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#audit-events"
+      - alert: "KubernetesAuditSchemaDrift"
+        expr: "(sum by (field) (rate(tailscale_k8s_schema_drift_total{status=\"unknown\"}[10m]))) > 0"
+        for: "15m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Unknown Kubernetes-audit {{ $labels.field }} values are arriving"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#kubernetes-audit-schema-drift"
       - alert: "HighDERPRelayUsage"
         expr: "(sum(label_replace(rate(tailscaled_inbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total{path=\"derp\"}[10m]), \"dir\", \"out\", \"\", \"\")) / clamp_min(sum(label_replace(rate(tailscaled_inbound_bytes_total[10m]), \"dir\", \"in\", \"\", \"\") or label_replace(rate(tailscaled_outbound_bytes_total[10m]), \"dir\", \"out\", \"\", \"\")), 1)) > 0.5"
         for: "30m"

@@ -119,8 +119,8 @@ Rules are organised into five families:
     [Runbooks — who watches the watcher](runbooks.md) for the three operator-owned answers.
 
 !!! tip "Every alert links to a runbook and a panel"
-    All 105 alert rules carry a `runbook_url` pointing at a section of
-    [Runbooks](runbooks.md), and 101 of them carry the paired `__dashboardUid__`/`__panelId__`
+    All 110 alert rules carry a `runbook_url` pointing at a section of
+    [Runbooks](runbooks.md), and 106 of them carry the paired `__dashboardUid__`/`__panelId__`
     annotations naming a canonical panel. Panel ids are resolved **by title** against the generated
     dashboard at build time, and generation hard-fails on a title that matches zero or more than one
     panel — so a renumbered or renamed panel breaks the build instead of silently producing a dead

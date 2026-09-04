@@ -222,3 +222,39 @@ tests:
             exp_annotations:
               summary: "A node key has been used by more than one client simultaneously"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+
+  # --- KubernetesAuditSchemaDrift --------------------------------------------
+  # status="known" must never fire this. Classified vocabulary arriving at a
+  # high rate is a busy cluster, not drift, and a rule that did not filter on
+  # status would read the two as the same thing.
+  - name: classified audit vocabulary does not fire
+    interval: 1m
+    input_series:
+      - series: 'tailscale_k8s_schema_drift_total{field="verb",status="known"}'
+        values: '0+5x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: KubernetesAuditSchemaDrift
+        exp_alerts: []
+
+  - name: unknown audit vocabulary fires per field after 15m
+    interval: 1m
+    input_series:
+      - series: 'tailscale_k8s_schema_drift_total{field="verb",status="unknown"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: KubernetesAuditSchemaDrift
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: KubernetesAuditSchemaDrift
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              field: verb
+            exp_annotations:
+              summary: "Unknown Kubernetes-audit verb values are arriving"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#kubernetes-audit-schema-drift"
