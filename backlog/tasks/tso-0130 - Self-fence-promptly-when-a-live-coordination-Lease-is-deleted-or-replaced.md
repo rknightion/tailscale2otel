@@ -4,6 +4,7 @@ title: Self-fence promptly when a live coordination Lease is deleted or replaced
 status: To Do
 assignee: []
 created_date: '2026-09-04 07:02'
+updated_date: '2026-09-04 07:30'
 labels:
   - needs-triage
 dependencies: []
@@ -31,3 +32,11 @@ client-go leader election intentionally provides no fencing. If the live Lease i
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner decision 2026-09-04: self-fence promptly. Watch the Lease and cancel active collection as soon as deletion, replacement or another holder is observed, rather than waiting out the renew deadline. Rejected: accepting the window as by-design, and detect-and-alert without fencing. The reason is that duplicate collection double-counts flow and audit logs, which is the exact failure active-passive coordination exists to prevent, so a bounded window is still a correctness bug rather than an acceptable cost.
+
+Build the Lease observation as a reusable mechanism: the owner also commissioned TSO-0131, whose handover counter is derived from the same observations, so design one watcher that serves both rather than two.
+<!-- SECTION:NOTES:END -->

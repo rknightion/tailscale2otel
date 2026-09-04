@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-03 23:03'
+updated_date: '2026-09-04 07:31'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -177,6 +177,30 @@ kubectl --context <direct-cluster-endpoint> ... same probe                      
 verifies a chart's Role through the proxy has proved nothing, and the failure mode is the dangerous
 direction: over-permissive answers that look like the Role working.
 
+### A bare `gcx` command picks a stack, and it is not necessarily yours
+
+The account holds **four** Grafana Cloud stacks. A bare `gcx resources push` authenticated against
+the wrong one and failed 401 before mutating anything, and a bare verification run selected the
+unrelated `rkaidev` stack and failed the same way. The 401 is the lucky outcome; the dangerous one is
+a command that succeeds against a stack you did not mean.
+
+**Pass the context explicitly, every time**: `gcx --context m7kni resources push -p deploy/alerts/grafana-managed`
+and `just verify-deploy m7kni`. TSO-0123 threaded an optional context through every check and pull
+without changing the user-level current context, so there is no longer a reason to rely on whatever
+that happens to be.
+
+### A gauge cannot count events, and `changes()` over one is not a workaround
+
+`tailscale2otel.coordination.leader` is a last-value gauge, so `changes()` over it counts sample
+transitions in whatever the series retained: a scrape gap, a restart, or a series appearing and
+disappearing all read as transitions. It cannot truthfully count completed leadership handovers, and
+a flapping rule built on it would fire on deployments rather than on flapping.
+
+Wave 10 rejected that rule rather than shipping a plausible-looking one, which was right. **When a
+question is about how many times something happened, the signal has to be a counter incremented at
+the event.** Deriving it from a gauge's shape produces a rule that is confidently wrong, and an alert
+nobody can trust is worse than no alert.
+
 ### A renamed metric leaves a panel silently empty
 
 It still loads; it just shows "No data". `internal/catalog/dashboardrefs_test.go` is the only thing
@@ -211,6 +235,21 @@ Related and recurring: **generated artifacts that embed the release-managed vers
 release PR itself, and they arrive in a queue** - fixing one exposes the next. The sharpest is that
 release-please's version regex has no global flag, so a line carrying the version twice (a
 shields.io badge: label *and* URL) half-updates and still fails the diff.
+
+### The standby Prometheus surface is settled: process-only, selected per scrape
+
+A replica in `coordination.mode: kubernetes` serves its pull endpoint continuously, before and after
+campaigning, and the gatherer is chosen **on every Gather** rather than when the listener starts. A
+leader serves the full gatherer; a standby, including a former leader after demotion, serves process
+telemetry only.
+
+Both halves are load-bearing. Serving continuously is what makes a standby distinguishable from a
+dead pod on the pull path, which it previously was not. Selecting per scrape is what stops a demoted
+leader from keeping its collector and per-tailnet series scrapeable: those series describe a tailnet
+it is no longer polling, so presenting them as live is worse than presenting nothing.
+
+Settled 2026-09-04. Do not widen the standby surface beyond process metrics, and do not move the
+gatherer choice back to listener start.
 
 ### A marker on a shared object is not a durable migration signal
 
