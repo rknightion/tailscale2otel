@@ -243,6 +243,77 @@ service_type}`. Groups: `id, display_name, group_type, directory_service{...}`. 
 every autogroup as a group. The lab has 25 service accounts of which 1 is real. A collector counting
 service accounts must split on `role` or it reports nonsense.
 
+## 5b. Session semantics that only show up when you provoke them
+
+All verified on 2026-09-04 by deliberately creating each condition.
+
+**`result` is the AUTHORIZATION result, not the connection outcome.** The upstream container was
+stopped and an SSH connection attempted; the client got `Connection reset by peer`, and the session
+was logged `result: success`. Nothing in the record marks the failure. Do not build a
+failed-connection alert on `result`, and do not describe the label as connection health.
+
+**A denial at the tailnet grant layer produces no session record at all.** Connecting from a tagged
+node that the `cap/pam` grant does not cover was dropped by the Tailscale filter before it reached
+the connector: no `/sessions` row, and no `authz:` line in the connector log. Denials of that class
+are visible only in Tailscale network flow logs. Whether a *Border0 policy* denial (as opposed to a
+grant denial) creates a row is still untested; it needs a second identity to provoke.
+
+So: `/sessions` counts sessions that reached the connector and were authorized. It is not an
+access-attempt log and must not be presented as one.
+
+**Field presence varies by `session_type`.** A `database` session has **no `events` key and no
+`sshuser`** (it is `null`), despite `recording_enabled: true` on the socket. The per-query logs with
+execution time and rows affected that the product documentation describes are **not in this API**;
+they are inside the recording or console-only. Model every field as optional.
+
+**`recordings` populates asynchronously, minutes after the session ends.** A session read
+immediately after it closes has `recordings: []`; the same session read later has one entry. A
+collector that counts recordings on first sight will undercount, so either count them on a later
+pass or do not emit a recording-presence metric at all.
+
+**A live session has `end_time: null`** and no recordings yet. That is how an active-sessions gauge
+is derived: `end_time == null`. `last_seen` equals `start_time` while it runs.
+
+**`auth_info` text varies with the grant.** A database session under the broad auto-added grant read
+`"tailscale acl: granted by tailscale.com/cap/pam (full access)"`, where the SSH sessions read the
+same string without the `(full access)` suffix. It is free text inside a JSON-in-a-string. Never
+parse it for control flow, and never label on it.
+
+### Database service payload, verified working
+
+```jsonc
+{
+  "name": "pam-db", "socket_type": "database", "recording_enabled": true,
+  "connector_ids": ["<connector id>"],
+  "upstream_configuration": {
+    "service_type": "database",
+    "database_service_configuration": {
+      "database_service_type": "standard",
+      "standard_database_service_configuration": {
+        "hostname": "pam-db", "port": 5432,
+        "protocol": "postgres",
+        "authentication_type": "username_and_password",
+        "database_name": "pamdemo",
+        "username_and_password_auth_configuration": {"username": "…", "password": "…"}
+      }
+    }
+  }
+}
+```
+
+The client then connects to `<name>.saga-turtle.ts.net:5432` with **its own identity as the
+username and an empty password**; PAM injects the real upstream credentials. Verified with pg8000
+against a throwaway Postgres 17.
+
+### `PUT /connector` lies in its response body
+
+Disabling the built-in SSH service with `PUT /connector` returned 200 with
+`built_in_ssh_service_enabled: true` and the socket still populated, while the change had in fact
+applied: the socket was gone from `GET /sockets` in the same second and the connector logged
+`socket: removing socket` / `tailscale: unadvertised service`. The response echoes pre-change
+state. **Verify every mutation with a fresh GET**, exactly as this repo already does for Intune
+Settings Catalog writes.
+
 ## 6. PII and secret fence - hard rules
 
 The repo's existing fence (flow logs, node metrics) applies, and PAM is worse. None of the
@@ -302,14 +373,18 @@ pam_iam_service_accounts
 trap. `pam_socket_upstream_config.json` contains a real cleartext password and must be redacted
 before any of it becomes a committed testdata file.
 
-## 9. Open questions the lab could not answer
+## 9. Open questions
 
-- Session record for a **failed or denied** session. Every captured session has `result: success`.
-  Deny one by narrowing the grant, then recapture, before trusting a `result` label's value set.
-- Session record for a **live** session: `end_time` is presumably absent or zero, which is how an
-  active-sessions gauge would be derived. Not observed.
-- Non-SSH `session_type` values and their `events[].type` vocabulary. Only `ssh` observed, with
-  `ssh_session` and `ssh_exec`. A database service would exercise the query-log shape.
-- Whether `/sessions` prunes or grows without bound. If it never prunes, `total_records` grows
-  forever and the newest-first ordering is the only thing keeping polling cheap.
-- Rate limits. None hit, none documented, no `X-RateLimit-*` headers observed.
+Answered since first writing: the live-session shape, the failed-session shape, the denied-session
+shape and a non-SSH `session_type` are all covered in section 5b.
+
+Still open:
+
+- **Does a Border0-policy denial create a session row?** Needs a second identity to provoke. The
+  grant-layer denial definitively does not.
+- **Where do the per-query database logs actually live?** They are documented as a product feature
+  and are absent from `/sessions`. Probably inside the recording artifact. If a future collector
+  wants query counts, this is the blocker.
+- **Does `/sessions` prune?** If it never does, `total_records` grows without bound and the
+  newest-first ordering is the only thing keeping polling cheap.
+- **Rate limits.** None hit, none documented, no `X-RateLimit-*` headers observed.
