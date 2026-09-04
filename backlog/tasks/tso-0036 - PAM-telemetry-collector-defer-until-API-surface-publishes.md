@@ -1,11 +1,11 @@
 ---
 id: TSO-0036
 title: PAM telemetry collector (Border0 API)
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-08-30 09:09'
-updated_date: '2026-09-04 19:32'
+updated_date: '2026-09-04 22:24'
 labels: []
 milestone: m-8
 dependencies: []
@@ -27,22 +27,22 @@ Scope fence: PAM config CHANGES are already counted by the auditlogs collector v
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A tracked, redacted fixture set lives in the repository and preserves every response envelope and object shape from the live captures, with PII and cleartext secrets replaced by deterministic safe values; the unredacted .capture/pam_*.json stay local and no test depends on them, so the suite runs identically in CI and on a fresh clone
-- [ ] #2 A new internal/b0api client talks to api.border0.com/api/v1 with a static bearer token, handles all four response envelopes including the bare {} empty case, and is covered by table tests built from the tracked fixtures
-- [ ] #3 A read-only Border0 service account is sufficient: the collector never calls a mutating endpoint, and a 403 is recorded as scope_denied via apistate.Disposition rather than read as a disabled feature
-- [ ] #4 Inventory and config-shape metrics land for connectors, services, policies, identities, org settings and subscription limits, following the internal/collector/settings pattern of one 0/1 gauge per boolean keyed by a stable name attribute
-- [ ] #5 Session metrics land as deltas with no double counting across restarts, proven by a test that replays the same page twice
-- [ ] #6 The session poller stops paging at the first already-seen session_id, proven by a test asserting the request count against a multi-page fixture
-- [ ] #7 No PII reaches a metric label: a test asserts the emitted attribute set against an allowlist, and upstream_configurations secrets appear in no metric, log or snapshot
-- [ ] #8 An unhandled-field adjudication test fails when a tracked fixture grows a field the decoder ignores, since there is no OpenAPI spec and the api-drift lane cannot cover this API
-- [ ] #9 Config keys, the collector catalog entry and the generated collector docs are wired the same way the settings collector is
+- [x] #1 A tracked, redacted fixture set lives in the repository and preserves every response envelope and object shape from the live captures, with PII and cleartext secrets replaced by deterministic safe values; the unredacted .capture/pam_*.json stay local and no test depends on them, so the suite runs identically in CI and on a fresh clone
+- [x] #2 A new internal/b0api client talks to api.border0.com/api/v1 with a static bearer token, handles all four response envelopes including the bare {} empty case, and is covered by table tests built from the tracked fixtures
+- [x] #3 A read-only Border0 service account is sufficient: the collector never calls a mutating endpoint, and a 403 is recorded as scope_denied via apistate.Disposition rather than read as a disabled feature
+- [x] #4 Inventory and config-shape metrics land for connectors, services, policies, identities, org settings and subscription limits, following the internal/collector/settings pattern of one 0/1 gauge per boolean keyed by a stable name attribute
+- [x] #5 Session metrics land as deltas with no double counting across restarts, proven by a test that replays the same page twice
+- [x] #6 The session poller stops paging at the first already-seen session_id, proven by a test asserting the request count against a multi-page fixture
+- [x] #7 No PII reaches a metric label: a test asserts the emitted attribute set against an allowlist, and upstream_configurations secrets appear in no metric, log or snapshot
+- [x] #8 An unhandled-field adjudication test fails when a tracked fixture grows a field the decoder ignores, since there is no OpenAPI spec and the api-drift lane cannot cover this API
+- [x] #9 Config keys, the collector catalog entry and the generated collector docs are wired the same way the settings collector is
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -115,4 +115,18 @@ No OpenAPI spec exists for this API, so the api-drift lane cannot cover it and a
 Scope now definable. Blocking condition removed; the implementation plan carries the frozen seams, the four phases and the proposed metric set.
 
 2026-09-04 Wave 12 phase 0 complete: re-captured 19 GET-only PAM responses with the read-only service-account token, generated the tracked corpus through scripts/redact-pam-fixtures.py, and added a fresh-clone security test. The test initially failed because JSON-in-a-string authorization detail survived; the redactor now removes it. The tracked set preserves literal {}, the bare policy array, paginated list/session envelopes, and SSH/database field-presence differences. No Border0 object was created or mutated.
+
+2026-09-04 Wave 12 completion evidence:
+- Feature commit 9994c0a72c47dfeeb2961367c7e514ed6fc4e657; integrated delivery head f339e173e28afc4f671670f0f10d1f9d0e691b9b.
+- Exact-head CI run 33923725959 attempt 1 succeeded; Auto-RC run 33924342484 attempt 1 succeeded; Grafana Sync run 33923726012 attempt 1 succeeded.
+- just check passed; just gen left no drift; just --fmt --check passed; final CodeRabbit review completed with zero findings.
+- Verbose test inventory contained only the three established skips: TestRuleCountsFromRealACL because its optional capture was absent, TestDumpFlowsJSON because FLOWSJSON_DUMP was unset, and TestDefaultCheckpointPath_XDGStateHomeWins because it is inapplicable on Darwin. No PAM test skipped.
+- Live read-only verification emitted inventory, config-shape, and session families. The session poller made exactly one GET request and zero non-GET requests. Nothing was created or mutated on the Border0 side.
+- Scope fence held: the collector does not restate PAM service/port telemetry or PAM configuration-change telemetry. Service accounts are split by role, name labels use bounded cardinality, and 403 responses map to scope_denied.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented the read-only Border0 PAM collector with tracked redacted fixtures, client envelope coverage, bounded inventory and configuration-shape metrics, durable delta session telemetry, cursor termination, PII allowlisting, unhandled-field adjudication, and generated configuration/catalog wiring. Verified through the full local gate, exact-head CI, completed CodeRabbit review, successful publication workflows, and one live GET-only cycle with no Border0 mutation.
+<!-- SECTION:FINAL_SUMMARY:END -->
