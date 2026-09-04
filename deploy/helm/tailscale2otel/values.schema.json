@@ -727,6 +727,31 @@
                             },
                             "additionalProperties": false
                         },
+                        "pam": {
+                            "type": "object",
+                            "properties": {
+                                "enabled": {
+                                    "type": "boolean"
+                                },
+                                "interval": {
+                                    "type": "string"
+                                },
+                                "sessions_interval": {
+                                    "type": "string"
+                                },
+                                "snapshot_body_bytes": {
+                                    "type": "integer",
+                                    "minimum": 1
+                                },
+                                "snapshot_enabled": {
+                                    "type": "boolean"
+                                },
+                                "snapshot_heartbeat": {
+                                    "type": "string"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
                         "posture_integrations": {
                             "type": "object",
                             "properties": {
@@ -1590,6 +1615,18 @@
                                 }
                             },
                             "additionalProperties": false
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "pam": {
+                    "type": "object",
+                    "properties": {
+                        "api_url": {
+                            "type": "string"
+                        },
+                        "token": {
+                            "type": "string"
                         }
                     },
                     "additionalProperties": false
@@ -2719,6 +2756,9 @@
                     "type": "string"
                 },
                 "TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN": {
+                    "type": "string"
+                },
+                "TS2OTEL_PAM__TOKEN": {
                     "type": "string"
                 },
                 "TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD": {

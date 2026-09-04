@@ -21,6 +21,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/oauthapps"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/pam"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/settings"
@@ -293,6 +294,17 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// VIP peer to its service name instead of "unknown" (#166).
 			services.WithEnrichCache(rt.cache),
 			services.WithAPIState(rt.apiState)), c.Services.Interval.D())
+	}
+	if c.PAM.Enabled && d.primary && d.pamClient != nil {
+		// PAM is one process-global Border0 organization, not one API surface per
+		// configured tailnet. Register both schedules on the primary runtime only;
+		// this preserves one copy of every series and one durable session cursor.
+		rt.registry.Register(pam.New(d.pamClient, c.PAM.Interval.D(),
+			pam.WithAPIState(rt.apiState),
+			pam.WithSnapshot(c.PAM.SnapshotEnabled, c.PAM.SnapshotBodyBytes),
+			pam.WithSnapshotHeartbeat(c.PAM.SnapshotHeartbeat.D())), c.PAM.Interval.D())
+		rt.registry.Register(pam.NewSessions(d.pamClient, c.PAM.SessionsInterval.D(), d.store, d.evidenceStore,
+			pam.WithSessionsAPIState(rt.apiState)), c.PAM.SessionsInterval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {
 		// Static node_metrics targets are process-global (a shared jump host, not a

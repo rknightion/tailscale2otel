@@ -609,13 +609,13 @@ existingConfigKey: config.yaml
 
 # Where the rendered config.yaml is stored.
 configStorage: # @schema additionalProperties:false
-  # -- Storage backend for the rendered `config.yaml`: `auto` | `secret` | `configmap`.
+  # -- Storage backend for the rendered `config.yaml`: `auto`, `secret`, or `configmap`.
   # `auto` (default) renders it into a ConfigMap while it is credential-free, and into
   # Secret `<fullname>-config` as soon as any credential-bearing key is set inline under
   # `config:` (`tailscale.auth.oauth.client_secret`, `tailscale.auth.apikey`,
   # `headscale.api_key`, `otlp.grafana_cloud.token`, `otlp.headers`, the three
   # `collectors.flowlogs.objectstore.*` and three `collectors.auditlogs.objectstore.*`
-  # credential keys, `streaming.token`, `webhook.secret`,
+  # credential keys, `pam.token`, `streaming.token`, `webhook.secret`,
   # `prometheus.auth.token`, `admin.auth.token`,
   # `profiling.pyroscope.basic_auth_password`, any `tailnets[]` entry, or a
   # `collectors.node_metrics.targets[]` entry with `bearer_token`/`headers`). A
@@ -642,6 +642,8 @@ secret: # @schema additionalProperties:false
   TS2OTEL_TAILSCALE__AUTH__APIKEY: ""
   # -- Headscale Bearer API key. Used ONLY when config.provider=headscale.
   TS2OTEL_HEADSCALE__API_KEY: ""
+  # -- Static read-only Border0 service-account bearer token for the optional PAM collector.
+  TS2OTEL_PAM__TOKEN: ""
   # -- Grafana Cloud instance/stack ID (the numeric user for OTLP basic auth).
   TS2OTEL_OTLP__GRAFANA_CLOUD__INSTANCE_ID: ""
   # -- Grafana Cloud OTLP token (the password for OTLP basic auth).
@@ -753,6 +755,13 @@ config: # @schema additionalProperties:false
         base_delay: 0s
         max_delay: 0s
       rate_limit: 0
+
+  # Tailscale PAM's independent Border0 API connection. The collector is opt-in below.
+  pam: # @schema additionalProperties:false
+    # -- Static read-only service-account bearer token. Prefer secret.TS2OTEL_PAM__TOKEN.
+    token: ""
+    # -- Border0 API base URL.
+    api_url: https://api.border0.com/api/v1
 
   tailscale: # @schema additionalProperties:false
     # -- Tailnet name, or "-" for the auth principal's default tailnet (the default,
@@ -1555,6 +1564,19 @@ config: # @schema additionalProperties:false
       interval: 600s
       # -- Emit the complete settings response to logs on change plus a heartbeat.
       snapshot_enabled: false
+    pam: # @schema additionalProperties:false
+      # -- Enable Border0-only PAM inventory, configuration shape and session telemetry.
+      enabled: false
+      # -- Connector/service/policy/identity/org inventory and configuration-shape interval.
+      interval: 600s
+      # -- Incremental newest-first session polling interval.
+      sessions_interval: 60s
+      # -- Emit redacted PAM configuration snapshots on change plus a heartbeat.
+      snapshot_enabled: false
+      # -- Refresh unchanged snapshots at this cadence.
+      snapshot_heartbeat: 24h
+      # -- Maximum serialized snapshot event body in bytes.
+      snapshot_body_bytes: 32768 # @schema minimum:1
     acl: # @schema additionalProperties:false
       # -- Enable the ACL/policy collector (acl.last_changed, acl.size, acl.rules by section).
       enabled: true

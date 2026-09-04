@@ -1421,6 +1421,54 @@
           },
           "type": "object"
         },
+        "pam": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "requires a read-only service-account token in TS2OTEL_PAM__TOKEN",
+              "type": "boolean"
+            },
+            "interval": {
+              "default": "600s",
+              "description": "connector/service/policy/identity/org inventory and config-shape interval",
+              "examples": [
+                "600s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "sessions_interval": {
+              "default": "60s",
+              "description": "incremental newest-first session polling interval",
+              "examples": [
+                "60s"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            },
+            "snapshot_body_bytes": {
+              "default": 32768,
+              "description": "maximum serialized snapshot event body",
+              "type": "integer"
+            },
+            "snapshot_enabled": {
+              "default": false,
+              "description": "opt in to redacted PAM configuration snapshots; secrets are stripped before serialization",
+              "type": "boolean"
+            },
+            "snapshot_heartbeat": {
+              "default": "24h",
+              "description": "refresh unchanged snapshots at this cadence",
+              "examples": [
+                "24h"
+              ],
+              "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "posture_integrations": {
           "additionalProperties": false,
           "properties": {
@@ -2959,6 +3007,21 @@
             }
           },
           "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "pam": {
+      "additionalProperties": false,
+      "properties": {
+        "api_url": {
+          "default": "https://api.border0.com/api/v1",
+          "description": "override only for a compatible proxy or local test endpoint",
+          "type": "string"
+        },
+        "token": {
+          "description": "static read-only Border0 service-account bearer token; keep in TS2OTEL_PAM__TOKEN",
+          "type": "string"
         }
       },
       "type": "object"

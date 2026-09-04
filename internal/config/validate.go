@@ -1045,7 +1045,8 @@ func (c *Config) validationChecks() []configCheck {
 			return fmt.Errorf("headscale.url: required when provider=headscale")
 		}
 		u, err := url.Parse(strings.TrimSpace(c.Headscale.URL))
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		if err != nil || u.Host == "" || u.Hostname() == "" || !validURLPort(u.Host) ||
+			(u.Scheme != "http" && u.Scheme != "https") {
 			return fmt.Errorf("headscale.url must be a valid absolute HTTP(S) URL")
 		}
 		if u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
@@ -1075,6 +1076,52 @@ func (c *Config) validationChecks() []configCheck {
 		if c.Headscale.MaxResponseBytes <= 0 {
 			return fmt.Errorf("headscale.max_response_bytes must be > 0 (bytes); it caps a single " +
 				"Headscale API response body before decoding")
+		}
+		return nil
+	})
+	add("pam.token", "Set pam.token (or TS2OTEL_PAM__TOKEN) when collectors.pam.enabled is true.", func() error {
+		if c.Collectors.PAM.Enabled && c.PAM.Token == "" {
+			return fmt.Errorf("pam.token: required when collectors.pam.enabled=true (set TS2OTEL_PAM__TOKEN)")
+		}
+		return nil
+	})
+	add("pam.api_url", "Set pam.api_url to an absolute HTTPS URL, or HTTP only for loopback development.", func() error {
+		if !c.Collectors.PAM.Enabled {
+			return nil
+		}
+		u, err := url.Parse(strings.TrimSpace(c.PAM.APIURL))
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return fmt.Errorf("pam.api_url must be a valid absolute HTTP(S) URL")
+		}
+		if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("pam.api_url must not contain credentials, a query, or a fragment; put the bearer token in pam.token")
+		}
+		if u.Scheme != "https" && !httpguard.IsLoopbackHost(u.Host) {
+			return fmt.Errorf("pam.api_url must use HTTPS except for a loopback development endpoint")
+		}
+		return nil
+	})
+	add("collectors.pam.interval", "Set collectors.pam.interval to a positive duration.", func() error {
+		if c.Collectors.PAM.Enabled && c.Collectors.PAM.Interval <= 0 {
+			return fmt.Errorf("collectors.pam.interval must be > 0")
+		}
+		return nil
+	})
+	add("collectors.pam.sessions_interval", "Set collectors.pam.sessions_interval to a positive duration.", func() error {
+		if c.Collectors.PAM.Enabled && c.Collectors.PAM.SessionsInterval <= 0 {
+			return fmt.Errorf("collectors.pam.sessions_interval must be > 0")
+		}
+		return nil
+	})
+	add("collectors.pam.snapshot_heartbeat", "Set collectors.pam.snapshot_heartbeat to a positive duration.", func() error {
+		if c.Collectors.PAM.Enabled && c.Collectors.PAM.SnapshotHeartbeat <= 0 {
+			return fmt.Errorf("collectors.pam.snapshot_heartbeat must be > 0")
+		}
+		return nil
+	})
+	add("collectors.pam.snapshot_body_bytes", "Set collectors.pam.snapshot_body_bytes to a positive byte count.", func() error {
+		if c.Collectors.PAM.Enabled && c.Collectors.PAM.SnapshotBodyBytes <= 0 {
+			return fmt.Errorf("collectors.pam.snapshot_body_bytes must be > 0")
 		}
 		return nil
 	})

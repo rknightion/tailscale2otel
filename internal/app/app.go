@@ -20,6 +20,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/annotations"
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
@@ -58,6 +59,10 @@ type App struct {
 	// It deliberately does not create runtimes: each runtime still requires an
 	// explicitly configured credential.
 	organizationTailnets []tsapi.OrganizationTailnet
+	// pamClient is process-global because one Border0 organization is not tied to
+	// any one configured tailnet credential. It is registered on the primary
+	// runtime only so multi-tailnet mode cannot duplicate or misattribute it.
+	pamClient *b0api.Client
 
 	// Process-level self-observability: the process provider carries process/
 	// global signals (no tailnet dimension). Per-tailnet self-obs lives on each
@@ -234,6 +239,14 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			return nil, fmt.Errorf("validate persistent flow-store identities: %w", err)
 		}
 	}
+	var pamClient *b0api.Client
+	if cfg.Collectors.PAM.Enabled {
+		var err error
+		pamClient, err = b0api.NewClient(pamAPIOptions(cfg, version))
+		if err != nil {
+			return nil, fmt.Errorf("build PAM API client: %w", err)
+		}
+	}
 
 	// Telemetry labels default to the configured tailnet name. For the single "-"
 	// placeholder (the "use my default tailnet" sentinel), best-effort resolve the
@@ -291,6 +304,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 
 	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, stores.Cursors.Store)
+	a.pamClient = pamClient
 	a.evidenceStore = stores.Evidence.Store
 	a.credReload = reloaders
 	a.checkpointEffective = stores.Cursors.Outcome.Kind
@@ -721,6 +735,7 @@ func (a *App) addRuntimeConfigured(
 		webhookDedup:  webhookDedup,
 		addrSet:       headscaleAddrSet(a.cfg),
 		tsRelease:     a.tsRelease,
+		pamClient:     a.pamClient,
 		multi:         multi,
 		primary:       len(a.runtimes) == 0, // the first runtime owns process-global static targets
 	})

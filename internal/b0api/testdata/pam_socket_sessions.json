@@ -1,0 +1,52 @@
+{
+  "pagination": {
+    "actual_page_size": 1,
+    "current_page": 1,
+    "next_page": 0,
+    "records_per_page": 100,
+    "total_pages": 1,
+    "total_records": 1
+  },
+  "session_logs": [
+    {
+      "audit_log": true,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-14\", \"fixture-text-15\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50004",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T13:39:05Z",
+      "killed": false,
+      "last_seen": "2026-09-04T13:39:04Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000011",
+          "recording_type": "database_query_log",
+          "start_time": "2026-09-04T13:39:21Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-7.example.invalid",
+      "server_port": "50003",
+      "session_id": "00000000-0000-4000-8000-000000000010",
+      "session_type": "database",
+      "socket_id": "00000000-0000-4000-8000-000000000007",
+      "socket_name": "fixture-name-5",
+      "sshuser": null,
+      "start_time": "2026-09-04T13:39:04Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    }
+  ]
+}

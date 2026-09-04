@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
@@ -20,6 +21,14 @@ import (
 )
 
 const serviceName = "tailscale2otel"
+
+func pamAPIOptions(cfg *config.Config, version string) b0api.Options {
+	return b0api.Options{
+		BaseURL:   cfg.PAM.APIURL,
+		Token:     cfg.PAM.Token.Reveal(),
+		UserAgent: serviceName + "/" + version,
+	}
+}
 
 // telemetryOptions maps the OTLP config into telemetry.Options, computing the
 // Grafana Cloud Basic-auth header when grafana_cloud credentials are set.

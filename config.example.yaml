@@ -90,6 +90,11 @@ tailscale:
 # Structural budgets (nesting depth 64, single string 4 MiB, array elements 500000)
 # are fixed in code — no real Tailscale response comes close to them.
 
+# ── Tailscale PAM / Border0 API (OPTIONAL) ─────────────────────────────────────
+pam:
+  token: ""                            # static read-only Border0 service-account bearer token; keep in TS2OTEL_PAM__TOKEN
+  api_url: https://api.border0.com/api/v1 # override only for a compatible proxy or local test endpoint
+
 # ── Multi-tailnet / MSP (OPTIONAL) ──────────────────────────────────────────────
 # Observe MORE THAN ONE tailnet from a single instance. Mutually exclusive with an
 # explicit tailscale.tailnet above (leave it at "-" when using this list). Each
@@ -461,6 +466,13 @@ collectors:
     enabled: true
     interval: 600s
     snapshot_enabled: false           # emit the complete settings response to logs on change plus a heartbeat. TS2OTEL_COLLECTORS__SETTINGS__SNAPSHOT_ENABLED
+  pam:                                # Border0-only PAM inventory, config shape and sessions; does not duplicate Tailscale service inventory or audit changes
+    enabled: false                    # requires a read-only service-account token in TS2OTEL_PAM__TOKEN
+    interval: 600s                    # connector/service/policy/identity/org inventory and config-shape interval
+    sessions_interval: 60s            # incremental newest-first session polling interval
+    snapshot_enabled: false           # opt in to redacted PAM configuration snapshots; secrets are stripped before serialization
+    snapshot_heartbeat: 24h           # refresh unchanged snapshots at this cadence
+    snapshot_body_bytes: 32768        # maximum serialized snapshot event body
   acl:                                # ACL policy snapshot
     enabled: true
     interval: 600s

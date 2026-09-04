@@ -24,6 +24,8 @@ var canonicalGroups = map[string]bool{
 	"Posture":                true,
 	"Log streaming":          true,
 	"OAuth Apps":             true,
+	"PAM":                    true,
+	"PAM sessions":           true,
 	"Services":               true,
 	"Features":               true,
 	"Receivers":              true,

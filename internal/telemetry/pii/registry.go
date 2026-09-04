@@ -39,6 +39,9 @@ var keyCategory = map[string]Category{
 	"coordination.lease_name":            CatFreeTextDetails, // operator-chosen Kubernetes object name
 	"coordination.namespace":             CatFreeTextDetails, // operator-chosen Kubernetes namespace
 	"coordination.identity":              CatHostnames,       // pod hostname used by client-go leader election
+	"tailscale.pam.connector.name":       CatFreeTextDetails, // operator-supplied Border0 connector name
+	"tailscale.pam.service.name":         CatFreeTextDetails, // operator-supplied Border0 socket name
+	"tailscale.pam.policy.name":          CatFreeTextDetails, // operator-supplied Border0 policy name
 
 	// Kubernetes-audit keys (#462), from tsrecorder's API-server-proxy events.
 	// Note tailscale.k8s.path is the QUERY-FREE kubernetes.Path — the raw
@@ -105,6 +108,9 @@ var identityKeys = map[string]bool{
 	"coordination.lease_name":          true,
 	"coordination.namespace":           true,
 	"coordination.identity":            true,
+	"tailscale.pam.connector.name":     true,
+	"tailscale.pam.service.name":       true,
+	"tailscale.pam.policy.name":        true,
 }
 
 // geoNonIdentifier are the GeoIP-enrichment keys (#461). Every one is DERIVED
@@ -317,6 +323,22 @@ var nonIdentifier = map[string]bool{
 	// ACL policy validation (#428): error | warning | test_failure. The validator's
 	// free-text messages are deliberately NOT emitted — only the bounded kind.
 	"tailscale.acl.validation.kind": true,
+
+	// Border0 PAM bounded dimensions. The three operator-supplied name keys are
+	// classified above; everything here is a closed upstream or code-defined
+	// vocabulary, or connector build metadata.
+	"tailscale.pam.version":                      true,
+	"tailscale.pam.built_date":                   true,
+	"tailscale.pam.service.type":                 true,
+	"tailscale.pam.setting.name":                 true,
+	"tailscale.pam.identity.kind":                true,
+	"tailscale.pam.identity.role":                true,
+	"tailscale.pam.plan":                         true,
+	"tailscale.pam.limit.name":                   true,
+	"tailscale.pam.session.type":                 true,
+	"tailscale.pam.session.authorization_result": true,
+	"tailscale.pam.session.event.type":           true,
+	"tailscale.pam.session.event.status":         true,
 }
 
 // categoryForIPClass maps an ipClass to the toggle category.

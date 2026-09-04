@@ -1,0 +1,43 @@
+{
+  "created_at": "2026-09-04T09:58:50Z",
+  "deleted": false,
+  "description": "fixture-description-5",
+  "expires": false,
+  "id": "00000000-0000-4000-8000-000000000026",
+  "name": "fixture-name-11",
+  "org_id": "00000000-0000-4000-8000-000000000001",
+  "org_wide": true,
+  "policy_data": {
+    "condition": {
+      "when": {
+        "after": "fixture-text-17",
+        "before": null,
+        "time_of_day_after": "fixture-text-18",
+        "time_of_day_before": "fixture-text-18"
+      },
+      "who": {
+        "email": [],
+        "group": [
+          "00000000-0000-4000-8000-000000000027"
+        ],
+        "service_account": []
+      }
+    },
+    "permissions": {
+      "aws_s3": {},
+      "database": {},
+      "http": {},
+      "kubernetes": {},
+      "rdp": {},
+      "ssh": {
+        "exec": {},
+        "sftp": {},
+        "shell": {}
+      },
+      "vnc": {}
+    }
+  },
+  "read_only": true,
+  "socket_ids": [],
+  "version": "fixture-text-19"
+}

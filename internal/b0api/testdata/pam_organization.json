@@ -1,0 +1,92 @@
+{
+  "account_id": 5653,
+  "certificate": {
+    "mtls_certificate": "fixture-secret-1",
+    "ssh_public_key": "fixture-secret-2"
+  },
+  "dns_management_enabled": false,
+  "id": "00000000-0000-4000-8000-000000000001",
+  "metadata": {
+    "ai_assistants_disabled": false,
+    "ai_session_analysis_disabled": false,
+    "is_ts": true
+  },
+  "mfa_required": false,
+  "name": "fixture-name-1",
+  "needs_reauth": false,
+  "owner_email": "person-1@example.invalid",
+  "private_network_enabled": true,
+  "role": "read only",
+  "setup_wizard": {
+    "completed": false,
+    "steps": {
+      "aws_ec2_connector_ssh": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      },
+      "linux_connector_ssh": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      },
+      "macos_connector_ssh": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      },
+      "org_subdomain": {
+        "completed": true,
+        "completed_at": "2026-09-04T09:58:43Z",
+        "completed_by_email": "person-2@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000003",
+        "skipped": false
+      },
+      "pick_use_case": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      },
+      "playground": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      },
+      "windows_connector_ssh": {
+        "completed": false,
+        "completed_at": "0001-01-01T00:00:00Z",
+        "completed_by_email": "person-1@example.invalid",
+        "completed_by_id": "00000000-0000-4000-8000-000000000002",
+        "skipped": false
+      }
+    }
+  },
+  "subdomain": "host-1.example.invalid",
+  "subscription": {
+    "plan": {
+      "name": "fixture-name-2",
+      "slug": "ts-free"
+    },
+    "subscription_limit": {
+      "admin_user_count": 6,
+      "custom_domain_count": 0,
+      "custom_idp_count": 0,
+      "notification_count": 10,
+      "organization_count": 5,
+      "socket_count": 10,
+      "socket_tcp_count": 10,
+      "subscription_id": 5656,
+      "user_count": 6
+    }
+  }
+}

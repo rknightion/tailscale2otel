@@ -281,6 +281,20 @@ static `node_metrics` target (see the `node_metrics` section); there is no dedic
 
 ---
 
+## `pam` — Tailscale PAM / Border0 API connection
+
+Used only when `collectors.pam.enabled` is true. PAM is exposed through Border0's independent API,
+not `api.tailscale.com`, and uses a static service-account bearer token with no refresh path. Use a
+read-only service account and keep the token in `TS2OTEL_PAM__TOKEN`, not in YAML. The collector is
+GET-only; an HTTP 403 is reported as `scope_denied`, never as a disabled feature.
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `pam.token` | `""` | Static Border0 service-account bearer token. Required when `collectors.pam.enabled` is true. Set via `TS2OTEL_PAM__TOKEN`. |
+| `pam.api_url` | `https://api.border0.com/api/v1` | Border0 API base URL. Override only for a compatible proxy or local test endpoint; it must be an absolute HTTP(S) URL without credentials, query, or fragment. |
+
+---
+
 ## `tailscale` — API connection & authentication
 
 | Key | Default | Description |
@@ -1209,6 +1223,11 @@ field the export does not. Neither field is required.
 | `collectors.keys.expiry_log_mode` | `daily` | Expiry WARN cadence: `daily` logs a change plus at most one reminder per 24h; `always` preserves every-scrape behavior; `off` suppresses only the log. Metrics still emit. |
 | `collectors.settings.enabled` / `.interval` | `true` / `600s` | Tailnet feature-toggle gauges. |
 | `collectors.settings.snapshot_enabled` | `false` | Emit the complete settings response to logs on change plus a heartbeat. |
+| `collectors.pam.enabled` / `.interval` | `false` / `600s` | Opt-in Border0-only PAM connector, service, policy, identity, organization and subscription telemetry. It does not duplicate Tailscale Service ports or audit-change metrics. |
+| `collectors.pam.sessions_interval` | `60s` | Poll cadence for the independent newest-first session poller. It stops at the durable seen-session boundary rather than paging the whole history. |
+| `collectors.pam.snapshot_enabled` | `false` | Emit safe PAM inventory and configuration-shape snapshots on change plus a heartbeat. Authentication objects, credentials and identity details are removed before serialization. |
+| `collectors.pam.snapshot_heartbeat` | `24h` | Refresh an unchanged PAM snapshot at this cadence. Must be positive. |
+| `collectors.pam.snapshot_body_bytes` | `32768` | Maximum bytes in one PAM snapshot log body chunk. Must be positive. |
 | `collectors.acl.enabled` / `.interval` | `true` / `600s` | ACL size + a "policy changed" signal (detected by ETag), plus policy risk-scoring gauges (wildcard / unrestricted / auto-approver / SSH-wildcard / posture-gated rules). |
 | `collectors.acl.snapshot_enabled` | `false` | **Explicit PII consent:** ship the raw policy and its diffs, including every user email and group member, to the logs backend. This opt-in overrides `pii_filter` for those raw bodies, so logs retention holds tailnet identity data. |
 | `collectors.acl.snapshot_heartbeat` | `24h` | Refresh an unchanged raw policy snapshot at this cadence. Must be positive. |

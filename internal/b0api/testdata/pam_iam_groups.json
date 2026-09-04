@@ -1,0 +1,42 @@
+{
+  "list": [
+    {
+      "directory_service": {
+        "display_name": "fixture-name-12",
+        "id": "00000000-0000-4000-8000-000000000029",
+        "service_type": "tailscale"
+      },
+      "display_name": "fixture-name-13",
+      "group_type": "tailscale",
+      "id": "00000000-0000-4000-8000-000000000027"
+    },
+    {
+      "directory_service": {
+        "display_name": "fixture-name-12",
+        "id": "00000000-0000-4000-8000-000000000029",
+        "service_type": "tailscale"
+      },
+      "display_name": "fixture-name-14",
+      "group_type": "tailscale",
+      "id": "00000000-0000-4000-8000-000000000030"
+    },
+    {
+      "directory_service": {
+        "display_name": "fixture-name-12",
+        "id": "00000000-0000-4000-8000-000000000029",
+        "service_type": "tailscale"
+      },
+      "display_name": "fixture-name-15",
+      "group_type": "tailscale",
+      "id": "00000000-0000-4000-8000-000000000031"
+    }
+  ],
+  "pagination": {
+    "actual_page_size": 3,
+    "current_page": 1,
+    "next_page": 0,
+    "records_per_page": 100,
+    "total_pages": 1,
+    "total_records": 3
+  }
+}

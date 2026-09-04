@@ -1,0 +1,471 @@
+{
+  "pagination": {
+    "actual_page_size": 9,
+    "current_page": 1,
+    "next_page": 0,
+    "records_per_page": 100,
+    "total_pages": 1,
+    "total_records": 9
+  },
+  "session_logs": [
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50002",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T13:39:40Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T13:39:39.544Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-3\": \"fixture-text-12\", \"fixture-embedded_key-4\": \"fixture-text-13\"}",
+          "status": "error",
+          "type": "ssh_session"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T13:39:39Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000009",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T13:39:39Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-14\", \"fixture-text-15\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50004",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T13:39:05Z",
+      "killed": false,
+      "last_seen": "2026-09-04T13:39:04Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000011",
+          "recording_type": "database_query_log",
+          "start_time": "2026-09-04T13:39:21Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-7.example.invalid",
+      "server_port": "50003",
+      "session_id": "00000000-0000-4000-8000-000000000010",
+      "session_type": "database",
+      "socket_id": "00000000-0000-4000-8000-000000000007",
+      "socket_name": "fixture-name-5",
+      "sshuser": null,
+      "start_time": "2026-09-04T13:39:04Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50005",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T13:38:17Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T13:36:47.122Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-1\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        },
+        {
+          "created_at": "2026-09-04T13:36:47.08Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T13:36:46Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000013",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T13:37:21Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000012",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T13:36:46Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50006",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:51:52Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:51:50.704Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        },
+        {
+          "created_at": "2026-09-04T10:51:50.785Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-2\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:51:49Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000015",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:52:21Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000014",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:51:49Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50007",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:51:49Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:51:48.28Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        },
+        {
+          "created_at": "2026-09-04T10:51:48.176Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-3\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:51:47Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000017",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:51:51Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000016",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:51:47Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50008",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:51:47Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:51:45.334Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        },
+        {
+          "created_at": "2026-09-04T10:51:45.46Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-4\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:51:44Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000019",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:51:51Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000018",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:51:44Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50009",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:51:44Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:51:42.69Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-5\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        },
+        {
+          "created_at": "2026-09-04T10:51:42.591Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:51:41Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000021",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:51:51Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000020",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:51:41Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50010",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:51:41Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:51:40.206Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-6\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        },
+        {
+          "created_at": "2026-09-04T10:51:40.115Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:51:39Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000023",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:51:51Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000022",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:51:39Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    },
+    {
+      "audit_log": false,
+      "auth_info": "{\"fixture-embedded_key-1\": [\"fixture-text-9\", \"fixture-text-10\"]}",
+      "client_ip": "192.0.2.4",
+      "client_port": "50011",
+      "country_code": "fixture-country_code-2",
+      "country_flag": "fixture-country_flag-1",
+      "end_time": "2026-09-04T10:31:00Z",
+      "events": [
+        {
+          "created_at": "2026-09-04T10:31:00.42Z",
+          "metadata": "{\"fixture-embedded_key-2\": \"fixture-text-11\", \"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-8\": \"fixture-text-16\"}",
+          "status": "success",
+          "type": "ssh_session"
+        },
+        {
+          "created_at": "2026-09-04T10:31:00.471Z",
+          "metadata": "{\"fixture-embedded_key-4\": \"fixture-text-13\", \"fixture-embedded_key-5\": false, \"fixture-embedded_key-6\": \"fixture-command-7\", \"fixture-embedded_key-7\": \"fixture-username-4\"}",
+          "status": "success",
+          "type": "ssh_exec"
+        }
+      ],
+      "killed": false,
+      "last_seen": "2026-09-04T10:30:59Z",
+      "metadata": {
+        "device": {
+          "ip": "192.0.2.4",
+          "name": "fixture-name-10"
+        },
+        "ip_metadata": {}
+      },
+      "name": "fixture-name-8",
+      "nickname": "fixture-name-9",
+      "picture": "https://example.invalid/image-1.png",
+      "recording_locked_by_plan": false,
+      "recordings": [
+        {
+          "recording_id": "00000000-0000-4000-8000-000000000025",
+          "recording_type": "asciinema",
+          "start_time": "2026-09-04T10:31:21Z"
+        }
+      ],
+      "result": "success",
+      "server_name": "host-8.example.invalid",
+      "server_port": "50001",
+      "session_id": "00000000-0000-4000-8000-000000000024",
+      "session_type": "ssh",
+      "socket_id": "00000000-0000-4000-8000-000000000008",
+      "socket_name": "fixture-name-6",
+      "sshuser": "fixture-username-4",
+      "start_time": "2026-09-04T10:30:59Z",
+      "sub": "00000000-0000-4000-8000-000000000002",
+      "user_email": "person-2@example.invalid"
+    }
+  ]
+}

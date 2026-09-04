@@ -1,0 +1,5 @@
+{
+  "data_consistency": {
+    "rx_after_tx_delay_ms": 603
+  }
+}

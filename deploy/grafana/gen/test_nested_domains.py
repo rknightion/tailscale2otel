@@ -49,7 +49,7 @@ ORIGINAL_LEAF_TABS = {
     "Network & Flows",
     "Audit Trail", "Risk & ACL", "Posture & Compliance", "Identity & Keys",
     "Kubernetes Audit",
-    "Access & ACL", "DNS & Settings", "Identity & Credentials", "Integrations",
+    "Access & ACL", "DNS & Settings", "Identity & Credentials", "Integrations", "PAM",
 }
 
 # Leaves that must NOT exist. A renamed-away tab is invisible to a set-equality

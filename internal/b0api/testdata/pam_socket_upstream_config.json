@@ -1,0 +1,25 @@
+{
+  "list": [
+    {
+      "config": {
+        "database_service_configuration": {
+          "database_service_type": "standard",
+          "standard_database_service_configuration": {
+            "authentication_type": "username_and_password",
+            "database_name": "fixture-name-7",
+            "hostname": "host-7.example.invalid",
+            "port": 5432,
+            "protocol": "postgres",
+            "username_and_password_auth_configuration": {
+              "password": "fixture-secret-5",
+              "username": "fixture-username-4"
+            }
+          }
+        },
+        "service_type": "database"
+      },
+      "created_at": "2026-09-04T13:38:11.499Z",
+      "updated_at": "2026-09-04T13:38:11.499Z"
+    }
+  ]
+}

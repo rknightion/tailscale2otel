@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 236 | 235 | 58 | 11 | 44 |
+| operational | 258 | 257 | 58 | 11 | 45 |
 | self_obs | 102 | 102 | 39 | 9 | 10 |
 
 ## Operational signals
@@ -108,6 +108,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.logstream.error` | log_event | `event_name="tailscale.logstream.error"` | visualized |  |
 | `tailscale.network.flow` | log_event | `event_name="tailscale.network.flow"` | visualized, drives_a_variable |  |
 | `tailscale.oauth_app.info` | log_event | `event_name="tailscale.oauth_app.info"` | visualized |  |
+| `tailscale.pam.snapshot` | log_event | `event_name="tailscale.pam.snapshot"` | visualized |  |
 | `tailscale.posture_integrations.snapshot` | log_event | `event_name="tailscale.posture_integrations.snapshot"` | visualized |  |
 | `tailscale.settings.snapshot` | log_event | `event_name="tailscale.settings.snapshot"` | visualized |  |
 | `tailscale.user_invite.no_longer_open` | log_event | `event_name="tailscale.user_invite.no_longer_open"` | visualized |  |
@@ -251,6 +252,27 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.oauth_apps.age` | metric | `tailscale_oauth_apps_age_seconds` | visualized |  |
 | `tailscale.oauth_apps.count` | metric | `tailscale_oauth_apps_count_ratio` | visualized |  |
 | `tailscale.organization.tailnets.count` | metric | `tailscale_organization_tailnets_count_ratio` | visualized |  |
+| `tailscale.pam.connector.connected` | metric | `tailscale_pam_connector_connected_ratio` | visualized |  |
+| `tailscale.pam.connector.info` | metric | `tailscale_pam_connector_info_ratio` | visualized |  |
+| `tailscale.pam.connector.last_seen_age` | metric | `tailscale_pam_connector_last_seen_age_seconds` | visualized |  |
+| `tailscale.pam.connector.plugins` | metric | `tailscale_pam_connector_plugins_ratio` | visualized |  |
+| `tailscale.pam.connector.sockets` | metric | `tailscale_pam_connector_sockets_ratio` | visualized |  |
+| `tailscale.pam.connector.tokens` | metric | `tailscale_pam_connector_tokens_ratio` | visualized |  |
+| `tailscale.pam.connectors` | metric | `tailscale_pam_connectors_ratio` | visualized, drives_a_variable |  |
+| `tailscale.pam.identities` | metric | `tailscale_pam_identities_ratio` | visualized |  |
+| `tailscale.pam.org.plan.info` | metric | `tailscale_pam_org_plan_info_ratio` | visualized |  |
+| `tailscale.pam.org.setting.enabled` | metric | `tailscale_pam_org_setting_enabled_ratio` | visualized |  |
+| `tailscale.pam.policies` | metric | `tailscale_pam_policies_ratio` | visualized |  |
+| `tailscale.pam.policy.setting.enabled` | metric | `tailscale_pam_policy_setting_enabled_ratio` | visualized |  |
+| `tailscale.pam.service.alive` | metric | `tailscale_pam_service_alive_ratio` | visualized |  |
+| `tailscale.pam.service.setting.enabled` | metric | `tailscale_pam_service_setting_enabled_ratio` | visualized |  |
+| `tailscale.pam.services` | metric | `tailscale_pam_services_ratio` | visualized |  |
+| `tailscale.pam.session.duration` | metric | `tailscale_pam_session_duration_seconds` | visualized |  |
+| `tailscale.pam.session.events` | metric | `tailscale_pam_session_events_total` | visualized |  |
+| `tailscale.pam.sessions` | metric | `tailscale_pam_sessions_total` | visualized |  |
+| `tailscale.pam.sessions.active` | metric | `tailscale_pam_sessions_active` | visualized |  |
+| `tailscale.pam.sessions.killed` | metric | `tailscale_pam_sessions_killed_total` | visualized |  |
+| `tailscale.pam.subscription.limit` | metric | `tailscale_pam_subscription_limit_ratio` | visualized |  |
 | `tailscale.posture_integration.error` | metric | `tailscale_posture_integration_error_ratio` | visualized, alertable | #526 wave 2/3: panel scheduled on tailnet/Policy & Config > Integrations - ALERTABLE-ONLY today. |
 | `tailscale.posture_integration.last_sync` | metric | `tailscale_posture_integration_last_sync_seconds` | visualized, alertable |  |
 | `tailscale.posture_integration.matched` | metric | `tailscale_posture_integration_matched_ratio` | visualized, alertable |  |

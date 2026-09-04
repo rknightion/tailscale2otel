@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/audit"
+	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
@@ -123,6 +124,7 @@ type runtimeDeps struct {
 	webhookDedup  *dedup.Set         // single-tailnet webhook<->audit cross set; nil otherwise
 	addrSet       enrich.AddrSet     // shared classification + node-discovery allowlist
 	tsRelease     *release.Fetcher   // shared upstream-version fetcher; nil when disabled
+	pamClient     *b0api.Client      // process-global Border0 organization client; primary runtime only
 	multi         bool               // true when >1 tailnet (enables checkpoint namespacing)
 	primary       bool               // true for the first runtime; owns process-global static node_metrics targets (#59)
 }

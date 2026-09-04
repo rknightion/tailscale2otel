@@ -14,6 +14,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/logstream"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/oauthapps"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/pam"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/settings"
@@ -92,6 +93,14 @@ var collectorDocs = map[string]collectorDoc{
 	"oauth_apps": {
 		about:   "Inventories the tailnet's OAuth applications (device-provisioning, alpha API) — app count plus per-app scope and allowed-node-attribute gauges. Idles silently on tailnets without the feature.",
 		metrics: oauthapps.Catalog,
+	},
+	"pam": {
+		about:   "Reports Border0-only PAM connector, service, policy, identity, organization and subscription configuration; it does not duplicate Tailscale Service ports or audit changes.",
+		metrics: pam.Catalog,
+	},
+	"pam_sessions": {
+		about:   "Polls the newest-first Border0 PAM session history incrementally, emitting durable session deltas, completed durations, active-session state and bounded event classifications without PII labels.",
+		metrics: pam.SessionCatalog,
 	},
 	"services": {
 		about:   "Reports Tailscale Services (VIP) — service count plus per-service exposed-port rules and (optionally) backing-host counts bucketed by approval/config state.",

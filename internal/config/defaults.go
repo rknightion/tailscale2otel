@@ -83,6 +83,7 @@ func Default() *Config {
 			MaxResponseBytes:    4 << 20,
 			MaxLogResponseBytes: 32 << 20,
 		},
+		PAM: PAMConfig{APIURL: "https://api.border0.com/api/v1"},
 		OTLP: OTLPConfig{
 			Protocol: "http",
 			Endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
@@ -290,6 +291,14 @@ func Default() *Config {
 			OAuthApps: SimpleCollector{
 				Enabled:  true,
 				Interval: dur(300 * time.Second),
+			},
+			PAM: PAMCollector{
+				Enabled:           false,
+				Interval:          dur(10 * time.Minute),
+				SessionsInterval:  dur(time.Minute),
+				SnapshotEnabled:   false,
+				SnapshotHeartbeat: dur(24 * time.Hour),
+				SnapshotBodyBytes: 32 * 1024,
 			},
 			NodeMetrics: NodeMetricsConfig{
 				Enabled:          false,

@@ -206,6 +206,14 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.pam.snapshot",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.posture_integrations.snapshot",
       "surface": "operational",
       "dispositions": [
@@ -1597,6 +1605,196 @@
       "kind": "metric",
       "name": "tailscale.organization.tailnets.count",
       "prom_name": "tailscale_organization_tailnets_count_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.connected",
+      "prom_name": "tailscale_pam_connector_connected_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.info",
+      "prom_name": "tailscale_pam_connector_info_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.last_seen_age",
+      "prom_name": "tailscale_pam_connector_last_seen_age_seconds",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.plugins",
+      "prom_name": "tailscale_pam_connector_plugins_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.sockets",
+      "prom_name": "tailscale_pam_connector_sockets_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connector.tokens",
+      "prom_name": "tailscale_pam_connector_tokens_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.connectors",
+      "prom_name": "tailscale_pam_connectors_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized",
+        "drives_a_variable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.identities",
+      "prom_name": "tailscale_pam_identities_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.org.plan.info",
+      "prom_name": "tailscale_pam_org_plan_info_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.org.setting.enabled",
+      "prom_name": "tailscale_pam_org_setting_enabled_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.policies",
+      "prom_name": "tailscale_pam_policies_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.policy.setting.enabled",
+      "prom_name": "tailscale_pam_policy_setting_enabled_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.service.alive",
+      "prom_name": "tailscale_pam_service_alive_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.service.setting.enabled",
+      "prom_name": "tailscale_pam_service_setting_enabled_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.services",
+      "prom_name": "tailscale_pam_services_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.session.duration",
+      "prom_name": "tailscale_pam_session_duration_seconds",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.session.events",
+      "prom_name": "tailscale_pam_session_events_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.sessions",
+      "prom_name": "tailscale_pam_sessions_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.sessions.active",
+      "prom_name": "tailscale_pam_sessions_active",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.sessions.killed",
+      "prom_name": "tailscale_pam_sessions_killed_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.pam.subscription.limit",
+      "prom_name": "tailscale_pam_subscription_limit_ratio",
       "surface": "operational",
       "dispositions": [
         "visualized"

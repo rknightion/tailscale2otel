@@ -210,6 +210,7 @@ config.collectors.node_metrics.targets[] — are handled separately below.
 */}}
 {{- define "tailscale2otel.credentialPaths" -}}
 headscale.api_key
+pam.token
 tailscale.auth.oauth.client_secret
 tailscale.auth.apikey
 otlp.grafana_cloud.token

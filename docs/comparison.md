@@ -35,7 +35,7 @@ and there is no reason to put anything in between.
 ## Design choices specific to this exporter
 
 **One process for the tailnet, not one per node.** A single static Go binary reads the
-Tailscale API and derives 310 metrics and 28 log-event types across 16 collectors. The
+Tailscale API and derives 331 metrics and 29 log-event types across 17 collectors. The
 collectors run on independent schedules and are isolated, so a failing source cannot stall the
 others — which matters because the API surfaces here are not equally reliable or equally
 rate-limited.
@@ -87,7 +87,7 @@ directly. Adding an exporter in the middle buys you nothing for that requirement
 want it centrally alongside the tailnet-wide signals, this exporter's scraper will forward it
 unchanged.
 
-**Your tailnet is small and the console is enough.** 16 collectors, four ingestion paths
+**Your tailnet is small and the console is enough.** 17 collectors, four ingestion paths
 and a cardinality budget exist for fleets with expiry cliffs, ACL churn and a metrics bill.
 Below that, the console is not a compromise.
 
@@ -96,7 +96,7 @@ Below that, the console is not a compromise.
 
 ## See also
 
-- [Metrics & Logs Reference](metrics.md) — all 310 metrics and 28 log-event types
+- [Metrics & Logs Reference](metrics.md) — all 331 metrics and 29 log-event types
 - [Signal Coverage](signal-coverage.md) — what each signal is *for*
 - [Architecture](architecture.md) — how the collectors and emitters fit together
 - [Streaming & Webhooks](streaming-webhooks.md) — the ingestion-path matrix

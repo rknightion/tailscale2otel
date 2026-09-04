@@ -402,6 +402,8 @@ _SENTINEL_ORDER = [
     # is not: registering a name absent from this list raises.
     "has_profiling", "has_tls", "has_annotations", "has_metrics_endpoint",
     "has_processor_queue", "has_log_truncation", "has_siem",
+    # Wave 12: the opt-in Border0 PAM collector's dedicated tab.
+    "has_pam",
 ]
 
 # --- scopes (#526) ----------------------------------------------------------

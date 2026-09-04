@@ -56,6 +56,7 @@ type Config struct {
 	LogFormat string          `yaml:"log_format" reload:"restart"`
 	Provider  string          `yaml:"provider" reload:"restart"` // "tailscale" (default) | "headscale"
 	Tailscale TailscaleConfig `yaml:"tailscale"`
+	PAM       PAMConfig       `yaml:"pam"`
 	// Tailnets is the optional multi-tailnet list (MSP mode). When non-empty the
 	// instance observes every listed tailnet; it is mutually exclusive with an
 	// explicit single tailscale.tailnet (Validate errors if both name a tailnet).
@@ -509,6 +510,14 @@ type HeadscaleConfig struct {
 	// snapshot/log pair. See internal/hsapi/limit.go for the sizing evidence and
 	// the per-deployment tuning constraint.
 	MaxResponseBytes int64 `yaml:"max_response_bytes" reload:"restart"`
+}
+
+// PAMConfig holds the independent Border0 API connection used by the optional
+// Tailscale PAM collector. Border0 service-account tokens are static and have
+// no refresh protocol.
+type PAMConfig struct {
+	Token  Secret `yaml:"token" reload:"restart"`
+	APIURL string `yaml:"api_url" reload:"restart"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.
@@ -1161,6 +1170,18 @@ type Collectors struct {
 	// clients (a config-surface seam for #167; the collector itself ships
 	// separately).
 	OAuthApps SimpleCollector `yaml:"oauth_apps"`
+	PAM       PAMCollector    `yaml:"pam"`
+}
+
+// PAMCollector configures the Border0 inventory/config snapshot and the
+// independently scheduled incremental session poller.
+type PAMCollector struct {
+	Enabled           bool     `yaml:"enabled" reload:"restart"`
+	Interval          Duration `yaml:"interval" reload:"restart"`
+	SessionsInterval  Duration `yaml:"sessions_interval" reload:"restart"`
+	SnapshotEnabled   bool     `yaml:"snapshot_enabled" reload:"restart"`
+	SnapshotHeartbeat Duration `yaml:"snapshot_heartbeat" reload:"restart"`
+	SnapshotBodyBytes int      `yaml:"snapshot_body_bytes" reload:"restart"`
 }
 
 // SimpleCollector is a point-in-time inventory collector: it just polls a

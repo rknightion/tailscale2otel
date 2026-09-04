@@ -1,0 +1,25 @@
+{
+  "list": [
+    {
+      "directory_service": {
+        "display_name": "fixture-name-12",
+        "id": "00000000-0000-4000-8000-000000000029",
+        "service_type": "tailscale"
+      },
+      "display_name": "fixture-name-8",
+      "email": "person-2@example.invalid",
+      "id": "00000000-0000-4000-8000-000000000028",
+      "image_url": "https://example.invalid/image-1.png",
+      "role": "admin",
+      "user_type": "tailscale"
+    }
+  ],
+  "pagination": {
+    "actual_page_size": 1,
+    "current_page": 1,
+    "next_page": 0,
+    "records_per_page": 100,
+    "total_pages": 1,
+    "total_records": 1
+  }
+}

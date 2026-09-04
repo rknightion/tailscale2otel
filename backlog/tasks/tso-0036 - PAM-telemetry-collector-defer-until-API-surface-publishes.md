@@ -1,10 +1,11 @@
 ---
 id: TSO-0036
 title: PAM telemetry collector (Border0 API)
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-08-30 09:09'
-updated_date: '2026-09-04 17:02'
+updated_date: '2026-09-04 19:32'
 labels: []
 milestone: m-8
 dependencies: []
@@ -112,4 +113,6 @@ Do NOT duplicate: PAM config CHANGES are already counted by the auditlogs collec
 No OpenAPI spec exists for this API, so the api-drift lane cannot cover it and an unhandled-field adjudication test is mandatory rather than nice to have.
 
 Scope now definable. Blocking condition removed; the implementation plan carries the frozen seams, the four phases and the proposed metric set.
+
+2026-09-04 Wave 12 phase 0 complete: re-captured 19 GET-only PAM responses with the read-only service-account token, generated the tracked corpus through scripts/redact-pam-fixtures.py, and added a fresh-clone security test. The test initially failed because JSON-in-a-string authorization detail survived; the redactor now removes it. The tracked set preserves literal {}, the bare policy array, paginated list/session envelopes, and SSH/database field-presence differences. No Border0 object was created or mutated.
 <!-- SECTION:NOTES:END -->

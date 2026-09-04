@@ -34,6 +34,7 @@ from tabs.policy_access import tab_policy_access
 from tabs.policy_dns import tab_policy_dns
 from tabs.policy_identity import tab_policy_identity
 from tabs.policy_integrations import tab_policy_integrations
+from tabs.policy_pam import tab_policy_pam
 from tabs.k8saudit import tab_k8saudit
 from tabs.nodemetrics import tab_nodemetrics
 from tabs.health_overview import tab_health_overview
@@ -111,6 +112,7 @@ TAILNET = DashboardSpec(
             TabDef("DNS & Settings", tab_policy_dns, None),
             TabDef("Identity & Credentials", tab_policy_identity, None),
             TabDef("Integrations", tab_policy_integrations, None),
+            TabDef("PAM", tab_policy_pam, "has_pam"),
         )),
     ),
     sibling="tailscale2otel-health",

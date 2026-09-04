@@ -1,0 +1,36 @@
+{
+  "alive": true,
+  "autocreation_rule_id": null,
+  "cloud_authentication_email_allowed_addressses": [],
+  "cloud_authentication_email_allowed_domains": [],
+  "cloud_authentication_enabled": true,
+  "connector_authentication_enabled": false,
+  "connector_managed": false,
+  "connectors": [
+    {
+      "connector_id": "00000000-0000-4000-8000-000000000004",
+      "name": "fixture-name-3"
+    }
+  ],
+  "custom_domains": [],
+  "description": "fixture-description-3",
+  "dnsname": "host-4.example.invalid",
+  "end_to_end_encryption_enabled": true,
+  "name": "fixture-name-5",
+  "private_network_enabled": true,
+  "private_network_ipv4": "192.0.2.2",
+  "private_network_ipv6": "2001:db8::1",
+  "private_socket": false,
+  "protected_password": "fixture-secret-3",
+  "protected_socket": false,
+  "protected_username": "fixture-username-1",
+  "recording_enabled": true,
+  "socket_id": "00000000-0000-4000-8000-000000000007",
+  "socket_tcp_ports": null,
+  "socket_type": "database",
+  "tags": {},
+  "upstream_http_hostname": "host-5.example.invalid",
+  "upstream_password": "fixture-secret-3",
+  "upstream_type": "postgres",
+  "upstream_username": "fixture-username-1"
+}

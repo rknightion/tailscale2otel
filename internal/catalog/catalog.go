@@ -24,6 +24,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/oauthapps"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/objectstore"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector/pam"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/postureintegrations"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/services"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/settings"
@@ -59,6 +60,8 @@ var metricSources = []func() []metricdoc.Metric{
 	postureintegrations.Catalog,
 	logstream.Catalog,
 	oauthapps.Catalog,
+	pam.Catalog,
+	pam.SessionCatalog,
 	services.Catalog,
 	flowlogs.Catalog,
 	nodemetrics.Catalog,
@@ -89,6 +92,7 @@ var logSources = []func() []metricdoc.LogEvent{
 	postureintegrations.LogCatalog,
 	logstream.LogCatalog,
 	oauthapps.LogCatalog,
+	pam.LogCatalog,
 	services.LogCatalog,
 	flowlogs.LogCatalog,
 	nodemetrics.LogCatalog,
