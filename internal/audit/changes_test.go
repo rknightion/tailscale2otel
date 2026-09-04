@@ -53,6 +53,13 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 		{"api_key create", evWith("API_KEY", "", "CREATE", "USER"), "api_key"},
 		{"api_key delete", evWith("API_KEY", "", "DELETE", "USER"), "api_key"},
 		{"api_key revoke", evWith("API_KEY", "", "REVOKE", "USER"), "api_key"},
+		// PAM configuration objects arrive through the ordinary configuration
+		// audit stream without a target property. Target type is the bounded
+		// vocabulary that distinguishes the three object lifecycles.
+		{"pam service", evWith("PAM_SERVICE", "", "CREATE", "PAM_SERVICE_ACCOUNT"), "pam_service"},
+		{"pam connector", evWith("PAM_CONNECTOR", "", "UPDATE", "PAM_CONNECTOR"), "pam_connector"},
+		{"pam service account", evWith("PAM_SERVICE_ACCOUNT", "", "DELETE", "PAM_SERVICE_ACCOUNT"), "pam_service_account"},
+		{"pam provisioning", evWith("TAILNET", "BORDER0_PROVISIONING", "ENABLE", "USER"), "pam_provisioning"},
 		// Precedence: NODE with a curated property is the property category, not device
 		{"node key_expiry not device", evWith("NODE", "KEY_EXPIRY", "DELETE", "USER"), "key_expiry"},
 		// Not classified — must NOT emit

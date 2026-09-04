@@ -1,10 +1,11 @@
 ---
 id: TSO-0134
 title: PAM config changes never reach the audit-changes metric
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-04 10:36'
-updated_date: '2026-09-04 13:48'
+updated_date: '2026-09-04 19:32'
 labels: []
 dependencies: []
 priority: medium
@@ -38,3 +39,9 @@ Decide whether PAM deserves its own curated change category (pam_service / pam_c
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-09-04 Wave 12 implementation: classified PAM_SERVICE, PAM_CONNECTOR and PAM_SERVICE_ACCOUNT as bounded pam_service, pam_connector and pam_service_account categories because live object lifecycle events carry no target.property and target type is the stable discriminator. Classified BORDER0_PROVISIONING as pam_provisioning. Added a separate live-only-property taxonomy ledger so an observed property absent from the vendored schema must still be categorized or explicitly excluded. Negative-tested the guard by removing the category and observing the intended failure, then restored it. Focused audit tests pass.
+<!-- SECTION:NOTES:END -->

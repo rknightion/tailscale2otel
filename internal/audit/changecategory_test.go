@@ -19,6 +19,9 @@ func TestChangeCategoryMatchesClassifyChange(t *testing.T) {
 	for action := range apiKeyActions {
 		events = append(events, Event{Action: action, Target: Target{Type: "API_KEY"}})
 	}
+	for targetType := range pamTargetCategories {
+		events = append(events, Event{Target: Target{Type: targetType}})
+	}
 	events = append(events,
 		Event{}, // nothing at all
 		Event{Action: "LOGIN", Target: Target{Type: "USER"}},                          // uncurated type

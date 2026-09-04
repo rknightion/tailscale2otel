@@ -31,6 +31,15 @@ var propertyCategories = map[string]string{
 	"TAILNET_INVITE":           "tailnet_invite",
 	"AUTH_PROVIDER":            "auth_provider",
 	"SECRET":                   "secret",
+	"BORDER0_PROVISIONING":     "pam_provisioning",
+}
+
+// liveAuditTargetProperties records target.property values observed in live
+// configuration audit records that are not represented by the vendored
+// Tailscale OpenAPI schema. They remain subject to the taxonomy guard in
+// taxonomy_test.go, so a live-only value cannot silently bypass classification.
+var liveAuditTargetProperties = map[string]string{
+	"BORDER0_PROVISIONING": "observed when PAM was enabled; it grants Border0 tenant-wide provisioning",
 }
 
 // propertyExclusions documents every current ConfigurationAuditLog target
@@ -112,6 +121,15 @@ var deviceChurnActions = map[string]bool{"CREATE": true, "DELETE": true, "EXPIRE
 // apiKeyActions are the API_KEY lifecycle actions worth a curated counter.
 var apiKeyActions = map[string]bool{"CREATE": true, "DELETE": true, "REVOKE": true}
 
+// pamTargetCategories identifies the bounded PAM configuration object
+// vocabulary seen in the regular configuration audit stream. Those events
+// have no target.property, so target type is the stable discriminator.
+var pamTargetCategories = map[string]string{
+	"PAM_SERVICE":         "pam_service",
+	"PAM_CONNECTOR":       "pam_connector",
+	"PAM_SERVICE_ACCOUNT": "pam_service_account",
+}
+
 // knownActions is the complete set of action values defined in the Tailscale
 // audit-log API (OpenAPI spec action enum) plus the action values observed in
 // this repo's test fixtures (changes_test.go, processor_test.go) and the
@@ -190,6 +208,9 @@ func classifyChange(ev Event) (string, bool) {
 // property.
 func ChangeCategory(targetProperty, targetType, action string) (string, bool) {
 	if cat, ok := propertyCategories[targetProperty]; ok {
+		return cat, true
+	}
+	if cat, ok := pamTargetCategories[targetType]; ok {
 		return cat, true
 	}
 	switch targetType {

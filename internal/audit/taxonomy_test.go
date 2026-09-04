@@ -21,13 +21,29 @@ func TestPropertyTaxonomyCoversVendoredSchema(t *testing.T) {
 		t.Errorf("vendored ConfigurationAuditLog.target.property %q lacks a category or explicit exclusion rationale", property)
 	}
 	for property := range propertyCategories {
-		if !contains(properties, property) {
-			t.Errorf("categorized property %q is absent from the vendored schema", property)
+		if _, liveOnly := liveAuditTargetProperties[property]; !contains(properties, property) && !liveOnly {
+			t.Errorf("categorized property %q is absent from both the vendored schema and live vocabulary", property)
 		}
 	}
 	for property := range propertyExclusions {
 		if !contains(properties, property) {
 			t.Errorf("excluded property %q is absent from the vendored schema", property)
+		}
+	}
+}
+
+// TestLivePropertiesAbsentFromVendoredSchemaAreTaxonomized guards properties
+// observed from live audit records which the Tailscale OpenAPI schema cannot
+// describe. Without it, additions such as Border0's PAM provisioning toggle
+// would silently bypass the taxonomy guard above.
+func TestLivePropertiesAbsentFromVendoredSchemaAreTaxonomized(t *testing.T) {
+	properties := vendoredAuditTargetProperties(t)
+	for property := range liveAuditTargetProperties {
+		if contains(properties, property) {
+			continue
+		}
+		if !knownProperty[property] {
+			t.Errorf("live ConfigurationAuditLog.target.property %q, absent from the vendored schema, lacks a category or explicit exclusion rationale", property)
 		}
 	}
 }
