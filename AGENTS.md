@@ -66,7 +66,7 @@ just gen-config-schema                 # the ROOT config.schema.json (NOT the ch
 | `config.schema.json` | the `Config` struct + `config.example.yaml` | `TestConfigSchemaInSync -update` (root module; no separate tool). The repo-ROOT schema for `config.yaml` — not the chart's `values.schema.json` below |
 | `docs/signal-coverage.md` | `internal/catalog/signal_dispositions.json` | `TestSignalCoverageDocInSync -update` (root module; no separate tool) |
 | `deploy/helm/tailscale2otel/README.md` | `Chart.yaml` + `values.yaml` + `README.md.gotmpl` | `helm-docs` **v1.14.2** |
-| `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.5.0** |
+| `deploy/helm/tailscale2otel/values.schema.json` | `values.yaml` (draft 7) | `helm-values-schema-json` **v2.6.0** |
 | `deploy/grafana/tailscale2otel-{tailnet,health}.json` | `deploy/grafana/gen/build.py` + `gen/dashboards.py` | `python3 build.py --out-dir …` (stdlib only) |
 | `deploy/alerts/grafana-managed/` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --out …` (stdlib only) |
 | `deploy/alerts/prometheus/tailscale2otel.rules.yaml` | `deploy/alerts/gen/build_rules.py` | `python3 build_rules.py --prom-out …` (stdlib only) |
@@ -80,7 +80,7 @@ just gen-config-schema                 # the ROOT config.schema.json (NOT the ch
 > wrong file**, so a mismatch can no longer silently corrupt an artifact. The pins live in the generation
 > task — **when Renovate bumps `losisin/helm-docs-github-action` or
 > `losisin/helm-values-schema-json-action` in `.github/workflows/helm.yml`, update them to match**
-> (the action version ≠ the tool version: action `v3.0.1` installs tool `v2.5.0`).
+> (the action version ≠ the tool version: action `v3.2.0` installs tool `v2.6.0`).
 >
 > Gotcha worth knowing: a plain `go install …/helm-docs@v1.14.2` yields a binary that reports **no
 > version**, because helm-docs reads its version from a build-time ldflag rather than Go build info.

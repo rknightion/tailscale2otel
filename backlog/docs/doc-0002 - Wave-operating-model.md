@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-04 07:31'
+updated_date: '2026-09-04 13:00'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -85,7 +85,7 @@ either one is a second source of truth that drifts.
 
 These have each shipped at least once. Treat them as things to check for, not things to hope about.
 
-### A local gate passing is not the same question as CI passing - four distinct instances
+### A local gate passing is not the same question as CI passing - five distinct instances
 
 - **actionlint.** It shells out to whatever `shellcheck` is on `PATH`. Local shellcheck 0.11.0 does
   not emit SC2015 at all; the runner's older one does. A workflow edit passed locally on two
@@ -94,7 +94,8 @@ These have each shipped at least once. Treat them as things to check for, not th
   Prefer a plain `if` over `A && B || C` in any `run:` block.
 - **`go test -race ./...` at the root is not the test suite.** There is no `go.work`, so it stops at
   the root module and never reaches the four tool modules. `tools/configcheck/go.sum` drifted 82
-  lines out of tidy unnoticed (#437). Run `scripts/verify-modules.sh`.
+  lines out of tidy unnoticed (#437). Run `just check`, whose `just test-modules` leg covers
+  all four.
 - **promqlcheck against the module is a different question from promqlcheck against the artifacts.**
   Building and unit-testing the tool proves nothing about the dashboards and rules the repo ships.
   #526 landed **65 real failures in CI with every local gate green** for exactly this reason.
@@ -104,6 +105,33 @@ These have each shipped at least once. Treat them as things to check for, not th
   and **all 19 advisory rules failed at push** with `Invalid value: "OK"` (it is `"Ok"`). `gcx
   resources validate` says outright that it does not validate the spec. **Only a real
   `gcx resources push` proves a rule is deployable**, and pushing here is pre-authorized.
+- **`just lint` runs whatever `golangci-lint` is on `PATH`, and nothing checks it against the pin.**
+  The justfile carries `golangci_version := "v2.13.2"` and `just setup` installs it, but the lint
+  recipe asserts nothing at run time - unlike the two helm generators, which verify the installed
+  version against their pin and loudly SKIP rather than write a wrong file. A machine left on 2.12.2
+  ran `just lint` green across all five modules while CI's 2.13.2 failed two SA1019 deprecations in
+  `internal/coordination/lease_observer.go` (CI 33868900332, Wave 11). **After any pin bump, `just
+  setup` before trusting a local lint.**
+
+### auto-rc fires after CI, so a wave can finish green and leave main red
+
+Wave 11's exact-head CI 33873152349 passed on `ba8ba6f5` at 12:30 and the run reported itself
+complete. auto-rc 33873859808 then fired off that green CI, cut `v5.0.0-rc.11` at 12:39:58, and its
+`binaries` job failed at 12:45:35 when `wait-for-module-proxy.sh` gave up at its 300s default. The
+tag was real and the proxy ingested it about 14 minutes after creation, so a re-run went green with
+no code change - exactly what the script's own message predicts.
+
+Two durable points. **A wave's closing check must cover the workflows that fire off CI, not only CI
+itself**, because the RC tag does not exist until after the run has declared itself done. And
+**`WAIT_TIMEOUT=300` is a guess about infrastructure nobody here controls**: rc.10 was ingested
+inside it and rc.11 was not, on tags 29 minutes apart.
+
+auto-rc is also the noisiest workflow on this repository. It cuts a full publish - two image arches,
+chart, SBOM, notices, cosign, and a goreleaser cross-compile - on **every** green CI on main, so
+11 RC tags exist for one unreleased 5.0.0 and 8 of them are from a single day. Six of 39 non-skipped
+runs failed, on four unrelated external causes: proxy ingestion lag, a StepSecurity agent timeout, a
+registry `not found` on a manifest digest, and a cosign version guard. Read an auto-rc red as
+infrastructure until proven otherwise, and never as a signal about the commit.
 
 ### A test with a wall-clock margin will eventually fail on a loaded runner
 
@@ -380,5 +408,5 @@ The run's closing terminal message carries only what no single task can: what th
 whole. Nothing durable may live only there.
 
 Before any task goes to `Done`, the definition-of-done gate in `backlog/config.yml` must have
-actually been run and its output seen - plus `scripts/verify-modules.sh` when a tool module changed,
+actually been run and its output seen - plus `just test-modules` when a tool module changed,
 and a real `gcx resources push` when an alert rule changed.
