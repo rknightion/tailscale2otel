@@ -1,10 +1,14 @@
 package app
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
@@ -45,5 +49,106 @@ func TestCoordinationStandbyGatesReadinessAndEmitsLeaderState(t *testing.T) {
 	}
 	if _, ok := values[string(coordination.StateLeader)]; !ok {
 		t.Fatalf("leader metric state labels = %#v, want leader", values)
+	}
+}
+
+// TestRunCoordinatedServesProcessMetricsWhileStandby pins the pull-path half
+// of coordination: the standby keeps its process telemetry available, while
+// collectors remain gated behind the Lease callback. The local host is not in
+// Kubernetes, so coordinator construction is expected to fail after the
+// listener has been started; that makes this a focused lifecycle test rather
+// than a client-go integration test.
+func TestRunCoordinatedServesProcessMetricsWhileStandby(t *testing.T) {
+	cfg := config.Default()
+	cfg.Coordination.Mode = "kubernetes"
+	cfg.Prometheus.Enabled = true
+	cfg.Prometheus.Listen = "127.0.0.1:2112"
+	cfg.Prometheus.Auth.AllowUnauthenticated = true
+
+	process := prometheus.NewRegistry()
+	leader := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "tailscale2otel_coordination_leader_ratio",
+		Help: "lease leader state",
+	}, []string{"coordination_mode", "coordination_state"})
+	process.MustRegister(leader)
+	leader.WithLabelValues("kubernetes", "standby").Set(0)
+
+	metricsStarted := false
+	a := &App{
+		cfg:         cfg,
+		logger:      slog.New(slog.DiscardHandler),
+		readyState:  newComponentHealth(),
+		metricsRun:  func(context.Context) { metricsStarted = true },
+	}
+	a.metricsSrv = a.buildMetricsServer(process)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := a.runCoordinated(ctx); err == nil {
+		t.Fatal("runCoordinated unexpectedly succeeded without in-cluster Kubernetes configuration")
+	}
+	if !metricsStarted {
+		t.Fatal("runCoordinated did not start the standby Prometheus listener")
+	}
+	rec := httptest.NewRecorder()
+	a.metricsSrv.Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("standby /metrics status = %d, want 200; body:\n%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `tailscale2otel_coordination_leader_ratio{coordination_mode="kubernetes",coordination_state="standby"} 0`) {
+		t.Fatalf("standby /metrics lacks the coordination leader zero:\n%s", rec.Body.String())
+	}
+}
+
+func TestCoordinationPromGathererHidesActiveSeriesOutsideLeadership(t *testing.T) {
+	cfg := config.Default()
+	cfg.Coordination.Mode = "kubernetes"
+	process := prometheus.NewRegistry()
+	coordinationMetric := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "tailscale2otel_coordination_leader_ratio",
+		Help: "lease leader state",
+	})
+	process.MustRegister(coordinationMetric)
+	coordinationMetric.Set(0)
+	active := prometheus.NewRegistry()
+	collectorMetric := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "tailscale2otel_devices_count_ratio",
+		Help: "active collector output",
+	})
+	active.MustRegister(collectorMetric)
+	collectorMetric.Set(7)
+
+	a := &App{
+		cfg:                  cfg,
+		promGatherer:         prometheus.Gatherers{process, active},
+		processPromGatherer:  process,
+	}
+	gatherer := a.coordinationPromGatherer()
+	hasMetric := func(name string) bool {
+		t.Helper()
+		families, err := gatherer.Gather()
+		if err != nil {
+			t.Fatalf("Gather: %v", err)
+		}
+		for _, family := range families {
+			if family.GetName() == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, state := range []coordination.State{coordination.StateStandby, coordination.StateSteppedDown} {
+		a.coordinationStatus = coordination.Status{State: state}
+		if !hasMetric("tailscale2otel_coordination_leader_ratio") {
+			t.Errorf("%s gatherer omitted process coordination metric", state)
+		}
+		if hasMetric("tailscale2otel_devices_count_ratio") {
+			t.Errorf("%s gatherer exposed stale active collector series", state)
+		}
+	}
+
+	a.coordinationStatus = coordination.Status{State: coordination.StateLeader}
+	if !hasMetric("tailscale2otel_devices_count_ratio") {
+		t.Error("leader gatherer omitted active collector series")
 	}
 }

@@ -523,6 +523,17 @@ func (a *App) requireMetricsAuth(next http.Handler) http.Handler {
 	})
 }
 
+// startMetrics starts the Prometheus listener. metricsRun is a test-only
+// synchronous override used to assert lifecycle ownership without depending on
+// scheduler timing; production always launches runMetrics in a goroutine.
+func (a *App) startMetrics(ctx context.Context) {
+	if a.metricsRun != nil {
+		a.metricsRun(ctx)
+		return
+	}
+	go a.runMetrics(ctx) //nolint:gosec // G118 false positive: runMetrics's only context.Background is the bounded graceful-shutdown context
+}
+
 // runMetrics serves the Prometheus endpoint until ctx is canceled, then shuts
 // down gracefully. Mirrors runAdmin, including HTTPS when both prometheus.tls
 // files are configured (Validate has already confirmed they exist and are

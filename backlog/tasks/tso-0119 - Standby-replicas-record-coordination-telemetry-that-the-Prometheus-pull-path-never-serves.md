@@ -3,9 +3,11 @@ id: TSO-0119
 title: >-
   Standby replicas record coordination telemetry that the Prometheus pull path
   never serves
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 23:02'
+updated_date: '2026-09-04 05:44'
 labels:
   - needs-triage
 dependencies: []
@@ -43,3 +45,20 @@ The judgment this needs. Leader-only may have been deliberate, to stop two pods 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Establish by observation, before source edits, whether a standby ProviderSet exports coordination.leader=0 through OTLP; record the observed result.
+2. Add a failing test that pins the intended standby delivery surfaces.
+3. Choose and implement the narrowest standby serving behavior that exposes process coordination state without duplicating active collector series, and document the duplicate-series rationale.
+4. Regenerate docs/metrics.md and run focused checks; root owns shared downstream generation, integrated review, full gate, commit, push, CI, and finalization.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Pre-change observation (2026-09-04, before any tracked Lane A source edit): an in-repository Go overlay exercised App.New, the real ProviderSet, the real observeCoordination standby path, and an actual loopback OTLP/HTTP receiver. Command: `GOFLAGS='-overlay=/Users/rob/repos/tailscale2otel/codex/tso0119_overlay.json' go test -race -v -run '^TestTSO0119ObservedStandbyOTLPExport$' ./internal/app`. Decisive output: `OTLP receiver observed tailscale2otel.coordination.leader value=0 coordination.mode=kubernetes coordination.state=standby coordination.identity=standby-pod coordination.lease_name=tailscale2otel coordination.namespace=observation`. This proves the standby OTLP push path carries leader=0 and the expected coordination attributes. It does not prove live Kubernetes election or Prometheus serving.
+
+Chosen behavior and duplicate-series decision: keep the Prometheus listener alive for the whole Kubernetes coordination lifecycle, but select its gatherer at scrape time. Standby and stepped-down replicas expose only the process-level provider, including coordination.leader=0; only the current leader exposes the full process-plus-tailnet gatherer. This makes coordination state observable on every enabled delivery path without allowing collector/per-tailnet series retained by a former leader to remain scrapeable after demotion. A scrape already in progress at transition may finish its prior snapshot; subsequent gathers follow the latest observed state.
+<!-- SECTION:NOTES:END -->

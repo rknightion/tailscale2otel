@@ -114,7 +114,12 @@ type App struct {
 	webhookDedups map[string]*dedup.Set // per-tailnet route sets in multi-tailnet mode
 	adminSrv      *http.Server
 	metricsSrv    *http.Server        // prometheus pull endpoint; nil unless prometheus.enabled
+	metricsRun    func(context.Context) // test-only override for starting metricsSrv without a wall-clock race
 	promGatherer  prometheus.Gatherer // process-wide gatherer behind metricsSrv; nil when pull is unavailable
+	// processPromGatherer contains only process-level metrics. Kubernetes standbys
+	// serve it while the full gatherer stays leader-only, so a former leader's
+	// collector series can never remain scrapeable after it steps down.
+	processPromGatherer prometheus.Gatherer
 	// Cert reloaders for the two listeners above, nil unless that listener
 	// serves TLS. Held here rather than in a package-level registry keyed by
 	// server pointer: a global would never drop an entry, and the lifetime of
@@ -486,7 +491,8 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	if cfg.PrometheusPullEnabled() {
 		if g := ps.PromGatherer(); g != nil {
 			a.promGatherer = g
-			a.metricsSrv = a.buildMetricsServer(g)
+			a.processPromGatherer = ps.Process().PromGatherer()
+			a.metricsSrv = a.buildMetricsServer(a.coordinationPromGatherer())
 		}
 	}
 
@@ -857,8 +863,8 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	if startAdmin && a.adminSrv != nil {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
 	}
-	if a.metricsSrv != nil {
-		go a.runMetrics(ctx) //nolint:gosec // G118 false positive: runMetrics's only context.Background is the bounded graceful-shutdown context
+	if a.metricsSrv != nil && a.cfg.Coordination.Mode != "kubernetes" {
+		a.startMetrics(ctx)
 	}
 
 	walEnabled := a.ingressWAL != nil && a.ingressWAL.wal != nil

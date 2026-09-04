@@ -312,7 +312,7 @@ var (
 		Name:        MetricCoordinationLeader,
 		Unit:        "1",
 		Instrument:  metricdoc.Gauge,
-		Description: "Lease leadership flag: `1` while this pod holds the active-passive Kubernetes Lease, otherwise `0`. A stepped-down value marks a deliberate stop after renewal failure.",
+		Description: "Lease leadership flag: `1` while this pod holds the active-passive Kubernetes Lease, otherwise `0`. In Kubernetes coordination mode, every enabled delivery path exposes this process-level metric while a pod is standby; the Prometheus pull path keeps collector series leader-only. A stepped-down value marks a deliberate stop after renewal failure.",
 		Attributes:  []string{"coordination.mode", "coordination.lease_name", "coordination.namespace", "coordination.identity", "coordination.state"},
 		Group:       GroupSelfObs,
 	}

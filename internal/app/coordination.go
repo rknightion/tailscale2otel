@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
@@ -19,6 +22,11 @@ func (a *App) runCoordinated(ctx context.Context) error {
 	a.coordinationMu.Unlock()
 	if a.adminSrv != nil {
 		go a.runAdmin(ctx) //nolint:gosec // G118 false positive: runAdmin's only context.Background is the bounded graceful-shutdown context
+	}
+	if a.metricsSrv != nil {
+		// The listener stays alive before and after campaigning. Its dynamic
+		// gatherer serves only process telemetry until this replica is leader.
+		a.startMetrics(ctx)
 	}
 	c, err := coordination.New(coordination.Options{
 		LeaseName:     a.cfg.Coordination.LeaseName,
@@ -44,6 +52,28 @@ func (a *App) runCoordinated(ctx context.Context) error {
 		return fmt.Errorf("run lease coordination: %w", err)
 	}
 	return nil
+}
+
+// coordinationPromGatherer selects the safe pull surface at scrape time. A
+// standby (including a former leader after demotion) retains process-level
+// telemetry such as coordination.leader, but never the full gatherer carrying
+// collector and per-tailnet series. Selecting on every Gather rather than when
+// the listener starts means each completed scrape follows the latest observed
+// coordination state; a gather already in progress may still return its prior
+// snapshot.
+func (a *App) coordinationPromGatherer() prometheus.Gatherer {
+	return coordinationPromGatherer{app: a}
+}
+
+type coordinationPromGatherer struct{ app *App }
+
+func (g coordinationPromGatherer) Gather() ([]*dto.MetricFamily, error) {
+	a := g.app
+	if a.cfg == nil || a.cfg.Coordination.Mode != "kubernetes" ||
+		a.currentCoordination().State == coordination.StateLeader || a.processPromGatherer == nil {
+		return a.promGatherer.Gather()
+	}
+	return a.processPromGatherer.Gather()
 }
 
 func (a *App) observeCoordination(s coordination.Status) {
