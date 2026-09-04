@@ -437,6 +437,11 @@ drift, and `configcheck` on both `config.example.yaml` and the chart-rendered co
   observability captures out of tracked files. Store secrets and raw captures only in ignored local
   paths. `gcx metrics|logs query` needs BOTH `--from` and `--to`; `auto_configure` must NEVER target a
   real/production tailnet.
+- **Kubernetes lab context:** use `robknight.saga-turtle.ts.net` for normal lab reads and writes; it
+  reaches the same cluster environment as the direct EKS context. Do not probe or refresh AWS SSO as
+  routine preflight. Use the direct AWS/EKS context and touch AWS SSO only when the task genuinely
+  cannot be completed correctly through the proxy, such as an explicit ServiceAccount impersonation
+  or RBAC proof.
 - **Conventional Commits:** commit messages follow `type(scope): subject` (see `git log`); Renovate and
   release tooling assume it.
 - **A breaking change (`!`) that cuts a new MAJOR needs the Go module path moved first.** release-please
