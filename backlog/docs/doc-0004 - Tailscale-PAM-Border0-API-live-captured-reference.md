@@ -142,7 +142,7 @@ recording_locked_by_plan (bool)
 metadata { ip_metadata{}, device{ ip, name } }
 events[] { created_at, type ("ssh_session"|"ssh_exec"), status, metadata }
              // metadata is JSON-in-a-string and CARRIES THE LITERAL COMMAND LINE:
-             // {"pty": false, "command": "hostname; id", "username": "pamdemo", ...}
+             // {"pty": false, "command": "hostname; id", "username": "<user>", ...}
 ```
 
 `auth_info` and `events[].metadata` are **strings containing JSON**, not objects. Double decode.
@@ -283,17 +283,17 @@ parse it for control flow, and never label on it.
 
 ```jsonc
 {
-  "name": "pam-db", "socket_type": "database", "recording_enabled": true,
+  "name": "<service>", "socket_type": "database", "recording_enabled": true,
   "connector_ids": ["<connector id>"],
   "upstream_configuration": {
     "service_type": "database",
     "database_service_configuration": {
       "database_service_type": "standard",
       "standard_database_service_configuration": {
-        "hostname": "pam-db", "port": 5432,
+        "hostname": "<upstream host>", "port": 5432,
         "protocol": "postgres",
         "authentication_type": "username_and_password",
-        "database_name": "pamdemo",
+        "database_name": "<db>",
         "username_and_password_auth_configuration": {"username": "…", "password": "…"}
       }
     }
@@ -301,7 +301,7 @@ parse it for control flow, and never label on it.
 }
 ```
 
-The client then connects to `<name>.saga-turtle.ts.net:5432` with **its own identity as the
+The client then connects to the service's MagicDNS name on 5432 with **its own identity as the
 username and an empty password**; PAM injects the real upstream credentials. Verified with pg8000
 against a throwaway Postgres 17.
 

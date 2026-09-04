@@ -4,6 +4,7 @@ title: PAM config changes never reach the audit-changes metric
 status: To Do
 assignee: []
 created_date: '2026-09-04 10:36'
+updated_date: '2026-09-04 13:48'
 labels: []
 dependencies: []
 priority: medium
@@ -14,7 +15,7 @@ ordinal: 135000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Live-verified 2026-09-04 against a real PAM deployment on the m7kni.io tailnet. Nine BORDER0_API audit events (PAM_SERVICE_ACCOUNT, PAM_CONNECTOR and PAM_SERVICE creates, one update, one delete) were polled and counted correctly on tailscale.config.audit.events (origin=BORDER0_API, CREATE=7 UPDATE=1 DELETE=1 in Grafana Cloud), but produced ZERO increments on tailscale.config.audit.changes.
+Live-verified 2026-09-04 against a real PAM deployment on the lab tailnet. Nine BORDER0_API audit events (PAM_SERVICE_ACCOUNT, PAM_CONNECTOR and PAM_SERVICE creates, one update, one delete) were polled and counted correctly on tailscale.config.audit.events (origin=BORDER0_API, CREATE=7 UPDATE=1 DELETE=1 confirmed in Grafana Cloud), but produced ZERO increments on tailscale.config.audit.changes.
 
 Cause: classifyChange keys on a curated target.property or on the device-churn / api-key type+action rules. A PAM event carries target.type PAM_SERVICE / PAM_CONNECTOR / PAM_SERVICE_ACCOUNT with no curated property, so it falls through. Consequence: the PAM_CONNECTOR and PAM_SERVICE_ACCOUNT entries TSO-0087 added to knownActorTypes in internal/audit/classify.go are unreachable in practice, because normalizeActorType is only called from the changes path.
 
