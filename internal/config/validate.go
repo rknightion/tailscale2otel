@@ -1670,8 +1670,13 @@ func (c *Config) validationChecks() []configCheck {
 		if leaseDuration <= 0 || renewDeadline <= 0 || retryPeriod <= 0 {
 			return fmt.Errorf("coordination lease_duration, renew_deadline, and retry_period must all be positive")
 		}
-		if leaseDuration <= renewDeadline || renewDeadline <= retryPeriod {
-			return fmt.Errorf("coordination timings invalid: require lease_duration > renew_deadline > retry_period")
+		// Keep this factor aligned with client-go leaderelection.JitterFactor.
+		// Reject the configuration here rather than letting NewLeaderElector fail
+		// after the application has already started constructing its runtime.
+		const retryJitterFactor = 1.2
+		minimumRenewDeadline := time.Duration(retryJitterFactor * float64(retryPeriod))
+		if leaseDuration <= renewDeadline || renewDeadline <= minimumRenewDeadline {
+			return fmt.Errorf("coordination timings invalid: require lease_duration > renew_deadline > 1.2 * retry_period > 0")
 		}
 		return nil
 	})

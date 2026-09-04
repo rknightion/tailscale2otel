@@ -3,6 +3,7 @@ package coordination
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,6 +33,30 @@ func TestNewRejectsInvalidElectionOptions(t *testing.T) {
 	_, err := New(Options{Client: fake.NewSimpleClientset(), Identity: "pod-a", LeaseName: "lease", Namespace: "default", LeaseDuration: 10 * time.Second, RenewDeadline: 10 * time.Second, RetryPeriod: time.Second})
 	if err == nil || !errors.Is(err, ErrInvalidOptions) {
 		t.Fatalf("New invalid timings error = %v, want ErrInvalidOptions", err)
+	}
+}
+
+func TestNewEnforcesClientGoRetryJitterBound(t *testing.T) {
+	base := Options{
+		Client:        fake.NewSimpleClientset(),
+		Identity:      "pod-a",
+		LeaseName:     "lease",
+		Namespace:     "default",
+		LeaseDuration: 13 * time.Second,
+		RetryPeriod:   10 * time.Second,
+	}
+
+	invalid := base
+	invalid.RenewDeadline = 12 * time.Second
+	if _, err := New(invalid); err == nil || !errors.Is(err, ErrInvalidOptions) ||
+		!strings.Contains(err.Error(), "renew deadline > 1.2 * retry period") {
+		t.Fatalf("New(jitter-bound timing) error = %v, want actionable ErrInvalidOptions", err)
+	}
+
+	valid := base
+	valid.RenewDeadline = 12*time.Second + time.Nanosecond
+	if _, err := New(valid); err != nil {
+		t.Fatalf("New(timing immediately above jitter bound): %v", err)
 	}
 }
 

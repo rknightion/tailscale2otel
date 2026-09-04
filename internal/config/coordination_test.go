@@ -36,6 +36,19 @@ func TestCoordinationDefaultsAndValidation(t *testing.T) {
 	}
 }
 
+func TestCoordinationValidationEnforcesClientGoRetryJitterBound(t *testing.T) {
+	const prefix = "coordination:\n  mode: kubernetes\n  lease_duration: 13s\n"
+
+	err := loadErr(t, prefix+"  renew_deadline: 12s\n  retry_period: 10s\n")
+	if err == nil || !strings.Contains(err.Error(), "renew_deadline > 1.2 * retry_period") {
+		t.Fatalf("Load(jitter-bound timing) error = %v, want actionable client-go jitter-bound error", err)
+	}
+
+	if err := loadErr(t, prefix+"  renew_deadline: 12000000001ns\n  retry_period: 10s\n"); err != nil {
+		t.Fatalf("Load(timing immediately above jitter bound): %v", err)
+	}
+}
+
 func TestCoordinationBothSourceWarning(t *testing.T) {
 	c := config.Default()
 	c.Coordination.Mode = "kubernetes"

@@ -76,10 +76,11 @@ type Coordinator struct {
 // constructed only for kubernetes coordination, so mode none carries neither
 // an API-server dependency nor a Kubernetes credential requirement.
 func New(opts Options) (*Coordinator, error) {
+	minimumRenewDeadline := time.Duration(leaderelection.JitterFactor * float64(opts.RetryPeriod))
 	if opts.LeaseName == "" || opts.Namespace == "" ||
-		opts.LeaseDuration <= opts.RenewDeadline || opts.RenewDeadline <= opts.RetryPeriod ||
+		opts.LeaseDuration <= opts.RenewDeadline || opts.RenewDeadline <= minimumRenewDeadline ||
 		opts.RetryPeriod <= 0 {
-		return nil, fmt.Errorf("%w: require non-empty lease name/namespace and lease duration > renew deadline > retry period > 0", ErrInvalidOptions)
+		return nil, fmt.Errorf("%w: require non-empty lease name/namespace and lease duration > renew deadline > 1.2 * retry period > 0", ErrInvalidOptions)
 	}
 	if opts.Identity == "" {
 		identity, err := os.Hostname()
