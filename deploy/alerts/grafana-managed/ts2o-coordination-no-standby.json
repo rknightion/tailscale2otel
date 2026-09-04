@@ -1,0 +1,107 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-coordination-no-standby"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "6",
+      "description": "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace {{ $labels.coordination_namespace }} has no zero-only contender for 10m. It has no ready standby to take over if its leader fails, so availability now depends on a new pod being scheduled and winning the Lease. The 10m window intentionally tolerates the backend's stale samples after a standby disappears. This is advisory and non-paging while operators establish their rescheduling baseline. Inspect the Lease leadership panel, then check replica availability, scheduling, and the Lease object. Absence stays OK: coordination.mode=kubernetes is optional.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health",
+      "summary": "Lease {{ $labels.coordination_lease_name }} has no standby"
+    },
+    "execErrState": "Ok",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (coordination_lease_name, coordination_namespace) (sum by (coordination_lease_name, coordination_namespace, coordination_identity) (tailscale2otel_coordination_leader_ratio) == bool 0)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  1
+                ],
+                "type": "lt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "10m0s",
+    "labels": {
+      "domain": "observability",
+      "service": "tailscale2otel",
+      "severity": "advisory",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Coordination no standby",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

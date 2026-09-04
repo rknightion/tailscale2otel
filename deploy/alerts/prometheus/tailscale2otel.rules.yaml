@@ -23,6 +23,39 @@ groups:
         annotations:
           summary: "tailscale2otel exporter is down"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
+      - alert: "CoordinationNoLeader"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (tailscale2otel_coordination_leader_ratio)) < 1"
+        for: "5m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Lease {{ $labels.coordination_lease_name }} has no leader"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "CoordinationSplitBrain"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (tailscale2otel_coordination_leader_ratio)) > 1"
+        for: "5m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Lease {{ $labels.coordination_lease_name }} has multiple leaders"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "CoordinationNoStandby"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (sum by (coordination_lease_name, coordination_namespace, coordination_identity) (tailscale2otel_coordination_leader_ratio) == bool 0)) < 1"
+        for: "10m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Lease {{ $labels.coordination_lease_name }} has no standby"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
       - alert: "TLSCertificateExpiring"
         expr: "(min by (component) (tailscale2otel_tls_cert_not_after_seconds - time())) < 1209600"
         for: "1h"

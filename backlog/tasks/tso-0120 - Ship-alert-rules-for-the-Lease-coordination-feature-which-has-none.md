@@ -1,9 +1,11 @@
 ---
 id: TSO-0120
 title: 'Ship alert rules for the Lease coordination feature, which has none'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 23:02'
+updated_date: '2026-09-04 06:00'
 labels:
   - needs-triage
 dependencies: []
@@ -45,3 +47,20 @@ Alert authoring in this repository has a hard rule: gcx resources validate does 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Add generated advisory, non-paging no-leader and split-brain coordination rules using the repository label taxonomy.
+2. Decide leadership flapping explicitly and either generate it with executable fixtures or record the reason for rejection.
+3. Add no-standby only after TSO-0119 has landed; otherwise record an explicit defer and resume boundary.
+4. Regenerate Grafana-managed and Prometheus artifacts plus alert-profile docs, validate offline, and execute promtool fixtures. Root alone updates shared catalog artifacts, pushes rules with gcx, verifies deployment, commits, pushes, checks CI, and finalizes.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane implementation evidence: generated enabled advisory, non-paging `CoordinationNoLeader` and `CoordinationSplitBrain` rules with the observability label taxonomy and per-Lease/namespace aggregation. TDD boundary test failed before catalogue entries, then `just gen-dashboards`, `just gen-promrules`, 129 Python generator tests, `just rules-check` (126 rules plus fixtures), and `git diff --check` passed. Leadership flapping was rejected for this task: the only available signal is a synchronous last-value gauge whose `changes()` reflects individual-series/retention churn, not completed leadership handovers; a truthful rule needs a handover counter or event stream. No-standby was deferred in this first pass because TSO-0119 had not yet landed, as AC4 requires. Offline checks do not prove Grafana deployability; root still owns the real push and verify-deploy.
+
+After TSO-0119 landed as 15e4777d, the conditional no-standby rule was added. `CoordinationNoStandby` sums all state-labelled samples per identity before counting zero-only contenders, so a promoted leader 's retained zero standby series does not count as a live standby. Its 10m `for` tolerates stale backend samples after replica loss. Promtool fixtures prove a lone leader fires after the window while a leader plus standby in another namespace stays quiet. Final focused evidence: 130 lane tests passed before the follow-up repair; `just rules-check` validated 127 rules and all fixtures.
+<!-- SECTION:NOTES:END -->

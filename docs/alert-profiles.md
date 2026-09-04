@@ -24,7 +24,7 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
 
 tailscale2otel's Grafana-managed alert catalogue (see
 [deploy/alerts/README.md](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/README.md)) ships one committed manifest set:
-the **recommended** profile below, unchanged from every previous release. `baseline` and
+the **recommended** profile below, which is also the default render of the current catalogue. `baseline` and
 `strict` are alternative *installable* profiles — materialize either on demand with:
 
 ```sh
@@ -40,21 +40,21 @@ materializing another profile is a command, not a checked-in directory.
 
 The smallest set worth waking someone up to. Enables only coverage_critical (the exporter itself is down) and core-policy rules (a signal every running exporter always emits, so its absence is always abnormal) — nothing that needs an optional collector or feature turned on, and nothing that needs a site-specific threshold tuned first. Recording rules keep their recommended paused state; they never page on their own.
 
-- Alert rules: **11 enabled**, 91 paused
+- Alert rules: **11 enabled**, 94 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `recommended`
 
-Today's shipped starter set, unchanged. The compatibility profile: its output is byte-identical to what tailscale2otel has always shipped in deploy/alerts/grafana-managed/, and is what `--out` produces with no `--profile` flag.
+Preserves every rule's authored paused state from the current catalogue. An explicit recommended render is byte-identical to what `--out` produces with no `--profile` flag.
 
-- Alert rules: **36 enabled**, 66 paused
+- Alert rules: **39 enabled**, 66 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `strict`
 
 Enables every alert and every recording rule EXCEPT the explicit exceptions below, which stay paused because enabling them blind is actively misleading rather than merely noisy — a documented placeholder threshold, a per-plan ingest-cost budget, or a signal that is legitimately absent on a healthy, idle deployment.
 
-- Alert rules: **99 enabled**, 3 paused
+- Alert rules: **102 enabled**, 3 paused
 - Recording rules: **23 enabled**, 0 paused
 
 Explicit exceptions (stay paused, with a reason):
@@ -62,6 +62,29 @@ Explicit exceptions (stay paused, with a reason):
 - `ts2o-api-rate-limit-wait-high` (API rate-limiter wait high) — strict exception: the rule's own description says its 5s threshold IS A PLACEHOLDER pending a real per-site baseline; enabling it blind pages on a busy tailnet's normal rate-limiter wait time rather than on an actual problem.
 - `ts2o-export-volume-high` (Export volume high) — strict exception: its 5000/s threshold is a Grafana Cloud ingest-cost budget tied to one specific plan, not a correctness signal, so enabling it fleet-wide pages on someone else's billing tier rather than on a real export problem.
 - `ts2o-ingest-data-stale` (Accepted ingest data stale) — strict exception: it fires on any legitimately idle sparse ingestion source — a quiet webhook or audit stream with nothing to report is not a fault, and the rule ships paused specifically so it is enabled per source/signal pair with a threshold tuned to that workload.
+
+## Lease coordination coverage
+
+`CoordinationNoLeader`, `CoordinationSplitBrain`, and `CoordinationNoStandby`
+aggregate the current leadership gauge by Lease and namespace. They are enabled
+advisory rules with no `page` label: observe their behaviour before raising their
+notification tier. The Lease leadership panel retains the identity and state labels
+needed to identify the contenders.
+
+Leadership flapping is intentionally not a shipped rule. The available
+`tailscale2otel_coordination_leader_ratio` signal is a synchronous last-value gauge,
+not a handover counter or an event stream; its state-labelled series can linger at
+their last value. A `changes()` expression would count individual series changes or
+their retention behaviour, not completed Lease handovers, and would therefore turn
+normal process churn into a misleading alert. Add an explicit, monotonic handover
+counter or timestamped transition signal before alerting on flapping.
+
+TSO-0119 now exposes process-level coordination telemetry on standby and stepped-down
+Prometheus pull endpoints while keeping collector telemetry leader-only. `CoordinationNoStandby`
+therefore counts identities whose all-state leader-gauge sum remains zero; it does not
+select a raw `coordination_state="standby"` series, because a promoted leader retains
+that old zero-valued state under synchronous last-value aggregation. Its 10m `for`
+window deliberately waits through the backend's stale samples after a replica loss.
 
 ## Recording rules
 

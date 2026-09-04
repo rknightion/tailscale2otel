@@ -84,7 +84,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **102 alert rules + 23 recording rules** across five groups (`-health`,
+has **105 alert rules + 23 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide — `gen/build_rules.py` is the source of truth.
 
@@ -127,15 +127,15 @@ semantics:
 |---|---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
 | `core` | `NoData` | `Error` | always emitted while the exporter runs | 10 |
-| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 67 |
-| `advisory` | `Ok` | `Ok` | hygiene; neither absence nor a transient error is actionable | 19 |
+| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 72 |
+| `advisory` | `Ok` | `Ok` | hygiene; neither absence nor a transient error is actionable | 22 |
 
 Before this, *every* rule was fail-open on error, so a broken datasource read
 as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 98 of the 102 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 101 of the 105 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel
@@ -185,6 +185,9 @@ python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen
 | Rule | Severity | Default | Fires when |
 |---|---|---|---|
 | `ExporterDown` | critical | ✅ on | `tailscale2otel_up_ratio` is `0` **or absent** for 5m — the exporter process died or stopped emitting entirely. The pack's only `coverage_critical` rule: a query error pages too |
+| `CoordinationNoLeader` | advisory | ✅ on | the summed current leader flags for one Kubernetes Lease/namespace stay below 1 for 5m — no replica is collecting; no `page` label while the handover baseline is observed |
+| `CoordinationSplitBrain` | advisory | ✅ on | the summed current leader flags for one Kubernetes Lease/namespace stay above 1 for 5m — multiple replicas can collect and double-count logs; no `page` label while the handover baseline is observed |
+| `CoordinationNoStandby` | advisory | ✅ on | zero standby identities remain for one Kubernetes Lease/namespace for 10m — the current leader has no ready failover; the window tolerates stale samples after replica loss and has no `page` label |
 | `CollectorScrapeFailing` | warning | ✅ on | `tailscale2otel_scrape_success_ratio == 0` (per collector) for 15m — the last scrape failed and hasn't recovered |
 | `CollectorScrapeStale` | warning | ✅ on | a collector hasn't completed a scrape in >1h (wedged; success gauge can stay stale at 1) |
 | `CollectorScrapeErrorRateHigh` | warning | ✅ on | `rate(scrape_errors_total[5m]) > 0` per collector for 15m — catches a **flapping** collector, whose last-scrape success gauge reads `1` at every evaluation so `CollectorScrapeFailing` never fires |

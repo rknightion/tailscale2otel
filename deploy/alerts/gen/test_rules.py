@@ -31,6 +31,7 @@ Run: ``python3 -m unittest discover -s deploy/alerts/gen -t deploy/alerts/gen``
 
 import importlib.util
 import json
+from collections import Counter
 from pathlib import Path
 import re
 import tempfile
@@ -43,6 +44,7 @@ DASHBOARDS = [ROOT / "deploy" / "grafana" / "tailscale2otel-tailnet.json",
               ROOT / "deploy" / "grafana" / "tailscale2otel-health.json"]
 MANIFEST_DIR = ROOT / "deploy" / "alerts" / "grafana-managed"
 PROM_RULES = ROOT / "deploy" / "alerts" / "prometheus" / "tailscale2otel.rules.yaml"
+ALERT_README = ROOT / "deploy" / "alerts" / "README.md"
 
 
 def load_module(name, path):
@@ -352,8 +354,23 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(102, len(alert_rules()))
+        self.assertEqual(105, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
+
+    def test_readme_policy_counts_match_the_catalogue(self):
+        text = ALERT_README.read_text()
+        documented = {
+            name: int(count)
+            for name, count in re.findall(
+                r"^\| `(coverage_critical|core|optional|advisory)` \|.*\| (\d+) \|$",
+                text,
+                re.MULTILINE,
+            )
+        }
+        rules.rules_by_uid()
+        actual = Counter(rules.POLICY_BY_UID.values())
+        self.assertEqual(dict(actual), documented)
+        self.assertEqual(len(alert_rules()), sum(documented.values()))
 
     def test_durations_are_go_style_strings(self):
         # `for` and relativeTimeRange are Go duration STRINGS in this API, not the
@@ -468,6 +485,75 @@ class AlertableSignalCoverageTest(unittest.TestCase):
         expr = rules.rule_expr(rules.rules_by_uid()["ts2o-node-ip-forwarding"])
         self.assertIn("exitNodeIPForwardingNotEnabled", expr)
         self.assertIn("subnetIPForwardingNotEnabled", expr)
+
+
+class CoordinationAlertTest(unittest.TestCase):
+    """The lease-health rules intentionally cover only current-state failures.
+
+    The exported gauge has no handover counter or event timestamp, so it can
+    prove zero or multiple leaders but cannot distinguish a normal handover from
+    repeated flapping. The generated profile guide records that boundary and the
+    TSO-0119 standby-delivery dependency instead of pretending a `changes()`
+    expression can infer it.
+    """
+
+    UIDS = {
+        "ts2o-coordination-no-leader": "lt",
+        "ts2o-coordination-split-brain": "gt",
+    }
+    EXPR = (
+        "sum by (coordination_lease_name, coordination_namespace) "
+        "(tailscale2otel_coordination_leader_ratio)"
+    )
+
+    def test_current_state_failures_are_enabled_advisory_rules(self):
+        by_uid = rules.rules_by_uid()
+        for uid, op in self.UIDS.items():
+            with self.subTest(uid=uid):
+                rule = by_uid[uid]
+                self.assertEqual(self.EXPR, rules.rule_expr(rule))
+                self.assertEqual(op, rule["_prom"]["op"])
+                self.assertEqual(1, rule["_prom"]["thr"])
+                self.assertEqual("5m", rule["_prom"]["dur"])
+                self.assertFalse(rule["paused"])
+                self.assertEqual("advisory", rules.POLICY_BY_UID[uid])
+                self.assertEqual("advisory", rule["labels"]["severity"])
+                self.assertEqual("observability", rule["labels"]["domain"])
+                self.assertEqual("true", rule["labels"]["skipinvestigation"])
+                self.assertNotIn("page", rule["labels"])
+                self.assertIn("__dashboardUid__", rule["annotations"])
+                self.assertIn("__panelId__", rule["annotations"])
+
+
+class CoordinationNoStandbyAlertTest(unittest.TestCase):
+    """No-standby counts zero-valued contender identities, not state labels.
+
+    A promoted pod retains its old zero-valued standby series, so selecting
+    `coordination_state="standby"` would mistake its own history for a live
+    redundant replica. Summing every state per identity first makes any identity
+    that has led non-zero; only an identity that remains wholly zero is standby.
+    """
+
+    EXPR = (
+        "sum by (coordination_lease_name, coordination_namespace) "
+        "(sum by (coordination_lease_name, coordination_namespace, coordination_identity) "
+        "(tailscale2otel_coordination_leader_ratio) == bool 0)"
+    )
+
+    def test_no_standby_is_enabled_advisory_and_identity_aware(self):
+        rule = rules.rules_by_uid()["ts2o-coordination-no-standby"]
+        self.assertEqual(self.EXPR, rules.rule_expr(rule))
+        self.assertEqual("lt", rule["_prom"]["op"])
+        self.assertEqual(1, rule["_prom"]["thr"])
+        self.assertEqual("10m", rule["_prom"]["dur"])
+        self.assertFalse(rule["paused"])
+        self.assertEqual("advisory", rules.POLICY_BY_UID[rule["uid"]])
+        self.assertEqual("advisory", rule["labels"]["severity"])
+        self.assertEqual("observability", rule["labels"]["domain"])
+        self.assertEqual("true", rule["labels"]["skipinvestigation"])
+        self.assertNotIn("page", rule["labels"])
+        self.assertIn("__dashboardUid__", rule["annotations"])
+        self.assertIn("__panelId__", rule["annotations"])
 
 
 class NewAlertRulesTest(unittest.TestCase):
@@ -1102,6 +1188,14 @@ class InstallableProfilesTest(unittest.TestCase):
                 with self.subTest(name=p.name):
                     self.assertEqual(p.read_bytes(), (Path(implicit) / p.name).read_bytes())
 
+    def test_recommended_describes_current_catalogue_preservation(self):
+        rationale = rules.PROFILES["recommended"]["rationale"]
+        decision = rules._recommended_decide(rules.rules_by_uid()["ts2o-exporter-down"]).why
+        for text in (rationale, decision):
+            self.assertIn("authored", text)
+            self.assertNotIn("always shipped", text)
+            self.assertNotIn("unchanged", text)
+
     def test_every_profile_materializes_and_validates(self):
         for name in rules.profile_names():
             with self.subTest(profile=name):
@@ -1306,12 +1400,24 @@ class AlertProfilesDocTest(unittest.TestCase):
             with self.subTest(profile=name):
                 self.assertIn("`%s`" % name, text)
 
+    def test_doc_does_not_claim_the_recommended_catalogue_never_changes(self):
+        text = ALERT_PROFILES_DOC.read_text()
+        self.assertNotIn("unchanged from every previous release", text)
+        self.assertNotIn("what tailscale2otel has always shipped", text)
+
     def test_doc_mentions_every_strict_exception_and_its_reason(self):
         text = ALERT_PROFILES_DOC.read_text()
         for uid, why in rules.STRICT_EXCEPTIONS.items():
             with self.subTest(uid=uid):
                 self.assertIn(uid, text)
                 self.assertIn(why, text)
+
+    def test_doc_records_coordination_detection_boundaries(self):
+        text = ALERT_PROFILES_DOC.read_text()
+        self.assertIn("Leadership flapping is intentionally not a shipped rule", text)
+        self.assertIn("TSO-0119", text)
+        self.assertIn("CoordinationNoStandby", text)
+        self.assertNotIn("No standby alert is deferred until TSO-0119 lands", text)
 
 
 if __name__ == "__main__":

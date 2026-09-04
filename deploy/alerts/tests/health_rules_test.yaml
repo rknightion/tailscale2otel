@@ -78,6 +78,100 @@ tests:
               summary: "tailscale2otel exporter is down"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
 
+  # --- Lease coordination: aggregate contenders, not individual pods --------
+  # The gauge has one series per contender/state. These rules must collapse
+  # identity and state into exactly one verdict for a Lease/namespace: zero
+  # leaders means collection has stopped; two leaders risks double-counting.
+  - name: no coordination leader fires once per lease after five minutes
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="standby"}'
+        values: '0+0x20'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="standby"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CoordinationNoLeader
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: CoordinationNoLeader
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              coordination_lease_name: tailscale2otel
+              coordination_namespace: default
+            exp_annotations:
+              summary: "Lease tailscale2otel has no leader"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - eval_time: 10m
+        alertname: CoordinationSplitBrain
+        exp_alerts: []
+
+  - name: split brain fires once per lease even with two leader identities
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="leader"}'
+        values: '1+0x20'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="leader"}'
+        values: '1+0x20'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-c",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="standby"}'
+        values: '0+0x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: CoordinationSplitBrain
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: CoordinationSplitBrain
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              coordination_lease_name: tailscale2otel
+              coordination_namespace: default
+            exp_annotations:
+              summary: "Lease tailscale2otel has multiple leaders"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - eval_time: 10m
+        alertname: CoordinationNoLeader
+        exp_alerts: []
+
+  # `coordination_state="standby"` alone is not a live-standby test: a pod that
+  # became leader retains its former zero-valued standby series. The rule sums
+  # every state per identity first, so only an identity with no leader value at
+  # all counts as a standby. Keep the second namespace in this fixture: a
+  # healthy redundant Lease must not suppress an alert for the lone leader.
+  - name: no standby fires only for the lone leader lease after ten minutes
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="leader"}'
+        values: '1+0x30'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="secondary",coordination_state="leader"}'
+        values: '1+0x30'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-c",coordination_lease_name="tailscale2otel",coordination_namespace="secondary",coordination_state="standby"}'
+        values: '0+0x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: CoordinationNoStandby
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CoordinationNoStandby
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              coordination_lease_name: tailscale2otel
+              coordination_namespace: default
+            exp_annotations:
+              summary: "Lease tailscale2otel has no standby"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+
   # --- CheckpointPersistErrors: counter-reset safety --------------------------
   # A process restart resets the counter to 0. rate() must absorb that rather
   # than reading the drop as a huge negative or the recovery as a spike. A

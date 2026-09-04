@@ -551,6 +551,64 @@ def groups():
               "on the Exporter Health dashboard (uid ts2otel-exporter-health).",
               domain="observability", paused=False,
               policy="coverage_critical", runbook="exporter-down", panel="Uptime"),
+        # Lease coordination is a process-level gauge: every contender reports
+        # 0 or 1, and these sums intentionally retain only the Lease boundary.
+        # Identity and state diagnose the individual pod in the linked panel,
+        # but would create one alert per contender rather than one per broken
+        # election. The signal only changes when state changes, so it cannot
+        # count handovers; the generated profile guide records why flapping is
+        # deliberately not inferred from this last-value gauge.
+        alert("ts2o-coordination-no-leader", "Coordination no leader",
+              "sum by (coordination_lease_name, coordination_namespace) "
+              "(tailscale2otel_coordination_leader_ratio)",
+              "lt", 1, "5m", "advisory",
+              "Lease {{ $labels.coordination_lease_name }} has no leader",
+              "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
+              "{{ $labels.coordination_namespace }} has summed to zero leaders for 5m. No replica "
+              "is running the collector lifecycle, so no new telemetry is being collected. This is "
+              "advisory and non-paging while operators establish a baseline for expected handover "
+              "time. Inspect the Lease leadership panel for each contender's identity and current "
+              "state, then check the Lease object, API-server latency, and the election timing. "
+              "Absence stays OK: coordination.mode=kubernetes is optional, and ExporterDown covers "
+              "the separate case where no exporter emits at all.",
+              domain="observability", paused=False,
+              policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
+        alert("ts2o-coordination-split-brain", "Coordination split brain",
+              "sum by (coordination_lease_name, coordination_namespace) "
+              "(tailscale2otel_coordination_leader_ratio)",
+              "gt", 1, "5m", "advisory",
+              "Lease {{ $labels.coordination_lease_name }} has multiple leaders",
+              "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
+              "{{ $labels.coordination_namespace }} has more than one replica reporting leadership "
+              "for 5m. Multiple active replicas can duplicate collection and double-count logs. This "
+              "is advisory and non-paging while operators establish a baseline for expected handover "
+              "time. Inspect the Lease leadership panel for the identities reporting leader, then "
+              "check the Lease object, API-server latency, and the election timing. Absence stays OK: "
+              "coordination.mode=kubernetes is optional.",
+              domain="observability", paused=False,
+              policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
+        # A promoted contender retains its old zero-valued standby state under
+        # the synchronous Gauge's last-value aggregation. Sum across every
+        # state PER IDENTITY before comparing with bool 0: an identity which has
+        # ever reported leader is non-zero, while a current standby remains
+        # wholly zero. The outer sum therefore counts genuine zero-only
+        # contenders, rather than a leader's retained standby label.
+        alert("ts2o-coordination-no-standby", "Coordination no standby",
+              "sum by (coordination_lease_name, coordination_namespace) "
+              "(sum by (coordination_lease_name, coordination_namespace, coordination_identity) "
+              "(tailscale2otel_coordination_leader_ratio) == bool 0)",
+              "lt", 1, "10m", "advisory",
+              "Lease {{ $labels.coordination_lease_name }} has no standby",
+              "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
+              "{{ $labels.coordination_namespace }} has no zero-only contender for 10m. It has no "
+              "ready standby to take over if its leader fails, so availability now depends on a new "
+              "pod being scheduled and winning the Lease. The 10m window intentionally tolerates the "
+              "backend's stale samples after a standby disappears. This is advisory and non-paging "
+              "while operators establish their rescheduling baseline. Inspect the Lease leadership "
+              "panel, then check replica availability, scheduling, and the Lease object. Absence stays "
+              "OK: coordination.mode=kubernetes is optional.",
+              domain="observability", paused=False,
+              policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
         # TLS certificate health (#316). Both are `optional`: a listener without
         # TLS emits nothing, and absence there means "not configured", not a
         # fault. A datasource error is still an error.
@@ -1945,8 +2003,9 @@ def check_runbook_coverage():
 #
 # A "profile" answers exactly one question for every rule in the catalogue:
 # does it ship paused, and why. `recommended`'s predicate is "keep the
-# author's own paused=... value from alert()/record() above", which is what
-# makes it byte-identical to what this generator has always shipped.
+# author's own paused=... value from alert()/record() above", which makes an
+# explicit recommended render byte-identical to the default render of the
+# current catalogue.
 # `baseline` and `strict` are declarative PREDICATES applied AFTER the
 # catalogue is built — never a second hand-authored rule list — so a rule's
 # classification lives in exactly one place (its `policy=`, and for strict's
@@ -1977,10 +2036,9 @@ class ProfileDecision:
 def _recommended_decide(rule):
     return ProfileDecision(
         rule["paused"],
-        "recommended: today's shipped starter-set state (this rule's own paused= in "
-        "build_rules.py), unchanged. This is the compatibility profile — its output must "
-        "stay byte-identical to what tailscale2otel has always shipped in "
-        "deploy/alerts/grafana-managed/.")
+        "recommended preserves this rule's authored paused= state from build_rules.py; "
+        "the explicit profile and the default render are byte-identical for the current "
+        "catalogue.")
 
 
 def _baseline_decide(rule):
@@ -2045,10 +2103,9 @@ PROFILES = {
         "overrides": {},
         "exceptions": {},
         "rationale": (
-            "Today's shipped starter set, unchanged. The compatibility profile: its output "
-            "is byte-identical to what tailscale2otel has always shipped in "
-            "deploy/alerts/grafana-managed/, and is what `--out` produces with no "
-            "`--profile` flag."
+            "Preserves every rule's authored paused state from the current catalogue. An "
+            "explicit recommended render is byte-identical to what `--out` produces with "
+            "no `--profile` flag."
         ),
     },
     "baseline": {
@@ -2233,7 +2290,7 @@ description: Installable alert profiles (baseline/recommended/strict) and how to
 
 tailscale2otel's Grafana-managed alert catalogue (see
 [deploy/alerts/README.md](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alerts/README.md)) ships one committed manifest set:
-the **recommended** profile below, unchanged from every previous release. `baseline` and
+the **recommended** profile below, which is also the default render of the current catalogue. `baseline` and
 `strict` are alternative *installable* profiles — materialize either on demand with:
 
 ```sh
@@ -2270,6 +2327,32 @@ def _recording_doc_rows():
     ]
 
 
+_COORDINATION_COVERAGE_DOC = """\
+## Lease coordination coverage
+
+`CoordinationNoLeader`, `CoordinationSplitBrain`, and `CoordinationNoStandby`
+aggregate the current leadership gauge by Lease and namespace. They are enabled
+advisory rules with no `page` label: observe their behaviour before raising their
+notification tier. The Lease leadership panel retains the identity and state labels
+needed to identify the contenders.
+
+Leadership flapping is intentionally not a shipped rule. The available
+`tailscale2otel_coordination_leader_ratio` signal is a synchronous last-value gauge,
+not a handover counter or an event stream; its state-labelled series can linger at
+their last value. A `changes()` expression would count individual series changes or
+their retention behaviour, not completed Lease handovers, and would therefore turn
+normal process churn into a misleading alert. Add an explicit, monotonic handover
+counter or timestamped transition signal before alerting on flapping.
+
+TSO-0119 now exposes process-level coordination telemetry on standby and stepped-down
+Prometheus pull endpoints while keeping collector telemetry leader-only. `CoordinationNoStandby`
+therefore counts identities whose all-state leader-gauge sum remains zero; it does not
+select a raw `coordination_state="standby"` series, because a promoted leader retains
+that old zero-valued state under synchronous last-value aggregation. Its 10m `for`
+window deliberately waits through the backend's stale samples after a replica loss.
+"""
+
+
 def generate_alert_profiles_doc():
     """The full docs/alert-profiles.md content, as a string."""
     lines = [_DOC_HEADER]
@@ -2290,6 +2373,7 @@ def generate_alert_profiles_doc():
             lines.append("\nThreshold/`for` overrides:\n\n")
             for uid, title, why in report["overrides"]:
                 lines.append("- `%s` (%s) — %s\n" % (uid, title, why))
+    lines.append("\n" + _COORDINATION_COVERAGE_DOC)
     lines.append("\n## Recording rules\n\n")
     lines.append(
         "These derived series are written by the recording-rule catalogue. The descriptions "
@@ -2517,7 +2601,7 @@ def main():
     ap.add_argument("--profile", choices=profile_names(), default="recommended",
                     help="which installable profile --out/--prom-out materialize (default: "
                          "%(default)s, today's shipped starter set — this is the compatibility "
-                         "profile and must stay byte-identical to what has always shipped).")
+                         "profile and is byte-identical to the default render of the current catalogue).")
     args = ap.parse_args()
     if not args.out and not args.prom_out and not args.docs_out:
         ap.error("nothing to do: pass --out (the shipped manifests), --prom-out (test fixture) "
