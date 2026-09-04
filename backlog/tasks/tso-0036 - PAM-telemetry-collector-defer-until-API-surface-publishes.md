@@ -4,7 +4,7 @@ title: PAM telemetry collector (Border0 API)
 status: To Do
 assignee: []
 created_date: '2026-08-30 09:09'
-updated_date: '2026-09-04 13:55'
+updated_date: '2026-09-04 17:02'
 labels: []
 milestone: m-8
 dependencies: []
@@ -15,19 +15,26 @@ ordinal: 39000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Tailscale PAM went beta 2026-08-26 (Border0 acquisition); PAM service accounts call a PAM API but no endpoints are in the published OpenAPI spec yet. We have no PAM setup, so this is spec-driven only: placeholder tracking task - when PAM endpoints appear in the vendored spec (the daily api-drift lane will surface them), design a collector for session counts/durations by service type, JIT access-request rates and recording-storage settings. Do not build ahead of the spec.
+Tailscale PAM went beta 2026-08-26 (Border0 acquisition). The original premise here was wrong and is corrected: PAM does have a usable API surface, it is just not on api.tailscale.com and never will be. There is no OpenAPI spec for it at all, so the daily api-drift lane cannot cover it and spec/tailscale-api.json will never carry it.
+
+The specification is doc-0004, a live-captured reference verified against a real PAM deployment on the lab: the endpoint map, the four response envelopes, every object shape, the /sessions polling semantics, the PII and cleartext-secret fences, and the three result semantics that produce wrong metrics if taken at face value. Read it in full before writing anything. The fixtures behind it are in .capture/pam_*.json, gitignored and unredacted.
+
+Build a collector for PAM inventory, config shape and session telemetry against that reference. Because nothing upstream will announce a shape change, an unhandled-field adjudication test is mandatory rather than nice to have.
+
+Scope fence: PAM config CHANGES are already counted by the auditlogs collector via origin=BORDER0_API, and PAM services already appear in the services collector as Tailscale Services with their own VIPs. This collector adds the Border0-only dimensions and session telemetry, and restates neither. TSO-0134 owns the audit-side gap.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A new internal/b0api client talks to api.border0.com/api/v1 with a static bearer token, handles all four response envelopes including the bare {} empty case, and is covered by table tests built from the .capture/pam_*.json fixtures
-- [ ] #2 A read-only Border0 service account is sufficient: the collector never calls a mutating endpoint, and a 403 is recorded as scope_denied via apistate.Disposition rather than read as a disabled feature
-- [ ] #3 Inventory and config-shape metrics land for connectors, services, policies, identities, org settings and subscription limits, following the internal/collector/settings pattern of one 0/1 gauge per boolean keyed by a stable name attribute
-- [ ] #4 Session metrics land as deltas with no double counting across restarts, proven by a test that replays the same page twice
-- [ ] #5 The session poller stops paging at the first already-seen session_id, proven by a test asserting the request count against a multi-page fixture
-- [ ] #6 No PII reaches a metric label: a test asserts the emitted attribute set against an allowlist, and upstream_configurations secrets appear in no metric, log or snapshot
-- [ ] #7 An unhandled-field adjudication test fails when a captured fixture grows a field the decoder ignores, since there is no OpenAPI spec and the api-drift lane cannot cover this API
-- [ ] #8 Config keys, the collector catalog entry and the generated collector docs are wired the same way the settings collector is
+- [ ] #1 A tracked, redacted fixture set lives in the repository and preserves every response envelope and object shape from the live captures, with PII and cleartext secrets replaced by deterministic safe values; the unredacted .capture/pam_*.json stay local and no test depends on them, so the suite runs identically in CI and on a fresh clone
+- [ ] #2 A new internal/b0api client talks to api.border0.com/api/v1 with a static bearer token, handles all four response envelopes including the bare {} empty case, and is covered by table tests built from the tracked fixtures
+- [ ] #3 A read-only Border0 service account is sufficient: the collector never calls a mutating endpoint, and a 403 is recorded as scope_denied via apistate.Disposition rather than read as a disabled feature
+- [ ] #4 Inventory and config-shape metrics land for connectors, services, policies, identities, org settings and subscription limits, following the internal/collector/settings pattern of one 0/1 gauge per boolean keyed by a stable name attribute
+- [ ] #5 Session metrics land as deltas with no double counting across restarts, proven by a test that replays the same page twice
+- [ ] #6 The session poller stops paging at the first already-seen session_id, proven by a test asserting the request count against a multi-page fixture
+- [ ] #7 No PII reaches a metric label: a test asserts the emitted attribute set against an allowlist, and upstream_configurations secrets appear in no metric, log or snapshot
+- [ ] #8 An unhandled-field adjudication test fails when a tracked fixture grows a field the decoder ignores, since there is no OpenAPI spec and the api-drift lane cannot cover this API
+- [ ] #9 Config keys, the collector catalog entry and the generated collector docs are wired the same way the settings collector is
 <!-- AC:END -->
 
 ## Definition of Done

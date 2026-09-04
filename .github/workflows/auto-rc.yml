@@ -67,15 +67,73 @@ jobs:
     with:
       release_tag: ${{ needs.rc.outputs.tag }}
 
+  # Proxy-ingestion gate. It exists so an RC whose tag proxy.golang.org has not
+  # ingested yet is SKIPPED rather than failed.
+  #
+  # .goreleaser.yaml sets gomod.proxy: true, so the build downloads the module
+  # from proxy.golang.org and verifies it against sum.golang.org instead of
+  # using the checked-out tree. That makes every RC race sumdb ingestion of a
+  # tag created seconds earlier, and ingestion latency is not something this
+  # repository controls: v5.0.0-rc.10 landed inside wait-for-module-proxy.sh's
+  # 300s default and rc.11, cut 29 minutes later, took about 14 minutes and
+  # failed the binaries job. A plain re-run went green with no code change.
+  #
+  # Why a gate and not `continue-on-error`. actionlint rejects that key on a
+  # job that calls a reusable workflow with `uses:` - only name, uses, with,
+  # secrets, needs, if and permissions are allowed there - so the decision has
+  # to be made before the call. The gate is also the better shape: infrastructure
+  # lag skips, while a genuine goreleaser or cosign regression still turns the
+  # run red, which is signal worth keeping.
+  #
+  # This is a cheap job polling in place of an expensive one. The binaries job
+  # ran the same wait inside the goreleaser matrix, so this holds no more runner
+  # time than before at the same timeout, and it is the job to lengthen if the
+  # window ever needs to grow.
+  #
+  # release-please.yml's binaries job is deliberately UNCHANGED: it still hard
+  # fails, because a real release missing its archives is the failure that
+  # actually costs something (#174 lost every v2.0.0 archive that way).
+  proxy:
+    needs: rc
+    if: needs.rc.outputs.tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      ready: ${{ steps.wait.outputs.ready }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Wait for the RC tag on the module proxy
+        id: wait
+        env:
+          TAG: ${{ needs.rc.outputs.tag }}
+        run: |
+          if bash scripts/wait-for-module-proxy.sh "$TAG"; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::$TAG is not on the module proxy yet, so the RC binaries were skipped. Re-run this workflow once it is; no code change is needed."
+          fi
+
   # goreleaser-args and pre-cmd are copied VERBATIM from release-please.yml's
   # binaries job (tag reference adapted to this workflow's `rc` job output).
   # .goreleaser.yaml sets gomod.proxy: true, so GoReleaser rebuilds from
   # proxy.golang.org/sum.golang.org rather than the checked-out tree; the
   # wait-for-module-proxy.sh guard keeps this job from racing sumdb ingestion of
   # the RC tag the same way it does for stable releases.
+  #
+  # `proxy` below decides whether this job runs at all, so an RC whose tag the
+  # module proxy has not ingested SKIPS rather than fails.
   binaries:
-    needs: rc
-    if: needs.rc.outputs.tag != ''
+    needs: [rc, proxy]
+    if: needs.rc.outputs.tag != '' && needs.proxy.outputs.ready == 'true'
     permissions:
       contents: write     # upload binaries + checksums to the RC release
       id-token: write     # cosign keyless signing
