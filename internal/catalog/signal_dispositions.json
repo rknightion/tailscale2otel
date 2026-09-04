@@ -2288,6 +2288,16 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.coordination.handovers",
+      "prom_name": "tailscale2otel_coordination_handovers_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.coordination.leader",
       "prom_name": "tailscale2otel_coordination_leader_ratio",
       "surface": "self_obs",

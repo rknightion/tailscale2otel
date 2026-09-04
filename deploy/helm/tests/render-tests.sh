@@ -1679,9 +1679,14 @@ assert_rc0 "AC: coordinated replicas render"
 [[ "$(dep_field '.spec.template.spec.automountServiceAccountToken')" == "true" ]] \
   && ok "AC: coordinated pod receives its Kubernetes API token" \
   || bad "AC: coordinated pod has no Kubernetes API token"
-[[ "$(docs_of Role | yq '.rules[] | select(.resources[] == "leases" and .verbs[] == "get") | .resourceNames[]')" == "$FULLNAME" ]] \
-  && ok "AC: Lease renewal RBAC is scoped to the configured Lease" \
-  || bad "AC: Lease renewal RBAC is not scoped to the configured Lease"
+lease_rules="$(docs_of Role | yq -o=json '[.rules[] | select(.resources[] == "leases")]')"
+[[ "$(yq 'length' <<<"$lease_rules")" == "2" &&
+   "$(yq -r '.[0].verbs | join(",")' <<<"$lease_rules")" == "get,update,list,watch" &&
+   "$(yq -r '.[0].resourceNames | join(",")' <<<"$lease_rules")" == "$FULLNAME" &&
+   "$(yq -r '.[1].verbs | join(",")' <<<"$lease_rules")" == "create" &&
+   "$(yq '.[1] | has("resourceNames")' <<<"$lease_rules")" == "false" ]] \
+  && ok "AC: Lease get/update/list/watch RBAC is scoped to the configured Lease" \
+  || bad "AC: Lease access is not confined to the configured Lease"
 checkpoint_role="$(docs_of Role | yq '.rules[] | select(.resources[] == "configmaps")')"
 grep -q -- '- list' <<<"$checkpoint_role" \
   && ok "AC: checkpoint RBAC can discover dynamic shards" \

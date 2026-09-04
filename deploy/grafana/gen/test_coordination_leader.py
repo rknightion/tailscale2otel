@@ -32,6 +32,20 @@ class CoordinationLeaderPanelTest(unittest.TestCase):
         doc = dashboard.build(dashboard.dashboards.HEALTH, True, only="Overview")
         self.assert_leadership_panel(json.dumps(doc))
 
+    @staticmethod
+    def assert_handover_panel(rendered):
+        for expected in (
+            "Leadership handovers (last 15m)",
+            "tailscale2otel_coordination_handovers_total",
+            "increase(",
+        ):
+            if expected not in rendered:
+                raise AssertionError("coordination handover panel missing %s" % expected)
+
+    def test_overview_renders_recent_leadership_handovers(self):
+        doc = dashboard.build(dashboard.dashboards.HEALTH, True, only="Overview")
+        self.assert_handover_panel(json.dumps(doc))
+
     def test_guard_rejects_a_title_without_the_metric(self):
         with self.assertRaisesRegex(AssertionError, "coordination leadership panel missing"):
             self.assert_leadership_panel('{"title":"Lease leadership"}')

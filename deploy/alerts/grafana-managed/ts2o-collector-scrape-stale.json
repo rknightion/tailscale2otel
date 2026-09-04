@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "32",
+      "__panelId__": "33",
       "description": "time() - tailscale2otel_scrape_last_timestamp_seconds > 1h for collector {{ $labels.tailscale_collector }} \u2014 it is wedged (the success gauge can stay stale at 1), so that collector's series are not refreshing. Complements CollectorScrapeFailing.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health",
       "summary": "Collector {{ $labels.tailscale_collector }} has not completed a scrape recently"

@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "51",
+      "__panelId__": "52",
       "description": "The /metrics handler runs with ContinueOnError (#103), so a registry Gather error returns HTTP 200 carrying the REMAINING series. The scrape looks healthy from the outside and some series are silently missing from every single one, which is why this needs its own rule rather than showing up as a scrape failure. The usual cause is a duplicate-series collision after pii_filter.tailnet_name removed the label that distinguished them. Absence stays OK: the pull endpoint is opt-in and most deployments export over OTLP only.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
       "summary": "The Prometheus pull endpoint is dropping series from every scrape"

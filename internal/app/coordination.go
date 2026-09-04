@@ -36,6 +36,7 @@ func (a *App) runCoordinated(ctx context.Context) error {
 		RetryPeriod:   a.cfg.Coordination.RetryPeriod.D(),
 		Logger:        a.logger,
 		Observe:       a.observeCoordination,
+		ObserveLease:  a.observeCoordinationLease,
 	})
 	if err != nil {
 		return err
@@ -91,6 +92,26 @@ func (a *App) observeCoordination(s coordination.Status) {
 			"coordination.namespace":  s.Namespace,
 			"coordination.identity":   s.Identity,
 			"coordination.state":      string(s.State),
+		})
+}
+
+// observeCoordinationLease records a zero on the process-lifetime observer's
+// initial snapshot, then adds only completed incoming handovers. It performs no
+// I/O or coordination locking, so it cannot hold up the Lease watcher.
+func (a *App) observeCoordinationLease(observation coordination.LeaseObservation) {
+	if !observation.Initial && !observation.CompletedHandover {
+		return
+	}
+	add := 0.0
+	if observation.CompletedHandover {
+		add = 1
+	}
+	a.procEmitter.Counter(appcatalog.DocCoordinationHandovers.Name, appcatalog.DocCoordinationHandovers.Unit,
+		appcatalog.DocCoordinationHandovers.Description, add, telemetry.Attrs{
+			"coordination.mode":       "kubernetes",
+			"coordination.lease_name": a.cfg.Coordination.LeaseName,
+			"coordination.namespace":  a.cfg.Coordination.Namespace,
+			"coordination.identity":   observation.Identity,
 		})
 }
 

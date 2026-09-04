@@ -56,6 +56,17 @@ groups:
         annotations:
           summary: "Lease {{ $labels.coordination_lease_name }} has no standby"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+      - alert: "CoordinationFlapping"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (increase(tailscale2otel_coordination_handovers_total[15m]))) > 2"
+        for: "5m"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Lease {{ $labels.coordination_lease_name }} is handing over repeatedly"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
       - alert: "ReceiverFailClosed"
         expr: "(max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)) > 0"
         for: "10m"

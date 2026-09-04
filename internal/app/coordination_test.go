@@ -52,6 +52,45 @@ func TestCoordinationStandbyGatesReadinessAndEmitsLeaderState(t *testing.T) {
 	}
 }
 
+func TestCoordinationLeaseObservationEmitsOnlyCompletedHandover(t *testing.T) {
+	cfg := config.Default()
+	cfg.Coordination.Mode = "kubernetes"
+	cfg.Coordination.LeaseName = "tailscale2otel"
+	cfg.Coordination.Namespace = "default"
+	rec := telemetrytest.New()
+	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
+
+	initial := coordination.LeaseObservation{Initial: true, Identity: "pod-b"}
+	a.observeCoordinationLease(initial)
+	// A restarted observer also has an initial snapshot and must not look like
+	// a handover. Renewal-only observations are ignored after the zero baseline.
+	a.observeCoordinationLease(initial)
+	a.observeCoordinationLease(coordination.LeaseObservation{Identity: "pod-b"})
+	points := rec.MetricPoints(appcatalog.MetricCoordinationHandovers)
+	if len(points) != 1 || points[0].Value != 0 || !points[0].Monotonic {
+		t.Fatalf("pre-handover points = %#v, want one monotonic zero", points)
+	}
+
+	a.observeCoordinationLease(coordination.LeaseObservation{
+		Identity:          "pod-b",
+		CompletedHandover: true,
+	})
+	points = rec.MetricPoints(appcatalog.MetricCoordinationHandovers)
+	if len(points) != 1 || points[0].Value != 1 {
+		t.Fatalf("handover points = %#v, want one counter at 1", points)
+	}
+	for key, want := range map[string]string{
+		"coordination.mode":       "kubernetes",
+		"coordination.lease_name": "tailscale2otel",
+		"coordination.namespace":  "default",
+		"coordination.identity":   "pod-b",
+	} {
+		if got := points[0].Attrs[key]; got != want {
+			t.Errorf("handover attr %q = %q, want %q", key, got, want)
+		}
+	}
+}
+
 // TestRunCoordinatedServesProcessMetricsWhileStandby pins the pull-path half
 // of coordination: the standby keeps its process telemetry available, while
 // collectors remain gated behind the Lease callback. The local host is not in

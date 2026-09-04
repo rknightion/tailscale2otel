@@ -187,6 +187,19 @@ def tab_health_overview(scope):
                desc="Rate-limit responses and the retries they trigger, fleet-wide."), 12, 7),
     ]
 
+    # Keep this row last so the established Overview panel IDs stay stable.
+    # Panel IDs are global, so panels in later tabs are still renumbered.
+    coordination_churn = [
+        (panel("Leadership handovers (last 15m)", "stat",
+               [prom_t("sum by (coordination_lease_name, coordination_namespace) "
+                       "(increase(tailscale2otel_coordination_handovers_total[15m]))")],
+               unit="short", options=stat_opts(graph="area"),
+               novalue="No handover series. Requires coordination.mode: kubernetes.",
+               desc="Completed Kubernetes Lease handovers observed in the last 15 minutes. "
+                    "Initial observations and process restarts do not increment this counter; "
+                    "a rising value indicates leadership churn."), 8, 5),
+    ]
+
     return [
         row("Golden signals", golden),
         autogrid_row("Collecting", collecting),
@@ -194,4 +207,5 @@ def tab_health_overview(scope):
         row("Application health", apphealth, present="has_selfobs"),
         autogrid_row("Degradation summary", degraded, present="has_scrape_err"),
         row("API throttling", api_degraded, present="has_api_retry"),
+        row("Coordination churn", coordination_churn),
     ]

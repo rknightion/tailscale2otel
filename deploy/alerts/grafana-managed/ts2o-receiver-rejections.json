@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "78",
+      "__panelId__": "79",
       "description": "The stream or webhook receiver is rejecting inbound events (spoofed/oversized/decode errors) \u2014 investigate the sender or HEC/webhook config.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Stream/webhook receiver is rejecting inbound ingest"

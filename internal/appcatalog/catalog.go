@@ -67,7 +67,12 @@ const (
 	// MetricReceiverMisconfigured marks fail-closed ingestion receivers that can
 	// accept no traffic because a network-reachable bind has no credential.
 	MetricReceiverMisconfigured = "tailscale2otel.receiver.misconfigured"
-	MetricCoordinationLeader    = "tailscale2otel.coordination.leader"
+	// MetricCoordinationLeader is the current Lease leadership flag.
+	MetricCoordinationLeader = "tailscale2otel.coordination.leader"
+	// MetricCoordinationHandovers counts completed Lease handovers observed by
+	// the incoming holder. Its emit site must consume the reusable Lease observer
+	// callback rather than creating a second Kubernetes watcher.
+	MetricCoordinationHandovers = "tailscale2otel.coordination.handovers"
 )
 
 // Go runtime self-observability metric names. These expose the exporter's own
@@ -314,6 +319,14 @@ var (
 		Instrument:  metricdoc.Gauge,
 		Description: "Lease leadership flag: `1` while this pod holds the active-passive Kubernetes Lease, otherwise `0`. In Kubernetes coordination mode, every enabled delivery path exposes this process-level metric while a pod is standby; the Prometheus pull path keeps collector series leader-only. A stepped-down value marks a deliberate stop after renewal failure.",
 		Attributes:  []string{"coordination.mode", "coordination.lease_name", "coordination.namespace", "coordination.identity", "coordination.state"},
+		Group:       GroupSelfObs,
+	}
+	DocCoordinationHandovers = metricdoc.Metric{
+		Name:        MetricCoordinationHandovers,
+		Unit:        "{handover}",
+		Instrument:  metricdoc.Counter,
+		Description: "Completed Kubernetes Lease leadership handovers into this process, derived from the same process-lifetime Lease observation used for self-fencing. A handover is counted exactly once when the observed holder changes from a different non-empty identity to this process. The initial observation emits zero, so a process restart does not look like flapping; a deleted Lease or fencing without an incoming holder is not a completed handover.",
+		Attributes:  []string{"coordination.mode", "coordination.lease_name", "coordination.namespace", "coordination.identity"},
 		Group:       GroupSelfObs,
 	}
 	DocAPIRequests = metricdoc.Metric{
@@ -806,7 +819,7 @@ var DocPIIFilterCategory = metricdoc.Metric{
 // docs generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		DocUp, DocCoordinationLeader, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
+		DocUp, DocCoordinationLeader, DocCoordinationHandovers, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
 		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,

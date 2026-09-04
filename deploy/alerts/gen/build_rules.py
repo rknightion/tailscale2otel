@@ -609,6 +609,28 @@ def groups():
               "OK: coordination.mode=kubernetes is optional.",
               domain="observability", paused=False,
               policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
+        # Count only the completed incoming handovers emitted by the reusable
+        # Lease observer. One controlled replacement is ordinary, and a second
+        # transition can be recovery from that replacement; three within 15m
+        # is repeated churn. Keeping the condition true for another 5m avoids
+        # notifying on a brief burst which has already settled.
+        alert("ts2o-coordination-flapping", "Coordination flapping",
+              "sum by (coordination_lease_name, coordination_namespace) "
+              "(increase(tailscale2otel_coordination_handovers_total[15m]))",
+              "gt", 2, "5m", "advisory",
+              "Lease {{ $labels.coordination_lease_name }} is handing over repeatedly",
+              "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
+              "{{ $labels.coordination_namespace }} completed at least three leadership handovers "
+              "within 15m and remained above that threshold for 5m. One controlled leader "
+              "replacement plus one recovery transition remains quiet; a third transition is "
+              "repeated churn, commonly caused by a renew deadline too tight for observed API-server "
+              "latency. This is advisory and non-paging while operators establish a live baseline. "
+              "Inspect the leadership-handover panel, Lease events, API-server latency, and the "
+              "configured election timings. Absence stays OK because Kubernetes coordination is "
+              "optional and a process restart emits an initial zero rather than a handover.",
+              domain="observability", paused=False,
+              policy="advisory", runbook="checkpoint-health",
+              panel="Leadership handovers (last 15m)"),
         # Four signals the health dashboard already panels and nothing watched.
         # All four are `optional`: each is gated on an opt-in subsystem, so
         # absence means "not configured" rather than a fault, while a datasource
@@ -2414,18 +2436,18 @@ _COORDINATION_COVERAGE_DOC = """\
 ## Lease coordination coverage
 
 `CoordinationNoLeader`, `CoordinationSplitBrain`, and `CoordinationNoStandby`
-aggregate the current leadership gauge by Lease and namespace. They are enabled
-advisory rules with no `page` label: observe their behaviour before raising their
-notification tier. The Lease leadership panel retains the identity and state labels
-needed to identify the contenders.
+aggregate the current leadership gauge by Lease and namespace.
+`CoordinationFlapping` aggregates the completed-handover counter on the same
+boundary. All four are enabled advisory rules with no `page` label: observe their
+behaviour before raising their notification tier. The dashboard retains the
+identity and state detail needed to identify the contenders.
 
-Leadership flapping is intentionally not a shipped rule. The available
-`tailscale2otel_coordination_leader_ratio` signal is a synchronous last-value gauge,
-not a handover counter or an event stream; its state-labelled series can linger at
-their last value. A `changes()` expression would count individual series changes or
-their retention behaviour, not completed Lease handovers, and would therefore turn
-normal process churn into a misleading alert. Add an explicit, monotonic handover
-counter or timestamped transition signal before alerting on flapping.
+`CoordinationFlapping` uses the explicit monotonic
+`tailscale2otel_coordination_handovers_total` counter rather than applying `changes()`
+to the synchronous last-value leadership gauge. It fires after three completed
+handovers within 15m remain above threshold for 5m: one controlled replacement plus
+one recovery transition stays quiet, while a third is repeated churn. Initial Lease
+observations and process restarts emit zero and do not count as handovers.
 
 TSO-0119 now exposes process-level coordination telemetry on standby and stepped-down
 Prometheus pull endpoints while keeping collector telemetry leader-only. `CoordinationNoStandby`

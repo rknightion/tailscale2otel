@@ -172,6 +172,45 @@ tests:
               summary: "Lease tailscale2otel has no standby"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
 
+  # The source counter starts at zero on every process and increments only on
+  # completed incoming handovers. Two transitions in 15m can be a controlled
+  # replacement plus recovery; the third is repeated churn. The five-minute
+  # `for` keeps a burst from notifying after it has already fallen out of view.
+  - name: coordination flapping fires after three completed handovers
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_coordination_handovers_total{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default"}'
+        values: '0+0x9 1+1x2 3+0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: CoordinationFlapping
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: CoordinationFlapping
+        exp_alerts:
+          - exp_labels:
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              coordination_lease_name: tailscale2otel
+              coordination_namespace: default
+            exp_annotations:
+              summary: "Lease tailscale2otel is handing over repeatedly"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
+
+  - name: coordination replacement and recovery stay below flapping threshold
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_coordination_handovers_total{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default"}'
+        values: '0+0x9 1+0x20'
+      - series: 'tailscale2otel_coordination_handovers_total{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default"}'
+        values: '0+0x14 1+0x15'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: CoordinationFlapping
+        exp_alerts: []
+
   # --- CheckpointPersistErrors: counter-reset safety --------------------------
   # A process restart resets the counter to 0. rate() must absorb that rather
   # than reading the drop as a huge negative or the recovery as a spike. A

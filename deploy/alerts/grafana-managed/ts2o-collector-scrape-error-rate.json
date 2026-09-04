@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "33",
+      "__panelId__": "34",
       "description": "rate(tailscale2otel_scrape_errors_total[5m]) > 0 for collector {{ $labels.tailscale_collector }} for 15m \u2014 it is logging scrape errors. Distinct from ts2o-collector-scrape-failing, which reads the last-scrape success gauge and therefore goes quiet for a collector that fails and recovers on alternating scrapes; this one catches that flap. Break down by error_type on \"Scrape errors/s by collector / type\". The counter is absent until the first error, so the policy is optional, not core.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#collector-scrape-health",
       "summary": "Collector {{ $labels.tailscale_collector }} scrape errors elevated"

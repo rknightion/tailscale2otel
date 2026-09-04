@@ -8,15 +8,15 @@
     "labels": {
       "grafana.app/folder": "tailscale2otel"
     },
-    "name": "ts2o-dedup-set-saturated"
+    "name": "ts2o-coordination-flapping"
   },
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "85",
-      "description": "Cross-source dedup set {{ $labels.dedup_set }} is evicting keys. NOTE: steady-state evictions are normal \u2014 dedup keys are effectively unique, so a full fixed-size set evicts one key per insert forever even in a healthy deployment. This rule ships PAUSED precisely because a raw evictions rate > 0 is not actionable on its own. The real overflow signal is evictions approaching the set's capacity within a single poll interval (overlap keys aged out before the next poll dedups against them \u2192 boundary double-counting); only enable this with a threshold tuned to your poll interval and set size.",
-      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors",
-      "summary": "Cross-source dedup set {{ $labels.dedup_set }} is evicting"
+      "__panelId__": "23",
+      "description": "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace {{ $labels.coordination_namespace }} completed at least three leadership handovers within 15m and remained above that threshold for 5m. One controlled leader replacement plus one recovery transition remains quiet; a third transition is repeated churn, commonly caused by a renew deadline too tight for observed API-server latency. This is advisory and non-paging while operators establish a live baseline. Inspect the leadership-handover panel, Lease events, API-server latency, and the configured election timings. Absence stays OK because Kubernetes coordination is optional and a process restart emits an initial zero rather than a handover.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health",
+      "summary": "Lease {{ $labels.coordination_lease_name }} is handing over repeatedly"
     },
     "execErrState": "Ok",
     "expressions": {
@@ -28,7 +28,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (dedup_set) (rate(tailscale2otel_dedup_evictions_total[15m]))",
+          "expr": "sum by (coordination_lease_name, coordination_namespace) (increase(tailscale2otel_coordination_handovers_total[15m]))",
           "instant": false,
           "intervalMs": 1000,
           "maxDataPoints": 43200,
@@ -60,7 +60,7 @@
             {
               "evaluator": {
                 "params": [
-                  0
+                  2
                 ],
                 "type": "gt"
               },
@@ -90,16 +90,16 @@
         "source": true
       }
     },
-    "for": "15m0s",
+    "for": "5m0s",
     "labels": {
       "domain": "observability",
       "service": "tailscale2otel",
-      "severity": "warning",
+      "severity": "advisory",
       "skipinvestigation": "true"
     },
     "noDataState": "Ok",
-    "paused": true,
-    "title": "Dedup set saturated",
+    "paused": false,
+    "title": "Coordination flapping",
     "trigger": {
       "interval": "1m"
     }

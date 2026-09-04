@@ -60,6 +60,10 @@ type Options struct {
 	RetryPeriod   time.Duration
 	Logger        *slog.Logger
 	Observe       func(Status)
+	// ObserveLease receives the process-lifetime reusable Lease observation
+	// stream, including standby. It is also the source used for self-fencing, so
+	// consumers must not create a second watcher for handover accounting.
+	ObserveLease func(LeaseObservation)
 }
 
 // Coordinator gates an application's active lifecycle behind one Kubernetes
@@ -144,6 +148,16 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 	)
 	electionCtx, stopElection := context.WithCancel(ctx)
 	defer stopElection()
+	observerCtx, stopObserver := context.WithCancel(ctx)
+	defer stopObserver()
+	observer := newLeaseObserver(c.client, c.opts.Namespace, c.opts.LeaseName, c.opts.Identity, c.opts.ObserveLease)
+	if !observer.Start(observerCtx) {
+		if ctx.Err() != nil {
+			c.setState(StateStopped)
+			return nil
+		}
+		return fmt.Errorf("start Lease observation")
+	}
 	activeDone := make(chan struct{})
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{Name: c.opts.LeaseName, Namespace: c.opts.Namespace},
@@ -171,7 +185,18 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 					s.State = StateLeader
 					s.Leader = c.opts.Identity
 				})
-				err := callback(activeCtx)
+				// client-go's leader election has no fencing: after a Lease is
+				// deleted or replaced, its active context can remain live until
+				// RenewDeadline. Arm the process-lifetime observer so its one
+				// stream immediately self-fences this active callback instead.
+				fencedCtx, stopFenced := context.WithCancel(activeCtx)
+				defer stopFenced()
+				if !observer.Arm(activeCtx, stopFenced) {
+					stopElection()
+					return
+				}
+				defer observer.Disarm()
+				err := callback(fencedCtx)
 				activeMu.Lock()
 				activeErr = err
 				activeMu.Unlock()

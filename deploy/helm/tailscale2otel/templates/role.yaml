@@ -7,9 +7,11 @@ metadata:
   labels:
     {{- include "tailscale2otel.labels" . | nindent 4 }}
 rules:
-  # Reading and renewing the configured Lease are name-scoped. No list/watch,
-  # patch, delete, or access to another Lease is needed by client-go's
-  # resourcelock.LeaseLock.
+  # The election lock and reusable Lease watcher access only the configured
+  # Lease. Kubernetes honors resourceNames for list/watch when the client
+  # supplies a matching metadata.name field selector; this observer does so on
+  # both collection calls. No patch, delete, or access to another Lease is
+  # needed.
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -17,6 +19,8 @@ rules:
     verbs:
       - get
       - update
+      - list
+      - watch
     resourceNames:
       - {{ .Values.config.coordination.lease_name | quote }}
   # Kubernetes cannot apply resourceNames to create: the POST URL has no

@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "58",
+      "__panelId__": "59",
       "description": "An overflow is a hot-path miss for a NEW address that could not even be scheduled for lookup because the cache was already at enrichment.reverse_dns.max_entries. Those flows keep their raw external addresses instead of a PTR name, so the enrichment silently degrades rather than failing. Raise max_entries, or narrow what is submitted for lookup. Read it alongside the lookup rate on \"rDNS cache overflows vs lookups/s\" \u2014 a handful of overflows against a large lookup rate is a different problem from a cache that overflows on most misses.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#enrichment-and-discovery",
       "summary": "The reverse-DNS cache is too small for the address churn it sees"

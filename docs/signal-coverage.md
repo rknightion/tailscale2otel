@@ -81,7 +81,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 236 | 235 | 58 | 11 | 44 |
-| self_obs | 101 | 101 | 38 | 9 | 10 |
+| self_obs | 102 | 102 | 39 | 9 | 10 |
 
 ## Operational signals
 
@@ -350,6 +350,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.component.errors` | metric | `tailscale2otel_component_errors_total` | visualized, alertable |  |
 | `tailscale2otel.config.valid` | metric | `tailscale2otel_config_valid_ratio` | visualized, alertable |  |
 | `tailscale2otel.config.warnings` | metric | `tailscale2otel_config_warnings_ratio` | visualized, alertable |  |
+| `tailscale2otel.coordination.handovers` | metric | `tailscale2otel_coordination_handovers_total` | visualized, alertable |  |
 | `tailscale2otel.coordination.leader` | metric | `tailscale2otel_coordination_leader_ratio` | visualized, alertable |  |
 | `tailscale2otel.dedup.evictions` | metric | `tailscale2otel_dedup_evictions_total` | visualized, alertable |  |
 | `tailscale2otel.dedup.hits` | metric | `tailscale2otel_dedup_hits_total` | visualized |  |

@@ -40,21 +40,21 @@ materializing another profile is a command, not a checked-in directory.
 
 The smallest set worth waking someone up to. Enables only coverage_critical (the exporter itself is down) and core-policy rules (a signal every running exporter always emits, so its absence is always abnormal) — nothing that needs an optional collector or feature turned on, and nothing that needs a site-specific threshold tuned first. Recording rules keep their recommended paused state; they never page on their own.
 
-- Alert rules: **11 enabled**, 99 paused
+- Alert rules: **11 enabled**, 100 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `recommended`
 
 Preserves every rule's authored paused state from the current catalogue. An explicit recommended render is byte-identical to what `--out` produces with no `--profile` flag.
 
-- Alert rules: **43 enabled**, 67 paused
+- Alert rules: **44 enabled**, 67 paused
 - Recording rules: **8 enabled**, 15 paused
 
 ## `strict`
 
 Enables every alert and every recording rule EXCEPT the explicit exceptions below, which stay paused because enabling them blind is actively misleading rather than merely noisy — a documented placeholder threshold, a per-plan ingest-cost budget, or a signal that is legitimately absent on a healthy, idle deployment.
 
-- Alert rules: **107 enabled**, 3 paused
+- Alert rules: **108 enabled**, 3 paused
 - Recording rules: **23 enabled**, 0 paused
 
 Explicit exceptions (stay paused, with a reason):
@@ -66,18 +66,18 @@ Explicit exceptions (stay paused, with a reason):
 ## Lease coordination coverage
 
 `CoordinationNoLeader`, `CoordinationSplitBrain`, and `CoordinationNoStandby`
-aggregate the current leadership gauge by Lease and namespace. They are enabled
-advisory rules with no `page` label: observe their behaviour before raising their
-notification tier. The Lease leadership panel retains the identity and state labels
-needed to identify the contenders.
+aggregate the current leadership gauge by Lease and namespace.
+`CoordinationFlapping` aggregates the completed-handover counter on the same
+boundary. All four are enabled advisory rules with no `page` label: observe their
+behaviour before raising their notification tier. The dashboard retains the
+identity and state detail needed to identify the contenders.
 
-Leadership flapping is intentionally not a shipped rule. The available
-`tailscale2otel_coordination_leader_ratio` signal is a synchronous last-value gauge,
-not a handover counter or an event stream; its state-labelled series can linger at
-their last value. A `changes()` expression would count individual series changes or
-their retention behaviour, not completed Lease handovers, and would therefore turn
-normal process churn into a misleading alert. Add an explicit, monotonic handover
-counter or timestamped transition signal before alerting on flapping.
+`CoordinationFlapping` uses the explicit monotonic
+`tailscale2otel_coordination_handovers_total` counter rather than applying `changes()`
+to the synchronous last-value leadership gauge. It fires after three completed
+handovers within 15m remain above threshold for 5m: one controlled replacement plus
+one recovery transition stays quiet, while a third is repeated churn. Initial Lease
+observations and process restarts emit zero and do not count as handovers.
 
 TSO-0119 now exposes process-level coordination telemetry on standby and stepped-down
 Prometheus pull endpoints while keeping collector telemetry leader-only. `CoordinationNoStandby`

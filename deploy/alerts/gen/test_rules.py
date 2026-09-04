@@ -354,7 +354,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(110, len(alert_rules()))
+        self.assertEqual(111, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_readme_policy_counts_match_the_catalogue(self):
@@ -488,14 +488,7 @@ class AlertableSignalCoverageTest(unittest.TestCase):
 
 
 class CoordinationAlertTest(unittest.TestCase):
-    """The lease-health rules intentionally cover only current-state failures.
-
-    The exported gauge has no handover counter or event timestamp, so it can
-    prove zero or multiple leaders but cannot distinguish a normal handover from
-    repeated flapping. The generated profile guide records that boundary and the
-    TSO-0119 standby-delivery dependency instead of pretending a `changes()`
-    expression can infer it.
-    """
+    """The leadership gauge rules cover current-state failures only."""
 
     UIDS = {
         "ts2o-coordination-no-leader": "lt",
@@ -550,6 +543,31 @@ class CoordinationNoStandbyAlertTest(unittest.TestCase):
         self.assertEqual("advisory", rules.POLICY_BY_UID[rule["uid"]])
         self.assertEqual("advisory", rule["labels"]["severity"])
         self.assertEqual("observability", rule["labels"]["domain"])
+        self.assertEqual("true", rule["labels"]["skipinvestigation"])
+        self.assertNotIn("page", rule["labels"])
+        self.assertIn("__dashboardUid__", rule["annotations"])
+        self.assertIn("__panelId__", rule["annotations"])
+
+
+class CoordinationFlappingAlertTest(unittest.TestCase):
+    """Flapping comes from completed handovers, never gauge churn."""
+
+    EXPR = (
+        "sum by (coordination_lease_name, coordination_namespace) "
+        "(increase(tailscale2otel_coordination_handovers_total[15m]))"
+    )
+
+    def test_flapping_is_enabled_advisory_and_handover_based(self):
+        rule = rules.rules_by_uid()["ts2o-coordination-flapping"]
+        self.assertEqual(self.EXPR, rules.rule_expr(rule))
+        self.assertNotIn("changes(", rules.rule_expr(rule))
+        self.assertEqual("gt", rule["_prom"]["op"])
+        self.assertEqual(2, rule["_prom"]["thr"])
+        self.assertEqual("5m", rule["_prom"]["dur"])
+        self.assertEqual("1h0m0s", rule["expressions"]["A"]["relativeTimeRange"]["from"])
+        self.assertFalse(rule["paused"])
+        self.assertEqual("advisory", rules.POLICY_BY_UID[rule["uid"]])
+        self.assertEqual("advisory", rule["labels"]["severity"])
         self.assertEqual("true", rule["labels"]["skipinvestigation"])
         self.assertNotIn("page", rule["labels"])
         self.assertIn("__dashboardUid__", rule["annotations"])
@@ -1414,7 +1432,10 @@ class AlertProfilesDocTest(unittest.TestCase):
 
     def test_doc_records_coordination_detection_boundaries(self):
         text = ALERT_PROFILES_DOC.read_text()
-        self.assertIn("Leadership flapping is intentionally not a shipped rule", text)
+        normalized = " ".join(text.split())
+        self.assertIn("CoordinationFlapping", text)
+        self.assertIn("tailscale2otel_coordination_handovers_total", text)
+        self.assertIn("Initial Lease observations and process restarts emit zero", normalized)
         self.assertIn("TSO-0119", text)
         self.assertIn("CoordinationNoStandby", text)
         self.assertNotIn("No standby alert is deferred until TSO-0119 lands", text)
