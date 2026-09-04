@@ -22,7 +22,9 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
-// scopeName is the instrumentation scope for all emitted telemetry.
+// scopeName is the instrumentation scope for all emitted telemetry. The major
+// module suffix is deliberately omitted: this is a long-lived operator-facing
+// identity, not a Go import path.
 const scopeName = "github.com/rknightion/tailscale2otel"
 
 // Options configures the OTLP/stdout telemetry pipeline.

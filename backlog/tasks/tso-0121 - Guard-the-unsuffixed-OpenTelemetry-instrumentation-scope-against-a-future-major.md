@@ -3,9 +3,11 @@ id: TSO-0121
 title: >-
   Guard the unsuffixed OpenTelemetry instrumentation scope against a future
   major
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-03 23:02'
+updated_date: '2026-09-04 05:37'
 labels:
   - needs-triage
 dependencies: []
@@ -40,3 +42,18 @@ The comment above the constant states what the scope is but not that its lack of
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+1. Inventory module-path-shaped telemetry identifiers and decide which require stability guards.
+2. Add a focused test and comment pinning the deliberately unsuffixed instrumentation scope.
+3. Negative-test the guard by changing scopeName, observing the expected failure, and reverting.
+4. Run focused telemetry checks; root owns integrated review, full gate, commit, push, CI, and finalization.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lane implementation evidence: added a stable-scope guard and clarified the constant comment. The focused test passed, a temporary `/v5` scope mutation failed with `operator queries depend on this value remaining stable across module major versions`, and the intended value was restored before the focused test passed again. Inventory result: scopeName is the only telemetry identifier plausibly mistaken for the Go module path; metric, resource and semantic-convention identifiers are module-major independent. Existing repository module-path guards cover root and replace-backed tool modules; promqlcheck is compile-time-only and not a telemetry identifier. Full integrated gate remains root-owned.
+<!-- SECTION:NOTES:END -->
