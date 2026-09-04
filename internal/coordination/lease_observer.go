@@ -96,9 +96,7 @@ func (o *leaseObserver) Start(ctx context.Context) bool {
 		return o.client.CoordinationV1().Leases(o.namespace).Watch(requestCtx, options)
 	}
 	lw := &cache.ListWatch{
-		ListFunc:             func(options metav1.ListOptions) (runtime.Object, error) { return list(ctx, options) },
 		ListWithContextFunc:  list,
-		WatchFunc:            func(options metav1.ListOptions) (watch.Interface, error) { return watchLease(ctx, options) },
 		WatchFuncWithContext: watchLease,
 	}
 	// The wrapper keeps streaming-list support on real clients and disables it
@@ -224,17 +222,18 @@ func (o *leaseObserver) delete(lease *coordinationv1.Lease) {
 func (o *leaseObserver) observe(observation LeaseObservation, present bool) {
 	o.mu.Lock()
 	observation.Identity = o.identity
+	previousObservedHolder := o.current
+	if previousObservedHolder == "" && !o.present {
+		previousObservedHolder = o.lastHolder
+	}
 	if observation.PreviousUID == "" {
 		observation.PreviousUID = o.currentUID
 	}
 	if observation.PreviousHolderIdentity == "" {
-		observation.PreviousHolderIdentity = o.current
-		if observation.PreviousHolderIdentity == "" && !o.present {
-			observation.PreviousHolderIdentity = o.lastHolder
-		}
+		observation.PreviousHolderIdentity = previousObservedHolder
 	}
 	if present {
-		observation.CompletedHandover = !observation.Initial && observation.PreviousHolderIdentity != "" && observation.PreviousHolderIdentity != observation.HolderIdentity && observation.HolderIdentity == o.identity
+		observation.CompletedHandover = !observation.Initial && previousObservedHolder != "" && previousObservedHolder != observation.HolderIdentity && observation.HolderIdentity == o.identity
 		o.present = true
 		o.currentUID = observation.UID
 		o.current = observation.HolderIdentity

@@ -488,6 +488,35 @@ func TestLeaseObserverCountsOnlyIncomingHandover(t *testing.T) {
 	}
 }
 
+func TestLeaseObserverDeduplicatesReplayedHandoverUpdate(t *testing.T) {
+	oldHolder := "pod-a"
+	newHolder := "pod-b"
+	oldLease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Name: "tailscale2otel", Namespace: "default", UID: types.UID("lease-a")},
+		Spec:       coordinationv1.LeaseSpec{HolderIdentity: &oldHolder},
+	}
+	newLease := oldLease.DeepCopy()
+	newLease.Spec.HolderIdentity = &newHolder
+
+	observations := make(chan LeaseObservation, 3)
+	observer := newLeaseObserver(nil, "default", "tailscale2otel", "pod-b", func(observation LeaseObservation) {
+		observations <- observation
+	})
+	observer.add(oldLease, true)
+	observer.update(oldLease, newLease)
+	observer.update(oldLease, newLease.DeepCopy())
+
+	handovers := 0
+	for len(observations) > 0 {
+		if (<-observations).CompletedHandover {
+			handovers++
+		}
+	}
+	if handovers != 1 {
+		t.Fatalf("replayed update emitted %d completed handovers, want 1", handovers)
+	}
+}
+
 func TestLeaseObserverStartsBeforeAnAbsentLeaseExists(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	observations := make(chan LeaseObservation, 4)
