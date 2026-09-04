@@ -2,6 +2,7 @@
 """Regression tests for the scoped Grafana deployment reachability check."""
 
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -31,6 +32,42 @@ class ReachabilityTest(unittest.TestCase):
 
         self.assertIn(["gcx", "config", "check", "--context", "m7kni"], calls)
         self.assertNotIn(["gcx", "config", "check"], calls)
+
+    def test_explicit_context_scopes_discovery_and_check(self):
+        calls = []
+
+        def fake_run(cmd, cwd=None):
+            calls.append(cmd)
+            if cmd == ["gcx", "--context", "m7kni", "config", "current-context"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="m7kni\n", stderr="")
+            if cmd == ["gcx", "--context", "m7kni", "config", "check"]:
+                return subprocess.CompletedProcess(cmd, 0, stdout="Connectivity: online\n", stderr="")
+            self.fail("unexpected gcx command: %r" % (cmd,))
+
+        with mock.patch.object(verifier.shutil, "which", return_value="/usr/bin/gcx"), \
+                mock.patch.object(verifier, "run", side_effect=fake_run):
+            self.assertEqual(verifier.check_gcx("m7kni"), "m7kni")
+
+        self.assertEqual(calls, [
+            ["gcx", "--context", "m7kni", "config", "current-context"],
+            ["gcx", "--context", "m7kni", "config", "check"],
+        ])
+
+    def test_resource_pulls_use_selected_context(self):
+        calls = []
+
+        def fake_run(cmd, cwd=None):
+            calls.append((cmd, cwd))
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with tempfile.TemporaryDirectory() as workdir, \
+                mock.patch.object(verifier, "run", side_effect=fake_run):
+            self.assertEqual(verifier.pull_deployed(workdir, "m7kni"), {})
+
+        self.assertEqual(calls, [
+            (["gcx", "--context", "m7kni", "resources", "pull", "alertrules"], workdir),
+            (["gcx", "--context", "m7kni", "resources", "pull", "recordingrules"], workdir),
+        ])
 
 
 if __name__ == "__main__":

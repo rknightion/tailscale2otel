@@ -9,6 +9,7 @@ those is the main reason this exists.
 
 Usage:
     python3 scripts/verify_deployment.py                 # verify against the current gcx context
+    python3 scripts/verify_deployment.py --context NAME  # verify against an explicit gcx context
     python3 scripts/verify_deployment.py --json          # machine-readable summary
     python3 scripts/verify_deployment.py --keep <dir>    # retain the sanitized pull for inspection
 
@@ -64,9 +65,18 @@ def run(cmd, cwd=None):
         raise  # unreachable; die() exits, but keeps control flow explicit
 
 
-def current_context():
+def gcx_command(context, *args):
+    """Build a gcx command, pinning an explicit context when supplied."""
+    command = ["gcx"]
+    if context:
+        command.extend(["--context", context])
+    command.extend(args)
+    return command
+
+
+def current_context(context=None):
     """Return gcx's selected context, accepting plain and agent output."""
-    p = run(["gcx", "config", "current-context"])
+    p = run(gcx_command(context, "config", "current-context"))
     if p.returncode != 0:
         die("gcx could not determine the current context:\n%s" % (p.stdout or p.stderr).strip())
 
@@ -92,11 +102,15 @@ def current_context():
     return name
 
 
-def check_gcx():
+def check_gcx(context=None):
     if shutil.which("gcx") is None:
         die("gcx is not installed — see docs for the deployment workflow")
-    name = current_context()
-    p = run(["gcx", "config", "check", "--context", name])
+    name = current_context(context)
+    if context:
+        command = gcx_command(name, "config", "check")
+    else:
+        command = ["gcx", "config", "check", "--context", name]
+    p = run(command)
     if p.returncode != 0 or "Connectivity: online" not in p.stdout:
         die("gcx cannot reach Grafana (not logged in, or offline):\n%s" % (p.stdout or p.stderr).strip())
     return name
@@ -121,11 +135,11 @@ def load_shipped():
 OUR_API = "rules.alerting.grafana.app/v0alpha1"
 
 
-def pull_deployed(workdir):
+def pull_deployed(workdir, context):
     # RecordingRule is a SEPARATE kind — `pull alertrules` does not return them,
     # so pulling only that made every recording rule look absent-then-drifted.
     for kind in ("alertrules", "recordingrules"):
-        p = run(["gcx", "resources", "pull", kind], cwd=workdir)
+        p = run(gcx_command(context, "resources", "pull", kind), cwd=workdir)
         if p.returncode != 0:
             die("gcx resources pull %s failed:\n%s" % (kind, (p.stderr or p.stdout).strip()))
     found = {}
@@ -164,16 +178,18 @@ def compare_specs(shipped, deployed):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--context", default=os.environ.get("TS2OTEL_GCX_CONTEXT") or None,
+                    help="gcx context to use (or TS2OTEL_GCX_CONTEXT)")
     ap.add_argument("--json", action="store_true", help="emit a machine-readable summary")
     ap.add_argument("--keep", metavar="DIR", help="retain the sanitized comparison in DIR")
     args = ap.parse_args()
 
-    ctx = check_gcx()
+    ctx = check_gcx(args.context)
     shipped = load_shipped()
 
     workdir = tempfile.mkdtemp(prefix="ts2o-verify-")
     try:
-        deployed = pull_deployed(workdir)
+        deployed = pull_deployed(workdir, ctx)
     finally:
         if not args.keep:
             shutil.rmtree(workdir, ignore_errors=True)

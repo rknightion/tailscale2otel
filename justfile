@@ -424,8 +424,8 @@ validate config="config.yaml": build
 # report drift between the live Grafana stack and what this repo ships (read-only)
 [group('infra')]
 [no-exit-message]
-verify-deploy:
-    python3 scripts/verify_deployment.py
+verify-deploy context="":
+    TS2OTEL_GCX_CONTEXT='{{ context }}' python3 scripts/verify_deployment.py
 
 # verify a saved Grafana ruler read-back after a known publication boundary
 [group('infra')]
