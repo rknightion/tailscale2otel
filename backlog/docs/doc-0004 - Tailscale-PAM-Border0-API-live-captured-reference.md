@@ -3,11 +3,12 @@ id: doc-0004
 title: Tailscale PAM (Border0) API - live-captured reference
 type: specification
 created_date: '2026-09-04 10:55'
+updated_date: '2026-09-04 13:03'
 ---
 
-Everything here was verified live on 2026-09-04 against a real PAM deployment on the `m7kni.io`
-tailnet (connector `camden`, service `pam-sandbox`, six real recorded SSH sessions). Nothing in it
-is from documentation, because there is barely any.
+Everything here was verified live on 2026-09-04 against a real PAM deployment on the lab tailnet:
+one connector, one SSH service, six real recorded sessions. Nothing in it is from documentation,
+because there is barely any.
 
 **There is no OpenAPI spec for this API.** `api.border0.com/api/v1/{openapi,swagger}.json`,
 `/openapi.json` and `/docs` all 404. Consequence: the daily api-drift lane cannot cover PAM, and
@@ -34,9 +35,9 @@ The token is a JWT carrying `org_id`, `service_account`, `service_account_id`, `
 `iat`. **It has no `exp` claim and does not expire.** There is no role claim in it; the role is
 server-side, so a collector cannot self-check its own permissions from the token.
 
-Credentials for the lab live in `~/repos/chat-personal/tailscale/.secrets/creds.local.env` as
-`BORDER0_API`, `BORDER0_TOKEN`, `BORDER0_ORG_ID`, `BORDER0_SERVICE_ACCOUNT_ID`. A dedicated
-read-only account `tailscale2otel-ro` (`576fd8be-a31b-4ee4-8364-f94f24819424`) exists for this work.
+Lab credentials live in an ignored local env file outside this repository, as `BORDER0_API`,
+`BORDER0_TOKEN`, `BORDER0_ORG_ID` and `BORDER0_SERVICE_ACCOUNT_ID`. A dedicated read-only service
+account exists for this work; its id is in that file and deliberately not written here.
 
 ## 2. Endpoint map
 
@@ -279,8 +280,8 @@ Bounded, safe label candidates: `socket_type`, `session_type`, `result`, `killed
   parameter**, not target types. `GET /logging/configuration?event=PAM_SERVICE.CREATE` filters
   server-side.
 - **PAM services are already in the services collector.** The connector advertises each one as a
-  Tailscale Service with its own VIP, so `svc:ssh-camden` and `svc:pam-sandbox` appear in
-  `tailscale.service.ports` with no new code. A PAM collector should add the Border0-only
+  Tailscale Service with its own VIP, so each PAM service appears in `tailscale.service.ports`
+  under its own `svc:` name with no new code. A PAM collector should add the Border0-only
   dimensions, not restate service inventory.
 - TSO-0134 covers the gap on the Tailscale side: PAM events never reach
   `tailscale.config.audit.changes`, and `BORDER0_PROVISIONING` is absent from the vendored spec.
