@@ -1,11 +1,11 @@
 ---
 id: TSO-0122
 title: Keep alert policy counts and recommended-profile prose truthful
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-04 05:59'
-updated_date: '2026-09-04 06:25'
+updated_date: '2026-09-04 07:10'
 labels:
   - needs-triage
 dependencies: []
@@ -27,16 +27,16 @@ CodeRabbit review during Wave 10 found two related documentation claims that dri
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The documented policy counts are derived or tested against the generator and sum to the shipped alert count
-- [ ] #2 Recommended-profile documentation states the actual preservation contract without claiming the catalogue never changes
-- [ ] #3 Generator tests and the alert documentation drift checks pass
+- [x] #1 The documented policy counts are derived or tested against the generator and sum to the shipped alert count
+- [x] #2 Recommended-profile documentation states the actual preservation contract without claiming the catalogue never changes
+- [x] #3 Generator tests and the alert documentation drift checks pass
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -54,4 +54,12 @@ CodeRabbit review during Wave 10 found two related documentation claims that dri
 Negative tests first proved both defects: the policy-count test reported optional 72 versus documented 67, and the profile-contract test found no `authored` wording plus the stale `always shipped` claim. Fixed the generator-owned rationale/decision/help text, corrected the optional policy count to 72, regenerated docs/alert-profiles.md, and added durable tests. Targeted red-to-green passed; the full generator suite now reports 132 tests passed, and `just rules-check` validates 127 rules plus all fixtures.
 
 `just rules-check` covers 127 Prometheus-compatible rules. The 128th catalogue resource is the Loki-backed `AuditConfigChangeWARN`, which is intentionally absent because promtool cannot parse LogQL; the real Grafana push and `just verify-deploy m7kni` cover all 128.
+
+Integrated with the alert work as 74a8c924. The cumulative full gate passed at 0e212ab5; integrated generation left no diff and formatting passed. Exact-head CI run 33844779329 attempt 1 succeeded for 630b1d75 before the later fallback fix. The final count audit distinguishes 127 Prometheus-compatible rules from the Loki-backed AuditConfigChangeWARN, while live Grafana verification covers all 128 deployed rules.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Corrected optional policy count 67 to 72, added a regression proving policy rows sum to the 105-alert catalogue, and replaced false catalogue-immutability prose with the real contract that recommended preserves authored paused state. Generator and drift checks pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

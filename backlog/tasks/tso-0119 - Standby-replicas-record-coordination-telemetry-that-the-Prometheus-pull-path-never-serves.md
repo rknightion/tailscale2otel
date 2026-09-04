@@ -3,11 +3,11 @@ id: TSO-0119
 title: >-
   Standby replicas record coordination telemetry that the Prometheus pull path
   never serves
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-03 23:02'
-updated_date: '2026-09-04 05:44'
+updated_date: '2026-09-04 07:10'
 labels:
   - needs-triage
 dependencies: []
@@ -32,18 +32,18 @@ The judgment this needs. Leader-only may have been deliberate, to stop two pods 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Verify first, before changing anything: confirm by observation whether a standby's OTLP push path carries coordination.leader, and record the result on this task either way
-- [ ] #2 A standby's recorded coordination state is observable on every delivery path the deployment has enabled, or the asymmetry is documented as deliberate with its reason
-- [ ] #3 The chosen behaviour is decided explicitly against the duplicate-series risk, and the reason is written on the task
-- [ ] #4 docs/metrics.md no longer describes a state that a supported delivery path cannot show
-- [ ] #5 A test pins the standby delivery behaviour so a future change to runActive cannot silently re-gate it
+- [x] #1 Verify first, before changing anything: confirm by observation whether a standby's OTLP push path carries coordination.leader, and record the result on this task either way
+- [x] #2 A standby's recorded coordination state is observable on every delivery path the deployment has enabled, or the asymmetry is documented as deliberate with its reason
+- [x] #3 The chosen behaviour is decided explicitly against the duplicate-series risk, and the reason is written on the task
+- [x] #4 docs/metrics.md no longer describes a state that a supported delivery path cannot show
+- [x] #5 A test pins the standby delivery behaviour so a future change to runActive cannot silently re-gate it
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -61,4 +61,12 @@ The judgment this needs. Leader-only may have been deliberate, to stop two pods 
 Pre-change observation (2026-09-04, before any tracked Lane A source edit): an in-repository Go overlay exercised App.New, the real ProviderSet, the real observeCoordination standby path, and an actual loopback OTLP/HTTP receiver. Command: `GOFLAGS='-overlay=/Users/rob/repos/tailscale2otel/codex/tso0119_overlay.json' go test -race -v -run '^TestTSO0119ObservedStandbyOTLPExport$' ./internal/app`. Decisive output: `OTLP receiver observed tailscale2otel.coordination.leader value=0 coordination.mode=kubernetes coordination.state=standby coordination.identity=standby-pod coordination.lease_name=tailscale2otel coordination.namespace=observation`. This proves the standby OTLP push path carries leader=0 and the expected coordination attributes. It does not prove live Kubernetes election or Prometheus serving.
 
 Chosen behavior and duplicate-series decision: keep the Prometheus listener alive for the whole Kubernetes coordination lifecycle, but select its gatherer at scrape time. Standby and stepped-down replicas expose only the process-level provider, including coordination.leader=0; only the current leader exposes the full process-plus-tailnet gatherer. This makes coordination state observable on every enabled delivery path without allowing collector/per-tailnet series retained by a former leader to remain scrapeable after demotion. A scrape already in progress at transition may finish its prior snapshot; subsequent gathers follow the latest observed state.
+
+Integrated as 15e4777d with formatting follow-up 8c7ae613. The cumulative full gate passed at 0e212ab5; the earlier integrated just gen left no diff, and the final formatting check passed. Exact-head CI run 33844779329 attempt 1 succeeded for 630b1d75 before the later fallback fix. CodeRabbit review completed and its findings were resolved.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Observed a real loopback OTLP export of coordination.leader=0 from standby before source edits, then made Prometheus serve process-only coordination metrics on standby and stepped-down replicas while leaders serve the full gatherer. Tests pin both visibility and duplicate-series exclusion; docs and the full gate pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

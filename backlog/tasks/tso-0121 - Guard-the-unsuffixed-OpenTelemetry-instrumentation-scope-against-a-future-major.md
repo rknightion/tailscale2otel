@@ -3,11 +3,11 @@ id: TSO-0121
 title: >-
   Guard the unsuffixed OpenTelemetry instrumentation scope against a future
   major
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-03 23:02'
-updated_date: '2026-09-04 05:37'
+updated_date: '2026-09-04 07:10'
 labels:
   - needs-triage
 dependencies: []
@@ -30,17 +30,17 @@ The comment above the constant states what the scope is but not that its lack of
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A test fails if scopeName gains a version suffix or otherwise changes, and its failure message says why the value must stay stable
-- [ ] #2 The test is negative-tested: the value is changed on purpose, the test is watched failing, and the change is reverted
-- [ ] #3 The comment on the constant states that the omitted major suffix is deliberate, so it reads as a decision rather than an oversight
-- [ ] #4 Any other identifier that a module-path major bump could plausibly be expected to change is checked in the same pass, and either guarded or recorded as not applicable
+- [x] #1 A test fails if scopeName gains a version suffix or otherwise changes, and its failure message says why the value must stay stable
+- [x] #2 The test is negative-tested: the value is changed on purpose, the test is watched failing, and the change is reverted
+- [x] #3 The comment on the constant states that the omitted major suffix is deliberate, so it reads as a decision rather than an oversight
+- [x] #4 Any other identifier that a module-path major bump could plausibly be expected to change is checked in the same pass, and either guarded or recorded as not applicable
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -56,4 +56,12 @@ The comment above the constant states what the scope is but not that its lack of
 
 <!-- SECTION:NOTES:BEGIN -->
 Lane implementation evidence: added a stable-scope guard and clarified the constant comment. The focused test passed, a temporary `/v5` scope mutation failed with `operator queries depend on this value remaining stable across module major versions`, and the intended value was restored before the focused test passed again. Inventory result: scopeName is the only telemetry identifier plausibly mistaken for the Go module path; metric, resource and semantic-convention identifiers are module-major independent. Existing repository module-path guards cover root and replace-backed tool modules; promqlcheck is compile-time-only and not a telemetry identifier. Full integrated gate remains root-owned.
+
+Integrated as 86f4b5e6. A temporary /v5 mutation produced the expected stability failure and was restored before the focused test passed. The cumulative full gate passed at 0e212ab5; no generated input changed, and formatting passed. Exact-head CI run 33844779329 attempt 1 succeeded for 630b1d75 before the later fallback fix. The previously missed /v5 rewrite review was also completed in four bounded CodeRabbit slices over all 582 changed internal files with zero findings.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Pinned the deliberately unsuffixed OpenTelemetry instrumentation scope with a decision comment and a negative-tested guard whose failure explains the operator-query stability contract. The identifier inventory found no other module-major-shaped telemetry identifier requiring a guard.
+<!-- SECTION:FINAL_SUMMARY:END -->

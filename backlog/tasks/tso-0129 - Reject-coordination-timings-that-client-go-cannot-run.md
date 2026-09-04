@@ -1,10 +1,11 @@
 ---
 id: TSO-0129
 title: Reject coordination timings that client-go cannot run
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-04 07:02'
+updated_date: '2026-09-04 07:11'
 labels:
   - needs-triage
 dependencies: []
@@ -21,16 +22,16 @@ Configuration validation currently accepts renew_deadline values greater than re
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Config validation rejects renew_deadline values that do not exceed the pinned client-go retry jitter bound, with an actionable error
-- [ ] #2 Coordinator option validation enforces the same bound so direct callers cannot bypass it
-- [ ] #3 Boundary tests cover an invalid jitter-bound configuration and the nearest valid configuration
+- [x] #1 Config validation rejects renew_deadline values that do not exceed the pinned client-go retry jitter bound, with an actionable error
+- [x] #2 Coordinator option validation enforces the same bound so direct callers cannot bypass it
+- [x] #3 Boundary tests cover an invalid jitter-bound configuration and the nearest valid configuration
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -43,4 +44,12 @@ Configuration validation currently accepts renew_deadline values greater than re
 
 <!-- SECTION:NOTES:BEGIN -->
 Wave 10 coordination audit found the mismatch at internal/config/validate.go and internal/coordination/coordination.go: repository validation only requires renew_deadline > retry_period, while client-go v0.37.0 rejects renew_deadline <= 1.2 * retry_period.
+
+Red proof: the focused config and coordinator tests both failed because the 12s renew deadline with a 10s retry period was accepted. Green proof: both layers now reject equality with the client-go 1.2 jitter bound and accept 12s plus 1ns; focused tests passed. CodeRabbit completed over all four changed internal files with zero findings. just check passed at commit 0e212ab5. The pre-commit hook regenerated the affected metrics and root config-schema families and found both already up to date.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Aligned configuration and coordinator validation with client-go JitterFactor 1.2 so invalid election timings fail early with an actionable error. Boundary tests prove equality is rejected and the nearest representable duration above it is accepted; review and the full gate pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
