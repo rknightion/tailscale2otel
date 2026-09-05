@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: read
       packages: write # delete package versions
-    uses: rknightion/.github/.github/workflows/ghcr-cleanup.yml@ff43f62eaec9f41d49b9a208d86b2eb932c97056 # v1.18.1
+    uses: rknightion/.github/.github/workflows/ghcr-cleanup.yml@27b0bd31dbe7bf238b89773d00d60ed5dfe187bb # v1.20.0
     with:
       packages: "tailscale2otel,charts/tailscale2otel"
       # Scheduled runs prune for real; a manual dispatch defaults to dry-run.
