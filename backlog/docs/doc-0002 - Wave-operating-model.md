@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-05 17:15'
+updated_date: '2026-09-05 20:12'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -105,13 +105,42 @@ These have each shipped at least once. Treat them as things to check for, not th
   and **all 19 advisory rules failed at push** with `Invalid value: "OK"` (it is `"Ok"`). `gcx
   resources validate` says outright that it does not validate the spec. **Only a real
   `gcx resources push` proves a rule is deployable**, and pushing here is pre-authorized.
-- **`just lint` runs whatever `golangci-lint` is on `PATH`, and nothing checks it against the pin.**
+- **`just lint` used to run whatever `golangci-lint` was on `PATH` with nothing checking it against the pin** (enforced since Wave 13, `0763467a`: a mismatch or missing binary now hard-errors naming `just setup`).
   The justfile carries `golangci_version := "v2.13.2"` and `just setup` installs it, but the lint
   recipe asserts nothing at run time - unlike the two helm generators, which verify the installed
   version against their pin and loudly SKIP rather than write a wrong file. A machine left on 2.12.2
   ran `just lint` green across all five modules while CI's 2.13.2 failed two SA1019 deprecations in
   `internal/coordination/lease_observer.go` (CI 33868900332, Wave 11). **After any pin bump, `just
   setup` before trusting a local lint.**
+
+### `pii_filter` categories are RETAIN flags: true emits the field, false removes it
+
+Wave 13's goal told the live run to "confirm the redactor removed each category's field" under the
+default `pii_filter`. That is backwards: every category defaults to `true` and `true` means keep.
+The run preserved the real semantics and proved both modes, but the wording cost a reconciliation
+paragraph in the report. Write live-verification steps as "default run proves retention, all-false
+run proves removal", and never describe the default as "redacted".
+
+### The grafana-sync workflow pushes rules on every push to main, and a goal must not forbid that
+
+`grafana-sync.yml` runs `gcx resources push` unconditionally on every push. A goal that lists "no
+rule push" as a hard stop is therefore forbidding something the repository does by itself the
+moment the root pushes. Wave 13 read that contradiction as an uncommissioned write and added a
+changed-path guard to the workflow; the owner reverted it (`57f38dce`) because the push is additive
+and `just verify-deploy` is the drift backstop. Phrase the prohibition as "no rule push by hand"
+and enumerate what each mandated procedure touches before writing a prohibition, per the protocol's
+pre-flight list.
+
+### The lab runs `tag: main` with no rollout trigger, so it is always behind
+
+The lab Argo application pins the image to the mutable `main` tag with `pullPolicy: Always`. A pod
+only pulls on (re)start, and nothing restarts it when `main` moves, so the running digest is
+whatever was current at the last rollout. Wave 13's 30-day stack sweep found 116 shipped families
+with no samples; the pod was seven days behind `main` and its values enable none of PAM, the
+objectstore paths, the snapshot logs, the device change-log or the Kubernetes audit collector.
+**A zero-sample family on the stack says nothing about the code until the lab's digest and values
+have been checked**, and a wave that ships a feature has not exercised it on the lab until the pod
+has restarted on an image that contains it. TSO-0140 and TSO-0141 carry the fix.
 
 ### auto-rc fires after CI, so a wave can finish green and leave main red
 

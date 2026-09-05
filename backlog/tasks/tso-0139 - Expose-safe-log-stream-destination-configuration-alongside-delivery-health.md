@@ -4,8 +4,8 @@ title: Expose safe log-stream destination configuration alongside delivery healt
 status: To Do
 assignee: []
 created_date: '2026-09-05 17:36'
-labels:
-  - needs-triage
+updated_date: '2026-09-05 20:10'
+labels: []
 dependencies: []
 references:
   - spec/tailscale-api.json
