@@ -4,6 +4,7 @@ title: Emit the modeled capability scope preflight metric at runtime
 status: To Do
 assignee: []
 created_date: '2026-09-05 22:01'
+updated_date: '2026-09-05 22:45'
 labels: []
 dependencies: []
 references:
@@ -34,3 +35,9 @@ The shipped catalog and dashboard expose `tailscale2otel.capability.scope_satisf
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner decision 2026-09-05: bundled into the 2026-09-11 wave with TSO-0133; PR #585 (5.0.0) merges after both land.
+<!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-05 20:12'
-updated_date: '2026-09-05 22:06'
+updated_date: '2026-09-05 22:46'
 labels: []
 dependencies: []
 references:
@@ -49,6 +49,8 @@ Pin the lab exporter to the current RC, add a Renovate regex manager and automer
 Owner decision 2026-09-05: Renovate-pinned rc tag (option 1). The infra repo tracks the same work as EKS-0071, whose description previously said the tag must stay on main; that paragraph is superseded by this decision and the note was appended there.
 
 Owner-selected Renovate-pinned RC tags landed in infra commits 2aa339c9d70a9eb9190b32a86943fe2e3aa6cd81 and 992f0c15a31818dafb2505d57294efd249aa1be3; c211ce7c00bc7f614f1d12aacff11bc97029bbc1 advanced the lab to RC.27. The manager detected ghcr.io/rknightion/tailscale2otel using semver-coerced ordering with prereleases enabled. Infra `just check` passed. Notify Argo runs 33991646520, 33991697382 and 33994252971 succeeded. The live pod rolled without a manual Deployment edit, became ready with zero restarts, and its image ID matched RC.27 registry digest sha256:ba02dd35e6f67009f7c6ee2c266b96bb8d70dc5f475909862548360af6e33b8b. The Wave operating model is updated in doc-0002.
+
+Owner decision 2026-09-05, answering the Wave 14 report: the lab keeps taking RC tags after 5.0.0; the Renovate rule (ignoreUnstable false, semver-coerced) stays as landed. First observed Renovate RC bump PR on the infra repo is still the outstanding evidence for AC 2.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
