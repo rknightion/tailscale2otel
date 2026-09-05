@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -8,10 +10,51 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
+func TestPAMTailnetSelectionConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml, selected string
+		wantError            []string
+	}{
+		{"primary default", "tailscale:\n  tailnet: primary.example\n", "", nil},
+		{"single match", "tailscale:\n  tailnet: primary.example\npam:\n  tailnet: primary.example\n", "primary.example", nil},
+		{"single unknown", "tailscale:\n  tailnet: primary.example\npam:\n  tailnet: missing.example\n", "", []string{"pam.tailnet", "primary.example"}},
+		{"multi match", "tailnets:\n  - name: primary.example\n    auth:\n      method: oauth\n  - name: secondary.example\n    auth:\n      method: oauth\npam:\n  tailnet: secondary.example\n", "secondary.example", nil},
+		{"multi unknown", "tailnets:\n  - name: primary.example\n    auth:\n      method: oauth\n  - name: secondary.example\n    auth:\n      method: oauth\npam:\n  tailnet: missing.example\n", "", []string{"pam.tailnet", "primary.example", "secondary.example"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := config.Load(path)
+			if len(tc.wantError) > 0 {
+				if err == nil {
+					t.Fatal("unknown PAM tailnet accepted")
+				}
+				for _, want := range tc.wantError {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("error %q missing %q", err, want)
+					}
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.PAM.Tailnet != tc.selected {
+				t.Fatalf("PAM tailnet = %q, want %q", cfg.PAM.Tailnet, tc.selected)
+			}
+		})
+	}
+}
+
 func TestPAMDefaultsAreOptInAndBounded(t *testing.T) {
 	cfg := config.Default()
 	if cfg.PAM.APIURL != "https://api.border0.com/api/v1" || cfg.PAM.Token.Reveal() != "" {
 		t.Fatalf("PAM defaults = APIURL %q token %q", cfg.PAM.APIURL, cfg.PAM.Token)
+	}
+	if cfg.PAM.Tailnet != "" || cfg.Collectors.PAM.SessionLogEnabled {
+		t.Fatal("PAM follow-up defaults changed existing behavior")
 	}
 	if cfg.Collectors.PAM.Enabled {
 		t.Fatal("PAM collector defaults enabled")
@@ -68,5 +111,18 @@ func TestPAMEnabledRequiresCredentialAndValidIntervals(t *testing.T) {
 				t.Fatalf("Validate() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestPAMFollowupEnvironmentKeys(t *testing.T) {
+	t.Setenv("TS2OTEL_TAILSCALE__TAILNET", "fixture.example")
+	t.Setenv("TS2OTEL_PAM__TAILNET", "fixture.example")
+	t.Setenv("TS2OTEL_COLLECTORS__PAM__SESSION_LOG_ENABLED", "true")
+	cfg, err := config.Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PAM.Tailnet != "fixture.example" || !cfg.Collectors.PAM.SessionLogEnabled {
+		t.Fatal("PAM environment keys were not applied")
 	}
 }

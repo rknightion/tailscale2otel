@@ -736,6 +736,9 @@
                                 "interval": {
                                     "type": "string"
                                 },
+                                "session_log_enabled": {
+                                    "type": "boolean"
+                                },
                                 "sessions_interval": {
                                     "type": "string"
                                 },
@@ -1623,6 +1626,9 @@
                     "type": "object",
                     "properties": {
                         "api_url": {
+                            "type": "string"
+                        },
+                        "tailnet": {
                             "type": "string"
                         },
                         "token": {

@@ -1079,6 +1079,24 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
+	add("pam.tailnet", "Set pam.tailnet to a configured tailnet name, or leave it empty for the primary runtime.", func() error {
+		if c.PAM.Tailnet == "" {
+			return nil
+		}
+		names := []string{c.Tailscale.Tailnet}
+		if len(c.Tailnets) > 0 {
+			names = make([]string, 0, len(c.Tailnets))
+			for _, tailnet := range c.Tailnets {
+				names = append(names, tailnet.Name)
+			}
+		}
+		for _, name := range names {
+			if c.PAM.Tailnet == name {
+				return nil
+			}
+		}
+		return fmt.Errorf("pam.tailnet %q does not match a configured tailnet; configured names: %q", c.PAM.Tailnet, names)
+	})
 	add("pam.token", "Set pam.token (or TS2OTEL_PAM__TOKEN) when collectors.pam.enabled is true.", func() error {
 		if c.Collectors.PAM.Enabled && c.PAM.Token == "" {
 			return fmt.Errorf("pam.token: required when collectors.pam.enabled=true (set TS2OTEL_PAM__TOKEN)")

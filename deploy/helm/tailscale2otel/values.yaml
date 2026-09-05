@@ -758,6 +758,8 @@ config: # @schema additionalProperties:false
 
   # Tailscale PAM's independent Border0 API connection. The collector is opt-in below.
   pam: # @schema additionalProperties:false
+    # -- Configured tailnet name hosting PAM. Empty selects the primary runtime; restart required.
+    tailnet: ""
     # -- Static read-only service-account bearer token. Prefer secret.TS2OTEL_PAM__TOKEN.
     token: ""
     # -- Border0 API base URL.
@@ -1571,6 +1573,8 @@ config: # @schema additionalProperties:false
       interval: 600s
       # -- Incremental newest-first session polling interval.
       sessions_interval: 60s
+      # -- Emit newly observed authorized sessions as logs under pii_filter. Grant-layer denials produce no record.
+      session_log_enabled: false
       # -- Emit redacted PAM configuration snapshots on change plus a heartbeat.
       snapshot_enabled: false
       # -- Refresh unchanged snapshots at this cadence.

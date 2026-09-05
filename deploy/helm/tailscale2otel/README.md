@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.33.2](https://img.shields.io/badge/Version-0.33.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.33.3](https://img.shields.io/badge/Version-0.33.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -430,6 +430,7 @@ extraVolumeMounts:
 | config.collectors.oauth_apps.interval | string | `"300s"` | Poll interval. |
 | config.collectors.pam.enabled | bool | `false` | Enable Border0-only PAM inventory, configuration shape and session telemetry. |
 | config.collectors.pam.interval | string | `"600s"` | Connector/service/policy/identity/org inventory and configuration-shape interval. |
+| config.collectors.pam.session_log_enabled | bool | `false` | Emit newly observed authorized sessions as logs under pii_filter. Grant-layer denials produce no record. |
 | config.collectors.pam.sessions_interval | string | `"60s"` | Incremental newest-first session polling interval. |
 | config.collectors.pam.snapshot_body_bytes | int | `32768` | Maximum serialized snapshot event body in bytes. |
 | config.collectors.pam.snapshot_enabled | bool | `false` | Emit redacted PAM configuration snapshots on change plus a heartbeat. |
@@ -620,6 +621,7 @@ extraVolumeMounts:
 | config.otlp.traces.tls.insecure_skip_verify | string | `nil` | null inherits; explicit true/false overrides. |
 | config.otlp.traces.tls.key_file | string | `""` | Empty inherits otlp.tls.key_file. |
 | config.pam.api_url | string | `"https://api.border0.com/api/v1"` | Border0 API base URL. |
+| config.pam.tailnet | string | `""` | Configured tailnet name hosting PAM. Empty selects the primary runtime; restart required. |
 | config.pam.token | string | `""` | Static read-only service-account bearer token. Prefer secret.TS2OTEL_PAM__TOKEN. |
 | config.pii_filter.command_text | bool | `true` | Emit the verbatim `kubectl exec` command line on Kubernetes-audit logs. This is the only attribute a human types at a shell, so it can carry a pasted secret; it has its own toggle rather than sharing free_text_details. Turning it off KEEPS the bounded tailscale.k8s.command_class classification that the exec metrics are built on. |
 | config.pii_filter.emails | bool | `true` | Emit user/actor login names (often emails). |

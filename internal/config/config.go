@@ -516,8 +516,10 @@ type HeadscaleConfig struct {
 // Tailscale PAM collector. Border0 service-account tokens are static and have
 // no refresh protocol.
 type PAMConfig struct {
-	Token  Secret `yaml:"token" reload:"restart"`
-	APIURL string `yaml:"api_url" reload:"restart"`
+	// Tailnet selects the configured runtime hosting PAM; empty keeps the primary.
+	Tailnet string `yaml:"tailnet" reload:"restart"`
+	Token   Secret `yaml:"token" reload:"restart"`
+	APIURL  string `yaml:"api_url" reload:"restart"`
 }
 
 // TailscaleConfig holds Tailscale API connection settings.
@@ -1176,6 +1178,8 @@ type Collectors struct {
 // PAMCollector configures the Border0 inventory/config snapshot and the
 // independently scheduled incremental session poller.
 type PAMCollector struct {
+	// SessionLogEnabled emits new sessions with the existing PII category filters.
+	SessionLogEnabled bool     `yaml:"session_log_enabled" reload:"restart"`
 	Enabled           bool     `yaml:"enabled" reload:"restart"`
 	Interval          Duration `yaml:"interval" reload:"restart"`
 	SessionsInterval  Duration `yaml:"sessions_interval" reload:"restart"`

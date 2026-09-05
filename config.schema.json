@@ -1438,6 +1438,11 @@
               "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
               "type": "string"
             },
+            "session_log_enabled": {
+              "default": false,
+              "description": "emit newly observed authorized sessions as logs under pii_filter; grant-layer denials produce no record",
+              "type": "boolean"
+            },
             "sessions_interval": {
               "default": "60s",
               "description": "incremental newest-first session polling interval",
@@ -3017,6 +3022,11 @@
         "api_url": {
           "default": "https://api.border0.com/api/v1",
           "description": "override only for a compatible proxy or local test endpoint",
+          "type": "string"
+        },
+        "tailnet": {
+          "default": "",
+          "description": "configured tailnet name hosting PAM; empty selects the primary runtime; restart required",
           "type": "string"
         },
         "token": {

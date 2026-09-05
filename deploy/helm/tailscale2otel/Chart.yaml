@@ -3,6 +3,7 @@ name: tailscale2otel
 description: Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 type: application
 # Chart version — bump on chart changes.
+# 0.33.3: expose explicit PAM tailnet selection and opt-in session logs.
 # 0.33.2: add the name-scoped Lease list/watch grant required by the reusable
 # Lease watcher; the observer supplies metadata.name field selectors.
 # 0.33.1: default the coordination Lease and checkpoint ConfigMap namespace to
@@ -179,7 +180,7 @@ type: application
 # profiling.pyroscope.tailnet_label, tracing.remote_parent, tracing.samplers.*, and the new
 # top-level resource: block (service_namespace/deployment_environment/attributes/from_env).
 # 0.28.0: add config.flows.capacity_profile (#329).
-version: 0.33.2
+version: 0.33.3
 # Tracks the tailscale2otel app version this chart defaults to.
 appVersion: "4.0.1" # x-release-please-version
 home: https://m7kni.io/tailscale2otel/

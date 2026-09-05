@@ -290,6 +290,7 @@ GET-only; an HTTP 403 is reported as `scope_denied`, never as a disabled feature
 
 | Key | Default | Description |
 |-----|---------|-------------|
+| `pam.tailnet` | `""` | Configured tailnet runtime hosting both PAM schedules. Empty keeps the primary (first configured) runtime. A non-empty value must exactly match `tailscale.tailnet` or an active `tailnets[].name`; unknown names fail validation and list the configured names. Set via `TS2OTEL_PAM__TAILNET`; restart required. |
 | `pam.token` | `""` | Static Border0 service-account bearer token. Required when `collectors.pam.enabled` is true. Set via `TS2OTEL_PAM__TOKEN`. |
 | `pam.api_url` | `https://api.border0.com/api/v1` | Border0 API base URL. Override only for a compatible proxy or local test endpoint; it must be an absolute HTTP(S) URL without credentials, query, or fragment. |
 
@@ -1225,6 +1226,7 @@ field the export does not. Neither field is required.
 | `collectors.settings.snapshot_enabled` | `false` | Emit the complete settings response to logs on change plus a heartbeat. |
 | `collectors.pam.enabled` / `.interval` | `false` / `600s` | Opt-in Border0-only PAM connector, service, policy, identity, organization and subscription telemetry. It does not duplicate Tailscale Service ports or audit-change metrics. |
 | `collectors.pam.sessions_interval` | `60s` | Poll cadence for the independent newest-first session poller. It stops at the durable seen-session boundary rather than paging the whole history. |
+| `collectors.pam.session_log_enabled` | `false` | Emit one log record per newly observed session, with replay and restart deduplication. The result is authorization outcome, not connection health; grant-layer denials produce no record. Existing `pii_filter` semantics apply: false removes the category, true retains it. Email, display name, SSH user, device name and command use emails, user_display_names, user_ids, hostnames and command_text respectively; client IP uses tailscale_ips for tailnet addresses and external_ips otherwise, with its port emitted only alongside the IP. Raw auth_info and event metadata are never emitted. |
 | `collectors.pam.snapshot_enabled` | `false` | Emit safe PAM inventory and configuration-shape snapshots on change plus a heartbeat. Authentication objects, credentials and identity details are removed before serialization. |
 | `collectors.pam.snapshot_heartbeat` | `24h` | Refresh an unchanged PAM snapshot at this cadence. Must be positive. |
 | `collectors.pam.snapshot_body_bytes` | `32768` | Maximum bytes in one PAM snapshot log body chunk. Must be positive. |

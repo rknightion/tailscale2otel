@@ -92,6 +92,7 @@ tailscale:
 
 # ── Tailscale PAM / Border0 API (OPTIONAL) ─────────────────────────────────────
 pam:
+  tailnet: ""                          # configured tailnet name hosting PAM; empty selects the primary runtime; restart required
   token: ""                            # static read-only Border0 service-account bearer token; keep in TS2OTEL_PAM__TOKEN
   api_url: https://api.border0.com/api/v1 # override only for a compatible proxy or local test endpoint
 
@@ -470,6 +471,7 @@ collectors:
     enabled: false                    # requires a read-only service-account token in TS2OTEL_PAM__TOKEN
     interval: 600s                    # connector/service/policy/identity/org inventory and config-shape interval
     sessions_interval: 60s            # incremental newest-first session polling interval
+    session_log_enabled: false        # emit newly observed authorized sessions as logs under pii_filter; grant-layer denials produce no record
     snapshot_enabled: false           # opt in to redacted PAM configuration snapshots; secrets are stripped before serialization
     snapshot_heartbeat: 24h           # refresh unchanged snapshots at this cadence
     snapshot_body_bytes: 32768        # maximum serialized snapshot event body

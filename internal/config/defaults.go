@@ -83,7 +83,7 @@ func Default() *Config {
 			MaxResponseBytes:    4 << 20,
 			MaxLogResponseBytes: 32 << 20,
 		},
-		PAM: PAMConfig{APIURL: "https://api.border0.com/api/v1"},
+		PAM: PAMConfig{Tailnet: "", APIURL: "https://api.border0.com/api/v1"},
 		OTLP: OTLPConfig{
 			Protocol: "http",
 			Endpoint: "https://otlp-gateway-prod-us-central-0.grafana.net/otlp",
@@ -293,6 +293,7 @@ func Default() *Config {
 				Interval: dur(300 * time.Second),
 			},
 			PAM: PAMCollector{
+				SessionLogEnabled: false,
 				Enabled:           false,
 				Interval:          dur(10 * time.Minute),
 				SessionsInterval:  dur(time.Minute),

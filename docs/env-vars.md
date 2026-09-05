@@ -62,6 +62,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_TAILSCALE__MAX_RESPONSE_BYTES` | `4194304` | `restart` | cap (4 MiB) on ONE snapshot-endpoint response body before decoding; ~2400 devices at ~1.8 KiB each — raise it (and the container memory limit) on a bigger tailnet, these endpoints are not paginated |
 | `TS2OTEL_TAILSCALE__MAX_LOG_RESPONSE_BYTES` | `33554432` | `restart` | cap (32 MiB) on ONE flow-log/audit-log response body; ~12000 flow records per poll — shrink the collector's window instead of raising this if you hit it |
 | `TS2OTEL_TAILSCALE__ORGANIZATION` | `""` | `restart` | alpha roster inventory via first runtime credential (needs tailnets:read); runtimes still require explicit credentials |
+| `TS2OTEL_PAM__TAILNET` | `""` | `restart` | configured tailnet name hosting PAM; empty selects the primary runtime; restart required |
 | `TS2OTEL_PAM__TOKEN` | `""` | `restart` | static read-only Border0 service-account bearer token; keep in TS2OTEL_PAM__TOKEN |
 | `TS2OTEL_PAM__API_URL` | `https://api.border0.com/api/v1` | `restart` | override only for a compatible proxy or local test endpoint |
 | `TS2OTEL_OTLP__PROTOCOL` | `http` | `restart` | http \| grpc \| stdout (stdout = print signals to the console for local debug, no backend) |
@@ -313,6 +314,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__PAM__ENABLED` | `false` | `restart` | requires a read-only service-account token in TS2OTEL_PAM__TOKEN |
 | `TS2OTEL_COLLECTORS__PAM__INTERVAL` | `600s` | `restart` | connector/service/policy/identity/org inventory and config-shape interval |
 | `TS2OTEL_COLLECTORS__PAM__SESSIONS_INTERVAL` | `60s` | `restart` | incremental newest-first session polling interval |
+| `TS2OTEL_COLLECTORS__PAM__SESSION_LOG_ENABLED` | `false` | `restart` | emit newly observed authorized sessions as logs under pii_filter; grant-layer denials produce no record |
 | `TS2OTEL_COLLECTORS__PAM__SNAPSHOT_ENABLED` | `false` | `restart` | opt in to redacted PAM configuration snapshots; secrets are stripped before serialization |
 | `TS2OTEL_COLLECTORS__PAM__SNAPSHOT_HEARTBEAT` | `24h` | `restart` | refresh unchanged snapshots at this cadence |
 | `TS2OTEL_COLLECTORS__PAM__SNAPSHOT_BODY_BYTES` | `32768` | `restart` | maximum serialized snapshot event body |
