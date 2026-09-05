@@ -295,10 +295,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			services.WithEnrichCache(rt.cache),
 			services.WithAPIState(rt.apiState)), c.Services.Interval.D())
 	}
-	if c.PAM.Enabled && d.primary && d.pamClient != nil {
+	pamRuntime := (cfg.PAM.Tailnet == "" && d.primary) || cfg.PAM.Tailnet == rt.configuredName
+	if c.PAM.Enabled && pamRuntime && d.pamClient != nil {
 		// PAM is one process-global Border0 organization, not one API surface per
-		// configured tailnet. Register both schedules on the primary runtime only;
-		// this preserves one copy of every series and one durable session cursor.
+		// configured tailnet. Register both schedules on the configured runtime,
+		// or the primary runtime when pam.tailnet is empty, so one durable session
+		// cursor and one copy of every series are retained.
 		rt.registry.Register(pam.New(d.pamClient, c.PAM.Interval.D(),
 			pam.WithAPIState(rt.apiState),
 			pam.WithSnapshot(c.PAM.SnapshotEnabled, c.PAM.SnapshotBodyBytes),
