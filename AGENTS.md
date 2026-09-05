@@ -22,6 +22,9 @@ This repo's task surface is a `justfile`. Discover it, don't guess it:
   rather than running a bare command.
 - `just setup` once per clone: it installs the pinned `golangci-lint`, `govulncheck` and the two
   Helm generators, and wires `core.hooksPath` at `.githooks`.
+- `just lint` and `just vuln` assert the invoked binary against the justfile pin before running.
+  A local lint result is evidence only when that pin assertion passed; run `just setup` to repair
+  a missing or stale tool.
 
 `just run` starts the exporter with `config.yaml`; set `otlp.protocol: stdout` for local debug without a backend.
 

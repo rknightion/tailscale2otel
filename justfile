@@ -64,11 +64,39 @@ fmt-check:
       (cd "$m" && golangci-lint fmt --diff)
     done
 
+# Assert the installed golangci-lint reports the justfile pin before lint runs.
+# This deliberately hard-errors on a missing or mismatched tool: a skipped lint
+# has no CI fail-on-diff backstop and would report a green result that means
+# nothing. Run `just setup` to install the pinned tool.
+[private]
+[script('bash')]
+assert-golangci-version:
+    set -euo pipefail
+    if ! command -v golangci-lint >/dev/null 2>&1; then
+      echo "::error::golangci-lint is missing; run 'just setup' to install the pinned tool" >&2
+      exit 1
+    fi
+    if ! output="$(golangci-lint version 2>&1)"; then
+      echo "::error::golangci-lint version check failed; run 'just setup'" >&2
+      exit 1
+    fi
+    got="$(printf '%s\n' "$output" | sed -nE 's/^golangci-lint has version v?([^[:space:]]+).*/\1/p' | head -n 1)"
+    want='{{ golangci_version }}'
+    normalized_want="${want#v}"
+    if [ -z "$got" ]; then
+      echo "::error::golangci-lint version output could not be parsed (justfile pin: $want); run 'just setup'" >&2
+      exit 1
+    fi
+    if [ "$got" != "$normalized_want" ]; then
+      echo "::error::golangci-lint reports $got, but the justfile pins $want; run 'just setup'" >&2
+      exit 1
+    fi
+
 # run golangci-lint over one module, or every module when module is empty
 [group('check')]
 [no-exit-message]
 [script('bash')]
-lint module="":
+lint module="": assert-golangci-version
     set -euo pipefail
     targets='{{ module }}'
     [ -n "$targets" ] || targets='{{ modules }}'
@@ -142,11 +170,39 @@ tidy-check module="":
       rm -rf "$before"
     done
 
+# Assert the installed govulncheck reports the justfile pin before vuln runs.
+# This deliberately hard-errors on a missing or mismatched tool: a skipped
+# vulnerability scan leaves no downstream trace that CI can catch. Run `just
+# setup` to install the pinned tool.
+[private]
+[script('bash')]
+assert-govulncheck-version:
+    set -euo pipefail
+    if ! command -v govulncheck >/dev/null 2>&1; then
+      echo "::error::govulncheck is missing; run 'just setup' to install the pinned tool" >&2
+      exit 1
+    fi
+    if ! output="$(govulncheck -version 2>&1)"; then
+      echo "::error::govulncheck version check failed; run 'just setup'" >&2
+      exit 1
+    fi
+    got="$(printf '%s\n' "$output" | sed -nE 's/^Scanner:[[:space:]]+govulncheck@v?([^[:space:]]+).*/\1/p' | head -n 1)"
+    want='{{ govulncheck_version }}'
+    normalized_want="${want#v}"
+    if [ -z "$got" ]; then
+      echo "::error::govulncheck version output could not be parsed (justfile pin: $want); run 'just setup'" >&2
+      exit 1
+    fi
+    if [ "$got" != "$normalized_want" ]; then
+      echo "::error::govulncheck reports $got, but the justfile pins $want; run 'just setup'" >&2
+      exit 1
+    fi
+
 # scan one module for known vulnerabilities, or every module when module is empty
 [group('check')]
 [no-exit-message]
 [script('bash')]
-vuln module="":
+vuln module="": assert-govulncheck-version
     set -euo pipefail
     targets='{{ module }}'
     [ -n "$targets" ] || targets='{{ modules }}'
