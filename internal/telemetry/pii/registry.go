@@ -2,6 +2,10 @@ package pii
 
 // keyCategory maps a fixed-meaning attribute key to its category.
 var keyCategory = map[string]Category{
+	// PAM chooses the address class with its runtime AddrSet; do not classify
+	// these again using the generic RFC1918/CGNAT defaults.
+	"tailscale.pam.session.client.tailnet_ip":  CatTailscaleIPs,
+	"tailscale.pam.session.client.external_ip": CatExternalIPs,
 	"tailscale.user":                     CatEmails,
 	"tailscale.src.user":                 CatEmails, // flow endpoint identity, from the record's srcNode block
 	"tailscale.dst.user":                 CatEmails, // flow endpoint identity, from the record's dstNodes block
@@ -47,17 +51,18 @@ var keyCategory = map[string]Category{
 	// Note tailscale.k8s.path is the QUERY-FREE kubernetes.Path — the raw
 	// request.Path is never emitted at all, because it carries the exec command
 	// line inside its query string.
-	"tailscale.k8s.user":           CatEmails,
-	"tailscale.k8s.src_node":       CatHostnames,
-	"tailscale.k8s.recorder":       CatHostnames,
-	"tailscale.k8s.src_node_id":    CatNodeIDs,
-	"tailscale.k8s.path":           CatEndpointPaths,
-	"tailscale.k8s.object_name":    CatFreeTextDetails, // arbitrary Kubernetes object names
-	"tailscale.k8s.label_selector": CatFreeTextDetails,
-	"tailscale.k8s.field_selector": CatFreeTextDetails,
-	"tailscale.k8s.pod":            CatFreeTextDetails,
-	"tailscale.k8s.container":      CatFreeTextDetails,
-	"tailscale.k8s.command":        CatCommandText, // human-typed; may contain a pasted secret
+	"tailscale.k8s.user":            CatEmails,
+	"tailscale.k8s.src_node":        CatHostnames,
+	"tailscale.k8s.recorder":        CatHostnames,
+	"tailscale.k8s.src_node_id":     CatNodeIDs,
+	"tailscale.k8s.path":            CatEndpointPaths,
+	"tailscale.k8s.object_name":     CatFreeTextDetails, // arbitrary Kubernetes object names
+	"tailscale.k8s.label_selector":  CatFreeTextDetails,
+	"tailscale.k8s.field_selector":  CatFreeTextDetails,
+	"tailscale.k8s.pod":             CatFreeTextDetails,
+	"tailscale.k8s.container":       CatFreeTextDetails,
+	"tailscale.pam.session.command": CatCommandText,
+	"tailscale.k8s.command":         CatCommandText, // human-typed; may contain a pasted secret
 
 	// Span-only keys (#212). Spans go through the same policy as metrics and logs
 	// via telemetry.piiSpanExporter, so these must be classified here too.
@@ -335,6 +340,11 @@ var nonIdentifier = map[string]bool{
 	"tailscale.pam.identity.role":                true,
 	"tailscale.pam.plan":                         true,
 	"tailscale.pam.limit.name":                   true,
+	"tailscale.pam.session.socket_name":          true, // frozen bounded session field; metric service labels retain their policy
+	"tailscale.pam.session.client.port":          true, // collector emits only alongside an allowed IP
+	"tailscale.pam.session.killed":               true,
+	"tailscale.pam.session.duration_seconds":     true,
+	"tailscale.pam.session.recording_type":       true,
 	"tailscale.pam.session.type":                 true,
 	"tailscale.pam.session.authorization_result": true,
 	"tailscale.pam.session.event.type":           true,

@@ -424,7 +424,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_PII_FILTER__NETWORK_TOPOLOGY` | `true` | `restart` | route CIDRs + split-DNS domains + search paths |
 | `TS2OTEL_PII_FILTER__TAILNET_NAME` | `true` | `restart` | tailnet identifier |
 | `TS2OTEL_PII_FILTER__FREE_TEXT_DETAILS` | `true` | `restart` | audit old/new/details, target names, key descriptions, posture values |
-| `TS2OTEL_PII_FILTER__COMMAND_TEXT` | `true` | `restart` | verbatim `kubectl exec` command line on Kubernetes-audit logs; the only attribute a human types at a shell, so it can carry a pasted secret. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on |
+| `TS2OTEL_PII_FILTER__COMMAND_TEXT` | `true` | `restart` | verbatim commands on Kubernetes-audit and opt-in PAM session logs; can carry pasted secrets. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on |
 | `TS2OTEL_SELF_OBSERVABILITY__ENABLED` | `true` | `restart` | emit tailscale2otel.up, api.requests, runtime metrics, etc. |
 | `TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID` | `""` | `restart` | service.instance.id resource attr; empty => host name. Set via env, e.g. TS2OTEL_SELF_OBSERVABILITY__INSTANCE_ID=$POD_NAME |
 | `TS2OTEL_ADMIN__ENABLED` | `true` | `restart` | run the admin HTTP server (probes + status page + optional pprof mount) |

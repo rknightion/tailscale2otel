@@ -8,6 +8,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
@@ -71,4 +72,19 @@ func TestSessionCatalogContainsEveryFamilyAndNoRecordingMetric(t *testing.T) {
 			t.Errorf("session metric %q missing from catalog", name)
 		}
 	}
+}
+
+func TestSessionLogCatalogMatchesEmitted(t *testing.T) {
+	start := time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)
+	end := start.Add(time.Minute)
+	s := session("session-log-catalog", start, "ssh")
+	s.EndTime = &end
+	api := sessionAPIFunc(func(context.Context, ...b0api.PageOptions) (b0api.SessionPage, error) {
+		return sessionPage(0, s), nil
+	})
+	rec := telemetrytest.New()
+	if err := NewSessions(api, 0, collector.NewMemoryStore(), collector.NewMemoryStore(), WithSessionLog(true, allSessionLogCategories(), enrich.DefaultAddrSet())).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	telemetrytest.AssertCatalogAttrs(t, rec, append(SessionCatalog(), apistate.Catalog()...), LogCatalog())
 }

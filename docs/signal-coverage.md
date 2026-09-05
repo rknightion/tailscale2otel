@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 258 | 257 | 58 | 11 | 45 |
+| operational | 259 | 258 | 58 | 11 | 45 |
 | self_obs | 102 | 102 | 39 | 9 | 10 |
 
 ## Operational signals
@@ -108,6 +108,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.logstream.error` | log_event | `event_name="tailscale.logstream.error"` | visualized |  |
 | `tailscale.network.flow` | log_event | `event_name="tailscale.network.flow"` | visualized, drives_a_variable |  |
 | `tailscale.oauth_app.info` | log_event | `event_name="tailscale.oauth_app.info"` | visualized |  |
+| `tailscale.pam.session` | log_event | `event_name="tailscale.pam.session"` | visualized |  |
 | `tailscale.pam.snapshot` | log_event | `event_name="tailscale.pam.snapshot"` | visualized |  |
 | `tailscale.posture_integrations.snapshot` | log_event | `event_name="tailscale.posture_integrations.snapshot"` | visualized |  |
 | `tailscale.settings.snapshot` | log_event | `event_name="tailscale.settings.snapshot"` | visualized |  |

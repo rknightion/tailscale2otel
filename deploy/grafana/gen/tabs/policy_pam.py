@@ -169,11 +169,23 @@ def tab_policy_pam(scope):
                     "collectors.pam.snapshot_enabled."), 24, 10),
     ]
 
+    session_records = [
+        (panel("PAM authorized session records", "logs",
+               [loki_t("%s | event_name=`tailscale.pam.session` |~ `$log_filter`" % LOKI_TN,
+                       maxlines=500)],
+               options=logs_opts(),
+               desc="Opt-in records for newly observed PAM sessions. Authorization result "
+                    "does not prove connection health; grant-layer denials produce no record. "
+                    "Enable collectors.pam.session_log_enabled. Identity, address, device-name "
+                    "and command fields follow pii_filter: false removes that category."), 24, 10),
+    ]
+
     return [
         row("PAM inventory", inventory),
         row("Connector health", connector_health),
         row("Configuration shape", configuration),
         row("Organization and limits", organization),
         row("Session telemetry", sessions),
+        row("Session history (explicit log opt-in)", session_records),
         row("Configuration history (explicit snapshot opt-in)", snapshots),
     ]

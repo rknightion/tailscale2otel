@@ -26997,6 +26997,65 @@
             }
           }
         }
+      },
+      "panel-331": {
+        "kind": "Panel",
+        "spec": {
+          "id": 331,
+          "title": "PAM authorized session records",
+          "description": "Opt-in records for newly observed PAM sessions. Authorization result does not prove connection health; grant-layer denials produce no record. Enable collectors.pam.session_log_enabled. Identity, address, device-name and command fields follow pii_filter: false removes that category.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_loki}"
+                      },
+                      "spec": {
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.pam.session` |~ `$log_filter`",
+                        "queryType": "range",
+                        "maxLines": 500,
+                        "legendFormat": ""
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": []
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "logs",
+            "version": "12.1.0",
+            "spec": {
+              "options": {
+                "showTime": true,
+                "showLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "dedupStrategy": "none",
+                "sortOrder": "Descending"
+              },
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
+              }
+            }
+          }
+        }
       }
     },
     "layout": {
@@ -36240,6 +36299,33 @@
                                             "element": {
                                               "kind": "ElementReference",
                                               "name": "panel-329"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "RowsLayoutRow",
+                                "spec": {
+                                  "title": "Session history (explicit log opt-in)",
+                                  "collapse": false,
+                                  "layout": {
+                                    "kind": "GridLayout",
+                                    "spec": {
+                                      "items": [
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 24,
+                                            "height": 10,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-331"
                                             }
                                           }
                                         }

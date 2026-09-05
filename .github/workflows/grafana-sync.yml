@@ -144,8 +144,30 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      # A dashboard-only push must not mutate rules. Manual dispatch remains the
+      # explicit reconciliation path when the manifests themselves are unchanged.
+      - name: detect rule changes
+        id: rules-changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- deploy/alerts scripts/grafana-prune-rules.py; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then exit "$status"; fi
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: install gcx
+        if: steps.rules-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           curl -fsSL -o gcx.tgz \
@@ -159,6 +181,7 @@ jobs:
       # The committed manifests are the shipped "recommended" profile — pushed as-is,
       # not regenerated, so what deploys is exactly what CI's drift gate checked.
       - name: list the rules this repository defines
+        if: steps.rules-changes.outputs.changed == 'true'
         run: |
           set -euo pipefail
           python3 - > expected-rules.txt <<'PY'
@@ -172,6 +195,7 @@ jobs:
           echo "this repository defines $(wc -l < expected-rules.txt) rules"
 
       - name: prune rules the repository no longer defines
+        if: steps.rules-changes.outputs.changed == 'true'
         run: |
           python3 scripts/grafana-prune-rules.py \
             --folder "${RULES_FOLDER}" \
@@ -181,4 +205,5 @@ jobs:
       # managerId=gcx from how they were first pushed; stripping the manager fields
       # sends provenance '' against a stack that holds 'api' and 409s every rule.
       - name: push rules
+        if: steps.rules-changes.outputs.changed == 'true'
         run: gcx resources push -p deploy/alerts/grafana-managed --on-error abort

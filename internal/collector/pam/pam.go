@@ -24,6 +24,8 @@ const (
 	defaultSnapshotBodyBytes = 32 * 1024
 	// EventSnapshot is the opt-in safe PAM inventory/configuration snapshot.
 	EventSnapshot = "tailscale.pam.snapshot"
+	// EventSession is the opt-in, PII-filtered record of an accepted PAM session.
+	EventSession = "tailscale.pam.session"
 )
 
 const (

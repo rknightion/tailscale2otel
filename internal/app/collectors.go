@@ -306,7 +306,8 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			pam.WithSnapshot(c.PAM.SnapshotEnabled, c.PAM.SnapshotBodyBytes),
 			pam.WithSnapshotHeartbeat(c.PAM.SnapshotHeartbeat.D())), c.PAM.Interval.D())
 		rt.registry.Register(pam.NewSessions(d.pamClient, c.PAM.SessionsInterval.D(), d.store, d.evidenceStore,
-			pam.WithSessionsAPIState(rt.apiState)), c.PAM.SessionsInterval.D())
+			pam.WithSessionsAPIState(rt.apiState),
+			pam.WithSessionLog(c.PAM.SessionLogEnabled, piiCategories(cfg.PIIFilter), d.addrSet)), c.PAM.SessionsInterval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {
 		// Static node_metrics targets are process-global (a shared jump host, not a

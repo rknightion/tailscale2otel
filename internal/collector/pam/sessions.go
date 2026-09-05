@@ -7,14 +7,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
 const (
@@ -33,6 +37,14 @@ const (
 	attrAuthorizationResult        = "tailscale.pam.session.authorization_result"
 	attrSessionEventType           = "tailscale.pam.session.event.type"
 	attrSessionEventStatus         = "tailscale.pam.session.event.status"
+	attrSessionKilled              = "tailscale.pam.session.killed"
+	attrSessionRecordingType       = "tailscale.pam.session.recording_type"
+	attrSessionDuration            = "tailscale.pam.session.duration_seconds"
+	attrSessionCommand             = "tailscale.pam.session.command"
+	attrSessionSocketName          = "tailscale.pam.session.socket_name"
+	attrSessionTailnetIP           = "tailscale.pam.session.client.tailnet_ip"
+	attrSessionExternalIP          = "tailscale.pam.session.client.external_ip"
+	attrSessionClientPort          = "tailscale.pam.session.client.port"
 )
 
 var sessionDurationBucketsSeconds = []float64{1, 10, 30, 60, 300, 900, 3600, 14400, 43200}
@@ -61,6 +73,10 @@ type SessionsCollector struct {
 	cursor                 time.Time
 	seen                   map[string]time.Time
 	pendingEvidenceDeletes []string
+	sessionLogEnabled      bool
+	sessionLogCategories   pii.Categories
+	sessionLogRedactor     *pii.Redactor
+	sessionLogAddrSet      enrich.AddrSet
 }
 
 // SessionsOption configures the independently scheduled session collector.
@@ -100,6 +116,17 @@ func WithSessionEvidenceCapacity(capacity int) SessionsOption {
 	}
 }
 
+// WithSessionLog enables one PII-filtered log record for each newly accepted
+// session. Callers pass the resolved category policy and runtime address set.
+func WithSessionLog(enabled bool, cats pii.Categories, addrs enrich.AddrSet) SessionsOption {
+	return func(c *SessionsCollector) {
+		c.sessionLogEnabled = enabled
+		c.sessionLogCategories = cats
+		c.sessionLogRedactor = pii.New(cats)
+		c.sessionLogAddrSet = addrs
+	}
+}
+
 // NewSessions returns the independently scheduled PAM session collector.
 // cursorStore and evidenceStore are deliberately separate durability classes;
 // nil stores fall back to separate process-local stores.
@@ -111,14 +138,15 @@ func NewSessions(a sessionAPI, interval time.Duration, cursorStore, evidenceStor
 		evidenceStore = collector.NewMemoryStore()
 	}
 	c := &SessionsCollector{
-		api:           a,
-		interval:      interval,
-		cursorStore:   cursorStore,
-		evidenceStore: evidenceStore,
-		now:           time.Now,
-		pageSize:      defaultSessionsPageSize,
-		capacity:      defaultSessionEvidenceCapacity,
-		seen:          make(map[string]time.Time),
+		api:                a,
+		interval:           interval,
+		cursorStore:        cursorStore,
+		evidenceStore:      evidenceStore,
+		now:                time.Now,
+		pageSize:           defaultSessionsPageSize,
+		capacity:           defaultSessionEvidenceCapacity,
+		seen:               make(map[string]time.Time),
+		sessionLogRedactor: pii.New(nil),
 	}
 	for _, opt := range opts {
 		opt(c)
@@ -230,6 +258,126 @@ func (c *SessionsCollector) emitSession(e telemetry.Emitter, s b0api.Session) {
 			attrSessionEventStatus: boundedSessionEventStatus(s.Events[i].Status),
 		})
 	}
+	if c.sessionLogEnabled {
+		c.emitSessionLog(e, s)
+	}
+}
+
+func (c *SessionsCollector) emitSessionLog(e telemetry.Emitter, s b0api.Session) {
+	duration, complete := sessionLogDuration(s)
+	durationAttr := "unknown"
+	if complete {
+		durationAttr = strconv.FormatFloat(duration, 'f', -1, 64)
+	}
+	attrs := telemetry.Attrs{
+		attrSessionSocketName:    s.SocketName,
+		attrSessionType:          boundedSessionType(s.SessionType),
+		attrAuthorizationResult:  boundedAuthorizationResult(s.Result),
+		attrSessionKilled:        strconv.FormatBool(s.Killed),
+		attrSessionRecordingType: boundedRecordingType(s.Recordings),
+		attrSessionDuration:      durationAttr,
+		"user.name":              s.UserEmail,
+		"user.full_name":         s.Name,
+		"host.name":              s.Metadata.Device.Name,
+	}
+	if s.SSHUser != nil {
+		attrs["user.id"] = *s.SSHUser
+	}
+	attrs = telemetry.Attrs(c.sessionLogRedactor.Log(attrs))
+	if command := sessionCommand(s.Events); command != "" && sessionLogCategoryEnabled(c.sessionLogCategories, pii.CatCommandText) {
+		attrs[attrSessionCommand] = command
+	}
+	if addressKey, address, ok := c.sessionLogAddress(s.ClientIP); ok {
+		attrs[addressKey] = address
+		if port, ok := sessionLogPort(s.ClientPort); ok {
+			attrs[attrSessionClientPort] = port
+		}
+	}
+	durationText := "unknown"
+	if complete {
+		durationText = strconv.FormatFloat(duration, 'f', -1, 64) + "s"
+	}
+	body := "PAM session authorization"
+	if boundedAuthorizationResult(s.Result) == "success" {
+		body = "PAM session authorized"
+	}
+	e.LogEvent(telemetry.Event{
+		Name:              EventSession,
+		Severity:          telemetry.SeverityInfo,
+		Timestamp:         s.StartTime,
+		ObservedTimestamp: c.now(),
+		Body:              fmt.Sprintf("%s for %s (type=%s, result=%s, duration=%s)", body, s.SocketName, boundedSessionType(s.SessionType), boundedAuthorizationResult(s.Result), durationText),
+		Attrs:             attrs,
+	})
+}
+
+func sessionLogDuration(s b0api.Session) (float64, bool) {
+	if s.EndTime == nil || s.StartTime.IsZero() || s.EndTime.Before(s.StartTime) {
+		return 0, false
+	}
+	return s.EndTime.Sub(s.StartTime).Seconds(), true
+}
+
+func boundedRecordingType(recordings []b0api.Recording) string {
+	if len(recordings) == 0 {
+		return "none"
+	}
+	if len(recordings) > 1 {
+		return "multiple"
+	}
+	switch recordings[0].RecordingType {
+	case "asciinema", "database_query_log":
+		return recordings[0].RecordingType
+	default:
+		return "other"
+	}
+}
+
+func sessionLogCategoryEnabled(cats pii.Categories, category pii.Category) bool {
+	enabled, exists := cats[category]
+	return !exists || enabled
+}
+
+func (c *SessionsCollector) sessionLogAddress(raw string) (string, string, bool) {
+	addr, err := netip.ParseAddr(strings.TrimSpace(raw))
+	if err != nil {
+		return "", "", false
+	}
+	category := pii.CatExternalIPs
+	attr := attrSessionExternalIP
+	if c.sessionLogAddrSet.Contains(addr.Unmap()) {
+		category = pii.CatTailscaleIPs
+		attr = attrSessionTailnetIP
+	}
+	if !sessionLogCategoryEnabled(c.sessionLogCategories, category) {
+		return "", "", false
+	}
+	return attr, addr.String(), true
+}
+
+func sessionLogPort(raw json.RawMessage) (string, bool) {
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		text = strings.TrimSpace(text)
+	} else {
+		text = strings.TrimSpace(string(raw))
+	}
+	if _, err := strconv.ParseUint(text, 10, 16); err != nil {
+		return "", false
+	}
+	return text, true
+}
+
+func sessionCommand(events []b0api.SessionEvent) string {
+	for _, event := range events {
+		var metadata struct {
+			Command string `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(event.Metadata), &metadata); err == nil && metadata.Command != "" {
+			return metadata.Command
+		}
+	}
+	return ""
 }
 
 func boundedSessionType(value string) string {

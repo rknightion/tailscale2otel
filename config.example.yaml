@@ -646,7 +646,7 @@ pii_filter:
   network_topology: true    # route CIDRs + split-DNS domains + search paths
   tailnet_name: true        # tailnet identifier
   free_text_details: true   # audit old/new/details, target names, key descriptions, posture values
-  command_text: true              # verbatim `kubectl exec` command line on Kubernetes-audit logs; the only attribute a human types at a shell, so it can carry a pasted secret. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on
+  command_text: true              # verbatim commands on Kubernetes-audit and opt-in PAM session logs; can carry pasted secrets. Turning it off KEEPS the bounded tailscale.k8s.command_class classification the exec metrics are built on
 
 # ── Self-observability (the exporter's own health telemetry) ────────────────────
 self_observability:

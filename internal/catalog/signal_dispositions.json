@@ -206,6 +206,14 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.pam.session",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.pam.snapshot",
       "surface": "operational",
       "dispositions": [
