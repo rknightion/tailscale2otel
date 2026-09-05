@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-04 13:00'
+updated_date: '2026-09-05 17:15'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -301,7 +301,8 @@ validate from the `rc` images, do not tag, and do not touch release-please confi
 finds an unreleased backlog of work does not "fix" it by releasing.
 
 **The board drained on 2026-09-04 and the repository is on `/v5`.** Wave 9 landed TSO-0118 and
-TSO-0094 and moved the module path; TSO-0036 is Parked on upstream and cannot be drained by any wave.
+TSO-0094 and moved the module path; TSO-0036 shipped in Wave 12 (`9994c0a`) once PAM went live on the lab; only TSO-0133 (dated) and
+TSO-0135 remained from that drain.
 PR #585 now reads `chore(main): release 5.0.0` with the receiver-credential break as its single
 `BREAKING CHANGES` entry. The call to merge it is the owner's and nobody else's.
 
