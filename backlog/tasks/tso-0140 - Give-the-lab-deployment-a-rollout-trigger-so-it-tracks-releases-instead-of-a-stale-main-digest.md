@@ -6,7 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-09-05 20:12'
-updated_date: '2026-09-05 20:13'
+updated_date: '2026-09-05 20:34'
 labels: []
 dependencies: []
 references:
@@ -35,3 +35,9 @@ The lab is a Helm release managed by an Argo application in the private infrastr
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner decision 2026-09-05: Renovate-pinned rc tag (option 1). The infra repo tracks the same work as EKS-0071, whose description previously said the tag must stay on main; that paragraph is superseded by this decision and the note was appended there.
+<!-- SECTION:NOTES:END -->
