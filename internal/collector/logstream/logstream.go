@@ -1,7 +1,8 @@
 // Package logstream is a stateful snapshot collector for the tailnet's
-// configuration/network log-streaming DELIVERY HEALTH (GET
-// /logging/{type}/stream/status) — Tailscale's own view of whether it is
-// successfully delivering audit/flow logs to the configured SIEM sink.
+// configuration/network log-streaming configuration and DELIVERY HEALTH (GET
+// /logging/{type}/stream and /logging/{type}/stream/status) — Tailscale's own
+// view of the configured SIEM destination and whether it is successfully
+// delivering audit/flow logs to that sink.
 //
 // The API's cumulative counters (numBytesSent, numTotalRequests, …) are emitted
 // as deltas via the Emitter's additive Counter (mirroring nodemetrics): the
@@ -9,10 +10,12 @@
 // later scrapes emit current-minus-previous, or the current value on a reset
 // (the stream config was recreated). This makes the collector stateful.
 //
-// Gating (#420): only a 404 — the endpoint is absent for this tailnet — OR a
-// 2xx body with no recognized status fields means "no stream configured", which
-// emits configured=0, stays idle and returns NO error, so a tailnet with no
-// SIEM sink never produces scrape-error noise.
+// Delivery-health gating (#420): only a 404 — the endpoint is absent for this
+// tailnet — OR a 2xx body with no recognized status fields means "no stream
+// configured", which emits configured=0, stays idle and returns NO error, so a
+// tailnet with no SIEM sink never produces scrape-error noise. The separate
+// configuration endpoint has an ambiguous 404, so that outcome is recorded as
+// unknown and emits no configuration assertion.
 //
 // It used to fold ANY 4xx into that same benign reading, which is precisely the
 // bug #420 was filed for: a revoked credential (401) and a missing logs:read
@@ -24,6 +27,7 @@ package logstream
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
@@ -47,6 +51,15 @@ var logTypes = []string{"configuration", "network"}
 
 const attrType = "tailscale.logstream.type"
 
+// Configuration labels are separate from the delivery-health type label so the
+// existing status and counter series keep their shape. Both values are bounded
+// by the API's supported log types/destination enum before entering telemetry.
+const (
+	attrLogType         = "tailscale.logstream.log_type"
+	attrDestinationType = "tailscale.logstream.destination_type"
+	destinationUnknown  = "unknown"
+)
+
 // opStatusPrefix is the upstream operationId of the status probe. The two log
 // types are INDEPENDENT probes with independent outcomes (one tailnet routinely
 // streams configuration logs and not network logs), so the availability signal
@@ -56,8 +69,19 @@ const attrType = "tailscale.logstream.type"
 // values.
 const opStatusPrefix = "getLogStreamingStatus"
 
+// opConfigurationPrefix is the upstream operationId of the read-only
+// destination configuration lookup. The suffix keeps availability independent
+// for the two supported log types, matching the status operation above.
+const opConfigurationPrefix = "getLogStreamingConfiguration"
+
 // statusOperation returns the availability operation name for a log type.
 func statusOperation(logType string) string { return opStatusPrefix + "." + logType }
+
+// configurationOperation returns the availability operation name for a log
+// type.
+func configurationOperation(logType string) string {
+	return opConfigurationPrefix + "." + logType
+}
 
 // statusDisposition is the DEFAULT disposition: no status code is read as
 // "feature disabled" beyond the built-in 404. Upstream does not document 403 on
@@ -65,21 +89,29 @@ func statusOperation(logType string) string { return opStatusPrefix + "." + logT
 // disabled is what turned a permission regression into a healthy zero.
 var statusDisposition = apistate.Disposition{}
 
+// configurationDisposition is the default disposition: a 403 means the
+// credential lacks the endpoint's log_streaming:read scope. The collector has
+// a local 404 override because this endpoint explicitly documents that status
+// as ambiguous rather than as disabled.
+var configurationDisposition = apistate.Disposition{}
+
 const (
-	metricConfigured      = "tailscale.logstream.configured"
-	metricBytesSent       = "tailscale.logstream.bytes_sent"
-	metricEntriesSent     = "tailscale.logstream.entries_sent"
-	metricRequests        = "tailscale.logstream.requests"
-	metricRequestsFailed  = "tailscale.logstream.requests_failed"
-	metricSpoofedEntries  = "tailscale.logstream.spoofed_entries"
-	metricMaxBodyRequests = "tailscale.logstream.max_body_requests"
-	metricLastActivity    = "tailscale.logstream.last_activity"
-	metricError           = "tailscale.logstream.error"
+	metricConfigured            = "tailscale.logstream.configured"
+	metricDestinationConfigured = "tailscale.logstream.destination.configured"
+	metricBytesSent             = "tailscale.logstream.bytes_sent"
+	metricEntriesSent           = "tailscale.logstream.entries_sent"
+	metricRequests              = "tailscale.logstream.requests"
+	metricRequestsFailed        = "tailscale.logstream.requests_failed"
+	metricSpoofedEntries        = "tailscale.logstream.spoofed_entries"
+	metricMaxBodyRequests       = "tailscale.logstream.max_body_requests"
+	metricLastActivity          = "tailscale.logstream.last_activity"
+	metricError                 = "tailscale.logstream.error"
 )
 
 // api is the narrow slice of the Tailscale client this collector needs.
 type api interface {
 	LogStreamStatus(ctx context.Context, logType string) (*tsapi.LogStreamStatus, error)
+	LogStreamConfiguration(ctx context.Context, logType string) (*tsapi.LogStreamConfiguration, error)
 }
 
 // Collector implements collector.SnapshotCollector for log-stream delivery health.
@@ -194,11 +226,13 @@ func (c *Collector) probeDue(logType string, at time.Time) bool {
 	return !ok || !at.Before(last.Add(c.probeInterval(logType)))
 }
 
-// Collect probes each log type's stream-status endpoint, gating 404/empty-200 as
-// "not configured" and emitting health (delta counters + gauges + error log) for
-// configured streams. Every probe also emits its bounded availability state
-// (#420). Any other error — 401, 403, 429, 5xx, transport — is returned (the
-// other log type is still attempted first).
+// Collect probes each log type's read-only configuration and stream-status
+// endpoints. A successful configuration lookup emits one bounded destination
+// point. An ambiguous configuration 404 emits no assertion and records unknown;
+// a 403 or any other failure is returned after both endpoints for both log types
+// have been attempted. Delivery health keeps its existing 404/empty-200 gating
+// and delta-counter behavior. Every probe emits its bounded availability state
+// (#420).
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	var firstErr error
 	at := c.now()
@@ -207,6 +241,22 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			continue
 		}
 		c.lastProbe[lt] = at
+
+		cfg, cfgErr := c.api.LogStreamConfiguration(ctx, lt)
+		cfgState := c.observeConfiguration(e, lt, cfgErr)
+		if cfgErr != nil {
+			// The configuration endpoint documents 404 for both an absent sink
+			// and an inaccessible/unsupported log type. It is therefore an
+			// explicit unknown, not disabled, and does not make this scrape fail.
+			if cfgState != apistate.StateUnknown || !isNotFound(cfgErr) {
+				if firstErr == nil {
+					firstErr = cfgErr
+				}
+			}
+		} else {
+			c.emitConfiguration(e, lt, cfg)
+		}
+
 		st, err := c.api.LogStreamStatus(ctx, lt)
 		state := apistate.Observe(e, c.tracker, c.Name(), statusOperation(lt), statusDisposition, err, c.now())
 		if err != nil {
@@ -231,6 +281,58 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		c.emitHealth(e, lt, st)
 	}
 	return firstErr
+}
+
+// observeConfiguration records availability for the configuration lookup. The
+// shared classifier intentionally maps every 404 to disabled, but this endpoint
+// documents 404 as an ambiguous combination of no sink, unsupported log type,
+// and insufficient access. Preserve that distinction by overriding only this
+// operation's 404 to StateUnknown.
+func (c *Collector) observeConfiguration(e telemetry.Emitter, logType string, err error) apistate.State {
+	if !isNotFound(err) {
+		return apistate.Observe(e, c.tracker, c.Name(), configurationOperation(logType), configurationDisposition, err, c.now())
+	}
+	state := apistate.StateUnknown
+	operation := configurationOperation(logType)
+	c.tracker.Record(c.Name(), operation, state, c.now())
+	if e != nil {
+		apistate.EmitAvailability(e, c.Name(), operation, state)
+		apistate.EmitLastProbe(e, c.Name(), operation, c.now())
+	}
+	return state
+}
+
+func isNotFound(err error) bool {
+	code, ok := tsapi.StatusCode(err)
+	return ok && code == http.StatusNotFound
+}
+
+func (c *Collector) emitConfiguration(e telemetry.Emitter, requestedLogType string, cfg *tsapi.LogStreamConfiguration) {
+	if cfg == nil {
+		return
+	}
+	logType := boundedLogType(cfg.LogType, requestedLogType)
+	destinationType := boundedDestinationType(cfg.DestinationType)
+	e.Gauge(docDestinationConfigured.Name, docDestinationConfigured.Unit, docDestinationConfigured.Description,
+		1, telemetry.Attrs{attrLogType: logType, attrDestinationType: destinationType})
+}
+
+func boundedLogType(value, fallback string) string {
+	switch value {
+	case "configuration", "network":
+		return value
+	default:
+		return fallback
+	}
+}
+
+func boundedDestinationType(value string) string {
+	switch value {
+	case "splunk", "elastic", "panther", "cribl", "datadog", "axiom", "s3":
+		return value
+	default:
+		return destinationUnknown
+	}
 }
 
 func (c *Collector) emitConfigured(e telemetry.Emitter, lt string, v float64) {

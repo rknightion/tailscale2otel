@@ -149,6 +149,95 @@ func TestConfigureLogStream_InvalidLogTypeNeverHitsServer(t *testing.T) {
 	}
 }
 
+func TestLogStreamConfiguration_DecodesOnlyAllowlistedFields(t *testing.T) {
+	const fixture = `{
+  "logType":"network",
+  "destinationType":"elastic",
+  "url":"https://sink.example.invalid/collect?token=secret-token",
+  "user":"sensitive-user",
+  "token":"secret-token",
+  "uploadPeriodMinutes":5,
+  "compressionFormat":"zstd",
+  "gcsCredentials":"{\"private_key\":\"secret-key\"}"
+}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method = "+r.Method, http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path != "/api/v2/tailnet/example.com/logging/network/stream" {
+			http.Error(w, "bad path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer testkey" {
+			http.Error(w, "auth = "+got, http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(fixture))
+	}))
+	defer srv.Close()
+
+	cfg, err := newClient(t, srv.URL).LogStreamConfiguration(context.Background(), "network")
+	if err != nil {
+		t.Fatalf("LogStreamConfiguration: %v", err)
+	}
+	if cfg.LogType != "network" || cfg.DestinationType != "elastic" {
+		t.Fatalf("allowlisted fields = %+v, want network/elastic", cfg)
+	}
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	for _, forbidden := range []string{"url", "sink.example.invalid", "sensitive-user", "secret-token", "uploadPeriodMinutes", "compressionFormat", "gcsCredentials", "secret-key"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("decoded configuration retained forbidden field/value %q: %s", forbidden, encoded)
+		}
+	}
+}
+
+func TestLogStreamConfiguration_Non2xxReturnsTypedStatusError(t *testing.T) {
+	for _, status := range []int{http.StatusForbidden, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "not configured", status)
+			}))
+			defer srv.Close()
+
+			_, err := newClient(t, srv.URL).LogStreamConfiguration(context.Background(), "configuration")
+			if err == nil {
+				t.Fatalf("expected error for status %d, got nil", status)
+			}
+			var se *tsapi.StatusError
+			if !errors.As(err, &se) {
+				t.Fatalf("error %T (%v) is not a *tsapi.StatusError", err, err)
+			}
+			if se.Code != status {
+				t.Errorf("StatusError.Code = %d, want %d", se.Code, status)
+			}
+			if se.Method != http.MethodGet {
+				t.Errorf("StatusError.Method = %q, want GET", se.Method)
+			}
+		})
+	}
+}
+
+func TestLogStreamConfiguration_InvalidLogTypeNeverHitsServer(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		t.Errorf("server must not be called for invalid logType; path=%s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	_, err := newClient(t, srv.URL).LogStreamConfiguration(context.Background(), "bogus")
+	if err == nil {
+		t.Fatal("expected error for invalid logType, got nil")
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("server calls = %d, want 0", got)
+	}
+}
+
 // statusCodeString renders an HTTP status code as its decimal string, used to
 // tolerate error messages that include the numeric code rather than its text.
 func statusCodeString(code int) string {

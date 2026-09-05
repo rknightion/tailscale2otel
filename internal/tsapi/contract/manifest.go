@@ -17,6 +17,7 @@ package contract
 //	getContacts               → Contacts              path: /api/v2/tailnet/{t}/contacts
 //	getTailnetSettings        → TailnetSettings       path: /api/v2/tailnet/{t}/settings
 //	getPolicyFile             → PolicyFileRaw         path: /api/v2/tailnet/{t}/acl (HuJSON — FuzzSkip)
+//	getLogStreamingConfiguration → LogStreamConfiguration(…,"configuration") path: /api/v2/tailnet/{t}/logging/{logType}/stream
 //	getLogStreamingStatus     → LogStreamStatus(…,"configuration") path: /api/v2/tailnet/{t}/logging/{logType}/stream/status
 //	getPostureIntegrations    → PostureIntegrations   path: /api/v2/tailnet/{t}/posture/integrations
 //	listServices              → Services              path: /api/v2/tailnet/{t}/services
@@ -150,6 +151,17 @@ var Manifest = []Op{
 		FuzzSkip:          true,
 		Invoke: func(ctx context.Context, c *tsapi.Client) error {
 			_, err := c.PolicyFileRaw(ctx)
+			return err
+		},
+	},
+	{
+		ID:     "getLogStreamingConfiguration",
+		Method: "GET",
+		// LogStreamConfiguration is the bounded subset of the endpoint's
+		// destination configuration that the collector retains.
+		KnownTopLevelKeys: []string{"logType", "destinationType"},
+		Invoke: func(ctx context.Context, c *tsapi.Client) error {
+			_, err := c.LogStreamConfiguration(ctx, "configuration")
 			return err
 		},
 	},

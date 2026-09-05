@@ -125,6 +125,20 @@ def tab_health_delivery(scope):
     # row — the ingestion-side receiver/dedup/checkpoint/freshness panels stay
     # with whichever lane owns Ingestion).
     siem = [
+        (panel("Configured destinations by log type", "table",
+               [prom_t("max by (tailscale_logstream_log_type, tailscale_logstream_destination_type) (%s)" %
+                       lot("tailscale_logstream_destination_configured_ratio", WIN_SLOW),
+                       instant=True, fmt="table")],
+               unit="short", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
+                                                                  "service_instance_id", "service_name",
+                                                                  "service_namespace", "deployment_environment_name",
+                                                                  "otel_scope_name", "otel_scope_version"],
+                                                        rename={"tailscale_logstream_log_type": "Log type",
+                                                                "tailscale_logstream_destination_type": "Destination",
+                                                                "Value": "Configured"})],
+               novalue="No confirmed log-stream configuration. The endpoint may be unavailable or ambiguous.",
+               desc="Confirmed Tailscale log-stream destinations by log type. Only the bounded destination "
+                    "enum is shown; an ambiguous or denied configuration lookup produces no row."), 12, 6),
         (panel("Streams configured", "stat",
                [prom_t("sum(max by (tailscale_logstream_type) (%s)) or vector(0)" % lot("tailscale_logstream_configured_ratio", WIN_SLOW), instant=True)],
                unit="short", options=stat_opts(color="value"),

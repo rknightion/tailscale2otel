@@ -80,7 +80,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 259 | 258 | 58 | 11 | 45 |
+| operational | 260 | 259 | 58 | 11 | 45 |
 | self_obs | 102 | 102 | 39 | 9 | 10 |
 
 ## Operational signals
@@ -217,6 +217,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.keys.count` | metric | `tailscale_keys_count_ratio` | visualized |  |
 | `tailscale.logstream.bytes_sent` | metric | `tailscale_logstream_bytes_sent_total` | visualized |  |
 | `tailscale.logstream.configured` | metric | `tailscale_logstream_configured_ratio` | visualized, drives_a_variable |  |
+| `tailscale.logstream.destination.configured` | metric | `tailscale_logstream_destination_configured_ratio` | visualized |  |
 | `tailscale.logstream.entries_sent` | metric | `tailscale_logstream_entries_sent_total` | visualized |  |
 | `tailscale.logstream.error` | metric | `tailscale_logstream_error_ratio` | visualized |  |
 | `tailscale.logstream.last_activity` | metric | `tailscale_logstream_last_activity_seconds` | visualized, alertable |  |

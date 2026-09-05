@@ -73,16 +73,17 @@ var responseTypes = map[string]ResponseTypeSpec{
 		Opaque: "response is a raw HuJSON policy document (tsclient.RawACL.HuJSON) — " +
 			"an opaque string we never structurally decode; disposition is recorded at op level",
 	},
-	"getLogStreamingStatus":      {Type: reflect.TypeOf(tsapi.LogStreamStatus{})},
-	"getPostureIntegrations":     {Type: reflect.TypeOf([]tsapi.PostureIntegration(nil))},
-	"listServices":               {Type: reflect.TypeOf([]tsapi.VIPService(nil))},
-	"listServiceHosts":           {Type: reflect.TypeOf([]tsapi.ServiceHost(nil))},
-	"getDnsConfiguration":        {Type: reflect.TypeOf(tsapi.DNSConfig{})},
-	"listDeviceInvites":          {Type: reflect.TypeOf([]tsapi.DeviceInvite(nil))},
-	"getDevicePostureAttributes": {Type: reflect.TypeOf(tsapi.DeviceAttributes{})},
-	"listUserInvites":            {Type: reflect.TypeOf([]tsapi.UserInvite(nil))},
-	"listOAuthApps":              {Type: reflect.TypeOf([]tsapi.OAuthApp(nil))},
-	"listOrganizationTailnets":   {Type: reflect.TypeOf([]tsapi.OrganizationTailnet(nil))},
+	"getLogStreamingConfiguration": {Type: reflect.TypeOf(tsapi.LogStreamConfiguration{})},
+	"getLogStreamingStatus":        {Type: reflect.TypeOf(tsapi.LogStreamStatus{})},
+	"getPostureIntegrations":       {Type: reflect.TypeOf([]tsapi.PostureIntegration(nil))},
+	"listServices":                 {Type: reflect.TypeOf([]tsapi.VIPService(nil))},
+	"listServiceHosts":             {Type: reflect.TypeOf([]tsapi.ServiceHost(nil))},
+	"getDnsConfiguration":          {Type: reflect.TypeOf(tsapi.DNSConfig{})},
+	"listDeviceInvites":            {Type: reflect.TypeOf([]tsapi.DeviceInvite(nil))},
+	"getDevicePostureAttributes":   {Type: reflect.TypeOf(tsapi.DeviceAttributes{})},
+	"listUserInvites":              {Type: reflect.TypeOf([]tsapi.UserInvite(nil))},
+	"listOAuthApps":                {Type: reflect.TypeOf([]tsapi.OAuthApp(nil))},
+	"listOrganizationTailnets":     {Type: reflect.TypeOf([]tsapi.OrganizationTailnet(nil))},
 }
 
 // ResponseTypes returns the operationId → decoded-response-type registry.

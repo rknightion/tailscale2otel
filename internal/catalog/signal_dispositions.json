@@ -1275,6 +1275,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.logstream.destination.configured",
+      "prom_name": "tailscale_logstream_destination_configured_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.logstream.entries_sent",
       "prom_name": "tailscale_logstream_entries_sent_total",
       "surface": "operational",

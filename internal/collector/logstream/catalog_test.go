@@ -32,6 +32,13 @@ func (f *catalogFakeAPI) LogStreamStatus(_ context.Context, logType string) (*ts
 	}, nil
 }
 
+func (f *catalogFakeAPI) LogStreamConfiguration(_ context.Context, logType string) (*tsapi.LogStreamConfiguration, error) {
+	if logType != "network" {
+		return nil, &tsapi.StatusError{Code: 404}
+	}
+	return &tsapi.LogStreamConfiguration{LogType: logType, DestinationType: "elastic"}, nil
+}
+
 // TestCatalogMatchesEmitted drives two scrapes (so the delta counters emit, not
 // just seed) and asserts every emitted metric/log event matches the catalog.
 func TestCatalogMatchesEmitted(t *testing.T) {

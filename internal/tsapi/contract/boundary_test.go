@@ -74,9 +74,9 @@ func TestBoundary_EveryConsumedOperationSurvivesEveryShape(t *testing.T) {
 		}
 	}
 
-	// Guard against the matrix quietly covering nothing: 19 operations, one of them
-	// FuzzSkip, six type-mistyped (4 shape-only kinds each), twelve full (8 kinds).
-	const wantOps = 18
+	// Guard against the matrix quietly covering nothing: 20 operations, one of them
+	// FuzzSkip, six type-mistyped (4 shape-only kinds each), thirteen full (8 kinds).
+	const wantOps = 19
 	if len(covered) != wantOps {
 		t.Errorf("boundary matrix ran against %d operations, want %d: %v", len(covered), wantOps, covered)
 	}
@@ -84,13 +84,13 @@ func TestBoundary_EveryConsumedOperationSurvivesEveryShape(t *testing.T) {
 	for _, n := range covered {
 		total += n
 	}
-	if want := 12*8 + 6*4; total != want {
+	if want := 13*8 + 6*4; total != want {
 		t.Errorf("boundary matrix ran %d (operation, kind) pairs, want %d — a silent drop in "+
 			"coverage looks exactly like a passing test", total, want)
 	}
 }
 
-// The wrong-shape expectation was verified against all 18 consumed operations
+// The wrong-shape expectation was verified against all 19 consumed operations
 // before being asserted, and this pins the two real top-level shapes so a manifest
 // entry cannot silently acquire the wrong one. listUserInvites and listDeviceInvites
 // return a bare array; every other consumed operation returns an object.

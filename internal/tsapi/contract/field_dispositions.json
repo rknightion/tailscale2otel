@@ -127,6 +127,18 @@
       "disposition": "emitted"
     },
     {
+      "op": "getLogStreamingConfiguration",
+      "path": "DestinationType",
+      "type": "tsapi.LogStreamConfiguration",
+      "disposition": "emitted"
+    },
+    {
+      "op": "getLogStreamingConfiguration",
+      "path": "LogType",
+      "type": "tsapi.LogStreamConfiguration",
+      "disposition": "emitted"
+    },
+    {
       "op": "getLogStreamingStatus",
       "path": "LastActivity",
       "type": "tsapi.LogStreamStatus",

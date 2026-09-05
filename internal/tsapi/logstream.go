@@ -71,6 +71,34 @@ func (c *Client) putJSON(ctx context.Context, urlStr string, body any) error {
 	return nil
 }
 
+// LogStreamConfiguration is the safe subset of the log-streaming endpoint
+// configuration returned by Tailscale. The response also contains destination
+// URLs, usernames, tokens, and provider credentials; those fields are
+// deliberately absent from this type so encoding/json drops them as it
+// decodes the response and they can never be retained by a caller.
+type LogStreamConfiguration struct {
+	LogType         string `json:"logType"`
+	DestinationType string `json:"destinationType"`
+}
+
+// LogStreamConfiguration fetches the read-only configuration for logType
+// ("network" | "configuration"). Only the bounded log type and destination
+// type are returned; all other fields from the wire response are ignored.
+func (c *Client) LogStreamConfiguration(ctx context.Context, logType string) (*LogStreamConfiguration, error) {
+	switch logType {
+	case "network", "configuration":
+	default:
+		return nil, fmt.Errorf("tsapi: invalid logType %q (want \"network\" or \"configuration\")", logType)
+	}
+	u := *c.baseURL
+	u.Path = path.Join(c.baseURL.Path, "/api/v2/tailnet", c.tailnet, "logging", logType, "stream")
+	var out LogStreamConfiguration
+	if err := c.getJSON(ctx, u.String(), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // LogStreamStatus is the delivery-health status of a configured log stream, from
 // GET /api/v2/tailnet/{tailnet}/logging/{logType}/stream/status. Only the fields
 // tailscale2otel emits are decoded; the rate*/nanosecond fields on the wire are

@@ -13,11 +13,19 @@ import (
 )
 
 type fakeAPI struct {
-	fn func(logType string) (*tsapi.LogStreamStatus, error)
+	fn       func(logType string) (*tsapi.LogStreamStatus, error)
+	configFn func(logType string) (*tsapi.LogStreamConfiguration, error)
 }
 
 func (f *fakeAPI) LogStreamStatus(_ context.Context, logType string) (*tsapi.LogStreamStatus, error) {
 	return f.fn(logType)
+}
+
+func (f *fakeAPI) LogStreamConfiguration(_ context.Context, logType string) (*tsapi.LogStreamConfiguration, error) {
+	if f.configFn != nil {
+		return f.configFn(logType)
+	}
+	return nil, &tsapi.StatusError{Code: http.StatusNotFound}
 }
 
 var _ collector.SnapshotCollector = (*Collector)(nil)
@@ -158,6 +166,121 @@ func TestEmpty200IsNotConfigured(t *testing.T) {
 	}
 	if got := rec.MetricPoints("tailscale.logstream.bytes_sent"); len(got) != 0 {
 		t.Fatalf("health emitted for empty 200: %d points", len(got))
+	}
+}
+
+func TestConfigurationConfiguredEmitsOnlyBoundedDestinationLabels(t *testing.T) {
+	api := &fakeAPI{
+		fn: func(string) (*tsapi.LogStreamStatus, error) {
+			return nil, &tsapi.StatusError{Code: http.StatusNotFound}
+		},
+		configFn: func(logType string) (*tsapi.LogStreamConfiguration, error) {
+			return &tsapi.LogStreamConfiguration{LogType: logType, DestinationType: "elastic"}, nil
+		},
+	}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	points := rec.MetricPoints(metricDestinationConfigured)
+	if len(points) != len(logTypes) {
+		t.Fatalf("destination configured points = %d, want %d", len(points), len(logTypes))
+	}
+	seen := map[string]bool{}
+	for _, p := range points {
+		if p.Value != 1 {
+			t.Errorf("destination configured value = %v, want 1", p.Value)
+		}
+		if p.Unit != "1" || p.Kind != "gauge" {
+			t.Errorf("destination configured kind/unit = %s/%s, want gauge/1", p.Kind, p.Unit)
+		}
+		if len(p.Attrs) != 2 {
+			t.Errorf("destination configured attrs = %v, want exactly log_type and destination_type", p.Attrs)
+		}
+		if got := p.Attrs[attrLogType]; got == "" {
+			t.Errorf("destination configured missing %q: %v", attrLogType, p.Attrs)
+		} else {
+			seen[got] = true
+		}
+		if got := p.Attrs[attrDestinationType]; got != "elastic" {
+			t.Errorf("destination type = %q, want elastic", got)
+		}
+		for key, value := range p.Attrs {
+			if key != attrLogType && key != attrDestinationType {
+				t.Errorf("destination configured emitted undeclared attr %q=%q", key, value)
+			}
+			if value == "https://sink.example.invalid/collect" || value == "sensitive-user" || value == "secret-token" {
+				t.Errorf("destination configured emitted sensitive value %q", value)
+			}
+		}
+	}
+	for _, lt := range logTypes {
+		if !seen[lt] {
+			t.Errorf("destination configured missing log type %q", lt)
+		}
+	}
+	for _, lr := range rec.LogRecords() {
+		if lr.Body == "https://sink.example.invalid/collect" || lr.Body == "sensitive-user" || lr.Body == "secret-token" {
+			t.Errorf("destination configuration leaked sensitive log body %q", lr.Body)
+		}
+	}
+
+	states := availabilityStates(t, rec)
+	for _, lt := range logTypes {
+		if got := states[opConfigurationPrefix+"."+lt]; got != string(apistate.StateSupported) {
+			t.Errorf("configuration availability[%s] = %q, want supported", lt, got)
+		}
+	}
+}
+
+func TestConfiguration404IsUnknownAndMakesNoDisabledAssertion(t *testing.T) {
+	api := &fakeAPI{
+		fn: func(string) (*tsapi.LogStreamStatus, error) {
+			return nil, &tsapi.StatusError{Code: http.StatusNotFound}
+		},
+		configFn: func(string) (*tsapi.LogStreamConfiguration, error) {
+			return nil, &tsapi.StatusError{Code: http.StatusNotFound}
+		},
+	}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect returned error for an ambiguous configuration 404: %v", err)
+	}
+	states := availabilityStates(t, rec)
+	for _, lt := range logTypes {
+		op := opConfigurationPrefix + "." + lt
+		if got := states[op]; got != string(apistate.StateUnknown) {
+			t.Errorf("configuration availability[%s] = %q, want unknown", lt, got)
+		}
+		if got := rec.MetricPoints(metricDestinationConfigured); len(got) != 0 {
+			t.Errorf("destination configured emitted on ambiguous 404: %+v", got)
+		}
+	}
+}
+
+func TestConfiguration403IsScopeDeniedAndMakesNoConfiguredAssertion(t *testing.T) {
+	api := &fakeAPI{
+		fn: func(string) (*tsapi.LogStreamStatus, error) {
+			return nil, &tsapi.StatusError{Code: http.StatusNotFound}
+		},
+		configFn: func(string) (*tsapi.LogStreamConfiguration, error) {
+			return nil, &tsapi.StatusError{Code: http.StatusForbidden}
+		},
+	}
+	rec := telemetrytest.New()
+	if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("Collect returned nil for a configuration 403")
+	}
+	states := availabilityStates(t, rec)
+	for _, lt := range logTypes {
+		op := opConfigurationPrefix + "." + lt
+		if got := states[op]; got != string(apistate.StateScopeDenied) {
+			t.Errorf("configuration availability[%s] = %q, want scope_denied", lt, got)
+		}
+	}
+	if got := rec.MetricPoints(metricDestinationConfigured); len(got) != 0 {
+		t.Fatalf("destination configured emitted on scope denial: %+v", got)
 	}
 }
 
@@ -362,8 +485,8 @@ func TestSupportedStateAndTracker(t *testing.T) {
 	}
 
 	snap := tr.Snapshot()
-	if len(snap) != 2 {
-		t.Fatalf("tracker snapshot = %d entries, want 2", len(snap))
+	if len(snap) != 4 {
+		t.Fatalf("tracker snapshot = %d entries, want 4 (two status and two configuration operations)", len(snap))
 	}
 	for _, e := range snap {
 		if e.Collector != "logstream" {
@@ -374,8 +497,8 @@ func TestSupportedStateAndTracker(t *testing.T) {
 		}
 	}
 	lp := rec.MetricPoints(apistate.MetricLastProbe)
-	if len(lp) != 2 {
-		t.Fatalf("last_probe points = %d, want 2", len(lp))
+	if len(lp) != 4 {
+		t.Fatalf("last_probe points = %d, want 4 (two status and two configuration operations)", len(lp))
 	}
 	want := float64(time.Date(2026, 7, 25, 9, 0, 0, 0, time.UTC).Unix())
 	for _, p := range lp {

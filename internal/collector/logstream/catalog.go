@@ -11,8 +11,17 @@ import (
 const groupLogStreaming = "Log streaming"
 
 var typeAttr = []string{attrType}
+var configurationAttrs = []string{attrLogType, attrDestinationType}
 
 var (
+	docDestinationConfigured = metricdoc.Metric{
+		Name:        metricDestinationConfigured,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "`1` when Tailscale reports a configured log-stream destination for the log type, keyed by the bounded destination type. No point is emitted when the configuration lookup is ambiguous or denied.",
+		Attributes:  configurationAttrs,
+		Group:       groupLogStreaming,
+	}
 	docConfigured = metricdoc.Metric{
 		Name:        metricConfigured,
 		Unit:        semconv.UnitDimensionless,
@@ -99,7 +108,7 @@ var (
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
-		docConfigured, docBytesSent, docEntriesSent, docRequests, docRequestsFailed,
+		docDestinationConfigured, docConfigured, docBytesSent, docEntriesSent, docRequests, docRequestsFailed,
 		docSpoofedEntries, docMaxBodyRequests, docLastActivity, docError,
 	}
 }

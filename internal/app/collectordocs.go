@@ -87,7 +87,7 @@ var collectorDocs = map[string]collectorDoc{
 		metrics: postureintegrations.Catalog,
 	},
 	"logstream": {
-		about:   "Reports configuration/network log-streaming delivery health — Tailscale's own view of whether it is delivering audit/flow logs to your configured SIEM sink.",
+		about:   "Reports bounded configuration/network log-stream destination state and delivery health — Tailscale's own view of the configured sink and whether it is delivering audit/flow logs.",
 		metrics: logstream.Catalog,
 	},
 	"oauth_apps": {
