@@ -4,6 +4,7 @@ title: 'Opt-in per-session PAM log record, off by default and pii_filter-gated'
 status: To Do
 assignee: []
 created_date: '2026-09-05 17:16'
+updated_date: '2026-09-05 17:22'
 labels: []
 dependencies: []
 references:
@@ -23,7 +24,7 @@ Wave 12 cut the PII-carrying per-session log record first under its cut order; t
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 `collectors.pam.session_log_enabled` (default false) emits one log record per newly accepted session from the existing delta path; replaying the same page or restarting against the same evidence store emits no duplicate record
-- [ ] #2 Identity, address, device-name and command attributes are governed by the existing pii_filter categories (emails, hostnames, tailscale_ips or external_ips, command_text, free_text_details) rather than a PAM-only switch, and a test proves each category removes its field
+- [ ] #2 Identity, address, device-name and command attributes are governed by the existing pii_filter categories (emails, user_display_names, user_ids, hostnames, tailscale_ips or external_ips by address range, command_text) rather than a PAM-only switch, and a test proves each category removes its field
 - [ ] #3 The emitted attribute set is asserted against an allowlist; auth_info and events[].metadata are never emitted verbatim
 - [ ] #4 The record carries a catalog descriptor, its docs/metrics.md row, a derived coverage disposition and a dashboard log panel, and the docs state that result is the authorization outcome and that sessions denied at the grant layer produce no record
 <!-- AC:END -->
