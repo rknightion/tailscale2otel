@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-05 20:12'
+updated_date: '2026-09-05 22:05'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -131,16 +131,17 @@ and `just verify-deploy` is the drift backstop. Phrase the prohibition as "no ru
 and enumerate what each mandated procedure touches before writing a prohibition, per the protocol's
 pre-flight list.
 
-### The lab runs `tag: main` with no rollout trigger, so it is always behind
+### The lab pins exporter release tags through Renovate so Argo rolls each accepted image
 
-The lab Argo application pins the image to the mutable `main` tag with `pullPolicy: Always`. A pod
-only pulls on (re)start, and nothing restarts it when `main` moves, so the running digest is
-whatever was current at the last rollout. Wave 13's 30-day stack sweep found 116 shipped families
-with no samples; the pod was seven days behind `main` and its values enable none of PAM, the
-objectstore paths, the snapshot logs, the device change-log or the Kubernetes audit collector.
-**A zero-sample family on the stack says nothing about the code until the lab's digest and values
-have been checked**, and a wave that ships a feature has not exercised it on the lab until the pod
-has restarted on an image that contains it. TSO-0140 and TSO-0141 carry the fix.
+The lab infrastructure values pin the exporter to a concrete GHCR release tag; the container tag
+omits the GitHub release's leading `v`. A Renovate regex manager reads the adjacent repository and
+tag fields with the Docker datasource, `semver-coerced` ordering and `ignoreUnstable: false`, then
+automerges the tag update on its branch. The changed values alter the pod template, so Argo's
+automated sync performs the rollout without a manual Deployment edit. The third-party sidecar pin
+is independent and stays unchanged. Every live-verification wave must compare the running pod's
+image ID with the selected registry digest and use the admin status page to prove the required
+collectors have completed on that process before querying the stack. A zero-sample family says
+nothing about the code until those digest, configuration and collector-run checks pass.
 
 ### auto-rc fires after CI, so a wave can finish green and leave main red
 
