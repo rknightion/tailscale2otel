@@ -87,7 +87,7 @@ services:
 
   tailscale2otel:
     # Tracks the current release; release-please rewrites the tag below.
-    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-4.0.1} # x-release-please-version
+    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-5.0.0} # x-release-please-version
     restart: unless-stopped
     # Start order only -- Compose waits for Alloy to report healthy, but that is
     # a convenience, not a requirement. The exporter retries its own OTLP export

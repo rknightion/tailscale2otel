@@ -1,5 +1,89 @@
 # Changelog
 
+## [5.0.0](https://github.com/rknightion/tailscale2otel/compare/v4.0.1...v5.0.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* **config:** Enabled non-loopback streaming and webhook receivers now fail startup unless every legacy or routed endpoint has its required token or secret. Credential-free loopback listeners remain supported for local-only use and warn about local injection risk. Go consumers must use github.com/rknightion/tailscale2otel/v5.
+
+### Features
+
+* **admin:** harden Wave 3 storage and access ([6d9c23c](https://github.com/rknightion/tailscale2otel/commit/6d9c23c32fda5d5121a062f05f632c6a0ef4323c))
+* **alerts:** cover coordination leadership health ([74a8c92](https://github.com/rknightion/tailscale2otel/commit/74a8c92496a60e6ca17fdfdf38437fdf97a41c40))
+* **alerts:** watch five signals that nothing alerted on ([7841543](https://github.com/rknightion/tailscale2otel/commit/7841543ff693c90a256e905989b415d0b11f8705))
+* **app:** wire wave 1 runtime controls ([1de673f](https://github.com/rknightion/tailscale2otel/commit/1de673f181ccadbd5c8d8b5c9cc86e66ca7ea1cc))
+* **checkpoint:** persist cursors in Kubernetes ([ed38f70](https://github.com/rknightion/tailscale2otel/commit/ed38f70e29292679addef5f06898cc931a8603cb))
+* **collectors:** configure dedup capacities ([1209ff3](https://github.com/rknightion/tailscale2otel/commit/1209ff328b1b51c84373f335528cbc42909f9b49))
+* **collectors:** quiet expiry warning cadence ([72fb042](https://github.com/rknightion/tailscale2otel/commit/72fb042d3aef3bf3e9932c9a633a0e6b452a251c))
+* **config:** add fleet discovery and operator forecasts ([882b4cf](https://github.com/rknightion/tailscale2otel/commit/882b4cf25183f32eb022a536746dcaa11c07fa8c))
+* **config:** freeze PAM tailnet and session-log configuration seams ([7f4cbfa](https://github.com/rknightion/tailscale2otel/commit/7f4cbfad7e7c940f1e0dd98fbac16a1f5ff80fee))
+* **config:** freeze wave 1 configuration ([f54548a](https://github.com/rknightion/tailscale2otel/commit/f54548a2e1a8542599ba4816ee7206a73ff63630))
+* **config:** freeze Wave 3 configuration seams ([992c3e3](https://github.com/rknightion/tailscale2otel/commit/992c3e3dd7af994433c1c882221bfd2c078955d7))
+* **config:** require credentials for network receivers ([69ca527](https://github.com/rknightion/tailscale2otel/commit/69ca527919aee27e68ceb2e15af257cbc595e77f))
+* **console:** adopt design system v2 ([05a1c9c](https://github.com/rknightion/tailscale2otel/commit/05a1c9c1f56c41e4a911b0ab38d3b52ad6a98152))
+* **coordination:** add Kubernetes Lease leadership ([1195f4b](https://github.com/rknightion/tailscale2otel/commit/1195f4b521d6b5440258e8f046ab8cc868379048))
+* **dashboards:** regroup operational surfaces ([1ea4b8b](https://github.com/rknightion/tailscale2otel/commit/1ea4b8b74d48b0f6be1bfc721941f912993cc34d))
+* **devices:** bound posture attribute cardinality ([06e7fc7](https://github.com/rknightion/tailscale2otel/commit/06e7fc7e2010f523c5ad3fb6bb5019ac8ce47acf))
+* **dev:** shard CodeRabbit pre-commit review ([322f1e8](https://github.com/rknightion/tailscale2otel/commit/322f1e82074b908b740a2404294e943aa09c3ca7))
+* **headscale:** honor retry and rate limits ([7292f5a](https://github.com/rknightion/tailscale2otel/commit/7292f5a7e99b32f2eaaf29cfe5963d63fbd916a5))
+* **helm:** add extraContainers for sidecars alongside the exporter ([31b7c31](https://github.com/rknightion/tailscale2otel/commit/31b7c31dacf8bd713bc14f2fd3d40dfd7df15b65))
+* **helm:** support coordinated replicas ([aea526d](https://github.com/rknightion/tailscale2otel/commit/aea526d53e38300b48b3c9200be25580b7ae7a07))
+* **logstream:** expose bounded destination configuration per log type ([dbaeeb4](https://github.com/rknightion/tailscale2otel/commit/dbaeeb4f8a130c380361d76a3fb07bb1cda1412b))
+* **node-metrics:** support per-tag port overrides ([e4c9e46](https://github.com/rknightion/tailscale2otel/commit/e4c9e46057e8b24b60b901505fb98cbea23b49b9))
+* **observability:** complete Wave 2 lifecycle coverage ([fa6a465](https://github.com/rknightion/tailscale2otel/commit/fa6a465e44a71d57f1f8433c05af2723ae6ad620))
+* **pam:** add Border0 telemetry collector ([9994c0a](https://github.com/rknightion/tailscale2otel/commit/9994c0a72c47dfeeb2961367c7e514ed6fc4e657))
+* **pam:** opt-in per-session log record behind pii_filter ([c94ba92](https://github.com/rknightion/tailscale2otel/commit/c94ba92dbfa47f8f99c527cb8fc7ea9a032a8f4f))
+* **pam:** select the tailnet runtime that hosts PAM telemetry ([076ac92](https://github.com/rknightion/tailscale2otel/commit/076ac9287c79427a709893c02db0ee433b5ebd80))
+* **resilience:** harden Wave 3 ingestion and runtime ([f35b6ab](https://github.com/rknightion/tailscale2otel/commit/f35b6ab35367291a2229f545659e23e779c2bc7d))
+* **snapshot:** freeze Wave 2 snapshot and config seams ([27c92b4](https://github.com/rknightion/tailscale2otel/commit/27c92b43853720f9271fe57e8d583e9bfaade2d6))
+* **telemetry:** apply per-tailnet cardinality limits ([175e3ce](https://github.com/rknightion/tailscale2otel/commit/175e3ce9cfa246ea893ba27e556d77fe9e859193))
+
+
+### Bug Fixes
+
+* **alerts:** emit the absolute deploy/alerts README link from the generator ([76a0b8f](https://github.com/rknightion/tailscale2otel/commit/76a0b8f7885b681a860f52984cafa70c4946e3ef))
+* **alerts:** match Grafana runtime status shape ([f2e221e](https://github.com/rknightion/tailscale2otel/commit/f2e221e576c63c3dc8582c873224a3beb130e344))
+* **alerts:** verify post-publication evaluations ([eb5c7fd](https://github.com/rknightion/tailscale2otel/commit/eb5c7fd1825d4872452fab234428aa21836e55a3))
+* **app,tsapi:** close flow stores on failed construction and pin the org path segment ([2167354](https://github.com/rknightion/tailscale2otel/commit/2167354df142e5b1436bb02a520917e6714c0c2d))
+* **app:** bound concurrent flow store shutdown ([2d84e51](https://github.com/rknightion/tailscale2otel/commit/2d84e511daf59dec2f2bd43514828db8985a6ccc))
+* **audit:** classify new configuration audit values ([102333f](https://github.com/rknightion/tailscale2otel/commit/102333fe49f09f362467987ed5ef9d1306281a36))
+* **audit:** classify PAM configuration changes ([f339e17](https://github.com/rknightion/tailscale2otel/commit/f339e173e28afc4f671670f0f10d1f9d0e691b9b))
+* **auth:** implement workload identity exchange contract ([5b55617](https://github.com/rknightion/tailscale2otel/commit/5b5561734a9fc5f04de10186173d10779018043a))
+* **auto-rc:** restore checks:read — reusable permissions validate at startup ([86c3e84](https://github.com/rknightion/tailscale2otel/commit/86c3e847879fc48fd4b9dfe1d63af4719a969613))
+* **checkpoint:** reconcile markerless rollback writes ([0513e63](https://github.com/rknightion/tailscale2otel/commit/0513e636ae2f2ebcc1c74e8149fb62e25779ebf3))
+* **checkpoint:** reconcile rollback-era legacy writes ([47f16b8](https://github.com/rknightion/tailscale2otel/commit/47f16b86d01f6da32f72185cec471d03d2ecd1b0))
+* **checkpoint:** restart after uncertain Kubernetes writes ([976cc00](https://github.com/rknightion/tailscale2otel/commit/976cc00c1f004922d1cec5936987abfa01f6f67b))
+* **checkpoint:** shard Kubernetes checkpoint state ([2901c12](https://github.com/rknightion/tailscale2otel/commit/2901c12e4ba66ab386335aa20008ed3d5d92acec))
+* **ci:** give the tailnet-join workflows their own WIF secret ([810ef36](https://github.com/rknightion/tailscale2otel/commit/810ef36acd5809c91f769cc9bb07a710e2320484))
+* **ci:** make clientlib drift verdicts explicit ([37c941b](https://github.com/rknightion/tailscale2otel/commit/37c941bc72d6f5ba34c7c8eff52bcf1e487d836a))
+* **ci:** repin rknightion/.github refs to v1.9.7 so Renovate can track them ([35ddeb1](https://github.com/rknightion/tailscale2otel/commit/35ddeb1550885d6aea4513fe368e9082c650fa57))
+* **ci:** unbreak the release pipeline and stop :main freezing on infra failure ([daf81d8](https://github.com/rknightion/tailscale2otel/commit/daf81d86c5fe2bc4679e5dbd481b44d525d7d1d6))
+* **config:** make secret source conflicts explicit ([1513eb1](https://github.com/rknightion/tailscale2otel/commit/1513eb145903dc15585cffaaba24feef536dd173))
+* **config:** reject oversized Kubernetes checkpoints ([b0eb87a](https://github.com/rknightion/tailscale2otel/commit/b0eb87ab89d8d97fb2c3f2ff84736b9ca3990227))
+* **coordination:** deduplicate handover observations ([fe3c3cc](https://github.com/rknightion/tailscale2otel/commit/fe3c3cc61eaf91adb3c94b6dbea8881f8c89ef3c))
+* **coordination:** expose standby process metrics ([15e4777](https://github.com/rknightion/tailscale2otel/commit/15e4777db004452d98435f1fdbf46b8fb14ed4d9))
+* **coordination:** self-fence on lease replacement ([8477683](https://github.com/rknightion/tailscale2otel/commit/84776837562eb4d61d4d1ed47ef08b05cd58126c))
+* **coordination:** validate retry jitter bound ([0e212ab](https://github.com/rknightion/tailscale2otel/commit/0e212ab5b5e47feb8595a10283dde7e58cbf2747))
+* **deploy:** close starter and verification gaps ([d3af40f](https://github.com/rknightion/tailscale2otel/commit/d3af40f4dada7f2a50e0d7c5020a01a16d942d2b))
+* **deps:** update go dependencies ([#600](https://github.com/rknightion/tailscale2otel/issues/600)) ([3ae7cb8](https://github.com/rknightion/tailscale2otel/commit/3ae7cb82074b93f2f023e0708f404f6a923ed295))
+* **deps:** update go dependencies ([#610](https://github.com/rknightion/tailscale2otel/issues/610)) ([7809c8b](https://github.com/rknightion/tailscale2otel/commit/7809c8bc0e8d8fb6cf09da07b97f2942440c46db))
+* **deps:** update module github.com/rknightion/tailscale2otel/v4 to v4.0.1 ([#584](https://github.com/rknightion/tailscale2otel/issues/584)) ([274dafe](https://github.com/rknightion/tailscale2otel/commit/274dafe0c76d87d0501d968feab6b417e9c74f7c))
+* **deps:** update module modernc.org/sqlite to v1.58.0 ([#606](https://github.com/rknightion/tailscale2otel/issues/606)) ([50f4e77](https://github.com/rknightion/tailscale2otel/commit/50f4e772073679e7bd3b8b394999c161f249811b))
+* **deps:** update v5 self-module matcher ([ef9f5ea](https://github.com/rknightion/tailscale2otel/commit/ef9f5ea76a1a4cc58a95d285921aa96a1102f15e))
+* **docs:** gate alert panel-link counts ([f9a9ad4](https://github.com/rknightion/tailscale2otel/commit/f9a9ad48269171e1db30d26b1cd1c3277b88b34f))
+* **flowstore:** keep legacy flow database usable ([22a023b](https://github.com/rknightion/tailscale2otel/commit/22a023b660fb57d01d08ae6799b1f5be7e52a29b))
+* **headscale:** classify configured tailnet prefixes ([1fbb579](https://github.com/rknightion/tailscale2otel/commit/1fbb579fe42b9971856aced2f188a8759124a4de))
+* **helm:** default coordination to release namespace ([ff444ba](https://github.com/rknightion/tailscale2otel/commit/ff444ba0e24f5e49a22cbc163b0a05543a827a9e))
+* **helm:** give kubeconform the CRD schemas for ServiceMonitor ([4f60b87](https://github.com/rknightion/tailscale2otel/commit/4f60b8715b49f1d521e232828009ec6332d96d62))
+* **helm:** restore the doubled braces in the CRD schema URL ([7c680b6](https://github.com/rknightion/tailscale2otel/commit/7c680b685e8ee3b20828b14044a4c8f36ff6090c))
+* **ingest:** close cancellation races ([16f25e1](https://github.com/rknightion/tailscale2otel/commit/16f25e126e3cf5e76c8207696d1ecb18051a33a3))
+* **observability:** address Wave 2 review findings ([a18a5dd](https://github.com/rknightion/tailscale2otel/commit/a18a5dd06f9ac9c8b84fda73bba653ded2398d5a))
+* **observability:** scope the dedup overlap horizon to the poll path ([e3caac4](https://github.com/rknightion/tailscale2otel/commit/e3caac42e74b29e4475e27e3c6f6258ba71a58e9))
+* **stream:** restore flow capture delay telemetry ([f825e5d](https://github.com/rknightion/tailscale2otel/commit/f825e5d5eca265c09d1784b84c41efcddc7d08dd))
+* **telemetry:** guard stable instrumentation scope ([86f4b5e](https://github.com/rknightion/tailscale2otel/commit/86f4b5e6c8e8400178a6b67b7237de63f13e1932))
+* **tooling:** select Grafana verification context ([630b1d7](https://github.com/rknightion/tailscale2otel/commit/630b1d7585246a0a719fb0233e69f0e6c1b61bc8))
+
 ## [4.0.1](https://github.com/rknightion/tailscale2otel/compare/v4.0.0...v4.0.1) (2026-08-27)
 
 
