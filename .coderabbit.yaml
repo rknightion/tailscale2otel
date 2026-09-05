@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Product-specific additions to the central CodeRabbit defaults.
+# Keep inheritance enabled; shared review policy lives in the owner/coderabbit repository.
+inheritance: true
+reviews:
+  path_filters:
+  - '!docs/metrics.md'
+  - '!docs/env-vars.md'
+  - '!config.schema.json'
+  - '!docs/signal-coverage.md'
+  - '!deploy/helm/tailscale2otel/README.md'
+  - '!deploy/helm/tailscale2otel/values.schema.json'
+  - '!deploy/grafana/*.json'
+  - '!deploy/alerts/grafana-managed/**'
+  - '!deploy/alerts/prometheus/tailscale2otel.rules.yaml'
+  - '!docs/alert-profiles.md'
+  - '!internal/catalog/capability_counts.json'
+  path_instructions:
+  - path: internal/**/*.go
+    instructions: >-
+      Keep OTLP behind internal/telemetry and signal names in the catalog. Flow and audit records use
+      exactly one ingestion path, poll or stream; cross-source dedupe is only a fallback and must not
+      make dual ingestion acceptable. Decode Tailscale wire fields defensively, preserve bounded caches/queues,
+      and keep entity detail out of unbounded metric labels. Queries and consumers use OTLP-to-Prometheus
+      normalized names.
+  - path: deploy/alerts/gen/**/*.py
+    instructions: >-
+      Generated Grafana-managed rules must use the live manifest spellings: noDataState and execErrState
+      use Ok, and durations are Go duration strings. Check rule expressions against the in-code signal
+      catalog and executable fixtures; parsing alone does not prove that a rule fires.
+  - path: internal/catalog/signal_dispositions.json
+    instructions: >-
+      This file is hand-maintained generated-adjacent policy. Do not suggest inventing a disposition or
+      restoring raw_only, omitted or pending_panel escapes. Dispositions are derived from real dashboard/rule
+      references, and structural exemptions require individual justification.
