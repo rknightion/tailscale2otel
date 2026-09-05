@@ -1450,6 +1450,16 @@
       "title": "Tailscale v1.102.1",
       "verdict": "parked",
       "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred until a real sample exists: the series are labeled by Tailscale Service name and the label KEY is not in the HELP text. Probed all 39 lab nodes 2026-08-10 \u2014 8 expose :5252/metrics, 7 declare the family with zero samples, and the nodes that actually host Tailscale Services (the k8s operator ingress proxies) run 1.98.9, which predates the metric and exposes no metrics endpoint. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
+    },
+    "changelog:2026-08-19-client": {
+      "title": "Tailscale v1.102.3",
+      "verdict": "not-relevant",
+      "note": "Client bugfix release. The tailnet-lock item is a startup-failure fix on large tailnets, not a new API surface; the exporter's only actionable tailnet-lock signal (tailscale.tailnet_lock.errors, per-device tailnet_lock_error log) is unchanged. TS-2026-011 is a client-side 4via6 fix with no control-plane exposure."
+    },
+    "changelog:2026-08-26-pam-beta": {
+      "title": "Tailscale PAM",
+      "verdict": "adopted",
+      "note": "TSO-0036 (PAM telemetry collector, Border0 API) shipped 2026-09-04 in 9994c0a: connector/service/policy/identity inventory, organization and subscription shape, session counters and durations. TSO-0134 classifies the PAM_* audit events. Session recordings are deliberately not counted because they populate asynchronously after first sight; the PII-carrying per-session log record was cut and is an owner decision."
     }
   }
 }
