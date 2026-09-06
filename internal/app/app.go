@@ -920,7 +920,9 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		// Process-global self-obs: emitted on the process provider (no tailnet
 		// Resource).
 		go runHeartbeat(ctx, a.procEmitter, heartbeatInterval, func(e telemetry.Emitter) {
-			EmitCapabilityStatus(e, a.capabilityMatrix(a.primaryAPIState()))
+			rows := a.capabilityMatrix(a.primaryAPIState())
+			EmitCapabilityStatus(e, rows)
+			EmitScopePreflight(e, rows)
 		})
 		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
