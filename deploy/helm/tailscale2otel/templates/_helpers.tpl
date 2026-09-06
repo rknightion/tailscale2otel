@@ -2,6 +2,20 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/* Validate the replica count before rendering either workload kind. */}}
+{{- define "tailscale2otel.validateReplicaCount" -}}
+{{- $replicas := int .Values.replicaCount -}}
+{{- if lt $replicas 1 -}}
+{{- fail (printf "replicaCount must be at least 1 (got %d)" $replicas) -}}
+{{- end -}}
+{{- if gt $replicas 3 -}}
+{{- fail (printf "replicaCount must be at most 3 (got %d): Kubernetes coordination supports at most three active-passive replicas" $replicas) -}}
+{{- end -}}
+{{- if and (gt $replicas 1) (ne .Values.config.coordination.mode "kubernetes") -}}
+{{- fail (printf "replicaCount must be 1 unless config.coordination.mode=kubernetes (got %d replicas with mode %q): multiple pollers would double-emit every metric and log" $replicas .Values.config.coordination.mode) -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "tailscale2otel.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}

@@ -1,0 +1,40 @@
+{{- if eq .Values.config.coordination.mode "kubernetes" }}
+{{- include "tailscale2otel.validateReplicaCount" . -}}
+{{- if .Values.persistence.existingClaim }}
+{{- fail "persistence.existingClaim is unsupported with config.coordination.mode=kubernetes: per-replica claims replace it so each StatefulSet pod owns its single-writer state" }}
+{{- end }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "tailscale2otel.fullname" . }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "tailscale2otel.fullname" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  # Standbys deliberately fail readiness to stay out of receiver Services.
+  # Do not wait for them when creating replicas or replacing updated pods.
+  podManagementPolicy: Parallel
+  updateStrategy:
+    type: OnDelete
+  selector:
+    matchLabels:
+      {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}
+  template:{{ include "tailscale2otel.podTemplate" . | trimPrefix "\n" | nindent 0 }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: checkpoints
+        labels:
+          {{- include "tailscale2otel.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+  {{- end }}
+{{- end }}

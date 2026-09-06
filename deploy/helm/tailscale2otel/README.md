@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.33.3](https://img.shields.io/badge/Version-0.33.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.34.0](https://img.shields.io/badge/Version-0.34.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -45,12 +45,15 @@ under `config:`) and the 0.5.0 migration (secret keys renamed to `TS2OTEL_*`,
 
 ### Coordinated replicas
 
-The chart is a singleton by default. `replicaCount` values above one fail unless
-`config.coordination.mode: kubernetes` is set; that mode permits up to three
-active-passive replicas sharing a Kubernetes `coordination.k8s.io` Lease. The
-chart renders the Lease Role and RoleBinding only in that mode, scopes `get` and
-`update` to the configured `coordination.lease_name`, and mounts the
-ServiceAccount token needed by the in-cluster Kubernetes client. The single
+The chart is a singleton `Deployment` by default. `replicaCount` values above
+one fail unless `config.coordination.mode: kubernetes` is set. Kubernetes
+coordination renders a `StatefulSet` for one to three active-passive replicas,
+with a governing headless Service that supplies stable pod DNS without exposing
+any listener port. When persistence is enabled, its one `volumeClaimTemplates`
+entry creates a distinct state PVC for each pod; it never creates a shared
+volume. The chart renders the Lease Role and RoleBinding only in that mode,
+scopes `get` and `update` to the configured `coordination.lease_name`, and
+mounts the ServiceAccount token needed by the in-cluster Kubernetes client. The single
 `config.coordination.namespace` value is shared by the Lease and checkpoint
 ConfigMaps: leave it empty (the default) to use the Helm release namespace, or
 set an explicit DNS-1123 label when those objects belong elsewhere. The Role
@@ -77,6 +80,35 @@ It stores one gzip `binaryData` ConfigMap per collector namespace, owned by the
 configured Lease, so checkpoint updates can never overwrite the chart's
 application-configuration ConfigMap.
 
+The Lease and these checkpoint ConfigMaps are the only state shared by replicas.
+Each pod's claim holds its own flow store, ingress WAL, GeoIP download files,
+file-backed semantic evidence, and any operator sidecar state mounted beneath
+`/var/lib/tailscale2otel`. A newly elected leader therefore has its own flow and
+evidence history and cannot replay the former leader's unprocessed WAL; that
+pod replays its WAL only if it returns. With `checkpoint.store: kubernetes`, poll
+cursors survive the hand-off. A sidecar that needs a unique identity must derive
+it from a Downward API `metadata.name` fieldRef; the chart owns the state volume
+but cannot configure a sidecar's identity.
+
+`persistence.existingClaim` is deliberately unsupported in Kubernetes
+coordination, even with persistence disabled: per-replica claims replace it.
+Changing an existing singleton to coordinated mode also changes the workload
+kind, so plan a maintenance window and any state migration outside Helm before
+switching modes. Do not use a shared RWX claim as a substitute for these
+per-replica volumes.
+
+Standbys intentionally return HTTP 503 from `/readyz` so receiver Services send
+traffic only to the leader. The StatefulSet uses `podManagementPolicy: Parallel`
+so an unready standby cannot block creation of the third replica. It uses
+`updateStrategy: OnDelete` because automatic rolling updates would wait forever
+for a standby to become Ready. After a Helm upgrade, explicitly replace pods one
+at a time: replace standbys first, verify their status and retained claims, then
+replace the leader and verify leadership transfers. Image and configuration
+changes do not reach an existing pod until it is replaced. Do not use Helm
+`--wait` or `--atomic` for coordinated installs; instead verify Running pods,
+distinct Bound claims, and the leader/standby states at `/api/status.json`.
+This also means a Helm rollback needs explicit pod replacement to apply.
+
 ### Receiver WAL durability and storage
 
 `config.ingress_wal.enabled` is `false` by default, so receiver acceptance stays
@@ -86,13 +118,14 @@ webhook body or fully validated decompressed streaming body. It does not mean OT
 export or backend acknowledgement. Replay is at-least-once, so a crash after export
 but before the local completion commit can duplicate data.
 
-The existing `/var/lib/tailscale2otel` state mount holds both checkpoints and the
-WAL. With `persistence.enabled=false` it is an `emptyDir`: data survives container
+The `/var/lib/tailscale2otel` state mount holds both checkpoints and the WAL.
+With `persistence.enabled=false` it is an `emptyDir`: data survives container
 restarts within the same pod, but is lost when the pod is replaced, rescheduled,
-or lost with its node. Set `persistence.enabled=true` to create a PVC, or combine
-it with `persistence.existingClaim`, when WAL data must survive those events. WAL
-entries contain sensitive raw or decompressed receiver payloads; do not expose,
-share, or back them up without the same access controls as the source data.
+or lost with its node. A singleton `Deployment` can create one PVC or mount
+`persistence.existingClaim`; a coordinated `StatefulSet` creates one PVC per
+replica and rejects `existingClaim`. WAL entries contain sensitive raw or
+decompressed receiver payloads; do not expose, share, or back them up without
+the same access controls as the source data.
 
 The existing `persistence.size: 64Mi` default is retained for checkpoint-only
 deployments. It is too small for the default 256 MiB encoded WAL ceiling. For that
@@ -235,7 +268,7 @@ extraVolumeMounts:
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| affinity | object | `{}` | Affinity rules for pod scheduling. |
+| affinity | object | `{}` | Affinity rules for pod scheduling. Empty keeps singleton scheduling unchanged; coordinated StatefulSets default to a soft hostname anti-affinity preference. Set this to replace that preference with the topology policy required by your cluster. |
 | config.admin.auth.failure_backoff | string | `"30s"` |  |
 | config.admin.auth.failure_limit | int | `5` | Failed attempts from one source inside failure_window before throttling; 0 disables. |
 | config.admin.auth.failure_window | string | `"1m"` |  |
@@ -814,8 +847,8 @@ extraVolumeMounts:
 | networkPolicy.ingress.extra | list | `[]` | Raw NetworkPolicyIngressRule entries appended as-is, alongside the rules this chart generates automatically for each enabled listener/consumer (see templates/networkpolicy.yaml). |
 | nodeSelector | object | `{}` | Node selector for pod scheduling. |
 | persistence.accessMode | string | `"ReadWriteOnce"` | PVC access mode. |
-| persistence.enabled | bool | `false` | Persist process state across pod replacement/rescheduling. When false, an emptyDir is used: it survives container restarts within the same pod, but is lost with pod replacement, rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted. |
-| persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled; persistence.enabled=true is required, and existingClaim may supply the durable volume instead of this chart creating it. |
+| persistence.enabled | bool | `false` | Persist process state across pod replacement/rescheduling. When false, an emptyDir is used: it survives container restarts within the same pod, but is lost with pod replacement, rescheduling, or node loss. A coordinated StatefulSet creates one PVC from this template per replica; singleton mode creates one PVC or mounts existingClaim. |
+| persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled; persistence.enabled=true is required. Unsupported with config.coordination.mode=kubernetes: coordinated replicas require their own PVCs, created from the StatefulSet claim template. |
 | persistence.size | string | `"64Mi"` | PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata. If config.flows.store.directory also points into this volume (e.g. /var/lib/tailscale2otel/flows), size for that store separately — see the disk-sizing estimate in docs/flow-view.md — and add its estimate on top of the WAL/checkpoint figure above. |
 | persistence.storageClass | string | `""` | StorageClass for the PVC (empty = cluster default). Only used when enabled. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |

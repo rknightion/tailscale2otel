@@ -158,7 +158,9 @@ goRuntime: # @schema additionalProperties:false
 nodeSelector: {}
 # -- Tolerations for pod scheduling.
 tolerations: []
-# -- Affinity rules for pod scheduling.
+# -- Affinity rules for pod scheduling. Empty keeps singleton scheduling unchanged; coordinated
+# StatefulSets default to a soft hostname anti-affinity preference. Set this to replace that
+# preference with the topology policy required by your cluster.
 affinity: {}
 
 # -- Extra volumes appended to the pod spec as-is (e.g. a Secret volume holding
@@ -2257,7 +2259,8 @@ config: # @schema additionalProperties:false
 persistence: # @schema additionalProperties:false
   # -- Persist process state across pod replacement/rescheduling. When false, an emptyDir is used:
   # it survives container restarts within the same pod, but is lost with pod replacement,
-  # rescheduling, or node loss. When true, a PVC is created or existingClaim is mounted.
+  # rescheduling, or node loss. A coordinated StatefulSet creates one PVC from this template per
+  # replica; singleton mode creates one PVC or mounts existingClaim.
   enabled: false
   # -- StorageClass for the PVC (empty = cluster default). Only used when enabled.
   storageClass: ""
@@ -2270,6 +2273,6 @@ persistence: # @schema additionalProperties:false
   # in docs/flow-view.md — and add its estimate on top of the WAL/checkpoint figure above.
   size: 64Mi
   # -- Use an existing PVC instead of creating one (empty = create one). Only used when enabled;
-  # persistence.enabled=true is required, and existingClaim may supply the durable volume instead
-  # of this chart creating it.
+  # persistence.enabled=true is required. Unsupported with config.coordination.mode=kubernetes:
+  # coordinated replicas require their own PVCs, created from the StatefulSet claim template.
   existingClaim: ""

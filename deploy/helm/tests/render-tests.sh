@@ -74,7 +74,10 @@ assert_no_configmap() {
   fi
 }
 
-dep_field() { docs_of Deployment | yq "$1"; }
+# The default path is a Deployment; coordinated mode is a StatefulSet. Every
+# workload assertion must cover either without duplicating the security suite.
+workload_docs() { yq 'select(.kind == "Deployment" or .kind == "StatefulSet")' <<<"$RENDER"; }
+dep_field() { workload_docs | yq "$1"; }
 config_field() {
   docs_of ConfigMap | yq -r '.data."config.yaml"' | yq -r "$1"
 }
@@ -1663,19 +1666,55 @@ render
 
 case_ "AC. coordinated replicas and checkpoint object isolation"
 
-render --set replicaCount=2
-[[ $RENDER_RC -ne 0 ]] && grep -q 'replicaCount must be 1 unless config.coordination.mode=kubernetes' <<<"$RENDER" \
-  && ok "AC: an uncoordinated second replica is rejected" \
-  || bad "AC: an uncoordinated second replica was not rejected with the coordination guard"
+for replicas in 2 3; do
+  render --set replicaCount="$replicas"
+  [[ $RENDER_RC -ne 0 ]] && grep -q 'replicaCount must be 1 unless config.coordination.mode=kubernetes' <<<"$RENDER" \
+    && ok "AC: an uncoordinated replicaCount=$replicas is rejected" \
+    || bad "AC: an uncoordinated replicaCount=$replicas was not rejected with the coordination guard"
+done
+
+for replicas in 1 2 3; do
+  render --set replicaCount="$replicas" --set config.coordination.mode=kubernetes
+  assert_rc0 "AC: coordinated replicaCount=$replicas renders"
+  [[ "$(docs_of StatefulSet | yq '.metadata.name')" == "$FULLNAME" ]] \
+    && ok "AC: coordinated replicaCount=$replicas uses a StatefulSet" \
+    || bad "AC: coordinated replicaCount=$replicas did not use a StatefulSet"
+  [[ -z "$(docs_of Deployment | tr -d '[:space:]-')" ]] \
+    && ok "AC: coordinated replicaCount=$replicas renders no Deployment" \
+    || bad "AC: coordinated replicaCount=$replicas rendered a Deployment"
+done
 
 render --set replicaCount=2 \
        --set config.coordination.mode=kubernetes \
        --set config.coordination.lease_name="$FULLNAME" \
-       --set config.checkpoint.store=kubernetes
+       --set config.checkpoint.store=kubernetes \
+       --set persistence.enabled=true
 assert_rc0 "AC: coordinated replicas render"
-[[ "$(dep_field '.spec.strategy.type')" == "RollingUpdate" ]] \
-  && ok "AC: coordinated deployment uses RollingUpdate" \
-  || bad "AC: coordinated deployment does not use RollingUpdate"
+[[ "$(docs_of StatefulSet | yq '.spec.podManagementPolicy')" == "Parallel" ]] \
+  && ok "AC: standby readiness cannot block replica creation" \
+  || bad "AC: ordered readiness would block replica creation"
+[[ "$(docs_of StatefulSet | yq '.spec.updateStrategy.type')" == "OnDelete" ]] \
+  && ok "AC: updates require explicit pod replacement instead of waiting on standbys" \
+  || bad "AC: automatic rolling updates would wait on standby readiness"
+[[ "$(docs_of StatefulSet | yq '.spec.serviceName')" == "${FULLNAME}-headless" ]] \
+  && ok "AC: coordinated StatefulSet uses the governing headless Service" \
+  || bad "AC: coordinated StatefulSet has no governing headless Service"
+[[ "$(docs_of Service | yq 'select(.metadata.name == "'"$FULLNAME"'-headless") | .spec.clusterIP')" == "None" ]] \
+  && ok "AC: governing Service is headless" || bad "AC: governing Service is not headless"
+[[ -z "$(docs_of Service | yq 'select(.metadata.name == "'"$FULLNAME"'-headless") | .spec.ports' | tr -d '[:space:]')" || "$(docs_of Service | yq 'select(.metadata.name == "'"$FULLNAME"'-headless") | .spec.ports')" == "null" ]] \
+  && ok "AC: governing Service exposes no listener ports" || bad "AC: governing Service unexpectedly exposes a listener"
+[[ "$(docs_of StatefulSet | yq '[.spec.volumeClaimTemplates[] | select(.metadata.name == "checkpoints")] | length')" == "1" ]] \
+  && ok "AC: one checkpoint claim template creates one claim per replica" \
+  || bad "AC: coordinated StatefulSet does not define exactly one checkpoint claim template"
+[[ -z "$(docs_of StatefulSet | yq '.spec.template.spec.volumes[] | select(.name == "checkpoints")' | tr -d '[:space:]-')" ]] \
+  && ok "AC: StatefulSet leaves the checkpoint volume to its claim template" \
+  || bad "AC: StatefulSet duplicated the claim-template checkpoint volume"
+[[ -z "$(docs_of PersistentVolumeClaim | tr -d '[:space:]-')" ]] \
+  && ok "AC: coordinated persistence emits no singleton PVC" \
+  || bad "AC: coordinated persistence emitted a singleton PVC"
+[[ "$(dep_field '.spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey')" == "kubernetes.io/hostname" ]] \
+  && ok "AC: coordinated replicas prefer different hosts" \
+  || bad "AC: coordinated replicas have no hostname anti-affinity preference"
 [[ "$(dep_field '.spec.template.spec.automountServiceAccountToken')" == "true" ]] \
   && ok "AC: coordinated pod receives its Kubernetes API token" \
   || bad "AC: coordinated pod has no Kubernetes API token"
@@ -1704,6 +1743,35 @@ fi
 [[ "$(docs_of ConfigMap | yq '.metadata.name')" == "$FULLNAME" ]] \
   && ok "AC: application configuration keeps its existing ConfigMap name" \
   || bad "AC: application configuration ConfigMap unexpectedly moved"
+
+render --set replicaCount=2 --set config.coordination.mode=kubernetes
+assert_rc0 "AC: coordinated replicas allow emptyDir state when persistence is disabled"
+[[ "$(docs_of StatefulSet | yq '.spec.template.spec.volumes[] | select(.name == "checkpoints") | has("emptyDir")')" == "true" ]] \
+  && ok "AC: coordinated non-persistent state remains emptyDir" \
+  || bad "AC: coordinated non-persistent state is not emptyDir"
+[[ "$(docs_of StatefulSet | yq '.spec | has("volumeClaimTemplates")')" == "false" ]] \
+  && ok "AC: disabled persistence creates no claims" || bad "AC: disabled persistence created claims"
+
+render --set replicaCount=2 --set config.coordination.mode=kubernetes --set persistence.existingClaim=old-state
+[[ $RENDER_RC -ne 0 ]] && grep -q 'per-replica claims replace it' <<<"$RENDER" \
+  && ok "AC: coordinated existingClaim fails with the per-replica migration message" \
+  || bad "AC: coordinated existingClaim did not fail with a migration message"
+
+render --set replicaCount=2 --set config.coordination.mode=kubernetes \
+       --set-json 'affinity={"nodeAffinity":{"requiredDuringSchedulingIgnoredDuringExecution":{"nodeSelectorTerms":[]}}}'
+assert_rc0 "AC: explicit affinity overrides the coordinated default"
+[[ "$(dep_field '.spec.template.spec.affinity | keys | join(",")')" == "nodeAffinity" ]] \
+  && ok "AC: explicit affinity contains only the operator-supplied policy" \
+  || bad "AC: explicit affinity contains unrelated chart context"
+[[ "$(dep_field '.spec.template.spec.affinity | has("podAntiAffinity")')" == "false" ]] \
+  && ok "AC: explicit affinity replaces the default anti-affinity" \
+  || bad "AC: explicit affinity was merged with the default anti-affinity"
+
+render --set replicaCount=2 --set config.coordination.mode=kubernetes \
+       --set "config.admin.auth.token=${SENTINEL}"
+assert_rc0 "AC: coordinated credential-bearing config renders"
+assert_secret_only "AC: coordinated credential-bearing config"
+assert_no_configmap "AC: coordinated credential-bearing config"
 
 case_ "AD. coordination namespace follows the release namespace and stays aligned"
 

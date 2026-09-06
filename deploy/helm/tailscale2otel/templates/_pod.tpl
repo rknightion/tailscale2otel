@@ -1,0 +1,362 @@
+{{- /* The pod template is shared by the singleton Deployment and coordinated StatefulSet. */ -}}
+{{- define "tailscale2otel.podTemplate" }}
+    metadata:
+      annotations:
+        {{- /*
+        GHSA-825f-hph6-x65w: a checksum annotation is only safe when it hashes
+        data that carries no secret. configStoresSecret is false ONLY when
+        .Values.config has no credential-bearing key inline (see
+        tailscale2otel.credentialPaths) and no tailnets[]/node_metrics-target
+        credential, so this branch never hashes anything confidential — it's a
+        legitimate rollout trigger for a ConfigMap-backed, credential-free config.
+        There used to also be a `checksum/secret: {{ toYaml .Values.secret |
+        sha256sum }}` here and this hashed the secret-backed config.yaml too:
+        BOTH published a deterministic digest of secret material into a pod
+        annotation, which anyone with workload-read (but no Secret-read) could
+        compare against offline guesses. Removed; see rolloutTrigger below.
+        */}}
+        {{- /*
+          No checksum for an operator-managed config (#347): the chart cannot
+          read another object's contents, so any hash it produced would be of
+          its own inert `config:` tree — a checksum that changes when the pod's
+          real config does NOT, and vice versa. That is worse than none.
+          rolloutTrigger / Reloader are the rollout path, as with a rotated
+          existingSecret.
+        */}}
+        {{- if and (not (include "tailscale2otel.configStoresSecret" .)) (not (include "tailscale2otel.usesExternalConfig" .)) }}
+        # Roll the pod when the (credential-free) rendered config changes.
+        checksum/config: {{ include "tailscale2otel.config" . | sha256sum }}
+        {{- end }}
+        {{- with .Values.rolloutTrigger }}
+        # Operator-chosen opaque rollout token — the ONLY supported way to force a
+        # rollout when secret-bearing input changes: a rotated externally managed
+        # existingSecret, a changed inline `secret:` value, or an edit to a
+        # secret-backed config.yaml (any inline credential under `config:`, a
+        # `tailnets[]` entry, or a node_metrics target bearer_token/headers — see
+        # tailscale2otel.credentialPaths). None of those may ever be hashed into an
+        # annotation: annotations are readable by any principal with workload-read
+        # but no Secret-read, and a published digest lets that principal verify
+        # offline guesses against real secret material (GHSA-825f-hph6-x65w).
+        # Kubernetes never refreshes envFrom/Secret-mounted values in a running
+        # container regardless, so a pod replacement is required either way.
+        # Changing this value changes the pod template and forces a Recreate
+        # rollout. It is NEVER derived from secret content (no value, no digest of
+        # a value, ever lands here). For an automated path instead, run Stakater
+        # Reloader in the cluster and set
+        # `podAnnotations.reloader.stakater.com/auto: "true"` — Reloader watches
+        # the Secret object itself and issues the rollout restart, so it never
+        # needs to read or hash the secret's contents.
+        tailscale2otel.m7kni.io/rollout-trigger: {{ . | quote }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "tailscale2otel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tailscale2otel.serviceAccountName" . }}
+      # Coordination uses the in-cluster Kubernetes client. Force the token
+      # mount on for that mode; singleton deployments retain the chart's
+      # default of no general-purpose Kubernetes credential.
+      automountServiceAccountToken: {{ if eq .Values.config.coordination.mode "kubernetes" }}true{{ else }}{{ .Values.serviceAccount.automountServiceAccountToken }}{{ end }}
+      {{- /*
+        The staged drain (receivers -> ingress WAL -> OTLP flush -> flow-store
+        close) can run to 40 seconds, and each stage is bounded in Go.
+        Kubernetes' default budget is 30, below the drain, so a rollout could
+        SIGKILL the pod mid-flush and lose the final flow rollup, the WAL
+        backlog and the last export (#332). Fail the render rather than truncate
+        a drain:
+        an operator who lowers this is making a data-durability decision and
+        should be told the floor, not discover it as gaps in a dashboard.
+        The `@schema minimum` on the value covers `helm install --set`; this
+        guard covers a values file, which schema validation alone also catches
+        but with a message that does not explain WHY 55. internal/app's
+        TestChartMinimumMatchesDrain fails if this number stops matching the
+        code, so raising a stage timeout cannot leave a stale floor here.
+      */}}
+      {{- if lt (int .Values.terminationGracePeriodSeconds) 55 }}
+      {{- fail (printf "terminationGracePeriodSeconds must be at least 55 (got %v): the binary's worst-case staged drain is 40s (receiver drain 10s + ingress WAL final drain 10s + OTLP flush 10s + flow-store close 10s) and a shorter budget SIGKILLs the process mid-flush, losing the final flow rollup, the WAL backlog and the last export" .Values.terminationGracePeriodSeconds) }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ int .Values.terminationGracePeriodSeconds }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: tailscale2otel
+          image: "{{ include "tailscale2otel.image" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["-config", "/etc/tailscale2otel/config.yaml"]
+          {{- /*
+            The chart's own Secret is deliberately FIRST: Kubernetes resolves
+            later envFrom sources over earlier ones, so this lets an operator's
+            extraEnvFrom entry deliberately take over a TS2OTEL_* value (the
+            documented path for an external secret operator) while the chart can
+            never silently override theirs (#348).
+          */}}
+          envFrom:
+            - secretRef:
+                name: {{ include "tailscale2otel.secretName" . }}
+            {{- with .Values.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- $gomemlimit := include "tailscale2otel.gomemlimit" . }}
+          {{- include "tailscale2otel.validateExtraEnv" . }}
+          {{- include "tailscale2otel.validateExternalConfig" . }}
+          {{- include "tailscale2otel.validateWorkloadIdentity" . }}
+          {{- if or .Values.goRuntime.gogc $gomemlimit .Values.extraEnv .Values.workloadIdentity.enabled }}
+          env:
+            {{- if .Values.goRuntime.gogc }}
+            - name: GOGC
+              value: {{ .Values.goRuntime.gogc | quote }}
+            {{- end }}
+            {{- if $gomemlimit }}
+            - name: GOMEMLIMIT
+              value: {{ $gomemlimit | quote }}
+            {{- end }}
+            {{- if .Values.workloadIdentity.enabled }}
+            # Set here rather than in config.yaml so the path stays derived from
+            # mountPath/fileName in one place and cannot drift from the volume.
+            - name: TS2OTEL_TAILSCALE__AUTH__WORKLOAD_IDENTITY__ID_TOKEN_FILE
+              value: {{ include "tailscale2otel.wifTokenPath" . | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- /*
+            Named container ports for every ENABLED listener. Named, because a
+            Service and a PodMonitor both target a port by name, and the number
+            is derived from the listen address rather than restated (#344).
+            Only enabled listeners appear: a declared port for a listener that
+            is not serving is misleading in `kubectl describe`.
+          */}}
+          {{- $ports := list }}
+          {{- if .Values.config.admin.enabled }}
+          {{- $ports = append $ports (dict "name" "admin" "listen" .Values.config.admin.listen) }}
+          {{- end }}
+          {{- if or .Values.config.prometheus.enabled (or (eq .Values.config.delivery.mode "prometheus") (eq .Values.config.delivery.mode "dual")) }}
+          {{- $ports = append $ports (dict "name" "prometheus" "listen" .Values.config.prometheus.listen) }}
+          {{- end }}
+          {{- if .Values.config.streaming.enabled }}
+          {{- $ports = append $ports (dict "name" "streaming" "listen" .Values.config.streaming.listen) }}
+          {{- end }}
+          {{- if .Values.config.webhook.enabled }}
+          {{- $ports = append $ports (dict "name" "webhook" "listen" .Values.config.webhook.listen) }}
+          {{- end }}
+          {{- with $ports }}
+          ports:
+            {{- range . }}
+            - name: {{ .name }}
+              containerPort: {{ include "tailscale2otel.listenPort" .listen }}
+              protocol: TCP
+            {{- end }}
+          {{- end }}
+          {{- if .Values.config.admin.enabled }}
+          # Probes hit the admin server's /healthz (liveness/readiness) and /readyz
+          # (readiness, startup) — never auth-gated. Only rendered when
+          # config.admin.enabled — the server is off by default. Each of the three
+          # is independently toggled by probes.<kind>.enabled (#350).
+          {{- /*
+            The binary serves the admin endpoints over HTTPS iff BOTH admin.tls
+            files are set (internal/app/admin.go picks ListenAndServeTLS on
+            certFile != "" && keyFile != ""). A probe with no scheme defaults to
+            HTTP, so the probes must follow that same both-or-neither condition
+            or enabling admin TLS leaves the pod permanently unready and
+            restarting (#342). One file alone is a startup error the app
+            rejects (validateTLSFiles, #170), never a TLS server — so `and`,
+            not `or`. The kubelet does not verify the server certificate on an
+            HTTPS probe, so a self-signed admin cert needs nothing further.
+            Setting admin TLS through TS2OTEL_ADMIN__TLS__* env vars instead of
+            `config.admin.tls` is invisible to the chart; use the config keys.
+            This stays computed here, never a probes.*.scheme value (#350) —
+            an operator-set scheme could silently drift out of sync with the
+            TLS files that actually decide it.
+          */}}
+          {{- $adminTLS := and .Values.config.admin.tls.cert_file .Values.config.admin.tls.key_file }}
+          {{- include "tailscale2otel.validateProbes" . }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            {{- /*
+              timeoutSeconds/failureThreshold/successThreshold render ONLY when they
+              differ from Kubernetes' own probe defaults (1/3/1) — the chart's own
+              defaults for these three ARE those Kubernetes defaults, so the default
+              rendered manifest stays byte-identical to before this feature: only
+              initialDelaySeconds/periodSeconds were ever rendered previously.
+            */}}
+            {{- if ne (int .Values.probes.liveness.timeoutSeconds) 1 }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            {{- end }}
+            {{- if ne (int .Values.probes.liveness.failureThreshold) 3 }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+            {{- end }}
+            {{- if ne (int .Values.probes.liveness.successThreshold) 1 }}
+            successThreshold: {{ .Values.probes.liveness.successThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            {{- if ne (int .Values.probes.readiness.timeoutSeconds) 1 }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            {{- end }}
+            {{- if ne (int .Values.probes.readiness.failureThreshold) 3 }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+            {{- end }}
+            {{- if ne (int .Values.probes.readiness.successThreshold) 1 }}
+            successThreshold: {{ .Values.probes.readiness.successThreshold }}
+            {{- end }}
+          {{- end }}
+          {{- if .Values.probes.startup.enabled }}
+          # Opt-in (#350): shields a slow first initialization from the steady-state
+          # liveness budget above — while this has not yet succeeded, the kubelet
+          # runs neither liveness nor readiness at all.
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+              {{- if $adminTLS }}
+              scheme: HTTPS
+              {{- end }}
+            initialDelaySeconds: {{ .Values.probes.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.startup.failureThreshold }}
+            successThreshold: {{ .Values.probes.startup.successThreshold }}
+          {{- end }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tailscale2otel
+              readOnly: true
+            - name: checkpoints
+              mountPath: /var/lib/tailscale2otel
+            {{- if .Values.workloadIdentity.enabled }}
+            - name: tailscale-wif-token
+              mountPath: {{ .Values.workloadIdentity.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- /*
+          Sidecars, rendered VERBATIM after the exporter so an operator can add a
+          companion process that has to share this pod's network namespace or its
+          volumes (the motivating case is a tailscale sidecar for tailnet-reachable
+          node-metrics targets). The chart adds nothing to them on purpose: a sidecar
+          that needs NET_ADMIN, root, or a writable root filesystem must say so in its
+          own securityContext, which overrides podSecurityContext — weakening the pod
+          default to suit a sidecar would silently relax the exporter too.
+        */}}
+        {{- include "tailscale2otel.validateExtraContainers" . }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+        - name: config
+          {{- if include "tailscale2otel.usesExternalConfig" . }}
+          {{- /*
+            Operator-managed config (#347). The chart renders no config object;
+            the key is projected to config.yaml so the container's -config path
+            is unchanged whatever the source key is called.
+          */}}
+          {{- if .Values.existingConfigSecret }}
+          secret:
+            secretName: {{ .Values.existingConfigSecret }}
+            items:
+              - key: {{ .Values.existingConfigKey }}
+                path: config.yaml
+          {{- else }}
+          configMap:
+            name: {{ .Values.existingConfigMap }}
+            items:
+              - key: {{ .Values.existingConfigKey }}
+                path: config.yaml
+          {{- end }}
+          {{- else if include "tailscale2otel.configStoresSecret" . }}
+          # This config carries credentials (multi-tailnet entries, an inline
+          # credential key, or configStorage.mode: secret) — served from a Secret.
+          secret:
+            secretName: {{ include "tailscale2otel.configSecretName" . }}
+          {{- else }}
+          configMap:
+            name: {{ include "tailscale2otel.fullname" . }}
+          {{- end }}
+        {{- if not (and (eq .Values.config.coordination.mode "kubernetes") .Values.persistence.enabled) }}
+        - name: checkpoints
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "tailscale2otel.fullname" .) }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.workloadIdentity.enabled }}
+        {{- /*
+          A PROJECTED token, scoped to Tailscale's audience alone. Deliberately
+          not automountServiceAccountToken: that mounts a general-purpose
+          Kubernetes API token, which this exporter never uses and which is a far
+          more valuable credential to leak. The kubelet refreshes this file in
+          place and the exporter re-reads it on every exchange, so rotation needs
+          no restart (#343).
+        */}}
+        - name: tailscale-wif-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: {{ include "tailscale2otel.wifAudience" . | quote }}
+                  expirationSeconds: {{ int .Values.workloadIdentity.expirationSeconds }}
+                  path: {{ .Values.workloadIdentity.fileName }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else if eq .Values.config.coordination.mode "kubernetes" }}
+      # Spread active-passive replicas when capacity permits. Operators can replace
+      # this preference with an explicit affinity policy for their topology.
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "tailscale2otel.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

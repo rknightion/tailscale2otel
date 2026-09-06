@@ -129,10 +129,10 @@ func TestChartTerminationGracePeriodCoversDrain(t *testing.T) {
 func TestChartMinimumMatchesDrain(t *testing.T) {
 	want := int(requiredBudget() / time.Second)
 
-	body := string(repoFile(t, "deploy/helm/tailscale2otel/templates/deployment.yaml"))
+	body := string(repoFile(t, "deploy/helm/tailscale2otel/templates/_pod.tpl"))
 	needle := "terminationGracePeriodSeconds must be at least " + strconv.Itoa(want)
 	if !strings.Contains(body, needle) {
-		t.Errorf("deployment.yaml's null/absent guard does not name %d seconds.\n"+
+		t.Errorf("_pod.tpl's null/absent guard does not name %d seconds.\n"+
 			"The worst-case staged drain is %s, so the enforced minimum must be %s. "+
 			"Expected the failure message to contain %q.",
 			want, worstCaseDrain(), requiredBudget(), needle)
