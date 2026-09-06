@@ -75,8 +75,9 @@ alert. `TestEveryRegisteredCollectorRecordsAPIState` fails if you skip it. Three
   (injectable clock via `export_test.go`), key "type" from `Capabilities`.
 - **nodemetrics reachability:** the scraper reads tailscaled client metrics (`tailscale set
   --webclient`, port 5252, plain HTTP). Reaching them across the tailnet needs an ACL grant opening
-  TCP 5252 to the scraping node. A node with no endpoint reports `node.up=0`. Client metrics are
-  unauthenticated by default; per-target bearer/TLS is supported.
+  TCP 5252 to the scraping node. A node with no endpoint - tailscaled older than v1.78, or
+  `--webclient` never set - reports `node.up=0`. Client metrics are unauthenticated by default;
+  per-target bearer/TLS is supported.
 - **nodemetrics discovery** runs on its own interval, separate from the scrape interval, and UNIONS
   its result with the static `targets` (dedup by URL, **static wins**). A discovery *failure* keeps
   the prior active set, so a flaky discoverer never empties the scrape set. The package stays
