@@ -8,8 +8,7 @@ assignee: []
 created_date: '2026-09-06 09:28'
 updated_date: '2026-09-06 09:28'
 labels: []
-dependencies:
-  - TSO-0142
+dependencies: []
 references:
   - deploy/helm/tailscale2otel/templates/deployment.yaml
   - deploy/helm/tailscale2otel/templates/pvc.yaml
