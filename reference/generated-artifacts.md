@@ -28,6 +28,9 @@ names use the spaced spelling.
   `docs/metrics.md` path is CWD-relative.
 - Never hand-edit between `<!-- BEGIN GENERATED -->` and `<!-- END GENERATED -->` in
   `docs/metrics.md`. Prose outside the markers is safe.
+- Several drift gates ride inside the normal `go test -race ./...` run rather than a separate
+  workflow step, so a stale generated doc surfaces as a plain test failure named after the
+  artifact, not as a docs job.
 - `config.schema.json` at the repo root is the schema for `config.yaml`. The chart's
   `values.schema.json` is a different artifact with a different generator; do not conflate them.
 - `.githooks/pre-commit` regenerates only the artifacts your *staged* changes invalidate and

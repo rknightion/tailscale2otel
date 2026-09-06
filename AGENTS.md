@@ -6,7 +6,7 @@ over OTLP, tuned for Grafana Cloud. Single static Go binary. `README.md` is the 
 
 This repository is PUBLIC. Keep lab-specific names, addresses, identifiers, credentials and
 observability captures out of every tracked file, `backlog/` included - write the shape, not the
-instance.
+instance. Aggregate counts, timings and structural findings are fine.
 
 ## Task interface
 
@@ -23,6 +23,8 @@ smoke legs. `just --list` is the authoritative recipe list; `just --show <recipe
   job names use the spaced spelling.
 - `just review-sharded` is the CodeRabbit path here - a whole-repo review exceeds the transport
   limit. See `docs/coderabbit-sharded-review.md`.
+- `just run` starts the exporter against `config.yaml`; `otlp.protocol: stdout` prints signals to
+  the console for local debug with no backend.
 
 ## Generated artifacts
 
@@ -57,8 +59,9 @@ tool module can never affect the main module's build.
   `internal/ci/workflowcontract_test.go` fails if a module drops out of either matrix, or if
   `module-verify` stops running a leg.
 - `tools/promqlcheck` is the one tool module with no `replace ../..` - it needs nothing from the
-  root module - and it pins `golang.org/x/text` against a transitive vulnerability, so Renovate must
-  keep that in step with the root module's. Invoke it as `go run -C tools/promqlcheck . -root "$PWD"`.
+  root module - and it pins `golang.org/x/text` against a transitive vulnerability (`GO-2026-5970`),
+  so Renovate must keep that in step with the root module's. Invoke it as
+  `go run -C tools/promqlcheck . -root "$PWD"`.
 - A breaking change that cuts a new MAJOR needs the Go module path moved first: run `just bump-major`
   and land it on `main` before merging the release PR. release-please does not maintain the path,
   and a major tagged against a stale `/vN` fails the GoReleaser binaries job.
@@ -87,8 +90,9 @@ tool module can never affect the main module's build.
   logs rather than internals. `testing/synctest` is the fake clock for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
 - The `telemetry.Emitter` facade is the only thing touching OTLP. Collectors depend only on the
-  frozen contracts and each declares a narrow client interface it can fake, which is what keeps OTLP
-  out of collectors.
+  frozen contracts (`telemetry.Emitter`, the collector interfaces, `enrich.DeviceCache`,
+  `tsapi.Client`, the flow/audit processors) and each declares a narrow client interface it can
+  fake, which is what keeps OTLP out of collectors.
 - Confirm any `tsclient`/`tsapi` field or method with `go doc` before using it - the client surface
   has non-obvious shapes, and gopls reports stale "undefined method" diagnostics after a `go.mod`
   bump. Trust the compiler, not the editor.
@@ -118,7 +122,16 @@ tool module can never affect the main module's build.
   `profiling.pprof.enabled` requires `admin.enabled` (`Validate()` errors otherwise). Mutex and
   block profiles stay empty unless `mutex_profile_fraction`/`block_profile_rate` are set. The
   Prometheus pull endpoint is a **second**, separate listener (default `127.0.0.1:2112`).
-- `internal/app` is the composition root: start at `app.New` to see how everything connects.
+- The Pyroscope push agent needs `profiling.pyroscope.server_address`, and a `grafana.net` target
+  also needs `basic_auth_password` (an access-policy token carrying `profiles:write`), which
+  `Warnings()` flags.
+- `internal/app` is the composition root: start at `app.New` to see how everything connects. Its
+  admin status page renders from an embedded template with no CDN or other external asset, so it
+  works on an air-gapped tailnet. Keep it self-contained.
+- Lab Kubernetes reads and writes go through the tailnet-proxied context, which reaches the same
+  cluster as the direct AWS/EKS one. Do not probe or refresh AWS SSO as routine preflight; use the
+  direct context only when the task genuinely cannot be done correctly through the proxy, such as
+  an explicit ServiceAccount impersonation or an RBAC proof.
 
 ## Task tracking
 
