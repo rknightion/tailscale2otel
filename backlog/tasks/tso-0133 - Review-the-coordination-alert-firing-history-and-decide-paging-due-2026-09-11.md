@@ -4,6 +4,7 @@ title: 'Review the coordination alert firing history and decide paging, due 2026
 status: To Do
 assignee: []
 created_date: '2026-09-04 07:31'
+updated_date: '2026-09-06 09:28'
 labels: []
 dependencies: []
 priority: low
@@ -34,3 +35,9 @@ Bring, per rule: how many times it fired, how long each firing lasted, and wheth
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Finding 2026-09-06: the date was not a real dependency. Nothing on the lab runs coordinated mode (one replica, no coordination block), and the only coordination series in the last 30 days came from the temporary Wave 11 sibling, since deleted. The four rules have been evaluating NoData and would still be on 2026-09-11. Owner decisions 2026-09-06: enable coordination on the lab for real, chart first (TSO-0143 per-replica persistence), then flip the lab; this task re-gates on seven days of evaluation after that flip. The paging labels are the owner's IRM overlay, but he still holds PR #585 until this task lands.
+<!-- SECTION:NOTES:END -->
