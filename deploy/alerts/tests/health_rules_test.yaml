@@ -145,6 +145,36 @@ tests:
   # every state per identity first, so only an identity with no leader value at
   # all counts as a standby. Keep the second namespace in this fixture: a
   # healthy redundant Lease must not suppress an alert for the lone leader.
+  - name: split brain ignores a dead leader's stale sample after a takeover
+    interval: 1m
+    input_series:
+      # pod-a led for six minutes, was killed at 6m, and its last leader=1 sample then lingers
+      # unmarked in the backend for the five-minute lookback. pod-b takes the Lease within the same
+      # minute (a real takeover completes in about 20s) and pod-a's replacement reports a fresh
+      # standby series under the same identity.
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="leader"}'
+        values: '1+0x6 _x14'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-a",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="standby"}'
+        values: '_x6 0+0x14'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="standby"}'
+        values: '0+0x6 _x14'
+      - series: 'tailscale2otel_coordination_leader_ratio{coordination_identity="pod-b",coordination_lease_name="tailscale2otel",coordination_namespace="default",coordination_state="leader"}'
+        values: '_x6 1+0x14'
+    alert_rule_test:
+      # Without the 3m lookback the stale pod-a leader sample keeps the sum at 2 from 6m until
+      # the 5m staleness boundary, which promtool's exact evaluation clock makes one sample short
+      # of the 5m for-window, so this case documents the takeover shape rather than discriminating
+      # the two expressions; a live rule evaluator with jitter has no such guarantee.
+      - eval_time: 11m
+        alertname: CoordinationSplitBrain
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CoordinationSplitBrain
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: CoordinationNoLeader
+        exp_alerts: []
+
   - name: no standby fires only for the lone leader lease after ten minutes
     interval: 1m
     input_series:

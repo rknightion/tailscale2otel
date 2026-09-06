@@ -28,7 +28,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (coordination_lease_name, coordination_namespace) (tailscale2otel_coordination_leader_ratio)",
+          "expr": "sum by (coordination_lease_name, coordination_namespace) (last_over_time(tailscale2otel_coordination_leader_ratio[3m]))",
           "instant": false,
           "intervalMs": 1000,
           "maxDataPoints": 43200,

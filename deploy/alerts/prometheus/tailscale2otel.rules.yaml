@@ -24,7 +24,7 @@ groups:
           summary: "tailscale2otel exporter is down"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-down"
       - alert: "CoordinationNoLeader"
-        expr: "(sum by (coordination_lease_name, coordination_namespace) (tailscale2otel_coordination_leader_ratio)) < 1"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (last_over_time(tailscale2otel_coordination_leader_ratio[3m]))) < 1"
         for: "5m"
         labels:
           severity: "advisory"
@@ -35,7 +35,7 @@ groups:
           summary: "Lease {{ $labels.coordination_lease_name }} has no leader"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
       - alert: "CoordinationSplitBrain"
-        expr: "(sum by (coordination_lease_name, coordination_namespace) (tailscale2otel_coordination_leader_ratio)) > 1"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (last_over_time(tailscale2otel_coordination_leader_ratio[3m]))) > 1"
         for: "5m"
         labels:
           severity: "advisory"
@@ -46,7 +46,7 @@ groups:
           summary: "Lease {{ $labels.coordination_lease_name }} has multiple leaders"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#checkpoint-health"
       - alert: "CoordinationNoStandby"
-        expr: "(sum by (coordination_lease_name, coordination_namespace) (sum by (coordination_lease_name, coordination_namespace, coordination_identity) (tailscale2otel_coordination_leader_ratio) == bool 0)) < 1"
+        expr: "(sum by (coordination_lease_name, coordination_namespace) (sum by (coordination_lease_name, coordination_namespace, coordination_identity) (last_over_time(tailscale2otel_coordination_leader_ratio[3m])) == bool 0)) < 1"
         for: "10m"
         labels:
           severity: "advisory"

@@ -558,9 +558,21 @@ def groups():
         # election. The signal only changes when state changes, so it cannot
         # count handovers; the generated profile guide records why flapping is
         # deliberately not inferred from this last-value gauge.
+        #
+        # last_over_time(...[3m]) bounds how long a DEAD process keeps voting.
+        # OTLP-pushed series carry no staleness marker, so a killed leader's
+        # final leader=1 sample would otherwise count for the full five-minute
+        # lookback while its replacement already reports a fresh standby series
+        # under the same identity. Live processes push every metric_interval
+        # (60s by default), so three minutes always holds a live sample and
+        # drops a dead one two export intervals before the 5m for-window ends.
+        # Observed on the lab on 2026-09-06: a forced takeover held the summed
+        # gauge at 2 for four minutes and split-brain Pending for as long. With
+        # staleness and the for-window both at 5m a false alert needs only
+        # evaluation jitter; the shorter lookback restores a real margin.
         alert("ts2o-coordination-no-leader", "Coordination no leader",
               "sum by (coordination_lease_name, coordination_namespace) "
-              "(tailscale2otel_coordination_leader_ratio)",
+              "(last_over_time(tailscale2otel_coordination_leader_ratio[3m]))",
               "lt", 1, "5m", "advisory",
               "Lease {{ $labels.coordination_lease_name }} has no leader",
               "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
@@ -575,7 +587,7 @@ def groups():
               policy="advisory", runbook="checkpoint-health", panel="Lease leadership"),
         alert("ts2o-coordination-split-brain", "Coordination split brain",
               "sum by (coordination_lease_name, coordination_namespace) "
-              "(tailscale2otel_coordination_leader_ratio)",
+              "(last_over_time(tailscale2otel_coordination_leader_ratio[3m]))",
               "gt", 1, "5m", "advisory",
               "Lease {{ $labels.coordination_lease_name }} has multiple leaders",
               "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "
@@ -596,7 +608,7 @@ def groups():
         alert("ts2o-coordination-no-standby", "Coordination no standby",
               "sum by (coordination_lease_name, coordination_namespace) "
               "(sum by (coordination_lease_name, coordination_namespace, coordination_identity) "
-              "(tailscale2otel_coordination_leader_ratio) == bool 0)",
+              "(last_over_time(tailscale2otel_coordination_leader_ratio[3m])) == bool 0)",
               "lt", 1, "10m", "advisory",
               "Lease {{ $labels.coordination_lease_name }} has no standby",
               "The Kubernetes Lease {{ $labels.coordination_lease_name }} in namespace "

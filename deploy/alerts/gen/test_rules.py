@@ -496,7 +496,7 @@ class CoordinationAlertTest(unittest.TestCase):
     }
     EXPR = (
         "sum by (coordination_lease_name, coordination_namespace) "
-        "(tailscale2otel_coordination_leader_ratio)"
+        "(last_over_time(tailscale2otel_coordination_leader_ratio[3m]))"
     )
 
     def test_current_state_failures_are_enabled_advisory_rules(self):
@@ -530,7 +530,7 @@ class CoordinationNoStandbyAlertTest(unittest.TestCase):
     EXPR = (
         "sum by (coordination_lease_name, coordination_namespace) "
         "(sum by (coordination_lease_name, coordination_namespace, coordination_identity) "
-        "(tailscale2otel_coordination_leader_ratio) == bool 0)"
+        "(last_over_time(tailscale2otel_coordination_leader_ratio[3m])) == bool 0)"
     )
 
     def test_no_standby_is_enabled_advisory_and_identity_aware(self):
