@@ -5,6 +5,7 @@ package coordination
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,7 +13,9 @@ import (
 	"sync"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
@@ -64,6 +67,23 @@ type Options struct {
 	// stream, including standby. It is also the source used for self-fencing, so
 	// consumers must not create a second watcher for handover accounting.
 	ObserveLease func(LeaseObservation)
+	// PodLabelTarget is the pod label which routes leader-only Kubernetes
+	// Services. A nil or incomplete target keeps labeling disabled for callers
+	// outside the coordinated pod runtime.
+	PodLabelTarget *PodLabelTarget
+}
+
+// PodLabelTarget identifies the label the coordinator owns on its own pod.
+// The absence of Key is deliberately meaningful: it leaves labeling disabled.
+type PodLabelTarget struct {
+	Namespace string
+	Name      string
+	Key       string
+	Value     string
+}
+
+func (t *PodLabelTarget) enabled() bool {
+	return t != nil && t.Namespace != "" && t.Name != "" && t.Key != "" && t.Value != ""
 }
 
 // Coordinator gates an application's active lifecycle behind one Kubernetes
@@ -74,6 +94,8 @@ type Coordinator struct {
 	mu      sync.RWMutex
 	status  Status
 	observe func(Status)
+	// Serializes label patches without making bounded cleanup wait indefinitely.
+	podLabelPatches chan struct{}
 }
 
 // New builds a Lease coordinator. The in-cluster client is deliberately
@@ -108,9 +130,10 @@ func New(opts Options) (*Coordinator, error) {
 		opts.Client = client
 	}
 	c := &Coordinator{
-		client:  opts.Client,
-		opts:    opts,
-		observe: opts.Observe,
+		client:          opts.Client,
+		opts:            opts,
+		observe:         opts.Observe,
+		podLabelPatches: make(chan struct{}, 1),
 		status: Status{
 			LeaseName: opts.LeaseName,
 			Namespace: opts.Namespace,
@@ -118,7 +141,6 @@ func New(opts Options) (*Coordinator, error) {
 			State:     StateStandby,
 		},
 	}
-	c.notify(c.Status())
 	return c, nil
 }
 
@@ -140,6 +162,13 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 	if callback == nil {
 		return fmt.Errorf("%w: active callback is required", ErrInvalidOptions)
 	}
+	if err := c.clearStartupPodLabel(ctx); err != nil {
+		if ctx.Err() != nil {
+			c.setState(StateStopped)
+			return nil
+		}
+		return err
+	}
 
 	var (
 		activeMu   sync.Mutex
@@ -158,6 +187,10 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 		}
 		return fmt.Errorf("start Lease observation")
 	}
+	// Publish standby only after the startup RBAC proof and Lease observer have
+	// completed. App readiness uses this notification to distinguish an elector
+	// that is campaigning from one that has not started yet.
+	c.notify(c.Status())
 	activeDone := make(chan struct{})
 	lock := &resourcelock.LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{Name: c.opts.LeaseName, Namespace: c.opts.Namespace},
@@ -196,6 +229,10 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 					return
 				}
 				defer observer.Disarm()
+				if err := c.setLeaderPodLabel(fencedCtx); err != nil {
+					c.opts.Logger.Error(fmt.Sprintf("set leader pod label: %v", err), "label_key", c.opts.PodLabelTarget.Key, "pod_name", c.opts.PodLabelTarget.Name)
+					go c.retryLeaderPodLabel(fencedCtx)
+				}
 				err := callback(fencedCtx)
 				activeMu.Lock()
 				activeErr = err
@@ -203,6 +240,7 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 				stopElection()
 			},
 			OnStoppedLeading: func() {
+				c.clearStoppedPodLabel()
 				activeMu.Lock()
 				led := becameLead
 				activeMu.Unlock()
@@ -243,6 +281,99 @@ func (c *Coordinator) Run(ctx context.Context, callback func(context.Context) er
 		return ErrLeadershipLost
 	}
 	return nil
+}
+
+func (c *Coordinator) clearStartupPodLabel(ctx context.Context) error {
+	if !c.opts.PodLabelTarget.enabled() {
+		return nil
+	}
+
+	deadlineCtx, cancel := context.WithTimeout(ctx, c.opts.LeaseDuration)
+	defer cancel()
+	var lastErr error
+	for {
+		lastErr = c.clearPodLabel(deadlineCtx)
+		if lastErr == nil {
+			return nil
+		}
+		if apierrors.IsForbidden(lastErr) {
+			return fmt.Errorf("clear leader pod label: required Kubernetes RBAC grant pods patch in namespace %q for pod %q: %w", c.opts.PodLabelTarget.Namespace, c.opts.PodLabelTarget.Name, lastErr)
+		}
+		if deadlineCtx.Err() != nil {
+			return fmt.Errorf("clear leader pod label within lease duration: %w", lastErr)
+		}
+		timer := time.NewTimer(c.opts.RetryPeriod)
+		select {
+		case <-deadlineCtx.Done():
+			timer.Stop()
+			return fmt.Errorf("clear leader pod label within lease duration: %w", lastErr)
+		case <-timer.C:
+		}
+	}
+}
+
+func (c *Coordinator) setLeaderPodLabel(ctx context.Context) error {
+	if !c.opts.PodLabelTarget.enabled() {
+		return nil
+	}
+	return c.patchPodLabel(ctx, c.opts.PodLabelTarget.Value)
+}
+
+func (c *Coordinator) retryLeaderPodLabel(ctx context.Context) {
+	ticker := time.NewTicker(c.opts.RetryPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := c.setLeaderPodLabel(ctx); err == nil {
+				return
+			} else {
+				c.opts.Logger.Error(fmt.Sprintf("retry leader pod label: %v", err), "label_key", c.opts.PodLabelTarget.Key, "pod_name", c.opts.PodLabelTarget.Name)
+			}
+		}
+	}
+}
+
+func (c *Coordinator) clearStoppedPodLabel() {
+	if !c.opts.PodLabelTarget.enabled() {
+		return
+	}
+	timeout := c.opts.RetryPeriod
+	if timeout > time.Second {
+		timeout = time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if err := c.clearPodLabel(ctx); err != nil {
+		c.opts.Logger.Error(fmt.Sprintf("clear leader pod label: %v", err), "label_key", c.opts.PodLabelTarget.Key, "pod_name", c.opts.PodLabelTarget.Name)
+	}
+}
+
+func (c *Coordinator) clearPodLabel(ctx context.Context) error {
+	return c.patchPodLabel(ctx, nil)
+}
+
+func (c *Coordinator) patchPodLabel(ctx context.Context, value any) error {
+	select {
+	case c.podLabelPatches <- struct{}{}:
+		defer func() { <-c.podLabelPatches }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	// Cancellation and a free slot can become ready together. Never let an
+	// outgoing leader's retry apply a fresh label after stop-leading cleanup.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	target := c.opts.PodLabelTarget
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"labels": map[string]any{target.Key: value}}})
+	if err != nil {
+		return fmt.Errorf("encode pod label patch: %w", err)
+	}
+	_, err = c.client.CoreV1().Pods(target.Namespace).Patch(ctx, target.Name, types.MergePatchType, patch, metav1.PatchOptions{})
+	return err
 }
 
 func (c *Coordinator) setState(state State) {

@@ -3,13 +3,18 @@ package coordination
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
@@ -85,6 +90,254 @@ func TestRunCanceledBeforeElectionDoesNotReportDemotion(t *testing.T) {
 	}
 	if got := c.Status().State; got != StateStopped {
 		t.Fatalf("status after shutdown = %q, want %q", got, StateStopped)
+	}
+}
+
+func TestRunLabelsLeaderAndLeavesStandbyUnlabeled(t *testing.T) {
+	client := fake.NewSimpleClientset(
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default"}},
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "default"}},
+	)
+	leader := newLabelCoordinator(t, client, "pod-a")
+	standby := newLabelCoordinator(t, client, "pod-b")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	leaderStarted := make(chan struct{})
+	leaderReturned := make(chan error, 1)
+	go func() {
+		leaderReturned <- leader.Run(ctx, func(activeCtx context.Context) error {
+			close(leaderStarted)
+			<-activeCtx.Done()
+			return nil
+		})
+	}()
+	select {
+	case <-leaderStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("leader callback did not start")
+	}
+	assertPodLabel(t, client, "pod-a", "leader")
+
+	standbyReturned := make(chan error, 1)
+	go func() {
+		standbyReturned <- standby.Run(ctx, func(context.Context) error {
+			t.Error("standby callback started")
+			return nil
+		})
+	}()
+	waitFor(t, func() bool { return standby.Status().State == StateStandby })
+	assertPodLabel(t, client, "pod-b", "")
+
+	cancel()
+	for name, returned := range map[string]<-chan error{"leader": leaderReturned, "standby": standbyReturned} {
+		select {
+		case err := <-returned:
+			if err != nil {
+				t.Errorf("%s Run = %v, want nil after cancellation", name, err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Errorf("%s Run did not return after cancellation", name)
+		}
+	}
+	assertPodLabel(t, client, "pod-a", "")
+}
+
+func TestRunClearsStaleLeaderLabelBeforeCampaigning(t *testing.T) {
+	holder := "pod-other"
+	duration := int32(30)
+	now := metav1.NewMicroTime(time.Now())
+	client := fake.NewSimpleClientset(
+		&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default", Labels: map[string]string{leaderLabelKey: "leader"}}},
+		&coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "tailscale2otel", Namespace: "default"}, Spec: coordinationv1.LeaseSpec{HolderIdentity: &holder, LeaseDurationSeconds: &duration, RenewTime: &now}},
+	)
+	c := newLabelCoordinator(t, client, "pod-a")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	returned := make(chan error, 1)
+	go func() {
+		returned <- c.Run(ctx, func(context.Context) error { t.Error("stale-label standby callback started"); return nil })
+	}()
+	waitFor(t, func() bool { return podLabel(t, client, "pod-a") == "" })
+	if got := c.Status().State; got != StateStandby {
+		t.Fatalf("status after startup clear = %q, want standby", got)
+	}
+	cancel()
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("Run after cancellation = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+}
+
+func TestRunFailsStartupOnForbiddenPodLabelPatch(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default"}})
+	client.PrependReactor("patch", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "pod-a", errors.New("patch forbidden"))
+	})
+	c := newLabelCoordinator(t, client, "pod-a")
+	err := c.Run(t.Context(), func(context.Context) error { t.Error("forbidden callback started"); return nil })
+	if err == nil || !strings.Contains(err.Error(), "pods patch in namespace \"default\"") {
+		t.Fatalf("Run forbidden startup error = %v, want named pods patch grant", err)
+	}
+}
+
+func TestRunCanceledDuringStartupPodLabelClearStopsCleanly(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default"}})
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	client.PrependReactor("patch", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		cancel()
+		return true, nil, context.Canceled
+	})
+	c := newLabelCoordinator(t, client, "pod-a")
+	if err := c.Run(ctx, func(context.Context) error { t.Error("canceled callback started"); return nil }); err != nil {
+		t.Fatalf("Run canceled during startup = %v, want nil", err)
+	}
+	if got := c.Status().State; got != StateStopped {
+		t.Fatalf("canceled coordinator state = %q, want stopped", got)
+	}
+}
+
+func TestRunRetriesStartupPodLabelClearBeforeCampaigning(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default", Labels: map[string]string{leaderLabelKey: "leader"}}})
+	var patches atomic.Int32
+	client.PrependReactor("patch", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if patches.Add(1) == 1 {
+			return true, nil, fmt.Errorf("transient startup patch failure")
+		}
+		return false, nil, nil
+	})
+	c := newLabelCoordinator(t, client, "pod-a")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started := make(chan struct{})
+	returned := make(chan error, 1)
+	go func() {
+		returned <- c.Run(ctx, func(activeCtx context.Context) error {
+			close(started)
+			<-activeCtx.Done()
+			return nil
+		})
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active work did not start after startup label clear retry")
+	}
+	if got := patches.Load(); got < 3 {
+		t.Fatalf("pod patches = %d, want failed clear, successful clear, and leader label", got)
+	}
+	cancel()
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("Run after cancellation = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+}
+
+func TestRunRetriesLeaderPodLabelWithoutStoppingActiveWork(t *testing.T) {
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "default"}})
+	var patches atomic.Int32
+	client.PrependReactor("patch", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if patches.Add(1) == 2 { // startup clear succeeds; the first leader-label patch fails.
+			return true, nil, fmt.Errorf("transient pod patch failure")
+		}
+		return false, nil, nil
+	})
+	c := newLabelCoordinator(t, client, "pod-a")
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	activeStarted := make(chan struct{})
+	returned := make(chan error, 1)
+	go func() {
+		returned <- c.Run(ctx, func(activeCtx context.Context) error {
+			close(activeStarted)
+			<-activeCtx.Done()
+			return nil
+		})
+	}()
+	select {
+	case <-activeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("active work did not start after first label patch failed")
+	}
+	waitFor(t, func() bool { return podLabel(t, client, "pod-a") == "leader" })
+	if got := patches.Load(); got < 3 {
+		t.Fatalf("pod patches = %d, want startup clear, failed set, and retry", got)
+	}
+	cancel()
+	select {
+	case err := <-returned:
+		if err != nil {
+			t.Fatalf("Run after cancellation = %v, want nil", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after cancellation")
+	}
+}
+
+const leaderLabelKey = "tailscale2otel.m7kni.io/role"
+
+func newLabelCoordinator(t *testing.T, client *fake.Clientset, identity string) *Coordinator {
+	t.Helper()
+	c, err := New(Options{
+		Client:        client,
+		Identity:      identity,
+		LeaseName:     "tailscale2otel",
+		Namespace:     "default",
+		LeaseDuration: 300 * time.Millisecond,
+		RenewDeadline: 200 * time.Millisecond,
+		RetryPeriod:   25 * time.Millisecond,
+		PodLabelTarget: &PodLabelTarget{
+			Namespace: "default",
+			Name:      identity,
+			Key:       leaderLabelKey,
+			Value:     "leader",
+		},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return c
+}
+
+func assertPodLabel(t *testing.T, client *fake.Clientset, name, want string) {
+	t.Helper()
+	if got := podLabel(t, client, name); got != want {
+		t.Fatalf("pod %q leader label = %q, want %q", name, got, want)
+	}
+}
+
+func podLabel(t *testing.T, client *fake.Clientset, name string) string {
+	t.Helper()
+	pod, err := client.CoreV1().Pods("default").Get(t.Context(), name, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get pod %q: %v", name, err)
+	}
+	return pod.Labels[leaderLabelKey]
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.NewTimer(2 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if condition() {
+			return
+		}
+		select {
+		case <-deadline.C:
+			t.Fatal("condition did not become true")
+		case <-ticker.C:
+		}
 	}
 }
 

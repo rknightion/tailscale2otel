@@ -139,8 +139,22 @@ func (a *App) ingressWALFailure() string {
 func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 	var ready bool
 	var reason string
-	if a.cfg != nil && a.cfg.Coordination.Mode == "kubernetes" && a.currentCoordination().State != coordination.StateLeader {
-		ready, reason = false, "coordination: "+string(a.currentCoordination().State)
+	if a.cfg != nil && a.cfg.Coordination.Mode == "kubernetes" {
+		switch a.currentCoordination().State {
+		case "":
+			ready, reason = false, "coordination: not started"
+		case coordination.StateStandby:
+			// Collectors and WAL replay are leader-only work, so a campaigning
+			// standby cannot satisfy either startup gate. Its live listeners
+			// still retain their component-failure gating.
+			ready, reason = readinessVerdict(nil, a.readyState.reasons())
+		default:
+			if wal := a.ingressWALFailure(); wal != "" {
+				ready, reason = false, wal
+			} else {
+				ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
+			}
+		}
 	} else if wal := a.ingressWALFailure(); wal != "" {
 		ready, reason = false, wal
 	} else {

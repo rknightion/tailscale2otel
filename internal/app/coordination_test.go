@@ -16,21 +16,33 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
-func TestCoordinationStandbyGatesReadinessAndEmitsLeaderState(t *testing.T) {
+func TestCoordinationStandbyIsReadyAfterCampaigningAndEmitsLeaderState(t *testing.T) {
 	cfg := config.Default()
 	cfg.Coordination.Mode = "kubernetes"
 	rec := telemetrytest.New()
 	a := baseTestApp(t, cfg, "http://127.0.0.1:0", rec)
 
+	prestart := httptest.NewRecorder()
+	a.readyz(prestart, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if prestart.Code != http.StatusServiceUnavailable || !strings.Contains(prestart.Body.String(), "coordination: not started") {
+		t.Fatalf("prestart /readyz = %d %q, want 503 coordination not started", prestart.Code, prestart.Body.String())
+	}
+
 	a.observeCoordination(coordination.Status{LeaseName: "tailscale2otel", Namespace: "default", Identity: "pod-a", State: coordination.StateStandby})
 	w := httptest.NewRecorder()
 	a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("standby /readyz = %d, want %d", w.Code, http.StatusServiceUnavailable)
+	if w.Code != http.StatusOK || w.Body.String() != "ok" {
+		t.Fatalf("campaigning standby /readyz = %d %q, want 200 ok", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "coordination: standby") {
-		t.Fatalf("standby /readyz body = %q, want coordination standby reason", w.Body.String())
+	// Enabled WALs start in replaying state, but replay is leader-only work.
+	// A standby must not wait for a replay it cannot start.
+	a.ingressWAL = &ingressWALCoordinator{state: ingressWALStateReplaying}
+	walStandby := httptest.NewRecorder()
+	a.readyz(walStandby, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if walStandby.Code != http.StatusOK {
+		t.Fatalf("campaigning standby with pending WAL /readyz = %d %q, want 200", walStandby.Code, walStandby.Body.String())
 	}
+	a.ingressWAL = nil
 	if got := a.buildStatus().Coordination; got.State != string(coordination.StateStandby) || got.Leader != "" {
 		t.Fatalf("standby status = %#v, want standby with no leader", got)
 	}
@@ -49,6 +61,25 @@ func TestCoordinationStandbyGatesReadinessAndEmitsLeaderState(t *testing.T) {
 	}
 	if _, ok := values[string(coordination.StateLeader)]; !ok {
 		t.Fatalf("leader metric state labels = %#v, want leader", values)
+	}
+}
+
+func TestCoordinationPodLabelTargetReadsMountedNamespace(t *testing.T) {
+	original := readServiceAccountNamespace
+	readServiceAccountNamespace = func(path string) ([]byte, error) {
+		if path != serviceAccountNamespaceFile {
+			t.Errorf("namespace path = %q, want service account mount", path)
+		}
+		return []byte(" tailscale \n"), nil
+	}
+	t.Cleanup(func() { readServiceAccountNamespace = original })
+
+	target, err := coordinationPodLabelTarget("pod-a")
+	if err != nil {
+		t.Fatalf("coordinationPodLabelTarget: %v", err)
+	}
+	if target.Namespace != "tailscale" || target.Name != "pod-a" || target.Key != "tailscale2otel.m7kni.io/role" || target.Value != "leader" {
+		t.Fatalf("pod label target = %#v, want mounted namespace and leader role label", target)
 	}
 }
 

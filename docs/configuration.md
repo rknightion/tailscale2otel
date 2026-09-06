@@ -1352,7 +1352,22 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 
 Coordination is opt-in and Kubernetes-only. With `mode: kubernetes`, every replica competes for one
 `coordination.k8s.io` Lease. Only the holder starts collectors, receivers, replay workers, and the
-heartbeat; standby replicas keep the admin listener live but remain unready. If the API server cannot
+heartbeat; standby replicas keep the admin and Prometheus listeners live and become Ready once the
+coordinator starts campaigning. The leader keeps the normal collector and component readiness gates.
+In coordinated mode, per-listener Services select `tailscale2otel.m7kni.io/role: leader`; the
+coordinator sets that label on its own pod after acquiring the Lease and clears it before campaigning
+and when stepping down. A handover can briefly leave a Service without an endpoint while the next
+leader labels itself. Headless discovery and monitoring selectors still include every replica.
+
+The chart grants `get` and `patch` on pods in the release namespace through a separate Role and
+RoleBinding. The grant is namespace-wide because replica pod names are not fixed in the chart's
+RBAC rules; the application targets only its own pod. It reads the pod namespace from the mounted
+service account and uses the coordination identity as the pod name. Missing `pods` `patch`
+permission fails startup with an actionable error. Standby readiness lets StatefulSet RollingUpdate
+and `helm --wait` complete; coordinated Services require the application version carrying TSO-0144
+or later so the selected label is actually set.
+
+If the API server cannot
 renew within `renew_deadline`, the leader stops active work and exits successfully so the kubelet can
 restart it. Outside Kubernetes, leave the default `none`: the exporter remains singleton-only.
 

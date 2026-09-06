@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -12,6 +14,26 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
+
+const serviceAccountNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+var readServiceAccountNamespace = os.ReadFile
+
+func coordinationPodLabelTarget(identity string) (*coordination.PodLabelTarget, error) {
+	namespace, err := readServiceAccountNamespace(serviceAccountNamespaceFile)
+	if err != nil {
+		return nil, fmt.Errorf("read pod namespace from service account mount: %w", err)
+	}
+	if name := strings.TrimSpace(string(namespace)); name != "" {
+		return &coordination.PodLabelTarget{
+			Namespace: name,
+			Name:      identity,
+			Key:       "tailscale2otel.m7kni.io/role",
+			Value:     "leader",
+		}, nil
+	}
+	return nil, fmt.Errorf("read pod namespace from service account mount: empty namespace")
+}
 
 // runCoordinated keeps the admin listener live while it campaigns. Every
 // collector, receiver, replay worker and heartbeat remains inside runActive,
@@ -28,15 +50,28 @@ func (a *App) runCoordinated(ctx context.Context) error {
 		// gatherer serves only process telemetry until this replica is leader.
 		a.startMetrics(ctx)
 	}
+	identity, err := os.Hostname()
+	if err != nil {
+		return fmt.Errorf("resolve pod identity: %w", err)
+	}
+	if identity == "" {
+		return errors.New("resolve pod identity: empty hostname")
+	}
+	podLabelTarget, err := coordinationPodLabelTarget(identity)
+	if err != nil {
+		return err
+	}
 	c, err := coordination.New(coordination.Options{
-		LeaseName:     a.cfg.Coordination.LeaseName,
-		Namespace:     a.cfg.Coordination.Namespace,
-		LeaseDuration: a.cfg.Coordination.LeaseDuration.D(),
-		RenewDeadline: a.cfg.Coordination.RenewDeadline.D(),
-		RetryPeriod:   a.cfg.Coordination.RetryPeriod.D(),
-		Logger:        a.logger,
-		Observe:       a.observeCoordination,
-		ObserveLease:  a.observeCoordinationLease,
+		LeaseName:      a.cfg.Coordination.LeaseName,
+		Namespace:      a.cfg.Coordination.Namespace,
+		Identity:       identity,
+		LeaseDuration:  a.cfg.Coordination.LeaseDuration.D(),
+		RenewDeadline:  a.cfg.Coordination.RenewDeadline.D(),
+		RetryPeriod:    a.cfg.Coordination.RetryPeriod.D(),
+		Logger:         a.logger,
+		Observe:        a.observeCoordination,
+		ObserveLease:   a.observeCoordinationLease,
+		PodLabelTarget: podLabelTarget,
 	})
 	if err != nil {
 		return err
