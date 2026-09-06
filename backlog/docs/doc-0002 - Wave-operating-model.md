@@ -3,7 +3,7 @@ id: doc-0002
 title: Wave operating model
 type: guide
 created_date: '2026-08-14 14:04'
-updated_date: '2026-09-05 22:05'
+updated_date: '2026-09-06 11:12'
 ---
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
@@ -121,15 +121,19 @@ The run preserved the real semantics and proved both modes, but the wording cost
 paragraph in the report. Write live-verification steps as "default run proves retention, all-false
 run proves removal", and never describe the default as "redacted".
 
-### The grafana-sync workflow pushes rules on every push to main, and a goal must not forbid that
+### The grafana-sync workflow pushes rules by itself, and a goal must not forbid that
 
-`grafana-sync.yml` runs `gcx resources push` unconditionally on every push. A goal that lists "no
-rule push" as a hard stop is therefore forbidding something the repository does by itself the
-moment the root pushes. Wave 13 read that contradiction as an uncommissioned write and added a
-changed-path guard to the workflow; the owner reverted it (`57f38dce`) because the push is additive
-and `just verify-deploy` is the drift backstop. Phrase the prohibition as "no rule push by hand"
-and enumerate what each mandated procedure touches before writing a prohibition, per the protocol's
-pre-flight list.
+`grafana-sync.yml` is path-filtered: it runs only on a push to main that touches
+`deploy/grafana/**`, `deploy/alerts/**`, `scripts/grafana-prune-rules.py` or the workflow itself,
+and on manual dispatch. When it runs, it pushes every shipped rule with `gcx resources push`
+unconditionally; there is no changed-rules guard inside the job. A goal that lists "no rule push"
+as a hard stop is therefore forbidding something the repository does by itself the moment the
+root pushes a rule or dashboard change. Wave 13 read that contradiction as an uncommissioned write
+and added a changed-path guard inside the job; the owner reverted it (`57f38dce`) because the push
+is additive and `just verify-deploy` is the drift backstop. A wave that touches none of those paths
+triggers no sync at all, so "grafana-sync did not run" is not a finding. Phrase the prohibition as
+"no rule push by hand" and enumerate what each mandated procedure touches before writing a
+prohibition, per the protocol's pre-flight list.
 
 ### The lab pins exporter release tags through Renovate so Argo rolls each accepted image
 
