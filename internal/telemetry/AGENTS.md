@@ -107,4 +107,6 @@ passthrough samples: dynamic names plus monotonic counters, so snapshot semantic
 key is declared in the matching catalog entry. It deliberately does **not** require every declared
 attribute to be observed - one test rarely exercises every conditional attribute, and a
 declared-but-unemitted attribute does not corrupt the docs - so a wrongly declared attribute name
-still reaches `docs/metrics.md` unchallenged.
+still reaches `docs/metrics.md` unchallenged. It is also opt-in: a package's `catalog_test.go` has
+to call it, and half of them still do not, so those signals' attribute keys are guarded by review
+alone. Add the call when you add a signal.
