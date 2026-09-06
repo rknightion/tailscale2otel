@@ -2,9 +2,8 @@
 
 Packaging, deployment and observability assets. None of it ships in the Go binary.
 
-Nothing under `grafana/` or `alerts/` is hand-maintained: both trees are generated, and
-`reference/grafana-delivery.md` at the repo root owns how they reach the live stack. The generator
-internals are in `reference/dashboard-generator.md` beside this file.
+How the generated `grafana/` and `alerts/` trees reach the live stack is
+`reference/grafana-delivery.md` at the repo root.
 
 ## Helm chart
 
@@ -31,10 +30,11 @@ block drifts from `config.Default()`.
 - Config hot reload is parked. Do not add a SIGHUP handler or a reload route to make a
   config-reloader sidecar work.
 - Secret keys are `TS2OTEL_` + the dotted config path with `__` between levels.
-- `values.schema.json` and `README.md` are generated and drift-checked; `just gen-helm` rebuilds
-  them. Chart-authored objects are `additionalProperties: false`, and root strictness lives in the
-  `just gen-helm-schema` flags plus `.github/workflows/helm.yml`, not in a `values.yaml`
-  annotation - those two must move together or local regeneration drifts from CI.
+- `values.schema.json` (JSON Schema **draft-07** - Helm validates nothing newer) and `README.md`
+  are generated and drift-checked; `just gen-helm` rebuilds them. Chart-authored objects are
+  `additionalProperties: false`, and root strictness lives in the `just gen-helm-schema` flags plus
+  `.github/workflows/helm.yml`, not in a `values.yaml` annotation - those two must move together or
+  local regeneration drifts from CI.
 - **The chart README deliberately has no AppVersion badge - do not "restore" it.** It uses
   `chart.versionBadge` + `chart.typeBadge`, not `chart.badgesSection`. An AppVersion badge bakes a
   release-managed version into a generated file: release-please bumps `Chart.yaml` `appVersion` but
@@ -100,9 +100,6 @@ commit. The follow-on jobs run on the default `GITHUB_TOKEN`.
   docker pipeline**, and there is no `Dockerfile.goreleaser`; the image is built exclusively by
   `publish`/`edge`. Do not re-add one.
 - **There is no manual tagging.** Never `git tag` or push a `v*` tag by hand.
-- **A MAJOR bump needs the module path moved first** - release-please only touches the manifest and
-  changelog. Run `just bump-major` and land it on `main` before merging the release PR;
-  `TestModulePathMatchesReleaseVersion` fails on the release PR itself if you do not.
 - `verify-release` reads the published release back and fails when assets are missing. It runs under
   `always()` on purpose: a failed uploader is exactly when completeness needs reporting.
 
