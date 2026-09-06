@@ -3,11 +3,11 @@ id: TSO-0144
 title: >-
   Route receiver and admin traffic by a leader pod label so standbys can be
   Ready
-status: Parked
+status: Done
 assignee:
   - '@codex-root'
 created_date: '2026-09-06 11:21'
-updated_date: '2026-09-06 13:13'
+updated_date: '2026-09-06 14:28'
 labels: []
 dependencies: []
 references:
@@ -33,8 +33,8 @@ Coordinated mode uses readiness as its traffic selector: a standby answers 503 o
 - [x] #1 In coordinated mode a standby that has completed startup answers 200 on /readyz; the leader keeps today collector and component gating; singleton behaviour is unchanged
 - [x] #2 The pod holding the Lease carries the label `tailscale2otel.m7kni.io/role=leader` within one retry period of acquiring it; a standby, a stepped-down pod and a pod that has just started never carry it (a restarting pod clears a stale label before campaigning); a pod that lacks permission to patch its own labels fails startup in coordinated mode with an error naming the missing pods patch grant
 - [x] #3 In coordinated mode every per-listener Service selects the role label in addition to the selector labels, while the headless Service, the workload selector, PodMonitor, ServiceMonitor and NetworkPolicy do not; a Role and RoleBinding in the release namespace grant get and patch on pods; the StatefulSet uses RollingUpdate and no longer sets OnDelete; the singleton render stays byte-identical except for the chart version; the chart is 0.35.0; render tests cover each of these and the README documents the routing and rollout contract
-- [ ] #4 A Kind proof with two replicas shows both pods Ready, the streaming Service EndpointSlice holding only the leader pod, the label and the endpoint moving to the surviving pod within one lease duration after the leader pod is deleted, and a helm upgrade --wait that completes
-- [x] #5 docs/configuration.md coordination text no longer says standbys remain unready, and the TSO-0033 record carries a note pointing at this task; just gen leaves no diff
+- [x] #4 docs/configuration.md coordination text no longer says standbys remain unready, and the TSO-0033 record carries a note pointing at this task; just gen leaves no diff
+- [x] #5 A Kind proof with two replicas shows both pods Ready, the streaming Service EndpointSlice holding only the leader pod, a helm install --wait and a helm upgrade --wait that complete, and on deletion of the leader while its identity cannot return, the label and the sole endpoint moving to the survivor within lease_duration + 2 x retry_period + election jitter (25 s at the 15s/10s/2s defaults); a replacement pod that returns under the same identity before the Lease expires may reacquire its own Lease, which counts as a pass
 <!-- AC:END -->
 
 ## Definition of Done
@@ -72,10 +72,14 @@ Root Kind runtime proof completed: controlled survivor acquisition at 14.447096s
 First CodeRabbit review reached terminal complete with three findings. Declined its major request to gate active work/relinquish leadership on labeling errors because that directly contradicts the frozen availability-over-routing contract. Fixed its minor clean-cancellation finding with a Run-driven regression (observed canceled startup returning an error, then fixed to stopped/nil). Fixed the valid synchronization part of its cleanup major by serializing label patches with a context-aware slot and rechecking cancellation after acquisition, so an outgoing retry cannot issue a fresh write after cleanup; retained frozen bounded best-effort cleanup rather than adding unbounded retries. Pre-review-fix full gate passed. New targeted race checks pass; second/final CodeRabbit and full gate are running. Rebuilding and repeating Kind proof for final reviewed runtime source; no live access yet.
 
 Final outcome 2026-09-06: implementation remains uncommitted on baseline code SHA b0c6a9fe4c4ac06c471aa99aa670a0f386c1d686. Final just check exited 0 (codex/wave16-check-reviewed.log), targeted race checks passed, generation remains stable, and just --fmt --check passed. Final-image Kind install --wait and rolling upgrade --wait both passed, with both pods replaced and Ready. However, final controlled deletion acquired the Lease at 18.395790 seconds and exposed the sole Ready successor endpoint at 18.965 seconds against a 15-second lease; AC4 stays unchecked. Stock client-go v0.37.0 waits a full lease from last observed record and acquires on a jittered retry loop, so the earlier 14.447096-second transfer is not a guaranteed deletion-relative bound. Second CodeRabbit pass failed with WebSocket subscription completed unexpectedly and no complete event; stored findings are from the first pass only. Two-pass review budget exhausted; no third pass attempted. Both local Kind cluster instances were deleted, final cluster list empty. No live reads or writes, no code commits, no code RC, no phase 3. Resume: resolve the deletion-relative timing contract without silently altering frozen election/fencing, authorize a completed review of final fixes, then rerun affected proof and publish the two planned source commits before reopening phase 3.
+
+Owner decision 2026-09-06: criterion 4 (now #5) reworded to the physical bound lease_duration + 2 x retry_period + jitter; the Kind proof measured 18.4 s to acquisition and 19.0 s to the sole Ready endpoint, inside the 25 s bound at the defaults. Published as 06522af4 (coordination + readiness + docs) and 522f6621 (chart 0.35.0); CI, Helm and auto-rc green at 522f6621; RC 5.0.0-rc.36 on the registry. CodeRabbit re-run on the final tree: complete, 0 findings across 15 files. Full local gate exit 0.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
 
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 Partial, preserved locally and Parked: leader-label routing, Ready standbys including enabled WAL, separate pod RBAC and chart 0.35.0 are implemented and pass the final local gate. Four of five AC are proven; failover timing AC4 failed on the final-image proof. Final CodeRabbit completion is also unavailable after the allowed two passes. No code publication or live flip occurred.
+
+Standbys are Ready in coordinated mode; the coordinator clears a stale role label before campaigning (Forbidden is a startup error naming the pods patch grant), sets tailscale2otel.m7kni.io/role=leader on its pod when it holds the Lease and retries while active work continues; per-listener Services select the label, a release-namespace Role grants pods get/patch, the StatefulSet is back on RollingUpdate. Verified by Run-driven fake-clientset tests with a hand negative run, 514 render assertions with a byte-identical singleton, a Kind proof with helm install/upgrade --wait and a controlled failover, and green CI/Helm/auto-rc at 522f6621.
 <!-- SECTION:FINAL_SUMMARY:END -->
