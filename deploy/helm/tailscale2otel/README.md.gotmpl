@@ -109,17 +109,30 @@ kind, so plan a maintenance window and any state migration outside Helm before
 switching modes. Do not use a shared RWX claim as a substitute for these
 per-replica volumes.
 
-Standbys intentionally return HTTP 503 from `/readyz` so receiver Services send
-traffic only to the leader. The StatefulSet uses `podManagementPolicy: Parallel`
-so an unready standby cannot block creation of the third replica. It uses
-`updateStrategy: OnDelete` because automatic rolling updates would wait forever
-for a standby to become Ready. After a Helm upgrade, explicitly replace pods one
-at a time: replace standbys first, verify their status and retained claims, then
-replace the leader and verify leadership transfers. Image and configuration
-changes do not reach an existing pod until it is replaced. Do not use Helm
-`--wait` or `--atomic` for coordinated installs; instead verify Running pods,
-distinct Bound claims, and the leader/standby states at `/api/status.json`.
-This also means a Helm rollback needs explicit pod replacement to apply.
+Ready standbys remain available for process telemetry, while every enabled
+per-listener Service selects `tailscale2otel.m7kni.io/role: leader` in addition
+to the normal chart labels. The elected pod sets that label while it holds the
+Lease; its absence means a pod is not the leader. The headless Service, workload
+selector, PodMonitor, ServiceMonitor, and NetworkPolicy continue to select every
+replica.
+
+This requires an application image that implements the leader label contract:
+use the release candidate carrying TSO-0144 or a later image. An older image
+with this chart in coordinated mode never labels a pod, so enabled listener
+Services have no endpoints.
+
+The chart creates a separate Role and RoleBinding in the release namespace for
+the chart ServiceAccount to `get` and `patch` pods. Kubernetes RBAC cannot dynamically
+scope `patch` to the calling pod's name, so this grant covers pods throughout that namespace;
+the coordinator only changes its identity pod's leader role label. The existing
+coordination Role remains scoped to the configured Lease/checkpoint namespace.
+
+The StatefulSet keeps `podManagementPolicy: Parallel` and uses Kubernetes'
+default `RollingUpdate` strategy. GitOps image changes and Helm upgrades replace
+pods normally, and `helm --wait`/`--atomic` can wait for every Ready replica. On
+a leadership hand-off, listener Service endpoints move to the new leader within
+the Lease timing. There can be a brief interval with no listener endpoint while
+the new leader applies its label.
 
 ### Receiver WAL durability and storage
 

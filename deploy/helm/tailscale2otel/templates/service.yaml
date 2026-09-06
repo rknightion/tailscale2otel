@@ -51,7 +51,7 @@ metadata:
 spec:
   type: {{ $svc.type }}
   selector:
-    {{- include "tailscale2otel.selectorLabels" $ | nindent 4 }}
+    {{- include "tailscale2otel.leaderSelectorLabels" $ | nindent 4 }}
   ports:
     - name: {{ $l.name }}
       port: {{ $svc.port | default (include "tailscale2otel.listenPort" $l.listen) }}

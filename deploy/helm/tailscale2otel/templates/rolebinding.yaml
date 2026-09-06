@@ -15,3 +15,21 @@ roleRef:
   kind: Role
   name: {{ include "tailscale2otel.coordinationRoleName" . }}
 {{- end }}
+---
+{{- if eq .Values.config.coordination.mode "kubernetes" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "tailscale2otel.podLabelRoleName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "tailscale2otel.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "tailscale2otel.podLabelRoleName" . }}
+{{- end }}

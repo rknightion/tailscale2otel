@@ -43,12 +43,33 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
+The listener Services route coordinated traffic only to the elected pod. Keep
+this separate from selectorLabels: the workload, headless Service, monitors,
+and NetworkPolicy must continue to address every replica.
+*/}}
+{{- define "tailscale2otel.leaderSelectorLabels" -}}
+{{- include "tailscale2otel.selectorLabels" . }}
+{{- if eq .Values.config.coordination.mode "kubernetes" }}
+tailscale2otel.m7kni.io/role: leader
+{{- end }}
+{{- end -}}
+
+{{/*
 The Role and RoleBinding for Kubernetes Lease coordination share this name.
 Truncate after adding the suffix so a release whose normal fullname already
 uses the Kubernetes 63-character limit still renders valid metadata.
 */}}
 {{- define "tailscale2otel.coordinationRoleName" -}}
 {{- printf "%s-coordination" (include "tailscale2otel.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{/*
+The release-namespace Role used only to label the elected pod. RBAC names allow
+DNS subdomains longer than 63 characters: retain the suffix so a maximum-length
+fullname cannot collide with the separate coordination Role.
+*/}}
+{{- define "tailscale2otel.podLabelRoleName" -}}
+{{- printf "%s-pod-labels" (include "tailscale2otel.fullname" .) -}}
 {{- end -}}
 
 {{/*

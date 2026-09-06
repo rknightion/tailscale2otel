@@ -1693,9 +1693,9 @@ assert_rc0 "AC: coordinated replicas render"
 [[ "$(docs_of StatefulSet | yq '.spec.podManagementPolicy')" == "Parallel" ]] \
   && ok "AC: standby readiness cannot block replica creation" \
   || bad "AC: ordered readiness would block replica creation"
-[[ "$(docs_of StatefulSet | yq '.spec.updateStrategy.type')" == "OnDelete" ]] \
-  && ok "AC: updates require explicit pod replacement instead of waiting on standbys" \
-  || bad "AC: automatic rolling updates would wait on standby readiness"
+[[ "$(docs_of StatefulSet | yq '.spec | has("updateStrategy")')" == "false" ]] \
+  && ok "AC: default RollingUpdate replaces Ready standbys normally" \
+  || bad "AC: StatefulSet overrides the default RollingUpdate strategy"
 [[ "$(docs_of StatefulSet | yq '.spec.serviceName')" == "${FULLNAME}-headless" ]] \
   && ok "AC: coordinated StatefulSet uses the governing headless Service" \
   || bad "AC: coordinated StatefulSet has no governing headless Service"
@@ -1718,7 +1718,10 @@ assert_rc0 "AC: coordinated replicas render"
 [[ "$(dep_field '.spec.template.spec.automountServiceAccountToken')" == "true" ]] \
   && ok "AC: coordinated pod receives its Kubernetes API token" \
   || bad "AC: coordinated pod has no Kubernetes API token"
-lease_rules="$(docs_of Role | yq -o=json '[.rules[] | select(.resources[] == "leases")]')"
+coordination_role() {
+  docs_of Role | yq 'select(.metadata.name == "'"$FULLNAME"'-coordination")'
+}
+lease_rules="$(coordination_role | yq -o=json '[.rules[] | select(.resources[] == "leases")]')"
 [[ "$(yq 'length' <<<"$lease_rules")" == "2" &&
    "$(yq -r '.[0].verbs | join(",")' <<<"$lease_rules")" == "get,update,list,watch" &&
    "$(yq -r '.[0].resourceNames | join(",")' <<<"$lease_rules")" == "$FULLNAME" &&
@@ -1726,11 +1729,11 @@ lease_rules="$(docs_of Role | yq -o=json '[.rules[] | select(.resources[] == "le
    "$(yq '.[1] | has("resourceNames")' <<<"$lease_rules")" == "false" ]] \
   && ok "AC: Lease get/update/list/watch RBAC is scoped to the configured Lease" \
   || bad "AC: Lease access is not confined to the configured Lease"
-checkpoint_role="$(docs_of Role | yq '.rules[] | select(.resources[] == "configmaps")')"
+checkpoint_role="$(coordination_role | yq '.rules[] | select(.resources[] == "configmaps")')"
 grep -q -- '- list' <<<"$checkpoint_role" \
   && ok "AC: checkpoint RBAC can discover dynamic shards" \
   || bad "AC: checkpoint RBAC omits list needed to discover shards"
-if [[ "$(docs_of Role | yq '[.rules[] | select(.resources[] == "configmaps") | has("resourceNames")] | any')" == "true" ]]; then
+if [[ "$(coordination_role | yq '[.rules[] | select(.resources[] == "configmaps") | has("resourceNames")] | any')" == "true" ]]; then
   bad "AC: checkpoint RBAC incorrectly claims to scope dynamic shard names"
 else
   ok "AC: checkpoint RBAC documents namespace-scoped dynamic-name limitation"
@@ -1782,8 +1785,8 @@ render --namespace "$RELEASE_NAMESPACE" \
        --set config.checkpoint.store=kubernetes
 assert_rc0 "AD: coordinated replicas default to the release namespace"
 default_config_namespace="$(config_field '.coordination.namespace')"
-default_role_namespace="$(docs_of Role | yq -r '.metadata.namespace')"
-default_binding_namespace="$(docs_of RoleBinding | yq -r '.metadata.namespace')"
+default_role_namespace="$(docs_of Role | yq -r 'select(.metadata.name == "'"$FULLNAME"'-coordination") | .metadata.namespace')"
+default_binding_namespace="$(docs_of RoleBinding | yq -r 'select(.metadata.name == "'"$FULLNAME"'-coordination") | .metadata.namespace')"
 if [[ "$default_config_namespace" == "$RELEASE_NAMESPACE" &&
       "$default_role_namespace" == "$RELEASE_NAMESPACE" &&
       "$default_binding_namespace" == "$RELEASE_NAMESPACE" ]]; then
@@ -1800,8 +1803,8 @@ render --namespace "$RELEASE_NAMESPACE" \
        --set config.coordination.namespace="$OVERRIDE_NAMESPACE"
 assert_rc0 "AD: an explicit coordination namespace override renders"
 override_config_namespace="$(config_field '.coordination.namespace')"
-override_role_namespace="$(docs_of Role | yq -r '.metadata.namespace')"
-override_binding_namespace="$(docs_of RoleBinding | yq -r '.metadata.namespace')"
+override_role_namespace="$(docs_of Role | yq -r 'select(.metadata.name == "'"$FULLNAME"'-coordination") | .metadata.namespace')"
+override_binding_namespace="$(docs_of RoleBinding | yq -r 'select(.metadata.name == "'"$FULLNAME"'-coordination") | .metadata.namespace')"
 if [[ "$override_config_namespace" == "$OVERRIDE_NAMESPACE" &&
       "$override_role_namespace" == "$OVERRIDE_NAMESPACE" &&
       "$override_binding_namespace" == "$OVERRIDE_NAMESPACE" ]]; then
@@ -1824,6 +1827,103 @@ if [[ $RENDER_RC -ne 0 ]] && grep -q 'DNS-1123 label' <<<"$RENDER"; then
 else
   bad "AD: schema-less render accepted an invalid coordination namespace (rc=$RENDER_RC)"
 fi
+
+# --------------------------------------------------------------------------
+case_ "AE. coordinated routing selects only the leader pod"
+
+listener_services() {
+  docs_of Service | yq 'select(.metadata.name != "'"$FULLNAME"'-headless")'
+}
+pod_label_role() {
+  docs_of Role | yq 'select(.metadata.name == "'"$FULLNAME"'-pod-labels") | '"$1"
+}
+pod_label_binding() {
+  docs_of RoleBinding | yq 'select(.metadata.name == "'"$FULLNAME"'-pod-labels") | '"$1"
+}
+
+render --namespace "$RELEASE_NAMESPACE" \
+       --set replicaCount=2 \
+       --set config.coordination.mode=kubernetes \
+       --set config.coordination.namespace="$OVERRIDE_NAMESPACE" \
+       --set service.admin.enabled=true \
+       --set "config.admin.auth.token=${SENTINEL}" \
+       --set config.prometheus.enabled=true \
+       --set config.prometheus.listen=:2112 \
+       --set service.prometheus.enabled=true \
+       --set "config.prometheus.auth.token=${SENTINEL}" \
+       --set config.streaming.enabled=true \
+       --set service.streaming.enabled=true \
+       --set "config.streaming.token=${SENTINEL}" \
+       --set config.webhook.enabled=true \
+       --set service.webhook.enabled=true \
+       --set "config.webhook.secret=${SENTINEL}" \
+       --set metrics.podMonitor.enabled=true \
+       --set metrics.podMonitor.bearerTokenSecret.name=prom-creds \
+       --set metrics.podMonitor.bearerTokenSecret.key=token \
+       --set metrics.serviceMonitor.enabled=true \
+       --set metrics.serviceMonitor.bearerTokenSecret.name=prom-creds \
+       --set metrics.serviceMonitor.bearerTokenSecret.key=token \
+       --set networkPolicy.enabled=true
+assert_rc0 "AE: coordinated listener surfaces render"
+[[ "$(listener_services | grep -c '^kind: Service$')" == "4" ]] \
+  && ok "AE: all four listener Services render" \
+  || bad "AE: expected four listener Services"
+[[ "$(listener_services | yq -r -N '.spec.selector."tailscale2otel.m7kni.io/role"' | sort -u)" == "leader" ]] \
+  && ok "AE: every listener Service selects the leader role" \
+  || bad "AE: listener Service role selectors differ"
+[[ "$(docs_of Service | yq 'select(.metadata.name == "'"$FULLNAME"'-headless") | .spec.selector."tailscale2otel.m7kni.io/role"')" == "null" ]] \
+  && ok "AE: headless Service continues to select every pod" \
+  || bad "AE: headless Service incorrectly selects only the leader"
+[[ "$(docs_of PodMonitor | yq '.spec.selector.matchLabels."tailscale2otel.m7kni.io/role"')" == "null" &&
+   "$(docs_of ServiceMonitor | yq '.spec.selector.matchLabels."tailscale2otel.m7kni.io/role"')" == "null" &&
+   "$(docs_of NetworkPolicy | yq '.spec.podSelector.matchLabels."tailscale2otel.m7kni.io/role"')" == "null" ]] \
+  && ok "AE: monitor and NetworkPolicy selectors continue to address every pod" \
+  || bad "AE: a monitor or NetworkPolicy was narrowed to the leader"
+[[ "$(pod_label_role '.metadata.namespace')" == "$RELEASE_NAMESPACE" &&
+   "$(pod_label_role '.rules | length')" == "1" &&
+   "$(pod_label_role '.rules[0].apiGroups | join(",")')" == "" &&
+   "$(pod_label_role '.rules[0].resources | join(",")')" == "pods" &&
+   "$(pod_label_role '.rules[0].verbs | join(",")')" == "get,patch" ]] \
+  && ok "AE: release-namespace pod-label Role grants exactly pods get and patch" \
+  || bad "AE: pod-label Role is missing, overbroad, or in the wrong namespace"
+[[ "$(pod_label_binding '.metadata.namespace')" == "$RELEASE_NAMESPACE" &&
+   "$(pod_label_binding '.subjects[0].name')" == "$FULLNAME" &&
+   "$(pod_label_binding '.subjects[0].namespace')" == "$RELEASE_NAMESPACE" &&
+   "$(pod_label_binding '.roleRef.name')" == "${FULLNAME}-pod-labels" ]] \
+  && ok "AE: release-namespace RoleBinding binds the chart ServiceAccount" \
+  || bad "AE: pod-label RoleBinding does not bind the chart ServiceAccount"
+[[ "$(docs_of Role | yq -r 'select(.metadata.name == "'"$FULLNAME"'-coordination") | .metadata.namespace')" == "$OVERRIDE_NAMESPACE" ]] \
+  && ok "AE: coordination Role stays in its configured namespace" \
+  || bad "AE: pod-label RBAC changed the coordination Role namespace"
+
+render --set service.admin.enabled=true \
+       --set "config.admin.auth.token=${SENTINEL}" \
+       --set config.prometheus.enabled=true \
+       --set config.prometheus.listen=:2112 \
+       --set service.prometheus.enabled=true \
+       --set "config.prometheus.auth.token=${SENTINEL}" \
+       --set config.streaming.enabled=true \
+       --set service.streaming.enabled=true \
+       --set "config.streaming.token=${SENTINEL}" \
+       --set config.webhook.enabled=true \
+       --set service.webhook.enabled=true \
+       --set "config.webhook.secret=${SENTINEL}"
+assert_rc0 "AE: singleton listener surfaces render"
+if [[ "$(listener_services | yq -N '.spec.selector | has("tailscale2otel.m7kni.io/role")' | sort -u)" == "false" &&
+      -z "$(docs_of Role | yq 'select(.metadata.name == "'"$FULLNAME"'-pod-labels")' | tr -d '[:space:]-')" &&
+      -z "$(docs_of RoleBinding | yq 'select(.metadata.name == "'"$FULLNAME"'-pod-labels")' | tr -d '[:space:]-')" ]]; then
+  ok "AE: singleton Services and RBAC remain unchanged"
+else
+  bad "AE: singleton render gained a leader selector or pod-label RBAC"
+fi
+
+render --set fullnameOverride=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+       --set config.coordination.mode=kubernetes
+assert_rc0 "AE: longest fullname renders separate pod-label RBAC"
+[[ "$(docs_of Role | yq -r -N '.metadata.name' | sort -u | wc -l | tr -d ' ')" == "2" &&
+   "$(docs_of RoleBinding | yq -r -N '.metadata.name' | sort -u | wc -l | tr -d ' ')" == "2" ]] \
+  && ok "AE: longest fullname keeps both Roles and RoleBindings distinct" \
+  || bad "AE: truncated pod-label RBAC collides with coordination RBAC"
 
 printf '\n---\n%d passed, %d failed\n' "$pass" "$fail"
 [[ $fail -eq 0 ]]

@@ -12,11 +12,9 @@ metadata:
 spec:
   serviceName: {{ include "tailscale2otel.fullname" . }}-headless
   replicas: {{ .Values.replicaCount }}
-  # Standbys deliberately fail readiness to stay out of receiver Services.
-  # Do not wait for them when creating replicas or replacing updated pods.
+  # Standbys are Ready once they have started. Receiver Services select the
+  # elected pod's role label, so Parallel creation remains safe and fast.
   podManagementPolicy: Parallel
-  updateStrategy:
-    type: OnDelete
   selector:
     matchLabels:
       {{- include "tailscale2otel.selectorLabels" . | nindent 6 }}

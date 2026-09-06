@@ -52,3 +52,23 @@ rules:
     verbs:
       - create
 {{- end }}
+---
+{{- if eq .Values.config.coordination.mode "kubernetes" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "tailscale2otel.podLabelRoleName" . }}
+  namespace: {{ .Release.Namespace | quote }}
+  labels:
+    {{- include "tailscale2otel.labels" . | nindent 4 }}
+rules:
+  # Kubernetes RBAC cannot dynamically constrain patch to the caller pod's name. The
+  # coordinator only clears or sets its identity pod's leader role label.
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - patch
+{{- end }}
