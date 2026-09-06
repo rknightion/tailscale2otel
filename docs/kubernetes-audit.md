@@ -4,7 +4,7 @@ Export OpenTelemetry metrics and logs from the Kubernetes API requests that Tail
 **tsrecorder** captures for traffic proxied through the Kubernetes operator's API-server proxy.
 
 The intent is SIEM-shaped: answer *who reached which resource in which namespace, from which device,
-with which client* — and surface the request patterns worth investigating, such as secret reads,
+with which client* - and surface the request patterns worth investigating, such as secret reads,
 `exec` into a pod, and permission enumeration.
 
 This is an advanced, opt-in feed. It reads the object-store exports written by tsrecorder, not
@@ -47,7 +47,7 @@ will produce them:
 - response sizes
 
 Every metric here counts **attempts**. A `delete` counted is a delete *requested*, which RBAC may well
-have refused. If you need outcomes, you need the Kubernetes API server's own audit log — a different
+have refused. If you need outcomes, you need the Kubernetes API server's own audit log - a different
 source with a different pipeline.
 
 ## Enabling it
@@ -108,22 +108,22 @@ log exports, which are organized under `YYYY/MM/DD/` partitions with fixed-width
 tsrecorder writes neither.
 
 **`prefix` is usually empty.** Keys are `<stableID>/events/<timestamp>.event` and
-`<stableID>/<timestamp>.cast`, where `<stableID>` is the recorder node's stable ID — it differs per
+`<stableID>/<timestamp>.cast`, where `<stableID>` is the recorder node's stable ID - it differs per
 recorder replica, so it cannot be pinned in a prefix.
 
 **Raise `max_object_decompressed_bytes` if you record long terminal sessions.** Only the first line of
 a `.cast` object is read for meaning, but the whole object is still streamed, and one exceeding the
 limit is quarantined rather than partially read.
 
-**There is no `source` key.** Object storage is the only surface tsrecorder exposes — no read API, no
-stream, no push — so unlike `flowlogs` and `auditlogs` there is nothing to select between.
+**There is no `source` key.** Object storage is the only surface tsrecorder exposes - no read API, no
+stream, no push - so unlike `flowlogs` and `auditlogs` there is nothing to select between.
 
 ## What it reads
 
 | Object | What is read | What is never read |
 |---|---|---|
 | `<stableID>/events/<ts>.event` | The whole record: verb, resource, namespace, object name, selectors, source identity, user agent | The raw `request.path`, and the request body |
-| `<stableID>/<ts>.cast` | **The header line only** — namespace, pod, container, session type, command, recorder | Every output frame. Terminal output is never inspected for meaning and never emitted |
+| `<stableID>/<ts>.cast` | **The header line only** - namespace, pod, container, session type, command, recorder | Every output frame. Terminal output is never inspected for meaning and never emitted |
 
 Session recordings are ingested at session **start**. There is no documented way to tell a finished
 `.cast` from one still being written, so nothing here depends on a recording being complete.
@@ -139,7 +139,7 @@ Three properties are enforced by tests, not just intent.
 /api/v1/namespaces/prod/pods/api-0/exec?command=sh&command=-c&command=...
 ```
 
-Only `kubernetes.Path` — the same path with no query — is exported.
+Only `kubernetes.Path` - the same path with no query - is exported.
 
 **High-cardinality values never reach a metric.** Object names, paths, label and field selectors, pod
 and container names and the exec command line are log attributes only. Every metric attribute is
@@ -160,7 +160,7 @@ pii_filter:
   command_text: false
 ```
 
-Turning it off **keeps** `tailscale.k8s.command_class` — a bounded classification of the same command
+Turning it off **keeps** `tailscale.k8s.command_class` - a bounded classification of the same command
 (`interactive_shell`, `recon`, `credential_read`, `package_mgmt`, `net_tool`, `file_transfer`, `none`,
 `other`) that carries no free text. The exec metrics are built on the class, so they keep working with
 the raw text switched off.
@@ -193,15 +193,15 @@ detail. Some starting points:
 
 The [bundled dashboards](dashboards.md) have a **Kubernetes Audit** tab under the *Security & Policy*
 group. It hides itself entirely when the feed is absent, so it costs nothing on a tailnet with no
-recorder — as do individual rows whose signal has no data.
+recorder - as do individual rows whose signal has no data.
 
 Rows that surface a Kubernetes identity hide when `pii_filter.emails` is off, and the log panels
 carrying the raw command line hide when `pii_filter.command_text` is off. The `command_class`
 breakdown stays visible either way, since the classification carries no free text.
 
 **No alert rules ship for this feed**, deliberately. The sensitive-read and RBAC-probe counters are
-the obvious candidates, but a useful threshold depends heavily on a cluster's own baseline — a
-`selfsubjectrulesreview` sweep is routine for UI clients such as Freelens — and an arbitrary one
+the obvious candidates, but a useful threshold depends heavily on a cluster's own baseline - a
+`selfsubjectrulesreview` sweep is routine for UI clients such as Freelens - and an arbitrary one
 would page on ordinary operator traffic. Watch the tab for a week, then set thresholds from what you
 actually see. See [Alerts](alerts.md) for the evaluation model and [alert profiles](alert-profiles.md)
 when deciding which optional rules to enable.
@@ -212,7 +212,7 @@ The event schema is **unversioned**. Upstream added it in late 2025, has only ev
 publishes no stability guarantee; the object written to the bucket is a server-side wrapper around
 upstream's type, and tsrecorder's server is not open source.
 
-`tailscale.k8s.schema_drift` counts records that do not match the expected shape — today, any event
+`tailscale.k8s.schema_drift` counts records that do not match the expected shape - today, any event
 `type` other than `kubernetes-api-request`, which is the only value upstream emits. A healthy feed
 reports nothing at all, so watch it after upgrading the operator or the recorder.
 

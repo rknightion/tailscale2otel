@@ -217,7 +217,7 @@ extraVolumeMounts: []
 #
 # SHUTDOWN ORDER. Kubernetes sends SIGTERM to all containers in a Pod at the
 # same time; it does not stop the exporter before these sidecars. The exporter
-# has a 45-second staged drain/flush budget (receivers, ingress WAL, OTLP and
+# has a 40-second staged drain/flush budget (receivers, ingress WAL, OTLP and
 # flow stores), while the chart's default terminationGracePeriodSeconds is 55.
 # A userspace proxy or Tailscale sidecar must therefore tolerate that window;
 # if it must stay available while the exporter drains, give it an appropriate
@@ -565,11 +565,13 @@ existingSecret: ""
 
 # -- Opaque value surfaced as the pod annotation
 # `tailscale2otel.m7kni.io/rollout-trigger`. Changing it changes the pod template and
-# forces a Recreate rollout. This is the supported way to pick up ANY secret-bearing
+# triggers a rollout: Recreate for singleton Deployments, RollingUpdate for coordinated
+# StatefulSets. This is the supported way to pick up any secret-bearing
 # change: a rotated `existingSecret`, a changed inline `secret:` value, or an edit to
 # a secret-backed `config.yaml` (an inline credential under `config:`, a `tailnets[]`
-# entry, or a node_metrics target bearer_token/headers). Kubernetes NEVER refreshes
-# environment variables or Secret-mounted files in a running container, so credentials
+# entry, or a node_metrics target bearer_token/headers). Kubernetes does not refresh
+# environment variables in a running container. Mounted Secret files can update, but
+# the application must reload them; credentials
 # injected via `envFrom`/`secret.yaml`/`secret-config.yaml` stay stale until the pod is
 # replaced. After rotating run e.g. `helm upgrade ... --set rolloutTrigger=$(date +%s)`.
 # Pick anything you like (a timestamp, a git SHA, a counter) — it must NOT be a secret
@@ -664,8 +666,8 @@ secret: # @schema additionalProperties:false
   # it serves only a loopback config.streaming.listen and refuses every other bind.
   TS2OTEL_STREAMING__TOKEN: ""
   # -- Webhook HMAC-SHA256 secret. Set ONLY when you enable config.webhook. Empty is accepted
-  # only on a loopback config.webhook.listen; network-reachable binds refuse every request
-  # with HTTP 403 before reading its body.
+  # only on a loopback config.webhook.listen; an enabled network-reachable listener
+  # without a route secret fails startup validation.
   TS2OTEL_WEBHOOK__SECRET: ""
   # -- Shared token gating the admin status page (/ and /api/status.json) and pprof. With no token
   # the page is served only on a loopback config.admin.listen and every other bind is refused with
@@ -1741,7 +1743,7 @@ config: # @schema additionalProperties:false
     namespace: "" # @schema maxLength:63;pattern:^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$
     # -- Leader Lease expiry duration. Must be greater than renew_deadline.
     lease_duration: 15s
-    # -- Time allowed to renew before stepping down. Must be greater than retry_period.
+    # -- Time allowed to renew before stepping down. Must be greater than 1.2 * retry_period.
     renew_deadline: 10s
     # -- Interval between Lease acquisition and renewal attempts.
     retry_period: 2s
@@ -1828,7 +1830,7 @@ config: # @schema additionalProperties:false
     # -- HTTP path the receiver serves.
     path: "/tailscale/webhook"
     # -- HMAC-SHA256 verification secret. Empty is accepted only on loopback; otherwise the
-    # receiver refuses every request with HTTP 403 before reading its body. Set via
+    # configuration fails startup validation. Set via
     # TS2OTEL_WEBHOOK__SECRET (secret).
     secret: ""
     # -- Read webhook.secret from this path instead of an inline value (mounted-Secret style).

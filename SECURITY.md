@@ -1,7 +1,7 @@
 # Security & data handling
 
 This document covers two things: how to **report a vulnerability** in `tailscale2otel`
-(immediately below), and the **operational security posture** of the service — what data
+(immediately below), and the **operational security posture** of the service - what data
 it handles, where that data goes, and the configuration levers and footguns operators
 should be aware of. For the user-facing pitch see `README.md`; for the full signal catalog
 see `docs/metrics.md`.
@@ -51,7 +51,7 @@ path where a secret could leak into logs, metrics, or the status page.
 
 Out of scope: vulnerabilities in the Tailscale API or the Tailscale client themselves
 (report those to [Tailscale](https://tailscale.com/security)), vulnerabilities in your OTLP
-backend, and the operator footguns documented below — the empty-secret auth behaviour and
+backend, and the operator footguns documented below - the empty-secret auth behaviour and
 `streaming.auto_configure` are **known, intentional, and documented**, so they are
 configuration hazards rather than vulnerabilities.
 
@@ -65,21 +65,21 @@ audit logs carry, among other things:
 - user identities (e.g. the actor on an audit event).
 
 All of this is exported over **OTLP to the configured backend** (for example
-Grafana Cloud). **Treat the OTLP backend as a trusted data sink** — anyone with
+Grafana Cloud). **Treat the OTLP backend as a trusted data sink** - anyone with
 read access to it can see this metadata. Scope backend credentials accordingly.
 
 Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
 `config.example.yaml`):
 
 - `cardinality.flow.source_port` / `cardinality.flow.destination_port` (both default
-  `false`) — keep ports **off** flow *metrics*. Note that ports are always present on
+  `false`) - keep ports **off** flow *metrics*. Note that ports are always present on
   flow *logs* regardless of these settings.
-- `cardinality.flow.collapse_external` (default `true`) — buckets unresolved IPs as
+- `cardinality.flow.collapse_external` (default `true`) - buckets unresolved IPs as
   `external`/`unknown` rather than emitting them as distinct series/labels.
-- `cardinality.flow.node_dims` (default `true`) — set `false` to omit src/dst
+- `cardinality.flow.node_dims` (default `true`) - set `false` to omit src/dst
   device names from flow metrics.
 
-Disabling the `devices` collector does **not** remove IPs from the payload — it
+Disabling the `devices` collector does **not** remove IPs from the payload - it
 only degrades IP→name enrichment, so flow/audit records fall back to
 `unknown`/`external` for names while the raw addresses are still exported.
 
@@ -127,7 +127,7 @@ configuration you do not intend to replace. It is off by default.
 - Keep secrets in **`TS2OTEL_*` environment variables** (the env layer overrides
   the file), never as literal values in YAML. `config.local.yaml`, `.env.local`,
   and `.secrets/` are gitignored for this reason.
-- The admin **status page redacts secret values** — it emits only `*Set` booleans
+- The admin **status page redacts secret values** - it emits only `*Set` booleans
   (e.g. `webhook_secret_set`) and OTLP header key names, never the values.
 - Secrets are **never logged**.
 

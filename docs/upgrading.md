@@ -22,8 +22,10 @@ below describe only behaviour changes and link back here for the operational seq
 
 - Choose the target artifact and read its version-specific entry below. Keep the previous artifact,
   its configuration, and the deployment manifest available until post-upgrade verification passes.
-- Confirm that only one instance targets each tailnet. A replacement must not overlap the old
-  instance: both would poll and emit the same data.
+- Confirm the topology. In `coordination.mode: none`, only one process may target each tailnet;
+  stop it before starting its replacement. Coordinated Kubernetes replicas share one Lease and
+  permit only its holder to do active work. Follow [High availability](high-availability.md) when
+  changing that deployment.
 - Record the running version before stopping it:
 
   ```sh
@@ -94,6 +96,10 @@ point the previous artifact at a migrated database just because the process did 
 The pre-v4 flow-store adoption below is the worked example.
 
 ### 4. Replace one instance and wait for readiness
+
+This sequence is for singleton deployments. For a coordinated StatefulSet, follow the
+[HA rollout procedure](high-availability.md#upgrade-and-rollback), preserve all per-pod claims
+and checkpoint ConfigMaps, and verify the leader as well as pod readiness.
 
 - Stop the current instance gracefully and wait for it to exit. Preserve the configured state
   volume, including any persistent checkpoint, ingress-WAL, or flow-store paths.
@@ -225,7 +231,7 @@ Before applying the version-specific changes in this section, follow the
 ### The Prometheus pull endpoint gained real defaults
 
 `prometheus.max_requests_in_flight`, `prometheus.timeout` and `prometheus.coalesce_gather`
-shipped as `0` / `0s` / `false` — an unbounded, untimed `/metrics` handler. A `Gather` walks
+shipped as `0` / `0s` / `false` - an unbounded, untimed `/metrics` handler. A `Gather` walks
 every series in the registry, so concurrent slow scrapes each paid for a full walk with
 nothing to shed them. The three now default to `4`, `8s` and `true`, and
 `max_requests_in_flight: 0` is **no longer accepted** while `prometheus.enabled` is true: the
@@ -238,7 +244,7 @@ loudly rather than honoured silently.
 | `prometheus.timeout` | `0s` (none) | `8s` |
 | `prometheus.coalesce_gather` | `false` | `true` |
 
-`prometheus.timeout: 0` still means "no timeout" and remains valid — only the request cap
+`prometheus.timeout: 0` still means "no timeout" and remains valid - only the request cap
 lost its zero.
 
 **Action:** if your config carries `prometheus.max_requests_in_flight: 0` and the endpoint is
@@ -258,7 +264,7 @@ attributes carrying user/actor identity and error text are renamed to their stab
 OpenTelemetry semantic-convention equivalents. OTel deprecated the `enduser.*` namespace in
 favour of the ECS-aligned `user.*` registry (`user.id`, `user.name`, `user.full_name`), and
 `error.message` is the stable key for a human-readable error string. The old names are
-**gone** — this is a hard cutover with no duplicate-attribute deprecation window.
+**gone** - this is a hard cutover with no duplicate-attribute deprecation window.
 
 Nothing else changed: no metric names, units, config keys, endpoints, or Helm values move
 in `2.0.0`, and no other attributes are renamed. Tailscale-specific concepts (DERP, exit
@@ -285,7 +291,7 @@ both are the same "short login/username" concept the `user.name` convention desc
 
 **Action:** update any dashboard, alert rule, or saved query that references an old label to
 its new name. The shipped Grafana dashboards and alert rules in `deploy/` are already updated
-— re-import them to pick up the new labels. The `pii_filter` toggles are unchanged: the same
+- re-import them to pick up the new labels. The `pii_filter` toggles are unchanged: the same
 category still gates each attribute (`user.id` → user IDs, `user.name` → emails,
 `user.full_name` → display names, `error.message` → free-text details), so no PII
 configuration needs changing.
@@ -295,7 +301,7 @@ configuration needs changing.
 The `feat!` motivation also referenced OTel's March 2026 deprecation of the Span Events API
 in favour of log records carrying an event name. No migration is needed there: the flow and
 audit log records have **always** set the native OTLP LogRecord `EventName` field
-(`tailscale.network.flow` and `tailscale.config.audit`) — that is the OTel-blessed
+(`tailscale.network.flow` and `tailscale.config.audit`) - that is the OTel-blessed
 post-Span-Events mechanism, and it did not change in `2.0.0`. It is called out here only so
 the pre-2.0 behaviour is on record.
 
@@ -305,13 +311,13 @@ Before applying the version-specific changes in this section, follow the
 [upgrade and rollback checklist](#upgrade-and-rollback-checklist).
 
 `v1.0.0` is the first **stable** release. It contains **no new breaking changes** over the
-`0.6.0` line — every fix and behaviour change below already shipped across the `0.x`
+`0.6.0` line - every fix and behaviour change below already shipped across the `0.x`
 releases and is simply consolidated here. The `1.0.0` tag marks the point at which the
 configuration surface, metric names, HTTP endpoints, and Helm values are considered stable
 and will follow [semantic versioning](https://semver.org/) going forward: breaking changes
 now require a major-version bump.
 
-If you are already running `0.6.0`, upgrading to `1.0.0` is a no-op — pull the new
+If you are already running `0.6.0`, upgrading to `1.0.0` is a no-op - pull the new
 tag/chart and restart. If you are coming from an **earlier `0.x`**, review the items below,
 which are the accumulated behaviour changes since the start of the `0.x` series.
 
@@ -335,7 +341,7 @@ misbehaving later:
   of being silently ignored.
 
 **Action:** start the new version once and fix anything validation reports. Nothing here
-changes the meaning of a valid config — it only rejects configs that were already broken.
+changes the meaning of a valid config - it only rejects configs that were already broken.
 
 ### Least-privilege OAuth scopes
 
@@ -369,8 +375,8 @@ bodies, raise `webhook.max_body_bytes`.
 
 ### Per-entity gauges now drop out instead of ghosting
 
-Churning per-entity gauges — `tailscale.device.online`, `tailscale.node.up`, and the
-`tailscale.dns.*` info gauges — were migrated to observable snapshots so that when an entity
+Churning per-entity gauges - `tailscale.device.online`, `tailscale.node.up`, and the
+`tailscale.dns.*` info gauges - were migrated to observable snapshots so that when an entity
 disappears (device removed, renamed, resolver dropped) its series **stops being exported**
 rather than lingering at its last value forever. This fixes ghost devices in dashboards and
 cardinality-slot exhaustion under sustained churn.
@@ -396,7 +402,7 @@ pinned to the old flapping label.
   the client-side rate limiter.
 - That rate-limiter wait is now **excluded** from `tailscale2otel.api.duration`, so
   `api.duration` reflects server round-trip time only. Its observed values may drop after
-  upgrade — this is a scope correction, not a regression.
+  upgrade - this is a scope correction, not a regression.
 - New metric `tailscale.stream.skipped` counts records the stream receiver skipped.
 
 **Action:** if you alert on `api.duration`, re-baseline it; the rate-limit component now
@@ -431,11 +437,11 @@ Outbound Tailscale API requests now send a `tailscale2otel/<version>` User-Agent
 
 This page covers the notable migrations. For the full, per-release detail:
 
-- **[Releases on GitHub](https://github.com/rknightion/tailscale2otel/releases)** — every version,
+- **[Releases on GitHub](https://github.com/rknightion/tailscale2otel/releases)** - every version,
   with its notes and downloadable binaries.
-- **[CHANGELOG.md](https://github.com/rknightion/tailscale2otel/blob/main/CHANGELOG.md)** — the
+- **[CHANGELOG.md](https://github.com/rknightion/tailscale2otel/blob/main/CHANGELOG.md)** - the
   complete generated changelog (also mirrored at [Changelog](changelog.md)).
-- **[Compare any two versions](https://github.com/rknightion/tailscale2otel/compare)** — useful when
+- **[Compare any two versions](https://github.com/rknightion/tailscale2otel/compare)** - useful when
   jumping several releases at once.
 
 Container images are tagged per release at

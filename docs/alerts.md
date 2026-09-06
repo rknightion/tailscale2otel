@@ -58,53 +58,53 @@ swap them for a self-hosted stack.
 
 Rules are organised into five families:
 
-- **`tailscale2otel-health`** — exporter self-health (scrape staleness, cardinality cap, API auth
+- **`tailscale2otel-health`** - exporter self-health (scrape staleness, cardinality cap, API auth
   failures, checkpoint errors, enrichment cache age, and more)
-- **`tailscale2otel-security`** — tailnet security and governance (tailnet-lock errors, key expiry,
+- **`tailscale2otel-security`** - tailnet security and governance (tailnet-lock errors, key expiry,
   posture coverage, unverified contacts). The ACL risk-scoring gauges and the curated
-  `tailscale.config.audit.changes` counter are natural additions here — e.g.
+  `tailscale.config.audit.changes` counter are natural additions here - e.g.
   `tailscale_acl_unrestricted_rules_ratio > 0` (any-to-any non-deny rules),
   `tailscale_acl_ssh_wildcard_ratio > 0` (wildcard SSH rules), or
   `increase(tailscale_config_audit_changes_total{tailscale_audit_change="auth_provider"}[1h]) > 0`.
-- **`tailscale2otel-integrations`** — MDM/EDR posture sync, log-stream delivery health, and a
+- **`tailscale2otel-integrations`** - MDM/EDR posture sync, log-stream delivery health, and a
   paused accepted-event staleness rule for continuously active source/signal pairs
-- **`tailscale2otel-network`** — DERP relay usage, region latency, flow data presence and
+- **`tailscale2otel-network`** - DERP relay usage, region latency, flow data presence and
   flow-log truncation, per-target node-metrics scrape health, and the webhook-only node IP-forwarding
   fault
-- **`tailscale2otel-recording`** — precomputed recording rules (DERP byte fraction, posture ratios,
+- **`tailscale2otel-recording`** - precomputed recording rules (DERP byte fraction, posture ratios,
   total active series)
 
-!!! danger "Format traps — three of these fail silently"
+!!! danger "Format traps - three of these fail silently"
     The manifest format is **not** the `apiVersion: 1` provisioning format, and the differences do
     not announce themselves. `gen/validate_manifests.py` enforces all of them offline.
 
     | trap | the rule |
     | --- | --- |
-    | state casing | **BOTH** `noDataState` and `execErrState` spell the OK state **`"Ok"`**. The API accepts only `["Error", "Ok", "Alerting", "KeepLast"]`. Corrected 2026-07-27 — this table previously claimed an asymmetry (`"OK"` for `execErrState`), and 19 rules passed every local check and were then rejected at push time. |
-    | durations | Go-style strings — `"30m0s"`, `"1h0m0s"`, `"0s"`. `"5m"` is rejected, and `relativeTimeRange` bounds are durations here, not integer seconds. |
+    | state casing | **BOTH** `noDataState` and `execErrState` spell the OK state **`"Ok"`**. The API accepts only `["Error", "Ok", "Alerting", "KeepLast"]`. Corrected 2026-07-27 - this table previously claimed an asymmetry (`"OK"` for `execErrState`), and 19 rules passed every local check and were then rejected at push time. |
+    | durations | Go-style strings - `"30m0s"`, `"1h0m0s"`, `"0s"`. `"5m"` is rejected, and `relativeTimeRange` bounds are durations here, not integer seconds. |
     | panel links | the paired `__dashboardUid__` / `__panelId__` **annotations**, `__panelId__` a **string**. Top-level `dashboardUid`/`panelId` are provisioning-only and `additionalProperties: false` rejects them. |
     | recording rules | no `annotations`, `for`, `condition`, `noDataState` or `execErrState`. The spec is exactly `{title, trigger, metric, expressions, targetDatasourceUID, labels, paused}`. |
 
 !!! tip "Limit-agnostic cardinality alerting"
     Prefer `count(tailscale2otel_series_overflowing_ratio == 1) > 0` for a cardinality-overflow
-    alert — it needs no hardcoded threshold and stays correct when `cardinality.metric_limit` is
+    alert - it needs no hardcoded threshold and stays correct when `cardinality.metric_limit` is
     changed. `tailscale2otel_scrape_budget_ratio` (last scrape duration ÷ interval; nearing `1` =
     risk of interval overrun) is another `tailscale2otel-health` signal worth enabling.
 
 !!! tip "Default-disabled by design"
     Only a high-signal starter set ships with `spec.paused: false`. The rest are
-    `spec.paused: true` — enable them in the Grafana UI once your tailnet has the relevant data.
+    `spec.paused: true` - enable them in the Grafana UI once your tailnet has the relevant data.
     Pausing is orthogonal to the evaluation policy below: a paused rule still carries its declared
     no-data and error semantics, it just is not evaluating yet.
 
-!!! tip "Evaluation policy — absence and error are per-rule, not global"
+!!! tip "Evaluation policy - absence and error are per-rule, not global"
     Every rule declares one of four policies, which fix its `noDataState` and `execErrState`
     together. Previously all of them were fail-open on error, so a broken datasource or a malformed
     query read as *healthy* across the entire pack.
 
     | policy | noData | execErr | for |
     | --- | --- | --- | --- |
-    | `coverage_critical` | `Alerting` | `Alerting` | the rule exists to notice something stopped — absence IS the alert |
+    | `coverage_critical` | `Alerting` | `Alerting` | the rule exists to notice something stopped - absence IS the alert |
     | `core` | `NoData` | `Error` | always emitted by a running exporter, so absence is abnormal |
     | `optional` | `Ok` | `Error` | absence means "not configured", but an error is still a fault |
     | `advisory` | `Ok` | `Ok` | neither absence nor a transient error is actionable here |
@@ -116,14 +116,14 @@ Rules are organised into five families:
 
     **Nothing here can watch Grafana's own ruler.** If the ruler stops evaluating, no rule fires,
     including the `coverage_critical` one. See
-    [Runbooks — who watches the watcher](runbooks.md) for the three operator-owned answers.
+    [Runbooks - who watches the watcher](runbooks.md) for the three operator-owned answers.
 
 !!! tip "Every alert links to a runbook and a panel"
     All 111 alert rules carry a `runbook_url` pointing at a section of
     [Runbooks](runbooks.md), and 107 of them carry the paired `__dashboardUid__`/`__panelId__`
     annotations naming a canonical panel. Panel ids are resolved **by title** against the generated
     dashboard at build time, and generation hard-fails on a title that matches zero or more than one
-    panel — so a renumbered or renamed panel breaks the build instead of silently producing a dead
+    panel - so a renumbered or renamed panel breaks the build instead of silently producing a dead
     link.
 
 !!! tip "Alert on accepted data, not only a running receiver"
@@ -146,7 +146,7 @@ Anything that speaks the Grafana app-platform API works too: `kubectl` against t
 server, or the Terraform `grafana_apps_rules_alertrule_v0alpha1` /
 `grafana_apps_rules_recordingrule_v0alpha1` resources, which take the same spec.
 
-`gcx resources validate -p deploy/alerts/grafana-managed` is a **client-side** check only —
+`gcx resources validate -p deploy/alerts/grafana-managed` is a **client-side** check only -
 `alertrules.rules.alerting.grafana.app` does not support server-side dry-run, so it confirms the
 manifests parse and that the kind is served, nothing more. The spec check is
 `python3 deploy/alerts/gen/validate_manifests.py`, which runs offline and in CI.

@@ -45,17 +45,17 @@ separate destinations.
 Every route needs:
 
 - A **Tailscale tailnet** you control.
-- **Authentication credentials** — an OAuth client is strongly preferred:
+- **Authentication credentials** - an OAuth client is strongly preferred:
     - **OAuth client (recommended):** create one in the [Tailscale admin
       console](https://tailscale.com/kb/1215/oauth-clients) with the least-privilege read scopes
       your collectors need (at minimum `all:read`). OAuth tokens are short-lived, auto-refreshed,
       and not tied to a user account.
     - **API key (fallback):** a personal API key also works (`method: apikey`), but it expires in
-      90 days or less and is tied to its creator — the exporter logs a warning when one is
+      90 days or less and is tied to its creator - the exporter logs a warning when one is
       configured.
 
 !!! tip "Running Headscale instead of Tailscale?"
-    tailscale2otel also supports a self-hosted [Headscale](https://headscale.net/) control plane —
+    tailscale2otel also supports a self-hosted [Headscale](https://headscale.net/) control plane -
     set `provider: headscale` and point it at your server instead of the steps below. A reduced
     collector set runs automatically (devices, users, keys, ACL, node-metrics); see
     [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection)
@@ -79,7 +79,7 @@ All starters are hand-maintained examples, not copies of the exhaustive
 
 ## Tailscale authentication
 
-The config file is entirely optional — `tailscale2otel` runs from built-in defaults plus
+The config file is entirely optional - `tailscale2otel` runs from built-in defaults plus
 environment variables. All three starters leave their secret fields empty so these environment
 variables supply the shared Tailscale credentials:
 
@@ -91,7 +91,7 @@ export TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret>
 
 These map to `tailscale.tailnet`, `tailscale.auth.oauth.client_id`, and
 `tailscale.auth.oauth.client_secret`. The `TS2OTEL_` prefix + `__` between nesting levels is the universal
-convention — see [Configuration](configuration.md) for the full mapping rules.
+convention - see [Configuration](configuration.md) for the full mapping rules.
 
 !!! tip "Secrets belong in env vars"
     Keep tokens and client secrets in environment variables only. They never need to appear in a
@@ -107,7 +107,7 @@ Four flags, in increasing order of how much they actually exercise:
   It prints any advisory warnings and exits 0 if valid, 1 otherwise.
 - `tailscale2otel -preflight -config <path>` goes further: it builds the tailnet runtimes,
   authenticates, and runs exactly one collection cycle of every enabled collector, then reports per
-  collector and exits. It is side-effect-free by default — no admin, Prometheus, streaming or
+  collector and exits. It is side-effect-free by default - no admin, Prometheus, streaming or
   webhook listener is started; nothing is exported; no checkpoint is persisted whatever
   `checkpoint.store` says; profiling stays off; and `collectors.acl.validate` is suppressed because
   it is the one non-`GET` request this exporter makes. The report says so when it does that, so a
@@ -126,7 +126,7 @@ Exit codes for `-preflight` and `-once` name the class of problem, because the n
 for each: **0** success, **1** the config is invalid, **2** a usage error, **3** the credentials or
 endpoint are wrong, **4** the credentials work but a specific collector failed (or the run hit
 `-preflight-timeout`), **5** the collectors are fine and the export path is broken. When more than
-one class fails, the lowest wins — it is the most upstream cause.
+one class fails, the lowest wins - it is the most upstream cause.
 
 ## Grafana Cloud over OTLP
 
@@ -151,7 +151,7 @@ export attempt.
 
 !!! note "Self-hosted Collector or Alloy"
     For a self-hosted OpenTelemetry Collector or Grafana Alloy, set `TS2OTEL_OTLP__PROTOCOL=grpc`
-    (or `http`) and point `TS2OTEL_OTLP__ENDPOINT` at your collector's OTLP receiver address — for
+    (or `http`) and point `TS2OTEL_OTLP__ENDPOINT` at your collector's OTLP receiver address - for
     a gateway reachable as `alloy` on the same Docker network or as a Kubernetes Service:
 
     ```sh
@@ -162,14 +162,14 @@ export attempt.
 
     Drop the `grafana_cloud` variables when you do this: the backend credential belongs to the
     gateway, not to the exporter. `TS2OTEL_OTLP__TLS__INSECURE` disables transport security
-    entirely and is only acceptable on a trusted private hop — which this one is, precisely because
+    entirely and is only acceptable on a trusted private hop - which this one is, precisely because
     it now carries no credential.
 
-    `TS2OTEL_OTLP__HEADERS` is a map field and must be set via a config file — see
+    `TS2OTEL_OTLP__HEADERS` is a map field and must be set via a config file - see
     [Configuration](configuration.md).
 
-    A complete, validated gateway pipeline — receiver, memory limiter, batch, retry, disk-backed
-    sending queue, plus the outage drill to prove it works — is in
+    A complete, validated gateway pipeline - receiver, memory limiter, batch, retry, disk-backed
+    sending queue, plus the outage drill to prove it works - is in
     [Collector Gateway](gateway.md).
 
 ## Prometheus pull
@@ -221,8 +221,7 @@ The destination starters are the canonical configuration for each deployment. Se
 of `examples/config/grafana-cloud-otlp.yaml`, `examples/config/prometheus-only.yaml`, or
 `examples/config/stdout.yaml`, then use the command for your deployment. Supply the shared Tailscale
 environment variables above; the Grafana starter additionally needs its two Grafana variables. Each
-parameterized block below is the one canonical executable snippet for all three `CONFIG` choices;
-do not copy a second quickstart elsewhere.
+block accepts any of the three `CONFIG` choices.
 
 ### Docker
 
@@ -302,7 +301,7 @@ For the expected result and verification commands, return to the selected destin
 
 **Self-observability metric:** `tailscale2otel` emits a `tailscale2otel.up` gauge (normalized to
 `tailscale2otel_up` in Prometheus/Grafana) once the first export cycle completes successfully. Query
-for it in Grafana Explore — if it appears, the pipeline is working end-to-end.
+for it in Grafana Explore - if it appears, the pipeline is working end-to-end.
 
 **Admin status page:** the admin server is on by default and binds `127.0.0.1:9091`, giving live
 visibility into collector health without querying the backend. The status page shows each
@@ -316,7 +315,7 @@ such. The `/healthz` and `/readyz` endpoints are always available without authen
 suitable for container health checks.
 
 A loopback default means "loopback **inside the container**", so reaching it from your machine takes
-both a published port and a bind the container will accept traffic on — plus a token, because a
+both a published port and a bind the container will accept traffic on - plus a token, because a
 non-loopback bind without one is refused:
 
 ```sh
@@ -331,7 +330,7 @@ as `Authorization: Bearer <token>`.
 
 !!! warning "The admin page fails closed on a network-reachable bind"
     With **no** `admin.auth.token` the page is served **only** on a loopback `admin.listen`; every
-    other bind — including a tailnet address — is refused with HTTP 403. Setting
+    other bind - including a tailnet address - is refused with HTTP 403. Setting
     `TS2OTEL_ADMIN__LISTEN=:9091` *without* a token therefore does not expose the page, it makes it
     answer 403 to everyone, which reads like a broken exporter. Set
     `TS2OTEL_ADMIN__AUTH__TOKEN` whenever the bind is not loopback. `/healthz` and `/readyz` are
@@ -339,8 +338,9 @@ as `Authorization: Bearer <token>`.
 
 ## What's collected by default
 
-The standard API collectors are enabled out of the box. `node_metrics` needs targets or discovery,
-and `k8s_audit` needs a tsrecorder export, so both are off by default. The polling cadences are:
+The standard API collectors are enabled by default. `node_metrics` needs targets or discovery,
+`k8s_audit` needs a tsrecorder export, and `pam` needs Border0 credentials. These three are off
+by default. The polling cadences are:
 
 | Collector | Default interval |
 |---|---|
@@ -348,23 +348,26 @@ and `k8s_audit` needs a tsrecorder export, so both are off by default. The polli
 | `users`, `keys`, `oauth_apps` | 300 s |
 | `settings`, `acl`, `dns`, `contacts`, `webhooks`, `posture_integrations`, `log_stream`, `services` | 600 s |
 
-Flow and audit logs default to `source: poll` — the exporter pulls them from the Tailscale API.
+Flow and audit logs default to `source: poll` - the exporter pulls them from the Tailscale API.
 See [Configuration](configuration.md) for how to switch to the streaming (HEC push) path and for
 all the tuning knobs.
 
 ## Next steps
 
-- [Installation](installation.md) — Docker Compose, Helm chart, and binary installation with
+- [Feature guide](features.md): setup references for all supported features.
+- [Event explorer](events.md): recent audit and webhook events on the admin server.
+- [High availability](high-availability.md): Kubernetes leader election and rollout procedure.
+- [Installation](installation.md) - Docker Compose, Helm chart, and binary installation with
   persistent checkpoint volumes.
-- [Collector Gateway](gateway.md) — put Alloy or an OpenTelemetry Collector between the exporter and
+- [Collector Gateway](gateway.md) - put Alloy or an OpenTelemetry Collector between the exporter and
   your backend so a backend outage does not cost you the telemetry produced during it.
-- [Configuration](configuration.md) — the complete key-by-key reference, including log streaming,
+- [Configuration](configuration.md) - the complete key-by-key reference, including log streaming,
   the webhook receiver, cardinality controls, and node-metrics scraping.
-- [Dashboards](dashboards.md) — import the shipped Grafana dashboards and see the data you just
+- [Dashboards](dashboards.md) - import the shipped Grafana dashboards and see the data you just
   started collecting.
-- [Why this exporter](comparison.md) — the trade-offs against the Tailscale console and native
+- [Why this exporter](comparison.md) - the trade-offs against the Tailscale console and native
   node metrics.
-- [FAQ](faq.md) — short operational answers with links to the authoritative detail.
+- [FAQ](faq.md) - short operational answers with links to the authoritative detail.
 
 ## Get help
 
@@ -374,4 +377,4 @@ If something here did not work, the fastest routes are the
 
 - [Source code and README](https://github.com/rknightion/tailscale2otel)
 - [Latest release and changelog](https://github.com/rknightion/tailscale2otel/releases/latest)
-- [`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) — the annotated starter config
+- [`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) - the annotated starter config

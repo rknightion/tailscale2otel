@@ -5,72 +5,40 @@ description: Which emitted metrics and log events are charted, alerted on, recor
 
 # Signal coverage
 
-Every metric and log event tailscale2otel emits is accounted for here. The table
-says what each signal is *for* — whether a shipped dashboard charts it or uses it for a
-variable, an alert rule watches it, or a recording rule folds it.
-
-This page is **generated from
-[`internal/catalog/signal_dispositions.json`](https://github.com/rknightion/tailscale2otel/blob/main/internal/catalog/signal_dispositions.json)**,
-a manifest that is itself gated in CI against three things: the in-code telemetry
-catalog (so a new signal cannot land undecided), the generated dashboard, and the
-two alert-rule files (so a `visualized` or `alertable` claim has to be true, in
-both directions). Nothing here comes from a text search over prose.
-
-Regenerate with:
-
-```sh
-go test ./internal/catalog -run TestSignalDispositionsInSync -update
-go test ./internal/catalog -run TestSignalCoverageDocInSync -update
-```
+This page maps each catalog metric and log event to the shipped dashboards and rules. The table
+is generated from [signal_dispositions.json](https://github.com/rknightion/tailscale2otel/blob/main/internal/catalog/signal_dispositions.json).
+CI compares that manifest with the code catalog, dashboard queries and alert/recording rules.
 
 ## Dispositions
 
-| disposition | meaning |
-| --- | --- |
-| `visualized` | queried by at least one **panel** on either generated dashboard |
-| `alertable` | queried by at least one alert rule expression |
-| `recorded` | consumed by at least one recording rule expression |
-| `drives_a_variable` | queried by a dashboard **template variable** — a presence sentinel, or a filter dropdown |
+| Disposition | Meaning |
+|---|---|
+| `visualized` | Queried by at least one dashboard panel. |
+| `alertable` | Queried by an alert expression. |
+| `recorded` | Consumed by a recording-rule expression. |
+| `drives_a_variable` | Queried by a dashboard variable, such as a presence sentinel or filter. |
 
-A signal can carry several at once (most alerted metrics are also charted). All
-four are **derived** — read off the shipped artifacts by the regenerator — so
-there is nothing here for anyone to assign by hand, and no value that can be
-written to settle a signal that is not actually on a surface.
+A signal can have several dispositions. They are derived from the artifacts, not assigned by
+hand. A variable reference does not count as a panel: it may control visibility without displaying
+the signal itself.
 
-`drives_a_variable` is deliberately **not** `visualized` (#527). A presence
-sentinel's `label_values()` call references a metric every bit as really as a
-panel query does, and puts nothing on screen — so while both fed one value, a
-signal could satisfy the every-signal-reaches-a-panel bar while being invisible.
-`tailscale.subnet_routes.advertised` sat in exactly that state, covered only by
-the sentinel gating a row, and it stayed invisible until #526 deleted that row.
-`tailscale.key.expiring` was worse: it counted as covered because its name
-appears as an *option value* in a dropdown, which is not a query at all. Both
-have panels now.
+Every signal must reach a panel unless it belongs to an individually justified structural class
+in `catalog.StructuralExemptions()`:
 
-**Every emitted signal must appear on a panel**, and #526 removed the last three
-ways round that. `raw_only` and `omitted` were deleted first: "deliberately
-query-only" is indistinguishable, from the outside, from "nobody got round to it",
-and 35 signals had accrued under the two of them. `pending_panel` replaced them as
-an explicitly transitional, shrink-only ledger — a signal could only ever leave it
-by gaining a panel — and was itself deleted the moment it emptied, which is the
-only reason it was safe to introduce.
+| Class | Reason |
+|---|---|
+| `histogram_base` | Panels query histogram buckets, sums or counts rather than the base name. |
+| `templated_event` | The emitted name varies, such as `tailscale.webhook.<type>`; a literal selector cannot equal it. |
+| `recorded_only` | A recording rule consumes the signal and a panel queries the output. |
 
-The only exemptions now are three **structural** classes, each an individually
-justified entry in `catalog.StructuralExemptions()` and none of them a judgement
-about whether a signal is worth charting:
+The templated webhook event is therefore included in the operational total but not its literal-name
+`visualized` count. Its `UNASSIGNED` row is a structural exception, not an instruction to assign a
+manual disposition. Operational and exporter-health totals are reported separately.
 
-| class | why it cannot be required |
-| --- | --- |
-| `histogram_base` | the base name of a histogram is never queried directly — panels query `_bucket`/`_sum`/`_count` |
-| `templated_event` | the event name is built at emit time (`tailscale.webhook.<type>`), so no literal selector can equal it |
-| `recorded_only` | consumed only by a recording rule whose *output* metric is itself panelled |
-
-**Operational and self-observability coverage are reported separately.**
-They answer different questions ("can I see my tailnet?" versus "can I see the
-exporter?"), and a well-covered fleet story would otherwise hide a blind exporter.
-
-The units, descriptions and attribute keys for every signal below are in
-[`metrics.md`](metrics.md); this page only covers what each one is used for.
+Regenerate the page with `just gen coverage`. Changing a dashboard or rule may also require
+reconciling the manifest; see the repository's
+[generated-artifact instructions](https://github.com/rknightion/tailscale2otel/blob/main/reference/generated-artifacts.md).
+Signal units and attributes are in the [metrics catalog](metrics.md).
 
 <!-- BEGIN GENERATED: signal-coverage -->
 

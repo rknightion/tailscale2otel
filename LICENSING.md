@@ -16,7 +16,7 @@ graph** of `./cmd/tailscale2otel` (not from `go.mod`, which carries indirect/tes
 never ship), using [`go-licenses`](https://github.com/google/go-licenses) and
 [`syft`](https://github.com/anchore/syft):
 
-- **`scripts/notices.sh`** → `THIRD_PARTY_NOTICES.md` — every linked module's `LICENSE` text, plus
+- **`scripts/notices.sh`** → `THIRD_PARTY_NOTICES.md` - every linked module's `LICENSE` text, plus
   its `NOTICE` file where one exists (Apache-2.0 §4(d)). The container images bake this into
   `/licenses/THIRD_PARTY_NOTICES.md` (alongside `/licenses/LICENSE`); the release pipeline also
   attaches it to each GitHub Release.
@@ -24,7 +24,7 @@ never ship), using [`go-licenses`](https://github.com/google/go-licenses) and
   `dist/sbom/tailscale2otel.cdx.json` (CycloneDX 1.6), attached to each GitHub Release. (GoReleaser
   additionally emits per-archive SBOMs and an image SBOM attestation.)
 
-These are **regenerated at release time, not committed** — they change on every dependency bump, so
+These are **regenerated at release time, not committed** - they change on every dependency bump, so
 committing and gating them would block hosted-Renovate automerge. They are therefore deliberately
 **not** part of any CI gate. The images and the release assets always reflect exactly what shipped.
 

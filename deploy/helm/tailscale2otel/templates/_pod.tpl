@@ -37,9 +37,9 @@
         # annotation: annotations are readable by any principal with workload-read
         # but no Secret-read, and a published digest lets that principal verify
         # offline guesses against real secret material (GHSA-825f-hph6-x65w).
-        # Kubernetes never refreshes envFrom/Secret-mounted values in a running
-        # container regardless, so a pod replacement is required either way.
-        # Changing this value changes the pod template and forces a Recreate
+        # Kubernetes never refreshes envFrom values in a running container. Mounted
+        # Secret files can update, but restart-required settings need pod replacement.
+        # Changing this value changes the pod template and triggers the workload
         # rollout. It is NEVER derived from secret content (no value, no digest of
         # a value, ever lands here). For an automated path instead, run Stakater
         # Reloader in the cluster and set

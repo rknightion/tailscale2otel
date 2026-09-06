@@ -1,7 +1,7 @@
 # Admin API contract & compatibility policy
 
 tailscale2otel's admin server exposes a small, **read-only** JSON API (#323).
-Nothing here is a remote-control surface — every endpoint listed below only
+Nothing here is a remote-control surface - every endpoint listed below only
 serves state the process already holds; the admin server's one mutating
 endpoint (`POST /api/rdns/purge`) is out of scope for this contract and
 carries no schema version.
@@ -13,12 +13,12 @@ carries no schema version.
 | `GET /api/cardinality.json` | `statusdata.CardinalityInfo` | [`schemas/cardinality.schema.json`](schemas/cardinality.schema.json) | `.schema_version` |
 | `GET /api/flows.json` | `flowsdata.Response` | [`schemas/flows.schema.json`](schemas/flows.schema.json) | `.schema_version` |
 | `GET /api/flows/export.json` | (internal envelope) | [`schemas/flows-export.schema.json`](schemas/flows-export.schema.json) | `.schema_version` |
-| `GET /api/flows/export.csv` | CSV | — (no JSON schema; see below) | `# schema_version=N` comment line |
+| `GET /api/flows/export.csv` | CSV | - (no JSON schema; see below) | `# schema_version=N` comment line |
 | `GET /api/events.json` | `eventsdata.Response` | [`schemas/events.schema.json`](schemas/events.schema.json) | `.schema_version` |
 
 `Status.config` and `Status.cardinality` carry `ConfigSummary`/`CardinalityInfo`
 verbatim, so those two objects have their **own** `schema_version` wherever
-they appear — nested inside `/api/status.json` or served standalone — because
+they appear - nested inside `/api/status.json` or served standalone - because
 each is also independently exposed and can change on its own schedule.
 
 ## Reading `schema_version`
@@ -30,10 +30,10 @@ without guessing from field presence. A consumer should:
 
 1. Read `schema_version`.
 2. If it matches the version the integration was written against, decode
-   normally — new, unfamiliar fields may appear (see Additive below) and
+   normally - new, unfamiliar fields may appear (see Additive below) and
    should be ignored, not treated as an error.
 3. If it is higher than expected, either fall back to a defensive/partial
-   decode or refuse and alert — the response may no longer have the shape the
+   decode or refuse and alert - the response may no longer have the shape the
    integration assumes.
 
 ## Additive vs. breaking
@@ -45,7 +45,7 @@ without guessing from field presence. A consumer should:
   collector name in `collectors[]`).
 - A previously-always-present field becoming conditionally omitted **only**
   when the underlying feature it describes is disabled/unavailable (this
-  repo's existing `omitempty`/`omitzero` convention — e.g. `tls_certificates`
+  repo's existing `omitempty`/`omitzero` convention - e.g. `tls_certificates`
   is omitted entirely when no listener runs TLS). This is additive because a
   consumer that already handles "feature off" gracefully sees no change; one
   that does not was already relying on undocumented behavior.
@@ -60,13 +60,13 @@ same change that makes it):**
 - Changing a field's JSON type (e.g. a duration string becoming a raw
   integer, an object becoming an array).
 - Changing what an EXISTING field's value means without renaming it (units,
-  scale, or semantics) — this is the one class of break the automated gate
+  scale, or semantics) - this is the one class of break the automated gate
   below **cannot** detect by shape alone, because the JSON type is unchanged.
   It must be called out explicitly in the PR/issue and treated as breaking by
   policy even though the tooling stays silent.
 - A field that was always present becoming conditionally omitted for a reason
   OTHER than the feature-disabled case above (e.g. omitting it under normal
-  operation to save bytes) — this removes a guarantee a consumer may depend
+  operation to save bytes) - this removes a guarantee a consumer may depend
   on, unlike the additive case.
 
 When in doubt, treat it as breaking: bumping a `schema_version` is cheap, and
@@ -78,12 +78,12 @@ Enforcement is two independent, deliberately different mechanisms, both
 living beside the response types they describe
 (`internal/app/apicontract`, plus one file in `internal/app` for the one
 unexported response type). Both run inside the normal `go test -race ./...`
-gate — no separate workflow step.
+gate - no separate workflow step.
 
-1. **Drift gate** (`TestSchemasInSync` / `TestFlowsExportSchemaInSync`) — the
+1. **Drift gate** (`TestSchemasInSync` / `TestFlowsExportSchemaInSync`) - the
    schema published under `docs/api/schemas/*.schema.json` must equal what
    reflecting over the LIVE Go response type produces, right now. ANY shape
-   change — additive or breaking — fails this test until the schema is
+   change - additive or breaking - fails this test until the schema is
    regenerated and the diff committed:
 
    ```sh
@@ -92,15 +92,15 @@ gate — no separate workflow step.
    ```
 
    This proves the published docs are current. It does **not** prove a
-   change was safe — an accidental field removal regenerates just as cleanly
+   change was safe - an accidental field removal regenerates just as cleanly
    as an addition. That's gate 2.
 
 2. **Compatibility gate** (`TestSchemasAreBackwardCompatible` /
-   `TestFlowsExportSchemaIsBackwardCompatible`) — a committed
+   `TestFlowsExportSchemaIsBackwardCompatible`) - a committed
    `docs/api/schemas/*.baseline.json` file records every field path and type
    the CURRENT `schema_version` promises. This test flattens the live schema
    and checks every baseline-listed path still resolves to the same type. It
-   is **never** satisfied by the routine `-update` flag above — regenerating
+   is **never** satisfied by the routine `-update` flag above - regenerating
    it requires the separate, explicit `-update-baseline` flag:
 
    ```sh
@@ -109,14 +109,14 @@ gate — no separate workflow step.
    ```
 
    Running `-update-baseline` is the deliberate, auditable act of
-   acknowledging a breaking change — it should be done in the same commit
+   acknowledging a breaking change - it should be done in the same commit
    that bumps the response's `SchemaVersion` constant
    (`statusdata.StatusSchemaVersion`, `statusdata.ConfigSummarySchemaVersion`,
    `statusdata.CardinalitySchemaVersion`, `flowsdata.SchemaVersion`,
    `eventsdata.SchemaVersion`, or `flowsExportSchemaVersion` in
    `internal/app/admin_flows_export.go`). The baseline itself also records the
    `schema_version` it was generated against, and the test fails loudly if
-   that number and the compiled-in constant disagree — so the two files
+   that number and the compiled-in constant disagree - so the two files
    cannot silently drift apart.
 
    A removed field, a renamed field, or a changed field type all fail this
@@ -129,7 +129,7 @@ gate — no separate workflow step.
    `internal/app/apicontract_test.go`) drives the real admin server
    (`buildAdminServer`) over every endpoint in the table above and asserts
    `schema_version` is actually present with the expected value on the wire
-   — not merely correct as a Go struct field nobody assigns.
+   - not merely correct as a Go struct field nobody assigns.
 
 ## What this contract does NOT cover
 
@@ -137,8 +137,8 @@ gate — no separate workflow step.
   order (`csvExportHeader` in `admin_flows_export.go`) is its de facto
   contract, and it carries the same `schema_version` as a `#`-comment line
   for consistency, not as an enforced shape.
-- **Cross-field relationships** — a field's value being consistent with
-  another field's — are outside a shape-only contract, the same limitation
+- **Cross-field relationships** - a field's value being consistent with
+  another field's - are outside a shape-only contract, the same limitation
   `internal/config/schema.go`'s `config.schema.json` documents for the
   application config.
 - **Semantic drift with no shape change** (see the "changing what an existing

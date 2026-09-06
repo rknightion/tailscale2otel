@@ -7,9 +7,8 @@ tags:
 
 # Security
 
-This page describes the operational security posture of `tailscale2otel`: what data it
-handles, where that data goes, and the configuration levers and footguns operators should
-be aware of.
+tailscale2otel handles network metadata and credentials. This page describes what leaves the
+process, what stays in local storage, and how to restrict access.
 
 ## Telemetry payload sensitivity
 
@@ -20,24 +19,25 @@ carry, among other things:
 - device names and hostnames,
 - user identities (e.g. the actor on an audit event).
 
-All of this is exported over **OTLP to the configured backend** (for example Grafana Cloud).
-**Treat the OTLP backend as a trusted data sink** — anyone with read access to it can see
+Enabled OTLP signals go to the configured backend; Prometheus exposes metrics and stdout prints
+telemetry locally. PII categories default to retention. Set a category to `false` to redact it.
+**Treat the OTLP backend as a trusted data sink** - anyone with read access to it can see
 this metadata. Scope backend credentials accordingly.
 
 Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
-[`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml)):
+[`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml):
 
 - `cardinality.flow.source_port` / `cardinality.flow.destination_port` (both default `false`)
-  — keep ports **off** flow *metrics*. Ports are always present on flow *logs* regardless of
+  - keep ports **off** flow *metrics*. Ports are always present on flow *logs* regardless of
   these settings.
-- `cardinality.flow.collapse_external` (default `true`) — buckets unresolved IPs as
+- `cardinality.flow.collapse_external` (default `true`) - buckets unresolved IPs as
   `external`/`unknown` rather than emitting them as distinct series/labels.
-- `cardinality.flow.node_dims` (default `true`) — set `false` to omit src/dst device names
+- `cardinality.flow.node_dims` (default `true`) - set `false` to omit src/dst device names
   from flow metrics.
 
 !!! warning "Disabling `devices` does not remove IPs"
     Disabling the `devices` collector does **not** remove IP addresses from the exported
-    payload — it only degrades IP→name enrichment, so flow/audit records fall back to
+    payload - it only degrades IP→name enrichment, so flow/audit records fall back to
     `unknown`/`external` for names while the raw addresses are still exported.
 
 !!! warning "Traces export a third, unaggregated stream"
@@ -48,7 +48,7 @@ Levers to reduce what leaves the tailnet (all under the `cardinality:` block in
     receiver spans. Account for this extra stream when scoping data residency or export policies;
     tracing is off by default.
 
-## How `pii_filter` decides — the guarantees
+## How `pii_filter` decides - the guarantees
 
 The per-category toggles are documented in
 [configuration.md](configuration.md#pii_filter-pii-identifier-redaction). Three properties of the
@@ -60,7 +60,7 @@ None of them change anything in the default (all-enabled) configuration, which s
 The three IP categories (`tailscale_ips`, `internal_ips`, `external_ips`) are chosen by
 **range-classifying the address itself**, not by trusting the attribute name. Before classification a
 value is normalized: surrounding whitespace is trimmed, a `host:port` or `[host]:port` form is
-reduced to its address, and an **IPv4-mapped IPv6 address is unmapped** — so `100.64.0.1`,
+reduced to its address, and an **IPv4-mapped IPv6 address is unmapped** - so `100.64.0.1`,
 `::ffff:100.64.0.1`, `::ffff:6440:1` and `[::ffff:100.64.0.1]:41641` are all the same CGNAT address
 and are all gated by `tailscale_ips`. A disabled category cannot be bypassed by rewriting the
 address's textual representation.
@@ -68,25 +68,25 @@ address's textual representation.
 For an attribute whose value is **only ever an IP** (`source.address`, `destination.address`,
 `tailscale.dns.resolver.address`), a non-empty value that will not parse as an address has an
 **unknown** category. While any IP category is disabled such a value is **dropped**, not emitted:
-the filter fails closed rather than guessing. The rejected text is never logged or echoed anywhere —
+the filter fails closed rather than guessing. The rejected text is never logged or echoed anywhere -
 only the drop decision leaves the redactor. Mixed attributes that legitimately hold a name
 (`tailscale.node`, `tailscale.exit_node`, `tailscale.src.node`, `tailscale.dst.node`) are unaffected:
 a non-IP value there is a hostname by design and stays governed by `hostnames`.
 
 ### Span status descriptions follow the free-text policy
 
-A span's **status description** is free text written by whatever failed — a collector error string, a
+A span's **status description** is free text written by whatever failed - a collector error string, a
 recovered panic value, an upstream HTTP error. It is governed by **`free_text_details`**, the same
 category as the `exception.message` that usually carries the identical text. With
 `free_text_details: false`, a status description is replaced with `[redacted]` unless it is a
-**bounded, code-defined class** — a receiver's fixed reject reason (`method not allowed`,
-`corrupt batch`, `bad_signature`, …) or an HTTP status text (`Too Many Requests`) — which carries no
+**bounded, code-defined class** - a receiver's fixed reject reason (`method not allowed`,
+`corrupt batch`, `bad_signature`, …) or an HTTP status text (`Too Many Requests`) - which carries no
 free text and is kept so failures stay distinguishable.
 
 The span's **status code stays `Error`**, so a failed span is still visibly failed, and the scrape
 span additionally carries a bounded `error.type` attribute (`panic` \| `timeout` \| `error`) naming
 the failure class. With `free_text_details: true` (the default) descriptions are unchanged, except
-that an identifier from some *other* disabled category is still scrubbed out of them — e.g.
+that an identifier from some *other* disabled category is still scrubbed out of them - e.g.
 `endpoint_paths: false` removes the API URL from the description and from error events.
 
 ### Body redaction is deterministic
@@ -100,18 +100,20 @@ iteration order, and the `[redacted]` marker itself is never re-matched.
 ## ACL policy hygiene
 
 The `acl` collector scores the tailnet policy for **structural risk** on each tick (no extra API
-call — it reuses the policy it already fetches). Only bounded structural counts with enum labels
-are emitted; rule contents and PII are never exported. The risk gauges are:
+call: it reuses the policy it already fetches). The risk gauges emit bounded structural counts with enum labels. Separately,
+`collectors.acl.snapshot_enabled` opts into raw policy snapshots and diffs. Those bodies bypass
+`pii_filter` and may contain identities or policy details; see the [snapshot
+configuration](configuration.md#snapshot-collectors). The risk gauges are:
 
-- `tailscale.acl.wildcard_rules` — rules with a `*` source or destination (by section/position).
-- `tailscale.acl.unrestricted_rules` — any-to-any non-deny rules (`> 0` means at least one rule
+- `tailscale.acl.wildcard_rules` - rules with a `*` source or destination (by section/position).
+- `tailscale.acl.unrestricted_rules` - any-to-any non-deny rules (`> 0` means at least one rule
   matches *any* source to *any* destination).
-- `tailscale.acl.autoapprovers` — auto-approver depth by kind (`routes` / `exit_node` / `services`);
+- `tailscale.acl.autoapprovers` - auto-approver depth by kind (`routes` / `exit_node` / `services`);
   `autoapprover_kind="exit_node" > 0` means exit-node auto-approval is configured.
-- `tailscale.acl.ssh_wildcard` — Tailscale SSH rules with a wildcard source or destination.
-- `tailscale.acl.posture_gated_rules` — rules gated by `srcPosture`.
+- `tailscale.acl.ssh_wildcard` - Tailscale SSH rules with a wildcard source or destination.
+- `tailscale.acl.posture_gated_rules` - rules gated by `srcPosture`.
 
-These make natural alert conditions — see [Alerts](alerts.md).
+See [Alerts](alerts.md) for rules using these signals.
 
 ## Audit change tracking
 
@@ -130,8 +132,8 @@ noise of the full audit stream.
 By default `tailscale2otel` makes two **unauthenticated outbound HTTPS GET** requests to power its
 update-available and version-skew signals:
 
-- `version_checks.self` (default `true`) → `api.github.com/repos/rknightion/tailscale2otel/releases/latest`
-- `version_checks.devices` (default `true`) → `pkgs.tailscale.com/stable/?mode=json`
+- `version_checks.self.enabled` (default `true`) → `api.github.com/repos/rknightion/tailscale2otel/releases/latest`
+- `version_checks.devices.enabled` (default `true`) → `pkgs.tailscale.com/stable/?mode=json`
 
 No tailnet data is sent in either request. Set both to `false` in air-gapped or egress-controlled
 environments.
@@ -141,15 +143,16 @@ environments.
 The optional `streaming` (Splunk-HEC) and `webhook` receivers accept inbound POSTs, and the optional
 Prometheus listener serves `GET /metrics`. Authentication is enabled by a configured secret; an
 empty credential is accepted only on loopback (these behaviours are also noted in
-[`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml)):
+[`config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml):
 
-- Leaving `webhook.secret` empty skips HMAC verification only on a loopback
-  `webhook.listen`. On any other bind, requests are refused with HTTP 403 before their
-  bodies are read.
-- Leaving `streaming.token` empty is **refused rather than accepted** on a network-reachable
-  bind: the HEC receiver answers every request with HTTP 403 and logs an ERROR at startup. It
-  stays open only on a loopback `streaming.listen`. This fails closed, so a missing token
-  costs you ingestion, not silent acceptance of forged records.
+- A network-reachable webhook listener requires a secret on every configured route. Missing
+  credentials fail startup validation. A loopback listener may omit the secret and skips HMAC
+  verification, so any local process can submit events.
+- A network-reachable HEC listener likewise requires a token on every route and fails startup
+  validation without one. The receiver handlers also reject unauthenticated network requests
+  with HTTP 403 if constructed outside the normal validated startup path.
+
+
 - Leaving `admin.auth.token` empty likewise **refuses** the status page and its JSON APIs with
   HTTP 403 on any non-loopback `admin.listen` (`/healthz` and `/readyz` stay open).
 - Leaving `prometheus.auth.token` empty likewise serves `/metrics` only on a loopback bind. On a
@@ -157,12 +160,10 @@ empty credential is accepted only on loopback (these behaviours are also noted i
   `prometheus.auth.allow_unauthenticated: true` explicitly acknowledges the exposure.
 - Every admin response carries `Content-Security-Policy`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and `Cache-Control: no-store`, applied at the mux so a route added
-  later cannot be served bare. The CSP is `default-src 'none'` with **no origin permitted in any
-  directive**, which turns the "entirely self-contained, no CDN" property into something enforced:
-  no remote asset can load, and the page cannot become an exfiltration channel for the inventory it
-  displays. `frame-ancestors 'none'` keeps the mutating rDNS purge out of a frame. Scripts and
-  styles are `'unsafe-inline'` — both pages are one inline bundle and use inline event handlers,
-  which a nonce does not cover — so contextual escaping in `html/template`, not the CSP, is what
+  later cannot be served bare. The CSP starts with `default-src 'none'` and permits no external origins.
+  Same-origin fonts and status polling use `font-src 'self'` and `connect-src 'self'`. `frame-ancestors 'none'` keeps the mutating rDNS purge out of a frame. Scripts and
+  styles are `'unsafe-inline'` - both pages are one inline bundle and use inline event handlers,
+  which a nonce does not cover - so contextual escaping in `html/template`, not the CSP, is what
   stands between tailnet data and the DOM. `Strict-Transport-Security` is sent **only** when
   `admin.tls` is configured: on a plaintext listener a browser that saw it once would refuse
   `http://` to that host and port and lock you out of your own page.
@@ -171,7 +172,7 @@ empty credential is accepted only on loopback (these behaviours are also noted i
     [`/flows`](flow-view.md) shows device names, addresses and users **in full**. `pii_filter`
     governs the telemetry this process exports, not what an authenticated administrator may look
     at locally, and by default the flow store is in memory and never leaves the process. The
-    **admin token is the only thing protecting that data** — if the set of people holding it is
+    **admin token is the only thing protecting that data** - if the set of people holding it is
     wider than the set who may see your users' email addresses, narrow the token rather than the
     filter.
 
@@ -179,7 +180,7 @@ empty credential is accepted only on loopback (these behaviours are also noted i
     That "never leaves the process" reasoning holds only for the in-memory default. Setting
     [`flows.store.directory`](configuration.md#flowsstore-opt-in-persistent-backend) writes flow
     rows to a SQLite database that survives restarts and lands in whatever backs up that volume,
-    so the admin token stops being the only control — filesystem and backup access now read the
+    so the admin token stops being the only control - filesystem and backup access now read the
     same data.
 
     Because that data does leave the process, the persistent path **does** apply `pii_filter`
@@ -194,12 +195,11 @@ empty credential is accepted only on loopback (these behaviours are also noted i
     or leave them empty behind an HTTPS reverse proxy. A `tailscale cert` works for private
     tailnet endpoints.
 
-!!! warning "Mistyped environment variable names silently leave auth disabled"
-    Any field can be set via a `TS2OTEL_*` environment variable (the env layer overrides the
-    file), and an **empty credential silently disables auth** — for example a mistyped
-    variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves the secret empty rather than failing
-    loudly. The startup log WARNs on a `TS2OTEL_*` variable that matches no config key, but
-    double-check that auth credentials are actually set.
+!!! warning "Check credential settings after an environment-variable warning"
+    An unknown `TS2OTEL_*` name produces a startup warning and leaves the intended key unchanged.
+    Missing stream or webhook credentials on network binds fail validation in v5. Admin and
+    Prometheus listeners keep their request-time authentication checks; a typo can leave them
+    returning 403. Check the effective configuration before exposing a listener.
 
 ## `streaming.auto_configure` footgun
 
@@ -214,7 +214,7 @@ empty credential is accepted only on loopback (these behaviours are also noted i
 - Keep secrets in **`TS2OTEL_*` environment variables** (the env layer overrides the file),
   never as literal values in YAML. `config.local.yaml`, `.env.local`, and `.secrets/` are
   gitignored for this reason.
-- The admin **status page redacts secret values** — it emits only `*Set` booleans (e.g.
+- The admin **status page redacts secret values** - it emits only `*Set` booleans (e.g.
   `webhook_secret_set`) and OTLP header key names, never the values themselves.
 - Secrets are **never logged**.
 

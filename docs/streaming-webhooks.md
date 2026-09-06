@@ -36,18 +36,18 @@ guarantee". Everything else on this page elaborates one of its rows.
 
 | Path | `flowlogs` | `auditlogs` | Tailscale events | Delivery | Durability boundary | Max backfill |
 |---|:---:|:---:|:---:|---|---|---|
-| `poll` (default) | ✓ | ✓ | — | at-least-once | checkpointed high-water mark; `replay_overlap` deliberately revisits completed time | `initial_lookback`, bounded by the API's own retention |
-| `stream` (Splunk-HEC receiver) | ✓ | ✓ | — | at-least-once, **at Tailscale's discretion** | none by default; opt-in bounded ingress WAL (`ingress_wal`) makes local acceptance durable | none — push only, no history |
-| `objectstore` | ✓ | ✓ | — | at-least-once | durable cursor, per-prefix scan positions, seen set and failed-object gaps, all in one checkpoint transaction | **14 day partitions** (`layout: partitioned`) or unbounded (`layout: flat`) — see below |
-| `webhook` receiver | — | — | ✓ | at-least-once, HMAC-verified | none by default; same opt-in WAL | none |
-| `both` | ✓ | ✓ | — | **double-counts** | as `poll` | as `poll` |
+| `poll` (default) | ✓ | ✓ | - | at-least-once | checkpointed high-water mark; `replay_overlap` deliberately revisits completed time | `initial_lookback`, bounded by the API's own retention |
+| `stream` (Splunk-HEC receiver) | ✓ | ✓ | - | at-least-once, **at Tailscale's discretion** | none by default; opt-in bounded ingress WAL (`ingress_wal`) makes local acceptance durable | none - push only, no history |
+| `objectstore` | ✓ | ✓ | - | at-least-once | durable cursor, per-prefix scan positions, seen set and failed-object gaps, all in one checkpoint transaction | **14 day partitions** (`layout: partitioned`) or unbounded (`layout: flat`) - see below |
+| `webhook` receiver | - | - | ✓ | at-least-once, HMAC-verified | none by default; same opt-in WAL | none |
+| `both` | ✓ | ✓ | - | **double-counts** | as `poll` | as `poll` |
 
 "✓" means the path carries that signal today. `objectstore` covers both log types because Tailscale
 publishes each as its own export; `webhook` carries only the real-time event feed, which is a
 different data source rather than a third delivery route for logs.
 
 **Acknowledgement stops at this process.** Every path above is at-least-once *into* the exporter. What
-happens after — whether the OTLP gateway accepted the batch, whether the backend stored it — is
+happens after - whether the OTLP gateway accepted the batch, whether the backend stored it - is
 outside every boundary in the table. A checkpoint that has advanced means "these records were handed
 to the emitter", not "these records are queryable".
 
@@ -55,18 +55,18 @@ The network and configuration exports are **separate objects in separate key spa
 reads its own destination: `collectors.flowlogs.objectstore` and `collectors.auditlogs.objectstore`
 (or, with a `tailnets:` list, each entry's `objectstore.flow` and `objectstore.audit`). Nothing is
 inherited between them, and two destinations this process reads may not name the same bucket **and**
-prefix — sharing one feed would have each engine fetch every object and then fail to decode the other
+prefix - sharing one feed would have each engine fetch every object and then fail to decode the other
 signal's records. One bucket with a prefix per signal is the normal arrangement.
 
 !!! warning "Running both paths double-counts"
-    Setting `source: both` — or enabling the streaming receiver while a collector still uses `source: poll` — means the same log record can be delivered and emitted twice. Cross-source deduplication is only a best-effort failsafe; the exporter logs a **WARN** at startup when it detects both paths are active for the same log type. Pick exactly one method per log type.
+    Setting `source: both` - or enabling the streaming receiver while a collector still uses `source: poll` - means the same log record can be delivered and emitted twice. Cross-source deduplication is only a best-effort failsafe; the exporter logs a **WARN** at startup when it detects both paths are active for the same log type. Pick exactly one method per log type.
 
 Streamed log records pass through the same shared processors as polled records, so they produce identical OTEL metrics and log events regardless of which path delivers them.
 
 ## Maximum effective backfill
 
 **Under the default `layout: partitioned`, the furthest back object-store ingestion can ever reach is
-14 day partitions — today plus the previous 13 days.** That is a permanent ceiling, not a per-cycle
+14 day partitions - today plus the previous 13 days.** That is a permanent ceiling, not a per-cycle
 one, and it does not depend on `initial_lookback`:
 
 - one cycle enumerates at most 14 `YYYY/MM/DD/` partitions, walking **backwards** from the newest so a
@@ -77,19 +77,19 @@ one, and it does not depend on `initial_lookback`:
 Setting `initial_lookback: 720h` against a bucket holding 30 days of exports therefore ingests the
 most recent 14 partitions and **silently ignores the other 16**. Nothing reports it: the older objects
 are never listed, so they produce no gap, no `skipped` count and no metric. `Warnings()` flags an
-`initial_lookback` beyond the ceiling at startup for exactly this reason — it is the only place an
+`initial_lookback` beyond the ceiling at startup for exactly this reason - it is the only place an
 operator finds out.
 
 To reach further back, use **`layout: flat`**, which has no day partitions to cap. It lists the prefix
 itself and resumes from a durable scan position, so it walks arbitrarily far back over as many cycles
 as it takes, bounded per cycle by `max_objects`. The cost is more LIST requests and higher discovery
-latency for new objects — see [export layouts](configuration.md#export-layouts-partitioned-vs-flat).
+latency for new objects - see [export layouts](configuration.md#export-layouts-partitioned-vs-flat).
 For a one-off historical load, `flat` against a copy of the export is the supported route; the
 partitioned reader is for steady-state ingestion.
 
 Two notes on what "backfill" can mean here at all. Object-store history is bounded by whatever the
 bucket's own lifecycle policy retains, and pushing old records into a backend does not make them
-visible if that backend's retention window has already passed them — Grafana Cloud's flow-log retention
+visible if that backend's retention window has already passed them - Grafana Cloud's flow-log retention
 is why a longer historical load was declined as unsupported in #287.
 
 ## Object-store durability and failed gaps
@@ -110,14 +110,14 @@ object-level gaps.
 
 **One object is all-or-nothing.** Every row is decoded and validated first, and only then is the whole
 set committed to the shared processor, so a scanner or read failure part-way through an object emits
-**nothing at all** — not a partial prefix of its rows. The retry after restart therefore replays the
+**nothing at all** - not a partial prefix of its rows. The retry after restart therefore replays the
 object exactly once rather than duplicating rows it had already emitted. (An earlier version of this
 page said the opposite; it predated the two-phase prepare/commit engine.
 `TestCollect_LateScannerErrorEntersDurableGapPath` and the `atomicity_test.go` suite are the
 guarantee.)
 
 What remains at-least-once is the object as a unit: a crash between emission and the checkpoint write
-replays that whole object. And OTLP/backend acknowledgement stays outside this boundary entirely — a
+replays that whole object. And OTLP/backend acknowledgement stays outside this boundary entirely - a
 committed row means "handed to the emitter", never "stored by the backend".
 
 Gap diagnostics do not expose bucket keys. Logs use a 12-character SHA-256 object digest, and these
@@ -202,7 +202,7 @@ or mixed-tailnet batches are rejected without processor, dedup, or receiver-tele
 | `tailscale.stream.rejected` | Whole requests not ingested (`reason` includes authentication/exposure failures, size/admission limits, malformed/decode failures, and `semantic_invalid`) |
 | `tailscale.stream.decode_errors` | Records classified as a known type but whose typed decode failed |
 | `tailscale.stream.skipped` | Records extracted from an otherwise-valid request body but never routed to a processor (`reason`: `unclassified` = matched neither the flow nor audit shape, `unwrap_drop` = a non-object value was dropped while unwrapping the envelope before classification) |
-| `tailscale.stream.inflight` | In-flight HTTP requests currently being processed (UpDownCounter) — useful for backpressure monitoring |
+| `tailscale.stream.inflight` | In-flight HTTP requests currently being processed (UpDownCounter) - useful for backpressure monitoring |
 | `tailscale.stream.request.duration` | Wall-clock duration of HEC request handling, in seconds (histogram) |
 
 All accepted ingestion paths also feed bounded cross-source freshness telemetry:
@@ -215,7 +215,7 @@ because webhook and audit sources can be legitimately quiet.
 
 ## Webhook receiver
 
-When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type. The receiver also emits `tailscale.webhook.rejected` (deliveries rejected, e.g. bad HMAC, keyed by `reason` — the signal to watch when a secret or timestamp tolerance is misconfigured), `tailscale.webhook.inflight` (in-flight requests, UpDownCounter), and `tailscale.webhook.request.duration` (handler wall-clock time, histogram) for backpressure and latency monitoring.
+When `webhook.enabled: true`, `tailscale2otel` binds an HTTP endpoint that receives real-time Tailscale event notifications. Each event is emitted as an OTEL log record (with severity INFO or WARN depending on event type) and increments a `tailscale.webhook.events` counter keyed by event type. The receiver also emits `tailscale.webhook.rejected` (deliveries rejected, e.g. bad HMAC, keyed by `reason` - the signal to watch when a secret or timestamp tolerance is misconfigured), `tailscale.webhook.inflight` (in-flight requests, UpDownCounter), and `tailscale.webhook.request.duration` (handler wall-clock time, histogram) for backpressure and latency monitoring.
 
 ```yaml
 webhook:
@@ -231,7 +231,7 @@ webhook:
 ```
 
 !!! note "No `auto_configure` for webhooks"
-    Unlike `streaming.auto_configure`, there is no equivalent for the webhook receiver — the
+    Unlike `streaming.auto_configure`, there is no equivalent for the webhook receiver - the
     Tailscale API has no webhook-registration endpoint. Webhooks must be registered manually in the
     [Tailscale admin console](https://login.tailscale.com/admin/webhooks), pointed at this
     receiver's `listen`/`path`, with the same secret configured on both sides.
@@ -279,13 +279,13 @@ private tailnet endpoints.
 The Helm chart ships **no inbound resource by default** (see `deploy/CLAUDE.md`'s "No Kubernetes
 Service" note). Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
 **only for the two receiver listeners, `streaming` and `webhook`**. **Admin and Prometheus never get
-one, at any value** — they are introspection and scrape surfaces, and publishing either to the
+one, at any value** - they are introspection and scrape surfaces, and publishing either to the
 internet is never the right default, so the chart does not offer that as a one-line mistake. Reach
 those two the way `deploy/CLAUDE.md` already documents: a `Service` you manage yourself plus your own
 `Ingress`, or a `PodMonitor`/`ServiceMonitor` for Prometheus scraping.
 
 Both paths require a backing `Service` first (`service.streaming.enabled` /
-`service.webhook.enabled` — see [Configuration](configuration.md)), and both refuse to render if the
+`service.webhook.enabled` - see [Configuration](configuration.md)), and both refuse to render if the
 listener has no credential configured (`config.streaming.token` / `config.webhook.secret`, or their
 `_file` siblings): publishing an unauthenticated receiver to the internet is the exact failure mode
 this feature exists to prevent, and `helm template` fails with an actionable message naming the
@@ -309,7 +309,7 @@ ingress:
 ```
 
 `ingress.<listener>.tls.enabled` defaults to `true` and requires **either** a `secretName` **or** at
-least one annotation (typically a cert-manager issuer, below) — otherwise the rendered Ingress would
+least one annotation (typically a cert-manager issuer, below) - otherwise the rendered Ingress would
 claim TLS with nothing configured to terminate it, and `helm template` fails and says so. Setting
 `tls.enabled: false` is allowed, but only makes sense when a mesh or sidecar upstream of the Ingress
 controller terminates TLS for you: **Tailscale will not deliver webhooks, and will not accept a
@@ -335,7 +335,7 @@ The annotation alone satisfies the TLS guard even with `secretName` left empty, 
 
 ### Gateway API (`HTTPRoute`)
 
-Requires the Gateway API CRDs and a `Gateway` object already provisioned in-cluster — this chart does
+Requires the Gateway API CRDs and a `Gateway` object already provisioned in-cluster - this chart does
 not create either, the same way it never creates a `ServiceMonitor`'s Prometheus Operator CRDs.
 
 ```yaml
@@ -362,11 +362,11 @@ render time exactly like the other guards above.
 Both receivers are small, self-contained packages if you want to check the parsing or verification
 behaviour yourself:
 
-- [`internal/stream`](https://github.com/rknightion/tailscale2otel/tree/main/internal/stream) — the Splunk-HEC-compatible log-streaming receiver
-- [`internal/webhook`](https://github.com/rknightion/tailscale2otel/tree/main/internal/webhook) — HMAC-verified webhook receiver
-- [`internal/dedup`](https://github.com/rknightion/tailscale2otel/tree/main/internal/dedup) — the cross-source de-duplication failsafe
+- [`internal/stream`](https://github.com/rknightion/tailscale2otel/tree/main/internal/stream) - the Splunk-HEC-compatible log-streaming receiver
+- [`internal/webhook`](https://github.com/rknightion/tailscale2otel/tree/main/internal/webhook) - HMAC-verified webhook receiver
+- [`internal/dedup`](https://github.com/rknightion/tailscale2otel/tree/main/internal/dedup) - the cross-source de-duplication failsafe
 
 Tailscale does not publicly document the exact HEC payload envelope, so the receiver parses
 defensively. If you capture an envelope that fails to decode, please
-[open an issue](https://github.com/rknightion/tailscale2otel/issues/new) — that is how the decoder
+[open an issue](https://github.com/rknightion/tailscale2otel/issues/new) - that is how the decoder
 gets better.

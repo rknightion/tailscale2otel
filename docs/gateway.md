@@ -8,7 +8,7 @@ tags:
 
 # Collector gateway
 
-`tailscale2otel` can export OTLP straight to your backend, or through a **gateway** — a Grafana
+`tailscale2otel` can export OTLP straight to your backend, or through a **gateway** - a Grafana
 Alloy or OpenTelemetry Collector instance that receives OTLP from the exporter, buffers it, and
 forwards it on. This page covers when the gateway is worth it, and ships a validated recipe for
 both Docker and Kubernetes.
@@ -34,7 +34,7 @@ deployments.
 | --- | --- | --- |
 | Path | exporter → backend | exporter → Alloy/Collector → backend |
 | Moving parts | one container | two |
-| Backend outage tolerance | limited — in-process retry only, bounded by the export interval | a disk-backed queue that holds the backlog and drains on recovery |
+| Backend outage tolerance | limited - in-process retry only, bounded by the export interval | a disk-backed queue that holds the backlog and drains on recovery |
 | Survives an exporter restart | no | the *gateway's* backlog does |
 | Backend credential lives in | the exporter | the gateway only |
 | Enrichment, filtering, tail sampling | not available | processors in the pipeline |
@@ -43,7 +43,7 @@ deployments.
 
 Grafana's own guidance is that [the recommended architecture for production observability uses
 Grafana Alloy](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/), for exactly
-these reasons — reliability, metadata enrichment, sampling and multi-backend routing — and that
+these reasons - reliability, metadata enrichment, sampling and multi-backend routing - and that
 direct SDK export is the quickstart shape rather than the durable one.
 
 **Take the gateway when** you cannot afford to lose telemetry across a backend outage or
@@ -52,7 +52,7 @@ need to enrich or route, or you would rather the backend token lived in one plac
 exporter.
 
 **Stay direct when** a gap during an outage is acceptable, or a second container is not worth the
-operational surface. Point `otlp.endpoint` at your backend and you are done — see
+operational surface. Point `otlp.endpoint` at your backend and you are done - see
 [Getting Started](getting-started.md).
 
 ### What a gateway does not give you
@@ -82,15 +82,15 @@ otelcol.receiver.otlp          :4317 gRPC / :4318 HTTP, on a private network
        -> otelcol.storage.file           optional, disk-backed queue (public preview)
 ```
 
-Two ordering rules are load-bearing. The **memory limiter goes first** — anything ahead of it
-buffers data it can no longer protect — and the **batch processor goes after it**, which is
+Two ordering rules are required. The **memory limiter goes first**: anything ahead of it
+buffers data it can no longer protect - and the **batch processor goes after it**, which is
 [Grafana's documented recommendation](https://grafana.com/docs/alloy/latest/reference/components/otelcol/otelcol.processor.batch/).
 
 !!! danger "`otelcol.storage.file` is public preview"
     The persistent-queue component is at Alloy stability level **public preview**: it is subject to
     breaking changes between releases, and Alloy **refuses to start** unless you pass
     `--stability.level=public-preview` (or lower). It is optional. Drop its block and the
-    `storage =` line from `sending_queue` and the queue still works — in memory, emptied on every
+    `storage =` line from `sending_queue` and the queue still works - in memory, emptied on every
     restart. Take the preview dependency only if surviving a gateway restart with the backlog
     intact is worth it to you.
 
@@ -100,7 +100,7 @@ buffers data it can no longer protect — and the **batch processor goes after i
 docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml up -d
 ```
 
-That compose file **replaces** `deploy/docker-compose.yaml` rather than overlaying it — do not pass
+That compose file **replaces** `deploy/docker-compose.yaml` rather than overlaying it - do not pass
 both. It runs Alloy pinned to a specific version tag (never `latest`, because Alloy component
 arguments change between minor versions) alongside the exporter, and points the exporter at the
 sidecar:
@@ -112,7 +112,7 @@ TS2OTEL_OTLP__TLS__INSECURE: "true"
 ```
 
 `tls.insecure` disables transport security **entirely**, so it is only ever acceptable on a trusted
-private hop. It is safe here specifically because there is no credential on that hop — in gateway
+private hop. It is safe here specifically because there is no credential on that hop - in gateway
 mode the backend token belongs to Alloy alone, and no `otlp.grafana_cloud.*` is set on the exporter
 at all.
 
@@ -137,7 +137,7 @@ access-policy token with the OTLP write scopes; both come from the Cloud Portal 
 
 ## Kubernetes
 
-The `tailscale2otel` chart does **not** bundle Alloy, and deliberately so — a gateway is shared
+The `tailscale2otel` chart does **not** bundle Alloy, and deliberately so - a gateway is shared
 infrastructure with its own lifecycle, and most clusters that want one already have one. Deploy
 Alloy with [its own chart](https://grafana.com/docs/alloy/latest/set-up/install/kubernetes/) (or
 `k8s-monitoring`), give it the pipeline from
@@ -169,7 +169,7 @@ existingSecret: tailscale2otel-credentials
 That `existingSecret` must carry the usual `TS2OTEL_*` keys
 (`TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID`, `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`); see
 [Installation](installation.md) for the full key list. Rotating an externally managed secret needs
-the pod replaced — Kubernetes never refreshes env in a running container — which is what the
+the pod replaced - Kubernetes never refreshes env in a running container - which is what the
 chart's `rolloutTrigger` value is for.
 
 On the Alloy side, three things carry over from the Docker recipe and are easy to miss:
@@ -177,7 +177,7 @@ On the Alloy side, three things carry over from the Docker recipe and are easy t
 - **Pass `--stability.level=public-preview`** in the Alloy container args if you keep the
   `otelcol.storage.file` block. Without it Alloy will not start.
 - **Give the queue a PVC**, not an `emptyDir`. A persistent queue on an `emptyDir` is discarded
-  exactly when you needed it, which is worse than not enabling it — the config looks durable and
+  exactly when you needed it, which is worse than not enabling it - the config looks durable and
   is not.
 - **Keep `memory_limiter.limit` at roughly 80% of the container memory limit.** A limiter budget
   above the pod's limit means the pod is OOM-killed before the limiter ever engages.
@@ -189,11 +189,11 @@ The gateway is an extra hop that can fail silently, so confirm both ends rather 
 **End to end:** the exporter's own `tailscale2otel.up` gauge (`tailscale2otel_up` once normalized
 for Prometheus) appearing in your backend proves the whole chain. The exporter's
 [admin status page](getting-started.md) shows OTLP delivery state per signal on its side of the
-hop — which tells you whether the exporter is reaching the gateway, not whether the gateway is
+hop - which tells you whether the exporter is reaching the gateway, not whether the gateway is
 reaching the backend.
 
 **The gateway's own health:** Alloy serves a readiness endpoint and its own metrics on port 12345.
-Keep that listener on loopback or behind your own auth — it is unauthenticated and exposes pipeline
+Keep that listener on loopback or behind your own auth - it is unauthenticated and exposes pipeline
 internals.
 
 ```sh
@@ -205,8 +205,8 @@ curl -s http://127.0.0.1:12345/metrics | grep '^otelcol_exporter_queue_size'
 means the backend is rejecting or throttling, and hitting
 `otelcol_exporter_queue_capacity` means you are dropping.
 
-**The outage and restart drill** — stop the backend, watch the queue fill, restart the gateway,
-watch the backlog survive, restore the backend, watch it drain — is written up step by step with
+**The outage and restart drill** - stop the backend, watch the queue fill, restart the gateway,
+watch the backlog survive, restore the backend, watch it drain - is written up step by step with
 observed values in the
 [`deploy/alloy/` README](https://github.com/rknightion/tailscale2otel/blob/main/deploy/alloy/README.md#outage-and-restart-smoke-test).
 Run it once before you rely on the queue.
@@ -220,6 +220,6 @@ Run it once before you rely on the queue.
 
 ## Next steps
 
-- [Installation](installation.md) — the direct-export Docker, Helm and binary paths.
-- [Configuration](configuration.md) — every `otlp.*` key, including headers and TLS.
-- [Troubleshooting](troubleshooting.md) — what to check when nothing arrives.
+- [Installation](installation.md) - the direct-export Docker, Helm and binary paths.
+- [Configuration](configuration.md) - every `otlp.*` key, including headers and TLS.
+- [Troubleshooting](troubleshooting.md) - what to check when nothing arrives.

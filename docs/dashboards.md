@@ -10,7 +10,7 @@ tags:
 
 tailscale2otel ships ready-to-use Grafana dashboards in the
 [`deploy/grafana/`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/grafana)
-directory: two v2-schema dashboards for Grafana 13+, generated from code, and nothing else — the
+directory: two v2-schema dashboards for Grafana 13+, generated from code, and nothing else - the
 four legacy single-purpose dashboards were removed (see below).
 
 ## Two dashboards, two questions
@@ -19,8 +19,8 @@ The dashboards split on the question they answer, not on data source:
 
 | Dashboard | uid | File | Question it answers |
 |---|---|---|---|
-| **Tailscale2OTel — Tailnet** | `tailscale2otel-tailnet` | `tailscale2otel-tailnet.json` | Is my tailnet healthy — devices, network, security, policy? |
-| **Tailscale2OTel — Exporter health** | `tailscale2otel-health` | `tailscale2otel-health.json` | Is the exporter itself healthy — collection, ingestion, delivery, runtime, cost? |
+| **Tailscale2OTel — Tailnet** | `tailscale2otel-tailnet` | `tailscale2otel-tailnet.json` | Is my tailnet healthy - devices, network, security, policy? |
+| **Tailscale2OTel — Exporter health** | `tailscale2otel-health` | `tailscale2otel-health.json` | Is the exporter itself healthy - collection, ingestion, delivery, runtime, cost? |
 
 Open **Tailnet** for anything about the fleet, its network traffic, or its security posture. Open
 **Exporter health** when you suspect data is missing, stale, or wrong, and you need to know whether
@@ -29,7 +29,7 @@ other in its controls menu (**Exporter health →** / **← Tailnet**), so you d
 both uids.
 
 Both use the **Grafana v2 dashboard schema** (`dashboard.grafana.app/v2`, Grafana 13+) with tabbed,
-often nested navigation and **conditional rendering** — a tab or row only appears when its
+often nested navigation and **conditional rendering** - a tab or row only appears when its
 underlying data is actually present, so each dashboard adapts to whichever optional collectors and
 features you have enabled.
 
@@ -42,7 +42,7 @@ python3 gen/build.py --out-dir .
 
 ### `tailscale2otel-tailnet` tabs
 
-Fleet & Network and Security & Policy are nested domains — each has sub-tabs, and one of them
+Fleet & Network and Security & Policy are nested domains - each has sub-tabs, and one of them
 (Devices, Security & Audit, Policy & Config) is nested a level deeper still.
 
 | Tab path | What it covers |
@@ -61,7 +61,7 @@ Fleet & Network and Security & Policy are nested domains — each has sub-tabs, 
 | **Security & Policy > Policy & Config > DNS & Settings** | DNS (MagicDNS, resolvers, split-DNS, search paths) and tailnet settings/features. |
 | **Security & Policy > Policy & Config > Identity & Credentials** | Users (by role/status/type), API keys and credential scopes, key expiry detail, and OAuth application inventory. |
 | **Security & Policy > Policy & Config > Integrations** | VIP services, webhook endpoint inventory, GeoIP enrichment, and posture-integration last-sync errors. |
-| **Security & Policy > Kubernetes Audit** | Kubernetes API request volume, sensitive-resource reads, exec/attach/portforward and terminal sessions, mutating requests, RBAC probes, schema drift, and investigation-focused log views (conditionally rendered — Kubernetes operator audit only). |
+| **Security & Policy > Kubernetes Audit** | Kubernetes API request volume, sensitive-resource reads, exec/attach/portforward and terminal sessions, mutating requests, RBAC probes, schema drift, and investigation-focused log views (conditionally rendered - Kubernetes operator audit only). |
 
 ### `tailscale2otel-health` tabs
 
@@ -80,7 +80,7 @@ Fleet & Network and Security & Policy are nested domains — each has sub-tabs, 
 `tailscale-audit-events.json` (`ts2otel-audit-events`) and `tailscale-exporter-health.json`
 (`ts2otel-exporter-health`) have been **removed**. They were hand-maintained `schemaVersion: 39`
 JSON, duplicated content the v2 dashboards already cover, and were excluded from every generator and
-drift gate — so they drifted silently and were the only dashboards nothing tested.
+drift gate - so they drifted silently and were the only dashboards nothing tested.
 
 tailscale2otel targets **Grafana 13+ and the v2 dashboard schema only**. The v2 dynamic layout
 (tabs, nested navigation, conditional rendering) cannot be expressed in the classic schema, so a
@@ -107,7 +107,7 @@ old dashboards showed only where the old ones were rendering empty panels.
     Grafana 11.5 rejects them with the misleading error `Dashboard title cannot be empty`. Neither
     failure mode says "your Grafana is too old", so check the version first.
 
-    This also means the **classic `POST /api/dashboards/db` endpoint does not apply** — it takes a
+    This also means the **classic `POST /api/dashboards/db` endpoint does not apply** - it takes a
     v1 dashboard body. Use one of the paths below.
 
 **`gcx` (recommended):**
@@ -124,10 +124,10 @@ Grafana.
 
 ## Datasource variables
 
-All dashboards resolve datasources by template variable — no pinned UIDs — so they are portable across stacks:
+All dashboards resolve datasources by template variable - no pinned UIDs - so they are portable across stacks:
 
-- `${DS_PROM}` / `ds_prometheus` — a Prometheus datasource (Grafana Cloud default UID: `grafanacloud-prom`)
-- `${DS_LOKI}` / `ds_loki` — a Loki datasource (Grafana Cloud default UID: `grafanacloud-logs`)
+- `${DS_PROM}` / `ds_prometheus` - a Prometheus datasource (Grafana Cloud default UID: `grafanacloud-prom`)
+- `${DS_LOKI}` / `ds_loki` - a Loki datasource (Grafana Cloud default UID: `grafanacloud-logs`)
 
 Both dashboards also expose one **Instance / environment** ad-hoc control. In a stack receiving
 several exporter installations, add `service_instance_id` and/or
@@ -141,7 +141,7 @@ queries use the **normalized** names, not the raw OTEL names. The key rules:
 - Dots become underscores in both metric names and label keys.
 - Monotonic counters gain a `_total` suffix.
 - Units are appended: `By` → `_bytes`, `s` → `_seconds`, `d` → `_days`.
-- A gauge with unit `"1"` gets a `_ratio` suffix — including plain integer counts, so
+- A gauge with unit `"1"` gets a `_ratio` suffix - including plain integer counts, so
   `tailscale_devices_count` becomes `tailscale_devices_count_ratio`.
 
 See [Metrics](metrics.md) for the full naming rules and the complete metric catalog.

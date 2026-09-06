@@ -10,15 +10,15 @@ tags:
 `tailscale2otel` is a single static Go binary that bridges the Tailscale observability surface to
 any OpenTelemetry backend. It polls the Tailscale API (and optionally receives streamed logs or
 webhooks), runs each data source through a typed conversion pipeline, and pushes the resulting
-metrics and logs (and, optionally, self-observability traces) over OTLP — all without writing a
-single line of PromQL or touching a sidecar.
+metrics and logs through OTLP, Prometheus pull, or stdout. Optional traces describe the exporter’s
+own collection and delivery work.
 
 ## High-level data flow
 
 `app.New` fans out over the configured tailnets: each gets its own `*tailnetRuntime` (client,
 enrichment cache, scheduler, flow/audit processors), and every runtime feeds a per-tailnet
 `telemetry.Provider` inside one process-wide `telemetry.ProviderSet`. Under `provider: headscale`
-there is no fan-out — a single runtime talks to Headscale instead.
+there is no fan-out - a single runtime talks to Headscale instead.
 
 ```mermaid
 flowchart LR
@@ -63,14 +63,14 @@ flowchart LR
     H -.-> P
 ```
 
-Collectors and processors emit only through the `telemetry.Emitter` interface — they never touch
+Collectors and processors emit only through the `telemetry.Emitter` interface - they never touch
 the OTEL SDK directly. This keeps OTLP a deployment concern, not a business-logic concern.
 
 ## Control-plane providers: Tailscale or Headscale
 
 By default tailscale2otel talks to Tailscale's hosted API. Setting `provider: headscale` points it
 at a self-hosted [Headscale](https://headscale.net/) control plane instead, via `internal/hsapi`
-behind the same `internal/provider` abstraction — the collectors and processors described above are
+behind the same `internal/provider` abstraction - the collectors and processors described above are
 unaware of which backend is in play.
 
 Headscale's API is narrower than Tailscale's, so under `provider: headscale` only the `devices`,
@@ -80,11 +80,11 @@ Headscale's API is narrower than Tailscale's, so under `provider: headscale` onl
 [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection) for
 the full list of what's affected and the required connection settings.
 
-## Composition root — `internal/app`
+## Composition root - `internal/app`
 
 `app.New` is where everything gets wired together. On startup it:
 
-1. Resolves the configured tailnets (`cfg.ResolvedTailnets()` — one `tailscale:` block or a
+1. Resolves the configured tailnets (`cfg.ResolvedTailnets()` - one `tailscale:` block or a
    `tailnets:` list) and builds a `telemetry.ProviderSet`: one process-level OTEL provider (no
    `tailscale.tailnet` attribute; process/global self-obs) plus one per-tailnet provider (each
    stamps `tailscale.tailnet=<name>` and gets a distinct `service.instance.id`, so tailnets never
@@ -95,12 +95,12 @@ the full list of what's affected and the required connection settings.
    `version_checks.self.enabled` / `version_checks.devices.enabled`).
 3. Builds the collection machinery, branching on `provider`:
    - **`tailscale` (default):** one `*tailnetRuntime` per resolved tailnet. Each runtime gets its
-     own `internal/tsapi` client (OAuth preferred — auto-refreshing, no expiry — or a static API
+     own `internal/tsapi` client (OAuth preferred, with refreshing access tokens, or a static API
      key), its own `enrich.DeviceCache`, its own `flowlog.Processor` / `audit.Processor` pair (so
      both the poll path and the stream/webhook path feed identical conversion logic within that
      tailnet), and its own collector registry + scheduler (`internal/collector`).
    - **`headscale`:** a single runtime backed by `internal/hsapi` behind the `internal/provider`
-     abstraction (`provider.Headscale`) — no per-tailnet fan-out; it shares the process emitter
+     abstraction (`provider.Headscale`) - no per-tailnet fan-out; it shares the process emitter
      rather than getting its own tailnet provider.
 4. Starts any enabled receivers (`internal/stream` for Splunk-HEC, `internal/webhook`).
 5. Launches the admin HTTP server (health probes, status page, `POST /api/rdns/purge`, optional
@@ -110,36 +110,36 @@ the full list of what's affected and the required connection settings.
 7. Starts continuous profiling (Pyroscope push agent) when configured; failure to reach Pyroscope
    is non-fatal.
 
-`Run` then starts, per runtime, its scheduler loop plus (when self-observability is enabled) the
+`Run` then starts, per active runtime, its scheduler loop plus the enabled
 release-check background loops (`selfRelease.Run` / `tsRelease.Run`) driving
 `tailscale2otel.update_available` and the device version-skew metrics.
 
 The file `internal/app/collectors.go` is the canonical list of what is registered and under what
 config gates. Start here when you want to understand how a new data source would be added.
 
-There is no cross-process coordination anywhere in this pipeline — checkpoints, the dedup set, and
-the enrichment cache are all in-process state. Run exactly one instance per tailnet (or one
-instance covering the whole fleet via `tailnets:`); a second instance polling or streaming the same
-tailnet double-counts flow/audit logs independently of the poll-vs-stream choice below. See
-[Troubleshooting](troubleshooting.md#running-more-than-one-instance-against-the-same-tailnet-double-counts).
+The default mode is singleton. [Kubernetes coordination](high-availability.md) elects one active
+process for the whole fleet using a Lease. Standbys keep admin and process-metrics listeners
+running; listener Services select the leader. With Kubernetes coordination enabled, `checkpoint.store: kubernetes` shares sharded
+cursors through ConfigMaps. Enrichment, dedup and local views remain process-local.
+
 
 ## Collector types and scheduling
 
 `internal/collector` defines two interfaces:
 
-- **`SnapshotCollector`** — a point-in-time read, called on a fixed interval. Used by `devices`,
+- **`SnapshotCollector`** - a point-in-time read, called on a fixed interval. Used by `devices`,
   `users`, `keys`, `settings`, `acl`, `dns`, `services`, `contacts`, `webhooks`,
-  `posture_integrations`, `log_stream`, and `nodemetrics`. Stateless between ticks (the `acl`
-  collector is the exception: it stores an ETag to skip unchanged responses).
-- **`WindowCollector`** — a time-windowed read, called with an explicit `[from, to]` range. Used
+  `posture_integrations`, `log_stream`, and `nodemetrics`. Some retain state between ticks, including ACL ETags,
+  previous snapshots, lifecycle observations and dedup sets.
+- **`WindowCollector`** - a time-windowed read, called with an explicit `[from, to]` range. Used
   by `flowlogs` and `auditlogs`. Each run returns a high-water mark that becomes the `from` of the
   next window, enabling resumable polling across restarts.
 
 Each collector runs in its own goroutine with a small randomised start-up stagger (bounded at 3 s
-by default) so no two collectors hit the API at the same instant. A panic or transient error in one
+by default) to spread initial API requests. Collisions remain possible. A panic or transient error in one
 tick is recovered and logged; it never stops the scheduler or any other collector.
 
-## Log sources — pick one per log type
+## Log sources - pick one per log type
 
 For flow logs and audit logs there are three ingestion sources:
 
@@ -150,7 +150,7 @@ For flow logs and audit logs there are three ingestion sources:
 - **Object store** (`source: objectstore`): tailscale2otel reads the exports Tailscale writes to an
   S3-compatible bucket, with checkpointed batch ingestion and backfill.
 
-**You must choose exactly one path per log type.** Running both double-counts records. A best-effort
+Choose one path per log type. `source: both` is accepted but can double-count records. A best-effort
 bounded FIFO de-duplicate set (`internal/dedup`) can suppress exact duplicates across paths, but it
 is a failsafe, not a substitute for correct configuration. The app logs a WARNING at startup if both
 paths are active for the same log type. See [Streaming & Webhooks](streaming-webhooks.md) for
@@ -165,15 +165,15 @@ they are not a flow/audit source choice.
 Two enrichment layers feed source/destination naming on flow and audit records; the device cache
 resolves **tailnet** addresses, reverse-DNS resolves **external** ones.
 
-- **`internal/enrich.DeviceCache`** — populated by the `devices` collector, in-memory, one instance
+- **`internal/enrich.DeviceCache`** - populated by the `devices` collector, in-memory, one instance
   per `tailnetRuntime`. Maps IP addresses and node IDs *within that tailnet* to human-readable
   device names. The flow-log and audit processors consult this cache first when annotating records
   and metrics with `source.address` / `destination.address` labels; a hit resolves to the device
   name, a miss on an in-tailnet-looking address resolves to `unknown`, and an address outside the
   tailnet resolves to `external`.
-- **`internal/rdns.Cache`** (opt-in, `enrichment.reverse_dns.enabled`) — an async, bounded reverse-DNS
+- **`internal/rdns.Cache`** (opt-in, `enrichment.reverse_dns.enabled`) - an async, bounded reverse-DNS
   (PTR) cache that only ever runs for addresses the device cache already bucketed as `external`
-  (`flowlog.Processor` calls it exactly there — see `internal/flowlog/processor.go`). Lookups never
+  (`flowlog.Processor` calls it exactly there - see `internal/flowlog/processor.go`). Lookups never
   block the hot path: a miss returns immediately and the resolved PTR name becomes available on a
   later sighting once the background lookup completes. Positive and negative results are cached with
   separate TTLs (`enrichment.reverse_dns.cache_ttl` / `negative_ttl`), bounded by `max_entries`. It
@@ -188,14 +188,14 @@ resolves **tailnet** addresses, reverse-DNS resolves **external** ones.
     If the `devices` collector is disabled, the enrichment cache is empty and flow/audit records
     fall back to `unknown` (for unresolvable internal IPs) or `external` (for addresses outside the
     tailnet). Device-name labels will be absent or generic until the collector is re-enabled and has
-    run at least once. Reverse-DNS enrichment is unaffected by this — it only depends on
+    run at least once. Reverse-DNS enrichment is unaffected by this - it only depends on
     `enrichment.reverse_dns.enabled`, not on the `devices` collector.
 
 ## Checkpointing
 
 Window collectors persist their high-water marks via `internal/collector.CheckpointStore`. By
 default this is a file, written atomically on each successful tick to `checkpoint.file_path`
-(default `/var/lib/tailscale2otel/checkpoints.json` — see
+(default `/var/lib/tailscale2otel/checkpoints.json` - see
 [configuration.md](configuration.md#checkpoint-poll-high-water-marks) for the authoritative value).
 On a clean restart the collector resumes from the last saved mark rather than re-fetching the full
 history; on cold start (no checkpoint) it applies the configured `initial_lookback` window.
@@ -214,16 +214,16 @@ retried on the next tick.
 plus version parse/compare helpers (`release.Parse`, `release.Less`), shared by two independent,
 config-gated background loops built in `app.buildProcessDeps` and started from `Run`:
 
-- **`version_checks.self.enabled`** — `a.selfRelease` polls the tailscale2otel GitHub releases feed
+- **`version_checks.self.enabled`** - `a.selfRelease` polls the tailscale2otel GitHub releases feed
   and drives `tailscale2otel.update_available` (comparing the running build version to the latest
   tagged release).
-- **`version_checks.devices.enabled`** — `a.tsRelease` polls the latest stable Tailscale client
+- **`version_checks.devices.enabled`** - `a.tsRelease` polls the latest stable Tailscale client
   release and feeds the `devices` collector's per-device / fleet version-skew metrics (flagging
   devices more than `version_checks.devices.outdated_minor_threshold` minor versions behind).
 
 Both fetchers make plain outbound HTTPS calls (no Tailscale auth), cache their result for
-`version_checks.cache_ttl`, and are fail-open: a blocked or failing fetch silently emits nothing
-rather than erroring. Both loops run independently of `self_observability.enabled` — an operator can
+`version_checks.cache_ttl`, and are fail-open: an unavailable version source does not stop collection.
+Version-check status signals distinguish success from an unavailable source. Both loops run independently of `self_observability.enabled`: an operator can
 want update alerts with broad self-obs off.
 
 ## Self-observability and the admin status page
@@ -231,16 +231,16 @@ want update alerts with broad self-obs off.
 tailscale2otel emits its own health signals as OTLP metrics (see [Metrics](metrics.md) for the
 full catalog):
 
-- `tailscale2otel.scrape.*` — per-collector duration, success/failure counts, last-run timestamp,
+- `tailscale2otel.scrape.*` - per-collector duration, success/failure counts, last-run timestamp,
   staleness (seconds since last success), and budget (last duration ÷ interval; ≥ 1 means risk of
   interval overrun), tagged with `tailscale.collector`.
-- `tailscale2otel.up` — overall heartbeat gauge.
-- `tailscale2otel.series.*` — per-source-metric active time-series count (`series.active`, pinned at
+- `tailscale2otel.up` - overall heartbeat gauge.
+- `tailscale2otel.series.*` - per-source-metric active time-series count (`series.active`, pinned at
   the cap), the effective cap itself (`series.limit`, omitted when unlimited), and a 0/1 overflow flag
   (`series.overflowing`) that fires when excess series are silently dropped into `otel_metric_overflow`.
   Together these let you alert on cardinality cap hits without hardcoding the limit in PromQL.
-- `tailscale2otel.api.requests` / `api.retries` — Tailscale API call counters, plus
-  `tailscale2otel.api.duration` — a per-request latency histogram (with trace exemplars when
+- `tailscale2otel.api.requests` / `api.retries` - Tailscale API call counters, plus
+  `tailscale2otel.api.duration` - a per-request latency histogram (with trace exemplars when
   `tracing.enabled`).
 - **Export-cost & ingest volume (C8):** `tailscale2otel.export.datapoints` / `export.log_records`
   (the DPM/log-cost proxy) and `tailscale2otel.ingest.records` / `ingest.size` (per
@@ -259,14 +259,19 @@ request, one span per receiver request) over the same `otlp.*` endpoint.
 
 In addition, an admin HTTP server (on by default, `127.0.0.1:9091`) serves:
 
-- `/` — an HTML status page with live collector health, cardinality table, the metrics/log catalog,
+- `/` - an HTML status page with live collector health, cardinality table, the metrics/log catalog,
   discovered node-metrics targets, and a redacted config view.
-- `/api/status.json` — the same data as JSON, for programmatic access. This and the other read-only
+- `/api/status.json` - the same data as JSON, for programmatic access. This and the other read-only
   JSON endpoints (`/api/config.json`, `/api/cardinality.json`, `/api/flows.json`,
   `/api/flows/export.json`, `/api/events.json`) each carry a top-level `schema_version` integer and are
-  published/versioned artifacts — see [`docs/api/compatibility.md`](api/compatibility.md) for the
+  published/versioned artifacts - see [`docs/api/compatibility.md`](api/compatibility.md) for the
   additive-vs-breaking policy and how CI enforces it (#323).
-- `POST /api/rdns/purge` — the admin server's **only mutating** endpoint: clears the reverse-DNS
+- `/flows` and `/events` expose the local [flow](flow-view.md) and [event](events.md) explorers.
+  Flow export is available as JSON and CSV at `/api/flows/export.json` and
+  `/api/flows/export.csv`. Disabled views return 404.
+- `/api/support-bundle.zip` downloads [bounded diagnostics](troubleshooting.md#generating-a-support-bundle),
+  including a redacted process-log tail. Device inventory requires `?include_devices=1`.
+- `POST /api/rdns/purge` - the admin server's **only mutating** endpoint: clears the reverse-DNS
   cache (`internal/rdns.Cache`). Method-gated (405 + `Allow: POST` on anything but `POST`), gated by
   the same admin-token auth as `/` and `/api/status.json` (`requireAdminAuth`), and additionally
   same-origin-checked (`sameOrigin`, `internal/app/admin_status.go`) as CSRF hardening: a browser
@@ -274,20 +279,23 @@ In addition, an admin HTTP server (on by default, `127.0.0.1:9091`) serves:
   don't send it) an `Origin` header must match the request `Host`; a request with **no** `Origin` /
   `Sec-Fetch-Site` at all (e.g. `curl`) is allowed through since the admin-token gate is the primary
   control for those. A cross-origin browser request gets `403 cross-origin request forbidden`.
-  Responds `200 application/json` with `{"purged": <int>, "enabled": <bool>}` — `enabled` reports
+  Responds `200 application/json` with `{"purged": <int>, "enabled": <bool>}` - `enabled` reports
   whether reverse-DNS is configured at all (`enrichment.reverse_dns.enabled`); when it is false,
   `purged` is always `0`.
-- `/healthz` and `/readyz` — liveness and readiness probes.
+- `/healthz` and `/readyz` - liveness and readiness probes.
 
     `/healthz` is **process-only** and answers 200 as long as the process is running: a component
     failure means "stop sending me traffic", not "restart me", and conflating the two turns a bad
     config into a crash loop.
 
-    `/readyz` returns 503 while any collector has not completed its first tick, or once a
-    long-running component has terminally failed — the stream and webhook receivers, the admin and
+    In singleton mode and on a coordinated leader, `/readyz` returns 503 while any collector has not completed its first tick, or once a
+    long-running component has terminally failed - the stream and webhook receivers, the admin and
     Prometheus listeners, and the ingress WAL. A merely degraded collector (a failed tick, overdue,
     a stuck checkpoint) deliberately does **not** gate readiness; pulling the pod for a partial
     fault would take the whole exporter down.
+
+    A coordinated standby becomes Ready when coordination starts, without running collectors.
+    Services use the leader label to route active traffic.
 
     The status page derives its health verdict from that same component state, so the probe and the
     page cannot disagree, and `/api/status.json` carries a `components[]` array naming each
@@ -296,34 +304,35 @@ In addition, an admin HTTP server (on by default, `127.0.0.1:9091`) serves:
 
     **OTLP export failure is the one thing that degrades health without affecting readiness.**
     `delivery[]` reports, per signal (`metrics`, `logs`, `traces`), what the exporters actually
-    shipped — attempts, failures, the current failure streak, the last success and failure times,
+    shipped - attempts, failures, the current failure streak, the last success and failure times,
     the last attempt's duration, and an error *class*. Three consecutive failures marks a signal
     `failing`, which makes overall `health` `degraded`. It deliberately does **not** make `/readyz`
     return 503: a backend outage would otherwise pull every replica out of rotation at once, turning
     one vendor's bad afternoon into a cascading outage.
 
     `delivery[]` counts what came *back*; `throughput` counts what was *handed to* the exporters.
-    Keep them distinct — the page's "last export" used to be the freshest collector success, which
+    Keep them distinct - the page's "last export" used to be the freshest collector success, which
     reported healthy data flow while every OTLP request was failing.
 
     `last_error_class` is one of `timeout`, `canceled`, `unauthenticated`, `rate_limited`,
     `unavailable`, `invalid`, `other`. The backend's response text is never surfaced: an OTLP error
     can carry the response body, which is exactly where an echoed credential or signed URL would be.
-- `/debug/pprof` — optional, requires `profiling.pprof.enabled: true`, which in turn requires
+- `/debug/pprof` - optional, requires `profiling.pprof.enabled: true`, which in turn requires
   **both** `admin.enabled: true` **and** `admin.auth.token` to be set (heap/goroutine dumps can
-  expose in-memory secrets) — see [security.md](security.md#secrets-handling).
+  expose in-memory secrets) - see [security.md](security.md#secrets-handling).
 
-The status page is entirely self-contained — no CDN or external assets — so it renders on
+The status page is entirely self-contained - no CDN or external assets - so it renders on
 air-gapped tailnets.
 
 ### Prometheus pull endpoint
 
-A second, independent HTTP listener — off by default and enabled by `prometheus.enabled`,
+A second, independent HTTP listener - off by default and enabled by `prometheus.enabled`,
 `delivery.mode: prometheus`, or `delivery.mode: dual` (default bind `127.0.0.1:2112`,
-`internal/app/metrics.go`) — serves a single `GET /metrics` in the standard Prometheus exposition
+`internal/app/metrics.go`) - serves a single `GET /metrics` in the standard Prometheus exposition
 format. The delivery modes enable it even when the legacy boolean is false. It is separate from the admin server so pull
-scraping works even with the status page/pprof disabled, and it gathers from every provider in the
-`telemetry.ProviderSet` (process + each tailnet) merged into one `prometheus.Gatherers`. Optionally
+scraping works even with the status page/pprof disabled, and an active instance gathers from every provider in the
+`telemetry.ProviderSet` (process + each tailnet). A coordinated standby serves only the process
+gatherer, selected on each scrape. Optionally
 gated by `prometheus.auth.token` (same Basic/Bearer constant-time check as the admin token). With no
 token, a loopback bind is open; a network-reachable bind returns HTTP 403 unless
 `prometheus.auth.allow_unauthenticated: true` explicitly acknowledges the exposure.
@@ -351,14 +360,14 @@ every emitted signal.
 
 ## Read the source
 
-Every package above is browsable on GitHub — the composition root in
+Every package above is browsable on GitHub - the composition root in
 [`internal/app`](https://github.com/rknightion/tailscale2otel/tree/main/internal/app) is the best
 place to start, since it wires all of the rest together:
 
-- [`internal/collector`](https://github.com/rknightion/tailscale2otel/tree/main/internal/collector) — scheduler, registry, and one package per source
-- [`internal/telemetry`](https://github.com/rknightion/tailscale2otel/tree/main/internal/telemetry) — the OTEL facade
-- [`internal/tsapi`](https://github.com/rknightion/tailscale2otel/tree/main/internal/tsapi) — Tailscale API client
-- [`internal/provider`](https://github.com/rknightion/tailscale2otel/tree/main/internal/provider) — Tailscale/Headscale control-plane abstraction
+- [`internal/collector`](https://github.com/rknightion/tailscale2otel/tree/main/internal/collector) - scheduler, registry, and one package per source
+- [`internal/telemetry`](https://github.com/rknightion/tailscale2otel/tree/main/internal/telemetry) - the OTEL facade
+- [`internal/tsapi`](https://github.com/rknightion/tailscale2otel/tree/main/internal/tsapi) - Tailscale API client
+- [`internal/provider`](https://github.com/rknightion/tailscale2otel/tree/main/internal/provider) - Tailscale/Headscale control-plane abstraction
 
 Corrections and questions are welcome via
 [GitHub issues](https://github.com/rknightion/tailscale2otel/issues).

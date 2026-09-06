@@ -555,7 +555,8 @@ scheduler:
 # ── Active-passive coordination (OPTIONAL: Kubernetes only) ───────────────────
 # mode: none keeps the historical singleton lifecycle. kubernetes elects one
 # whole-process leader through a coordination.k8s.io Lease; standby pods remain
-# live but not ready and run no collectors or receivers.
+# Ready after campaigning starts, but run no collectors or receivers. Listener
+# Services in the Helm chart select the leader label.
 coordination:
   mode: none                           # none (default singleton behavior) | kubernetes (Lease-based active-passive)
   lease_name: tailscale2otel           # DNS-1123 Lease name; all replicas use the same name

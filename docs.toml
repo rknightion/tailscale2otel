@@ -40,6 +40,10 @@ Home = "index.md"
 
 [[site.nav]]
 Guides = [
+    { "Feature guide" = "features.md" },
+    { "High availability" = "high-availability.md" },
+    { "PAM" = "pam.md" },
+    { "Event explorer" = "events.md" },
     { "Flow View" = "flow-view.md" },
     { "Node Metrics" = "node-metrics.md" },
     { "Streaming & Webhooks" = "streaming-webhooks.md" },

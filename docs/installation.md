@@ -8,7 +8,7 @@ tags:
 # Installation
 
 `tailscale2otel` ships as a single static binary with no runtime dependencies.
-Pick the method that fits your environment — Docker Compose for a quick single-host
+Pick the method that fits your environment - Docker Compose for a quick single-host
 deployment, Helm for Kubernetes, or a local binary build for testing.
 
 Choose the telemetry destination before copying an install command. [Getting Started](getting-started.md)
@@ -36,10 +36,10 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ### Env-only (no file to mount)
 
     The config file is optional. Pass `TS2OTEL_*` environment variables and the
-    exporter starts from built-in defaults plus those overrides — nothing to mount:
+    exporter starts from built-in defaults plus those overrides - nothing to mount:
 
     ```sh
-    docker run --rm --stop-timeout 45 \
+    docker run --rm --stop-timeout 55 \
       -e TS2OTEL_TAILSCALE__TAILNET=example.com \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID=<client-id> \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
@@ -53,7 +53,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     If you prefer YAML for the non-secret fields, mount it and pass `-config`:
 
     ```sh
-    docker run --rm --stop-timeout 45 \
+    docker run --rm --stop-timeout 55 \
       -v "$PWD/config.yaml:/etc/tailscale2otel/config.yaml:ro" \
       -e TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET=<client-secret> \
       -e TS2OTEL_OTLP__GRAFANA_CLOUD__TOKEN=<token> \
@@ -61,9 +61,9 @@ See [Configuration](configuration.md) for the full list of options once you are 
       -config /etc/tailscale2otel/config.yaml
     ```
 
-    !!! warning "Pass `--stop-timeout 45` on every `docker run`"
+    !!! warning "Pass `--stop-timeout 55` on every `docker run`"
         Shutdown is *staged*, and `docker run`'s default stop timeout is 10
-        seconds — long enough to be killed partway through the first stage. See
+        seconds - long enough to be killed partway through the first stage. See
         [Shutdown budgets](#shutdown-budgets) below for the arithmetic. Both the
         Compose file and the Helm chart set an adequate budget already; a bare
         `docker run` is the one path where you must set it yourself.
@@ -71,8 +71,8 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ### Docker Compose
 
     A ready-to-use [`deploy/docker-compose.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/deploy/docker-compose.yaml)
-    is included in the repository. `deploy/.env` — the file sitting next to the
-    compose file — is the one canonical place for your credentials:
+    is included in the repository. `deploy/.env` - the file sitting next to the
+    compose file - is the one canonical place for your credentials:
 
     ```sh
     # deploy/.env — never commit this file
@@ -99,10 +99,10 @@ See [Configuration](configuration.md) for the full list of options once you are 
     That runs the **published** image, pinned to a specific release rather than
     `latest` (which moves under a running deployment). Override the tag with
     `TS2OTEL_VERSION`, e.g. `TS2OTEL_VERSION=latest docker compose ... up`. The
-    default tracks the current release automatically — release-please rewrites
+    default tracks the current release automatically - release-please rewrites
     the pin on each release, and a test fails the release PR if it stops.
 
-    To build from a working tree instead, add the dev override — the local image
+    To build from a working tree instead, add the dev override - the local image
     is tagged `tailscale2otel:dev`, so it can never be mistaken for a release:
 
     ```sh
@@ -110,8 +110,8 @@ See [Configuration](configuration.md) for the full list of options once you are 
                    -f deploy/docker-compose.dev.yaml up --build
     ```
 
-    Compose loads its env file from the **project directory** — the directory
-    holding the compose file — not from your shell's cwd, so `deploy/.env` is
+    Compose loads its env file from the **project directory** - the directory
+    holding the compose file - not from your shell's cwd, so `deploy/.env` is
     read whichever directory you run that command from. A `.env` at the
     repository root is *not* picked up on that command line; if you keep
     credentials somewhere else, pass `--env-file /path/to/file` explicitly.
@@ -121,15 +121,15 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     ### Health checks
 
-    The image is distroless — no shell, no `curl` — so the binary probes
+    The image is distroless - no shell, no `curl` - so the binary probes
     itself: `-healthcheck` GETs its own admin `/readyz` over loopback and
     exits with one of three codes:
 
     | Exit code | Meaning |
     | --- | --- |
-    | `0` | ready — `/readyz` returned 2xx |
-    | `1` | unready — reached the process, but it reported not ready yet (e.g. still waiting for the first poll) |
-    | `2` | unreachable — could not probe at all: bad config, refused connection, TLS failure, or the check hit `-healthcheck-timeout` (default `5s`) |
+    | `0` | ready - `/readyz` returned 2xx |
+    | `1` | unready - reached the process, but it reported not ready yet (e.g. still waiting for the first poll) |
+    | `2` | unreachable - could not probe at all: bad config, refused connection, TLS failure, or the check hit `-healthcheck-timeout` (default `5s`) |
 
     `deploy/docker-compose.yaml` wires this up already:
 
@@ -142,11 +142,11 @@ See [Configuration](configuration.md) for the full list of options once you are 
       retries: 3
     ```
 
-    Use the exec (`["CMD", ...]`) form, never `CMD-SHELL` — there is no shell
+    Use the exec (`["CMD", ...]`) form, never `CMD-SHELL` - there is no shell
     in the image to run it. `docker run` equivalent:
 
     ```sh
-    docker run --rm --stop-timeout 45 \
+    docker run --rm --stop-timeout 55 \
       --health-cmd "/usr/local/bin/tailscale2otel -healthcheck" \
       --health-interval 30s --health-timeout 10s \
       --health-start-period 30s --health-retries 3 \
@@ -156,7 +156,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     !!! warning "The healthcheck needs `admin.enabled` (the default)"
         `-healthcheck` probes `/readyz` on the admin server, so it reports
         exit code `2` forever if `admin.enabled: false` (or
-        `TS2OTEL_ADMIN__ENABLED=false`) — the readiness surface it depends on
+        `TS2OTEL_ADMIN__ENABLED=false`) - the readiness surface it depends on
         no longer exists. If you disable admin, also disable the healthcheck
         (`healthcheck: { disable: true }` in Compose, or drop `--health-cmd`
         for `docker run`) so the orchestrator does not flag a working
@@ -164,7 +164,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     Not using Compose or plain `docker run`? On Kubernetes the Helm chart's
     pod probes already hit `/readyz` directly over HTTP (see the chart's
-    `values.yaml`), so `-healthcheck` is not needed there — it exists for the
+    `values.yaml`), so `-healthcheck` is not needed there - it exists for the
     non-chart Docker paths where nothing else can execute an HTTP check
     without a shell.
 
@@ -187,7 +187,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     !!! warning "Do not add the mount to the base compose file"
         A Compose service map may carry only one `volumes:` key. Adding a second
-        one to `deploy/docker-compose.yaml` is a parse error, not a merge —
+        one to `deploy/docker-compose.yaml` is a parse error, not a merge -
         Compose refuses the whole file with `mapping key "volumes" already
         defined`. Earlier versions of that file suggested exactly this in a
         comment (#333). Across two `-f` files Compose *merges* the volume lists
@@ -199,7 +199,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ### File-based secrets (recommended for shared hosts)
 
     An environment variable is readable by anything that can inspect the
-    container — `docker inspect`, `docker compose config`, `/proc/<pid>/environ`,
+    container - `docker inspect`, `docker compose config`, `/proc/<pid>/environ`,
     and any crash reporter that dumps the environment. Every credential has a
     `*_file` sibling, so Compose's `secrets:` can supply it as a file instead:
 
@@ -215,12 +215,12 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     Each secret is mounted at `/run/secrets/<name>` and the override points the
     matching `TS2OTEL_*_FILE` variable at it. `deploy/secrets/` is git-ignored.
-    Delete any entry you do not use — Compose fails if a declared secret's file
+    Delete any entry you do not use - Compose fails if a declared secret's file
     is missing. CI renders the supported Compose variants and starts this path
     against the built image, disposable file secrets, and stdout delivery; the
     lab deployment is Kubernetes-only.
 
-    !!! warning "Value XOR file — setting both is a startup error"
+    !!! warning "Value XOR file - setting both is a startup error"
         Supplying a credential *both* inline (via `deploy/.env`) and as a file is
         rejected at startup and names the environment variable or secret file
         that caused the conflict. It is not a precedence rule. If you use this override, remove those credential lines from
@@ -230,7 +230,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     !!! warning "Rotation requires recreating the container"
         The files are read **once**, during config load. The host file is
         bind-mounted, so editing it changes what the container *would* read, but
-        the running process still holds the old value — nothing re-reads it. After
+        the running process still holds the old value - nothing re-reads it. After
         rotating:
 
         ```sh
@@ -250,7 +250,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
           repository root and one level down, along with `.secrets/`,
           `config.local.yaml`, `.capture/` and `checkpoints*`.
         - **`.dockerignore`** stops it being uploaded to the Docker daemon.
-          Docker never reads `.gitignore` — a git-ignored file is still sent with
+          Docker never reads `.gitignore` - a git-ignored file is still sent with
           the build context and recorded in the build cache unless
           `.dockerignore` excludes it.
 
@@ -259,14 +259,14 @@ See [Configuration](configuration.md) for the full list of options once you are 
         `config.example.yaml` and `scripts/notices.*`. Compose builds, direct
         `docker build -f deploy/Dockerfile .`, BuildKit and the release pipeline
         all use the repository root as their context, and `.dockerignore` is only
-        honoured at the context root — so that single file governs every build
+        honoured at the context root - so that single file governs every build
         path. If you add a top-level directory the image needs, re-include it
         there or the build fails with a missing package.
 
         `just hygiene` runs `scripts/check-secret-hygiene.sh`, which gates both halves: it asserts every
         documented secret path is git-ignored, that the committed example files
-        stay trackable, and — by planting disposable sentinel files and inspecting
-        the context from inside the builder — that nothing sensitive reaches a
+        stay trackable, and - by planting disposable sentinel files and inspecting
+        the context from inside the builder - that nothing sensitive reaches a
         build layer.
 
     !!! tip "Checkpoint persistence"
@@ -299,7 +299,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ### Preferred: a pre-created Secret (`existingSecret`)
 
     The credential never passes through Helm, so it is not in the release values
-    either — only in the Secret object, under normal Secret RBAC:
+    either - only in the Secret object, under normal Secret RBAC:
 
     ```sh
     cat > creds.env <<'EOF'
@@ -318,7 +318,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
       --set-string existingSecret=tailscale2otel-creds
     ```
 
-    Use `--from-env-file` or `--from-file`, not `--from-literal` — the latter has
+    Use `--from-env-file` or `--from-file`, not `--from-literal` - the latter has
     exactly the same command-line exposure as an inline `--set`.
 
     Rotating that Secret does not reach a running pod on its own; see the
@@ -352,7 +352,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     ```
 
     Both forms store the value in the Helm release, which lives in a Secret in
-    the release namespace — protected by Secret RBAC, but readable by anyone who
+    the release namespace - protected by Secret RBAC, but readable by anyone who
     can run `helm get values`. `existingSecret` avoids that; these do not.
 
     ### Development only: inline
@@ -371,11 +371,11 @@ See [Configuration](configuration.md) for the full list of options once you are 
     !!! warning "Credentials never land in a ConfigMap"
         A ConfigMap is readable by anyone holding `get configmaps` in the namespace,
         which is routinely granted far more widely than `get secrets`. If a
-        credential-bearing key *is* set inline under `config:` — an OAuth
+        credential-bearing key *is* set inline under `config:` - an OAuth
         `client_secret`, `apikey`, `headscale.api_key`, `grafana_cloud.token`,
         `otlp.headers`, the `objectstore` keys, the `streaming`/`webhook`/
         `prometheus`/`admin` tokens, the Pyroscope password, any `tailnets[]` entry,
-        or a `node_metrics` target with a `bearer_token`/`headers` — the chart
+        or a `node_metrics` target with a `bearer_token`/`headers` - the chart
         renders the whole `config.yaml` into a Secret instead of a ConfigMap and
         mounts it from there. Credential-free configs keep the ConfigMap. Set
         `configStorage.mode` to `secret` or `configmap` to override; `configmap`
@@ -391,7 +391,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         ```
 
         `existingConfigMap` and `existingConfigSecret` are mutually exclusive, and
-        `existingConfigKey` (default `config.yaml`) names the key inside it — it is
+        `existingConfigKey` (default `config.yaml`) names the key inside it - it is
         projected to `config.yaml` in the container, so the `-config` path never
         changes. This is how **multi-tailnet credentials reach the pod without
         entering Helm values**, and therefore without showing up in
@@ -400,7 +400,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         Either setting makes the chart render **no** config object and ignore the
         whole `config:` tree. That is total on purpose: a partially-applied config
         would mean `helm template` shows values the pod never sees. No
-        `checksum/config` annotation is emitted either — the chart cannot read
+        `checksum/config` annotation is emitted either - the chart cannot read
         another object's contents, so any hash would be of its own inert
         `config:` tree, changing when the pod's real config does not and vice
         versa. Use `rolloutTrigger` or Reloader to roll after a config change,
@@ -410,7 +410,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         Credentials reach the container through `envFrom`, and Kubernetes never
         refreshes environment variables in a running container. So rotating the
         values in an `existingSecret` you manage yourself does **not** reach the
-        running pod — the pod template only references it by name. Force a rollout
+        running pod - the pod template only references it by name. Force a rollout
         after rotating:
 
         ```sh
@@ -419,14 +419,14 @@ See [Configuration](configuration.md) for the full list of options once you are 
         ```
 
         `rolloutTrigger` is an opaque value of your choosing, surfaced as a pod
-        annotation — never put a secret value or a hash of one there. For an
+        annotation - never put a secret value or a hash of one there. For an
         automated path, run [Stakater Reloader](https://github.com/stakater/Reloader)
         and set `podAnnotations."reloader.stakater.com/auto"="true"`; it issues a
         rollout restart, which is what env-injected credentials require. The chart's
         `checksum/config` and `checksum/secret` annotations already cover
         chart-managed config and inline `secret:` values.
 
-    Config fields carry no credentials, so they are fine on the command line —
+    Config fields carry no credentials, so they are fine on the command line -
     combine them with whichever credential mode you chose above:
 
     ```sh
@@ -442,14 +442,14 @@ See [Configuration](configuration.md) for the full list of options once you are 
         `emptyDir` at `/var/lib/tailscale2otel`. Set `persistence.enabled=true`
         to create a PVC for durability across pod rescheduling.
 
-    For the full values table — every knob, type, default, and description — see the
+    For the full values table - every knob, type, default, and description - see the
     [chart README on GitHub](https://github.com/rknightion/tailscale2otel/blob/main/deploy/helm/tailscale2otel/README.md).
 
 === "Binary"
 
     ## Binary
 
-    Build from source with the Go toolchain (Go 1.27+ required — see `go.mod` for the pinned version):
+    Build from source with the Go toolchain (Go 1.27+ required - see `go.mod` for the pinned version):
 
     ```sh
     git clone https://github.com/rknightion/tailscale2otel.git
@@ -457,7 +457,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
     go build -o tailscale2otel ./cmd/tailscale2otel
     ```
 
-    Copy the example config and edit it — keep secrets in environment variables,
+    Copy the example config and edit it - keep secrets in environment variables,
     not in the YAML file:
 
     ```sh
@@ -470,11 +470,11 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
     !!! tip "Local debug without a backend"
         Set `TS2OTEL_OTLP__PROTOCOL=stdout` (or `otlp.protocol: stdout` in the
-        YAML) to print metrics and logs to the console — no OTLP backend needed.
+        YAML) to print metrics and logs to the console - no OTLP backend needed.
 
     !!! tip "Where checkpoints go on a native run"
         The shipped default, `/var/lib/tailscale2otel/checkpoints.json`, suits a
-        **container** — the image pre-seeds that directory for uid 65532, and the
+        **container** - the image pre-seeds that directory for uid 65532, and the
         Helm chart sets it explicitly and mounts a volume there. A native run
         usually cannot write it: on Linux only root can create `/var/lib`
         subdirectories, and macOS and Windows have no `/var/lib` at all, though
@@ -494,7 +494,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
 
         - **The configured path always wins when it is usable.** Nothing is ever
           moved or copied, so an existing checkpoint can never be stranded by
-          this — relocation only happens where there was no readable checkpoint.
+          this - relocation only happens where there was no readable checkpoint.
         - **An explicitly configured `checkpoint.file_path` is never relocated.**
           Naming a path is a decision, and it is usually a mounted volume that is
           briefly absent; writing elsewhere would hide that misconfiguration and
@@ -523,7 +523,7 @@ See [Configuration](configuration.md) for the full list of options once you are 
         production, whether via Docker Compose or the Helm chart. A local binary
         is for development, `-validate` runs and quick experiments. There is no
         `systemd` unit, no service packaging and no package-manager path, and
-        none is planned — the image already carries the runtime contract
+        none is planned - the image already carries the runtime contract
         (non-root uid 65532, a pre-seeded state directory, a read-only
         filesystem, the shutdown budget) that a native install would have to
         reproduce by hand and keep in step.
@@ -539,7 +539,7 @@ checking, and both have a trap that makes the obvious command fail.
 happens inside shared reusable workflows, so the certificate names the shared
 repo. The identity is also **pinned by commit SHA and moves whenever that pin is
 bumped**, so match it with a regexp anchored on the workflow path rather than
-pinning the whole string — a hardcoded `--certificate-identity` is correct for
+pinning the whole string - a hardcoded `--certificate-identity` is correct for
 exactly one release and then rots.
 
 ### Release binaries
@@ -606,7 +606,7 @@ gh attestation verify oci://ghcr.io/rknightion/tailscale2otel:3.0.0 \
   -R rknightion/tailscale2otel --signer-repo rknightion/.github
 ```
 
-Once verified, pin by digest rather than tag for anything long-lived —
+Once verified, pin by digest rather than tag for anything long-lived -
 `cosign verify` reports the digest it validated.
 
 ### What is in a release
@@ -634,25 +634,25 @@ was already accepted. Shutdown runs in **stages**, each separately bounded:
 | Receivers drain | 10s | Requests already ACKed to Tailscale, still being processed |
 | Ingress WAL final drain | 10s | The accepted-but-unexported backlog (replayed next start) |
 | OTLP flush and shutdown | 10s | The final flow rollup and the last metric/log export |
+| Flow-store close | 10s | Persistent flow rows still queued for flush |
 
-Worst case is therefore **30 seconds**, and a deployment budget needs headroom on
-top of that — the numbers above are bounds, not durations, and process teardown
-lands after them. Every shipped path uses **45 seconds**:
+Worst case is therefore **40 seconds**, and a deployment budget needs headroom on
+top of that - the numbers above are bounds, not durations, and process teardown
+lands after them. Every shipped path uses **55 seconds**:
 
 | Path | Setting | Its own default |
 | --- | --- | --- |
-| Compose | `stop_grace_period: 45s` (set in `deploy/docker-compose.yaml`) | 10s |
-| Kubernetes | `terminationGracePeriodSeconds: 45` (chart value) | 30s |
-| `docker run` | `--stop-timeout 45` — **you must pass this** | 10s |
-| systemd (your own unit — none is shipped yet) | `TimeoutStopSec=45` | 90s, already adequate |
+| Compose | `stop_grace_period: 55s` (set in `deploy/docker-compose.yaml`) | 10s |
+| Kubernetes | `terminationGracePeriodSeconds: 55` (chart value) | 30s |
+| `docker run` | `--stop-timeout 55` - **you must pass this** | 10s |
+| systemd (your own unit - none is shipped yet) | `TimeoutStopSec=55` | 90s, already adequate |
 
-Kubernetes' own default of 30 is worth calling out: it equals the drain exactly,
-with zero margin, so it is not a safe value despite looking like one. The chart
-**fails to render** below 45 rather than silently truncating a drain.
+Kubernetes' default of 30 seconds is below the staged drain. The chart refuses to render
+a grace period below 55 seconds.
 
 These numbers are derived, not copied. `internal/app` sums the stage constants
 and its tests fail if the Compose file, the chart default, or the chart's
-enforced floor stops covering the total — so raising any stage timeout fails the
+enforced floor stops covering the total - so raising any stage timeout fails the
 build with a message naming the files to update, instead of quietly eroding the
 margin. Raise the budgets if you raise a timeout; lowering them below the floor
 is a data-durability decision the chart will not make silently.
@@ -661,7 +661,17 @@ is a data-durability decision the chart will not make silently.
 
 ## Next steps
 
-- [Getting Started](getting-started.md) — authenticate, point at an OTLP backend, and verify the first metrics arrive.
-- [Collector Gateway](gateway.md) — export through Alloy or an OpenTelemetry Collector instead of
+- [Getting Started](getting-started.md) - authenticate, point at an OTLP backend, and verify the first metrics arrive.
+- [Collector Gateway](gateway.md) - export through Alloy or an OpenTelemetry Collector instead of
   directly, for outage tolerance, enrichment and a single egress point.
-- [Configuration](configuration.md) — every setting, default, and environment variable reference.
+- [Configuration](configuration.md) - every setting, default, and environment variable reference.
+
+## Coordinated replicas and state volumes
+
+For two or three Kubernetes replicas, follow [High availability](high-availability.md). The chart
+uses a StatefulSet, one leader Lease and per-pod PVCs when persistence is enabled.
+
+The Compose and Helm state volumes can also hold the optional ingress WAL and persistent SQLite
+flow store. Size them for those limits and retention periods as well as checkpoints. A full WAL
+refuses new receiver requests; a persistent flow store may contain user identities and requires
+protected backups. File-backed state is local to its owning process or pod.

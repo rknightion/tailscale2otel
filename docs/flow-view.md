@@ -6,13 +6,13 @@ description: Explore your tailnet's traffic from the exporter itself — topolog
 # Flow view
 
 The exporter serves a built-in view of your tailnet's network flow logs at **`/flows`** on the admin
-server. It answers the questions you actually open a flow tool for — who talked to whom, over what,
-how much, and when — without a Grafana or Prometheus backend in the loop.
+server. It shows who talked to whom, over which protocol,
+how much, and when - without a Grafana or Prometheus backend in the loop.
 
 It is a **convenience view, not a second telemetry pipeline**. Everything it shows is derived from the
 same flow records the exporter is already sending over OTLP, which remains the system of record. By
 default the store is in memory, bounded, and lost on restart; setting `flows.store.directory` switches to
-an opt-in on-disk backend that survives a restart and can answer over days — see
+an opt-in on-disk backend that survives a restart and can answer over days - see
 [Persistent storage](#persistent-storage) below.
 
 ## What it shows
@@ -22,14 +22,14 @@ volume, edges by the bytes on that conversation. Drag a device to reposition it;
 the whole page to it and dim everything it does not talk to.
 
 **Traffic over time.** Transmit and receive over the selected window. Drag horizontally on the chart
-to zoom into a span — that pins the view and pauses polling; double-click, or press **jump to now**,
+to zoom into a span - that pins the view and pauses polling; double-click, or press **jump to now**,
 to go back to live.
 
 **Top devices and conversations.** Ranked by bytes, split by role, so you can tell what a device sent
 from what it received rather than inferring it from edge direction.
 
 **Destination services.** What is being talked *to*, resolved to IANA service names where the port is
-registered. Overlay traffic only — see [what the services section counts](#limits-worth-knowing).
+registered. Overlay traffic only - see [what the services section counts](#limits-worth-knowing).
 
 **Identity.** Traffic by user, by tag, and by operating system, taken from the node metadata each flow
 record carries. Tags break down **individually**, so a device tagged `tag:servers,tag:prod` is counted
@@ -39,11 +39,11 @@ under both rather than under a joined label that matches nothing you would searc
 the receiving one, shaded by volume. Click a cell to filter the connection list to exactly that
 relationship. See [what the matrix can and cannot show](#what-the-identity-matrix-can-show) below.
 
-**Policy reconciliation.** What the tailnet's own ACL says about the traffic above — see
+**Policy reconciliation.** What the tailnet's own ACL says about the traffic above - see
 [reading the policy section](#reading-the-policy-section), which is worth reading before acting on it.
 
 **Path quality.** Whether each peer was reached directly or had to be relayed through DERP, and which
-relay carried it — see [reading the path section](#reading-the-path-section).
+relay carried it - see [reading the path section](#reading-the-path-section).
 
 **Recent connections.** The newest individual connections, with their raw endpoints, the verified
 reporter node ID, bounded trust/consistency diagnosis, the policy's reading of each one and how each
@@ -97,19 +97,19 @@ flows:
     retention: 720h                            # 30 days — the disk retention, independent of the above
 ```
 
-**Two retentions, two different things — this is the easiest setting on this page to get wrong.**
+**Memory and disk retention are independent.**
 `flows.retention` sizes the in-memory ring and is capped at 24h. `flows.store.retention` is a
 separate knob on the disk-backed store, with its own default (30 days) and no 24h cap.
 
 The two never run together. A store is one or the other, chosen at startup by whether
-`flows.store.directory` is set, and there is no tiering between them — with persistence on, every query
+`flows.store.directory` is set, and there is no tiering between them - with persistence on, every query
 including the most recent minute is answered from disk, and `flows.retention` no longer governs what
 `/flows` can see. It still bounds the ring the process would build if you unset the path, and the
 window clamp follows whichever store is active, so a 30-day disk retention really is queryable.
 
 **One file per tailnet:** `flows-<tailnet>-<digest>.db` inside the configured directory, where
 `<digest>` is the first 16 bytes of the SHA-256 of the tailnet name. A device name is only unique
-within its own tailnet, so multi-tailnet mode gets one database per tailnet automatically — nothing
+within its own tailnet, so multi-tailnet mode gets one database per tailnet automatically - nothing
 to configure per entry.
 
 The digest is not decoration. The rows carry user and device identities, and a name-only filename is
@@ -124,7 +124,7 @@ upgrading.
 - **Aggregates are exact, not capped.** The in-memory store folds per-bucket overflow into
   `__other__` and marks coverage partial (see [Limits worth knowing](#limits-worth-knowing)). The
   disk store keeps one row per connection and computes every aggregate with `GROUP BY` at query time,
-  so there is no per-key cap to overflow — `Truncated` on a query result is zero unless the
+  so there is no per-key cap to overflow - `Truncated` on a query result is zero unless the
   write-behind queue below actually dropped something.
 - **Recent connections pages the whole retained window**, not a fixed 2,000-row ring. `recent`/
   `cursor` paging (see [the JSON API](#filtering-and-pagination)) walks however much is on disk,
@@ -136,25 +136,25 @@ upgrading.
 **Writes never block ingestion.** Recording a connection enqueues it onto a bounded in-process queue
 (`flows.store.queue_size`) and returns immediately; a background goroutine batches queued rows to
 disk (`flows.store.batch_size` per transaction, forced out at least every `flows.store.flush_interval`
-so a quiet tailnet doesn't sit on a partial batch). If the queue is full — the writer falling behind a
-burst, or disk I/O stalling — the observation is **dropped and counted**, never queued indefinitely and
+so a quiet tailnet doesn't sit on a partial batch). If the queue is full - the writer falling behind a
+burst, or disk I/O stalling - the observation is **dropped and counted**, never queued indefinitely and
 never allowed to slow OTLP export. Drops surface in the admin API the same way the in-memory ring's
 truncation does.
 
-**PII / data at rest — read this before pointing `directory` at anything.** The in-memory ring dies with
+**PII and stored data.** The in-memory ring dies with
 the process; nothing is written anywhere, and [Privacy](#privacy) below is what governs it.
 The disk store is a different exposure: flow rows carry user identities (source/destination emails,
 tags), and once written they persist across restarts and land in whatever backs up that volume. The
-configured `pii_filter` policy is applied to a row **before** it is written — the same redaction the
-OTLP export path applies — so a category you've turned off does not reach the database either. What
+configured `pii_filter` policy is applied to a row **before** it is written - the same redaction the
+OTLP export path applies - so a category you've turned off does not reach the database either. What
 `pii_filter` leaves enabled, the database keeps indefinitely (up to `flows.store.retention`) and your
 backup process will too. Size access to that directory and its backups accordingly; the admin token
 gates the view, but a filesystem-level or backup-level read bypasses it entirely.
 
-**Disk sizing — an estimate, not a measurement.** This backend stores one row per connection across
-29 mostly-short `TEXT`/`INTEGER` columns (endpoints, tags, verdict, path, byte/packet counters — see
-`internal/flowstore/sqlitestore/schema.go`) plus two indexes. Assume roughly **250–350 bytes per row**
-including index overhead — nobody has benchmarked the real figure on this project's fixtures yet, so
+**Disk sizing - an estimate, not a measurement.** This backend stores one row per connection across
+29 mostly-short `TEXT`/`INTEGER` columns (endpoints, tags, verdict, path, byte/packet counters - see
+`internal/flowstore/sqlitestore/schema.go`) plus two indexes. Assume roughly **250-350 bytes per row**
+including index overhead - nobody has benchmarked the real figure on this project's fixtures yet, so
 treat it as an order-of-magnitude planning number, not a measured one. Two ways to reason about it:
 
 - **The row cap is the hard ceiling regardless of rate.** `flows.store.max_rows` defaults to
@@ -162,24 +162,24 @@ treat it as an order-of-magnitude planning number, not a measured one. Two ways 
   says.
 - **The retention window is the usual limit at moderate traffic, until the cap overtakes it.** A
   tailnet sustaining around 2 connections/second (~170,000/day) reaches roughly 5.1M rows over the
-  default 30-day retention — already past the row cap above. Below that rate, retention days × your
+  default 30-day retention - already past the row cap above. Below that rate, retention days × your
   connections/day × 300 bytes is the estimate; above it, the row cap is what actually bounds disk use.
 
 Measure your own tailnet's connection rate (the `tailscale.network.flow.count` metric, or watch the
 row count directly) before committing to a volume size, and raise `flows.store.max_rows` deliberately
 if 1.5 GB is too small a ceiling for the retention you want.
 
-**Backups.** Nothing backs this up for you — it's a plain SQLite file under `flows.store.directory`. Back
+**Backups.** Nothing backs this up for you - it's a plain SQLite file under `flows.store.directory`. Back
 it up the way you would any other application database if the history matters to you (a filesystem
 snapshot of the directory is fine; SQLite in WAL mode is safe to copy while the process is stopped, or
 via your storage layer's own consistent-snapshot mechanism while running). A lost or corrupted file
-loses history — nothing else. `/flows` on the in-memory path continues to work either way; loss here
+loses history - nothing else. `/flows` on the in-memory path continues to work either way; loss here
 is not an outage.
 
 ### Adopting a database written before 4.0.0
 
 Releases before 4.0.0 named the file `flows-<tailnet>.db`, with no digest and no identity row. That
-name cannot prove ownership, so the service does **not** adopt one automatically — it logs the
+name cannot prove ownership, so the service does **not** adopt one automatically - it logs the
 refusal, leaves the file untouched, and starts with the flow view off. The status page says so
 explicitly rather than looking like the flow view was never switched on, and overall health reads
 `degraded` while it lasts.
@@ -193,16 +193,16 @@ tailscale2otel -config config.yaml -adopt-flow-db your-tailnet.example
 Naming the tailnet is the point: it is the ownership assertion the filename cannot make, so verify it
 is right before running this. The command stamps the identity row, moves the file to the digest name,
 reports how many rows came across, and exits. It changes nothing else, is safe to re-run, and is safe
-to interrupt — the identity is written before the move, so a re-run finishes the job. Run it once per
+to interrupt - the identity is written before the move, so a re-run finishes the job. Run it once per
 tailnet, with the service stopped.
 
 It refuses, without touching anything, if the database already names a different tailnet, or if both
-the legacy and digest-named files exist — decide which one you want and move the other aside first.
+the legacy and digest-named files exist - decide which one you want and move the other aside first.
 
 If you would rather not keep the history, move the old file out of the directory and start clean; the
 service creates a fresh database on the next start.
 
-**Binary footprint.** The engine is `modernc.org/sqlite`, a pure-Go, cgo-free implementation — chosen
+**Binary footprint.** The engine is `modernc.org/sqlite`, a pure-Go, cgo-free implementation - chosen
 specifically because the release matrix builds `CGO_ENABLED=0` and ships a distroless image. Adds
 about 4.6 MB to the binary; nothing else about the build changes.
 
@@ -214,11 +214,11 @@ exceptions:
 - With `admin.auth.token` set, both require it as the HTTP Basic password or as
   `Authorization: Bearer <token>`.
 - With no token, both are served only on a **loopback** `admin.listen`. On any other bind they are
-  refused with HTTP 403 — the same fail-closed behaviour as the status page.
+  refused with HTTP 403 - the same fail-closed behaviour as the status page.
 
 This matters more here than elsewhere: the in-memory view shows device names, addresses, and the
 user each device belongs to, unfiltered. The persistent store applies `pii_filter` before writing a
-row — see [Privacy](#privacy).
+row - see [Privacy](#privacy).
 
 ## Privacy
 
@@ -226,7 +226,7 @@ row — see [Privacy](#privacy).
 [`pii_filter`](configuration.md#pii_filter-pii-identifier-redaction) applies to persistent rows
 before they are written.**
 
-That filter governs the telemetry this process **exports** — what reaches your OTLP backend, and
+That filter governs the telemetry this process **exports** - what reaches your OTLP backend, and
 whoever can read it. The in-memory flow store is different: it is never written or sent anywhere and
 is readable only through the admin-authenticated surface above. Narrowing what you send onward is
 not a request to be blinded to your own tailnet, so `emails: false` still leaves the in-memory users
@@ -250,11 +250,11 @@ destination node pairings):
 
 | matrix | both endpoints carry it | usable? |
 |---|---|---|
-| **Tag → tag** | 24,154 pairings (**70%**) | Yes — this is the one to reach for. |
+| **Tag → tag** | 24,154 pairings (**70%**) | Yes - this is the one to reach for. |
 | **User → user** | 241 pairings (**1%**) | Rarely. A tag-owned device has no user at all, so a machine-to-machine tailnet shows almost nothing. |
 | **OS → OS** | 0 | **No.** Not offered. |
 
-**There is no OS matrix, deliberately.** `srcNode` never carries `os` — zero times in 18,702 records —
+**The view has no OS matrix.** `srcNode` never carries `os` - zero times in 18,702 records -
 while `dstNodes` entries do. An OS matrix could therefore only ever be empty, so the page does not
 offer one. For the same reason the **Operating system** breakdown is labelled *destination side only*:
 it describes what traffic was sent **to**, not what sent it.
@@ -269,17 +269,17 @@ the connection is processed. The ACL comes from the `acl` collector and the tail
 `users` collector; with either disabled the section degrades rather than guessing.
 
 **This is a diagnostic, not an audit.** Tailscale carried every connection shown, so it permitted every
-connection shown. Anything the section reports is a lead to look into — most often a subnet router or a
-VIP service whose semantics this reading does not fully capture — not traffic that got through.
+connection shown. Anything the section reports is a lead to look into - most often a subnet router or a
+VIP service whose semantics this reading does not fully capture - not traffic that got through.
 
 ### The four verdicts
 
 | Verdict | Meaning |
 |---|---|
 | **permitted** | A rule covers the connection in the direction it was observed. |
-| **return traffic** | The half of the connection that *established* it is covered. Flow logs report both halves; a policy governs only one. On a live tailnet this was **37% of all connections** — it is normal, not a finding. |
+| **return traffic** | The half of the connection that *established* it is covered. Flow logs report both halves; a policy governs only one. On a live tailnet this was **37% of all connections** - it is normal, not a finding. |
 | **not explained** | No rule covers it in either direction, as this evaluator reads the policy. |
-| **undecidable** | The policy could not be applied here. Never a finding — see below. |
+| **undecidable** | The policy could not be applied here. Never a finding - see below. |
 
 **"Undecidable" is not "unexplained".** A selector match is yes, no, or *unknown*, and a connection is
 reported as unexplained only when **every** rule definitively fails. An undeclared `group:`, a `svc:`
@@ -290,17 +290,17 @@ generator of confident false alarms.
 ### Traffic no rule explains
 
 Unexplained connections are aggregated into **relationships**: source identity, destination identity,
-transport and destination port — the shape a grant would be written in. Each endpoint is named by the
+transport and destination port - the shape a grant would be written in. Each endpoint is named by the
 most useful thing known about it: its tags, then its owner, then its device name, then its address.
 
 That aggregation is what makes the output usable. On a live tailnet, 9,786 individually unexplained
 connections were **three relationships**, all involving one tag talking to two LAN addresses behind a
 subnet router.
 
-### `tsmp` — Tailscale reporting its own rejections
+### `tsmp` - Tailscale reporting its own rejections
 
 A connection whose transport reads `tsmp` is not traffic anybody sent. TSMP is Tailscale's own
-ICMP-ish protocol — IP protocol 99, which IANA reserves for "any private encryption scheme" — carried
+ICMP-ish protocol - IP protocol 99, which IANA reserves for "any private encryption scheme" - carried
 only between nodes inside the WireGuard tunnel, and it exists to say **why something failed**: an ACL
 drop, a refused connection, no route.
 
@@ -311,18 +311,18 @@ Two things make it worth reading rather than dismissing as an odd protocol numbe
   dropped. That is independent corroboration of a **not explained** verdict, arriving from the other
   side of the connection.
 - **It never appears in a packet capture.** tailscaled neither accepts these from the host network
-  stack nor sends them to it, so `tcpdump` will not show them on any interface — including the
+  stack nor sends them to it, so `tcpdump` will not show them on any interface - including the
   Tailscale one. On a live tailnet a 60-second capture of the sending host's LAN interface took in
   1,978,983 packets and matched none of them while the API reported the flow continuously. Chasing the
   packets is a dead end; the flow log is the only place they are visible.
 
-TSMP has no ports, so a `tsmp` connection shows none — see
+TSMP has no ports, so a `tsmp` connection shows none - see
 [protocols with no ports](#protocols-with-no-ports) below.
 
 ### Rules that permitted nothing
 
 The other half: which rules never covered anything in the window. **The window is stated on the list,
-and it is the whole point** — a rule can be entirely healthy and idle. NTP, ICMP and break-glass access
+and it is the whole point** - a rule can be entirely healthy and idle. NTP, ICMP and break-glass access
 routinely go hours without firing; on a live tailnet 9 of 19 rules were idle over three hours and
 almost all of them legitimately so. Widen the window before concluding a rule is dead.
 
@@ -342,10 +342,10 @@ Known limits, which the section reports honestly rather than guessing around:
 - **`physicalTraffic` is not evaluated.** It is the WireGuard underlay, not a connection a policy
   describes; those connections show no verdict at all.
 - **Exit traffic** carries no destination, so it is evaluated only against `autogroup:internet`.
-- **`ip: ["*"]` covers every protocol**, including ICMP — it is a wildcard over protocol as well as
+- **`ip: ["*"]` covers every protocol**, including ICMP - it is a wildcard over protocol as well as
   port. A *bare* port number is what implies tcp/udp only.
 
-Reconciliation reads the identity the flow record carried — the same identity the rest of the page
+Reconciliation reads the identity the flow record carried - the same identity the rest of the page
 shows, and for the same reason (see [Privacy](#privacy)). An endpoint the record carried nothing
 identifying for appears as `unidentified`.
 
@@ -355,7 +355,7 @@ Tailscale connects two nodes directly when it can and falls back to relaying thr
 when it cannot. Both are end-to-end encrypted; a relayed path is simply slower and lower throughput,
 because the traffic goes via Tailscale's infrastructure instead of straight between the two machines.
 
-This is read from `physicalTraffic` — the WireGuard underlay, which reports the endpoint each peer was
+This is read from `physicalTraffic` - the WireGuard underlay, which reports the endpoint each peer was
 actually reached at. Three values:
 
 | Path | Meaning |
@@ -366,8 +366,8 @@ actually reached at. Three values:
 
 **The marker is never shown as a device.** A relayed connection's destination is that loopback
 marker, so the connection list shows a dash where the destination device name would be and keeps the
-raw `127.3.3.40:<region>` beside it. The peer is on the *source* side of a physical record — that is
-how the API reports it — so it is still named there, and the per-peer table below is keyed on it.
+raw `127.3.3.40:<region>` beside it. The peer is on the *source* side of a physical record - that is
+how the API reports it - so it is still named there, and the per-peer table below is keyed on it.
 
 **The counts are connections, not bytes**, and the two are usually far apart. On a live tailnet 11.6%
 of underlay connections were relayed but only 0.4% of the bytes: handshakes and keepalives relay while
@@ -389,7 +389,7 @@ Two things this deliberately does not claim:
 - **A physical connection with no endpoint gets no path at all**, rather than being counted as direct.
   "We cannot tell" must not read as good news.
 
-Note also that the peer here is named by its **device name** only — never by its tags, unlike the
+Note also that the peer here is named by its **device name** only - never by its tags, unlike the
 unexplained-relationship list. The question is which machine to go and look at, and a row keyed on
 `tag:servers` would merge every tagged server into one.
 
@@ -397,7 +397,7 @@ unexplained-relationship list. The question is which machine to go and look at, 
 
 **Memory is bounded, and coverage is honest about it.** Everything is aggregated to one-minute
 resolution on the way in, and every dimension has a per-minute cap. Beyond a cap, keys fold into
-`__other__` and the page says coverage is partial rather than implying it is complete — the totals stay
+`__other__` and the page says coverage is partial rather than implying it is complete - the totals stay
 exact either way. This matters because the streaming receiver is a potentially unauthenticated ingress,
 and a flood of unique flow keys must not be able to grow the process without limit.
 
@@ -405,17 +405,17 @@ and a flood of unique flow keys must not be able to grow the process without lim
 buckets and is bounded to 24h. In multi-tailnet mode each tailnet keeps its own store, so memory
 scales with the number of tailnets too. Nothing survives a restart on this path. Set
 `flows.store.directory` to opt into an on-disk backend that does survive a restart and can hold weeks
-instead of hours — see [Persistent storage](#persistent-storage). For long-range history you don't
-want to run a database for, query your OTLP backend instead — that remains the system of record
+instead of hours - see [Persistent storage](#persistent-storage). For long-range history you don't
+want to run a database for, query your OTLP backend instead - that remains the system of record
 either way.
 
-**Some flows carry no destination.** Exit traffic never does — that is how the Tailscale API reports
+**Some flows carry no destination.** Exit traffic never does - that is how the Tailscale API reports
 it, not a gap in decoding. Those connections count toward totals and show a dash where a destination
 would be, rather than a fabricated endpoint. Use the `tailscale.exit_node.*` metrics to measure exit
 traffic, which attribute by the relaying node.
 
 **The destination-services section counts overlay traffic only.** A physical connection describes the
-WireGuard underlay — *how* two nodes reached each other — so its destination port is the ephemeral one
+WireGuard underlay - *how* two nodes reached each other - so its destination port is the ephemeral one
 the peer happened to be listening on, and on a relayed path it is not a port at all but the DERP region
 ID written where a port would go. Neither names a service, so neither is counted here; on a live
 tailnet the underlay was half the section's bytes and both of its top two rows. Nothing is hidden by
@@ -437,7 +437,7 @@ end (0 of 71,253) while every portless one did (3,224 of 3,224).
 The view reads it as the absent port it is. A connection over one of these protocols therefore shows
 **no destination port and no destination service**, contributes nothing to the destination-services
 section, and is not counted as a distinct port by `tailscale.network.unique.dst_ports`. Its addresses
-are untouched — the record really carried those — and its bytes count toward the totals and every
+are untouched - the record really carried those - and its bytes count toward the totals and every
 other breakdown, so nothing goes missing; what is dropped is a number that was never a port.
 
 The same applies to the *source* port of every physical connection. The underlay reports the peer's
@@ -446,15 +446,15 @@ and is read as absent.
 
 ## Every ingestion path feeds it
 
-The polling collector, the streaming receiver and the object-store reader share one flow processor, so
-the view is complete regardless of `collectors.flowlogs.source`. Cross-source de-duplication applies
-here exactly as it does to the metrics, so a window delivered twice is counted once.
+The polling collector, streaming receiver and object-store reader share one flow processor.
+Each can populate the view. Cross-source deduplication is bounded and best-effort; choose one
+source per log type to avoid duplicate delivery.
 
 ## The JSON API
 
 The page is a shell that polls `/api/flows.json`; that endpoint is a supported read-only API in its own
 right, behind the same auth. The response carries a top-level `schema_version` integer and is a
-published, versioned contract — see [`docs/api/compatibility.md`](api/compatibility.md).
+published, versioned contract - see [`docs/api/compatibility.md`](api/compatibility.md).
 
 | Parameter | Default | Meaning |
 |---|---|---|
@@ -463,28 +463,28 @@ published, versioned contract — see [`docs/api/compatibility.md`](api/compatib
 | `top` | `20` | Length of each ranked list. Capped at 200. |
 | `recent` | `200` | Raw connections returned. Capped at 1000; `0` omits them. |
 | `tailnet` | first | Which tailnet to report on. An unknown name is a 404, never another tailnet's data. |
-| `device` | — | Substring, case-insensitive, matched against either endpoint's node name. |
-| `addr` | — | Substring, case-insensitive, matched against either endpoint's address. |
-| `service` | — | Substring, case-insensitive, matched against the destination service. |
-| `identity` | — | Substring, case-insensitive, matched against either endpoint's user or tags. |
-| `type` | — | Exact: `virtual`, `subnet`, `exit` or `physical`. |
-| `verdict` | — | Exact: `permitted`, `no_rule` or `undetermined`. |
-| `path` | — | Exact: `direct` or `derp`. |
-| `cursor` | — | Opaque page token from a previous response's `next_cursor`. |
+| `device` | - | Substring, case-insensitive, matched against either endpoint's node name. |
+| `addr` | - | Substring, case-insensitive, matched against either endpoint's address. |
+| `service` | - | Substring, case-insensitive, matched against the destination service. |
+| `identity` | - | Substring, case-insensitive, matched against either endpoint's user or tags. |
+| `type` | - | Exact: `virtual`, `subnet`, `exit` or `physical`. |
+| `verdict` | - | Exact: `permitted`, `no_rule` or `undetermined`. |
+| `path` | - | Exact: `direct` or `derp`. |
+| `cursor` | - | Opaque page token from a previous response's `next_cursor`. |
 
 ### Filtering and pagination
 
 The seven filter parameters run **server-side against the whole retained connection ring**, not
 against the page a request happened to return. Before #296 the browser filtered only the rows the
 API had already sent, so a connection matching your search but sitting outside the returned tail was
-invisible — and the page gave no sign of it. Filters combine with AND, and apply to `recent` only;
+invisible - and the page gave no sign of it. Filters combine with AND, and apply to `recent` only;
 the ranked aggregates always describe the unfiltered window.
 
 Each filter value is capped at 128 bytes. A longer one is rejected with `400 Bad Request` naming the
 parameter rather than being truncated: a truncated filter matches **more** than you asked for, and
 would read as an answer.
 
-Pagination uses `next_cursor`, an opaque token — pass it back as `cursor` for the next page of
+Pagination uses `next_cursor`, an opaque token - pass it back as `cursor` for the next page of
 matching rows. An absent, malformed or unrecognized cursor is treated as "start from the newest"
 rather than an error, so a token held across a restart degrades to a fresh view instead of breaking
 it. Do not parse it; its contents are not a stable interface.
@@ -501,14 +501,14 @@ Four counters describe what you are looking at, and they are not interchangeable
 `recent_truncated` is the one that matters when a search comes back empty: it distinguishes "nothing
 matched" from "the ring no longer goes back that far".
 
-Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` — each an
+Alongside the ranked lists, `result` carries `tag_matrix`, `user_matrix` and `os_matrix` - each an
 array of `{src, dst, counts}` cells ranked by bytes and capped at 400. Entries in `recent` carry the
 endpoint identity (`src_user`, `src_tags`, `src_os` and their `dst_` counterparts) as well as the raw
-addresses, plus that connection's own `verdict`, `reversed` and `rule`, and — on underlay connections
-only — its `path` and `derp_region`.
+addresses, plus that connection's own `verdict`, `reversed` and `rule`, and - on underlay connections
+only - its `path` and `derp_region`.
 
 `result.ports` is `{port, transport, service, counts}` per destination endpoint, from the **overlay**
-traffic types only — a physical entry's port is a WireGuard underlay port, or a DERP region ID on a
+traffic types only - a physical entry's port is a WireGuard underlay port, or a DERP region ID on a
 relayed path, and neither is a service. A [portless protocol](#protocols-with-no-ports) contributes
 nothing either, having no port to report. Its counts therefore sum to less than `result.totals`.
 
@@ -532,7 +532,7 @@ Policy reconciliation spans two places. `result` carries what the policy *said* 
 
 | Field | Contents |
 |---|---|
-| `result.verdicts` | Connection counts per verdict: `permitted`, `permitted_reverse`, `no_rule`, `undetermined`. Empty when no policy was in force — which is **not** the same as everything being permitted. |
+| `result.verdicts` | Connection counts per verdict: `permitted`, `permitted_reverse`, `no_rule`, `undetermined`. Empty when no policy was in force - which is **not** the same as everything being permitted. |
 | `result.unexplained` | `{src, dst, transport, port, counts}` relationships nothing explained, ranked by bytes. |
 | `result.rules` | `{rule, counts}` per rule index that permitted something. Complete and unranked, so subtracting it from `policy.rules` gives the rules that permitted nothing. |
 
@@ -564,13 +564,13 @@ $ curl -sH "Authorization: Bearer $TOKEN" \
 ### Shareable links
 
 Window, end, tailnet, the selected device, the matrix mode and cell, and all seven filters round-trip
-through the page's own URL (`/flows?window=6h&device=camden`), using the same parameter names as the
+through the page's own URL (`/flows?window=6h&device=example-node`), using the same parameter names as the
 JSON API above rather than a second vocabulary. Back and forward navigate the view; typing in a
 filter box replaces the current history entry instead of pushing one, so the back button still does
 what you expect after a search.
 
-A link naming a device or matrix cell that no longer exists — or carrying any other stale or invalid
-value — falls back to the default view rather than erroring or showing an empty screen that reads as
+A link naming a device or matrix cell that no longer exists - or carrying any other stale or invalid
+value - falls back to the default view rather than erroring or showing an empty screen that reads as
 "no traffic". The admin token never appears in the URL: the page is not given one, so there is
 nothing for it to put there. URLs land in history, logs, referrers and pasted messages.
 
@@ -580,15 +580,14 @@ nothing for it to put there. URLs land in history, logs, referrers and pasted me
 connections table shows, behind the same admin auth, taking the same `window` / `end` / `tailnet`
 and seven filter parameters as `/api/flows.json`.
 
-**Both state their own provenance, in the file.** The rows come from the bounded in-memory recent
-ring — never persistent full history — and each export carries the window, the filters applied and
-the matched/returned/retained/truncated counts. CSV puts this in leading `#` comment lines before
-the header row; JSON puts it in an envelope object alongside `rows`. An export that looked like a
-complete record of a time range would eventually be treated as evidence, which is the failure this
-avoids.
+Each export records its source, window, filters, and matched/returned/retained/truncated counts.
+Rows come from the store serving the view: the bounded recent-connection ring by default, or
+SQLite when `flows.store.directory` is configured. SQLite exports remain subject to retention,
+row and export limits. CSV records this metadata in leading `#` comment lines; JSON puts it in
+an envelope alongside `rows`. Check those limits before treating a download as a complete record.
 
-A field that a spreadsheet would read as a formula — one starting `=`, `+`, `-`, `@`, a tab or a
-carriage return — is prefixed with a single quote in the CSV output. Device names, users, tags and
+A field that a spreadsheet would read as a formula - one starting `=`, `+`, `-`, `@`, a tab or a
+carriage return - is prefixed with a single quote in the CSV output. Device names, users, tags and
 ACL service names come from the tailnet's control plane, not from this code.
 
 ```console
@@ -596,13 +595,13 @@ $ curl -sH "Authorization: Bearer $TOKEN" \
     'http://127.0.0.1:9091/api/flows/export.csv?window=6h&verdict=no_rule' -o unexplained.csv
 
 $ curl -sH "Authorization: Bearer $TOKEN" \
-    'http://127.0.0.1:9091/api/flows/export.json?window=6h&device=camden' | jq '.rows | length'
+    'http://127.0.0.1:9091/api/flows/export.json?window=6h&device=example-node' | jq '.rows | length'
 ```
 
 ## What it is not
 
 It is not a replacement for dashboards, alerting, or retention. By default it holds hours, not weeks
-(persistence, opt-in, extends that to whatever `flows.store.retention` allows — still not a
+(persistence, opt-in, extends that to whatever `flows.store.retention` allows - still not a
 replacement for the points below); it cannot join across time ranges; and it has no alerting. For any
 of that, use the OTLP export and the [dashboards](dashboards.md) and [alert rules](alerts.md) that
 ship with the project.

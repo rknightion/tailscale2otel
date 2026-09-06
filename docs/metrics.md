@@ -11,7 +11,7 @@ records (exported as OTLP logs, landing in Loki). It documents the OTEL source n
 and instrument types, the **normalized** Prometheus names you actually query in Grafana Cloud, the
 key attributes/labels on each signal, and the conditions under which optional signals appear.
 
-If you are wiring dashboards or alerts, query against the **Prometheus (normalized) name** column —
+If you are wiring dashboards or alerts, query against the **Prometheus (normalized) name** column -
 that is what exists in the metrics store. The OTEL name is the source-of-truth identifier used in
 the code and in any non-Grafana OTEL backend.
 
@@ -24,16 +24,16 @@ the code and in any non-Grafana OTEL backend.
 All metrics and log attributes are authored to follow
 [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/):
 
-- **Dotted, lowercase, namespaced names** — e.g. `tailscale.network.io`,
+- **Dotted, lowercase, namespaced names** - e.g. `tailscale.network.io`,
   `tailscale.device.online`, `tailscale2otel.scrape.duration`. Words within a segment use
   `snake_case` where needed (e.g. `last_seen`, `key.expiry`).
-- **UCUM units** — units are expressed in the
+- **UCUM units** - units are expressed in the
   [Unified Code for Units of Measure](https://ucum.org/): `By` (bytes), `s` (seconds), `d` (days),
   `1` (a dimensionless ratio/flag), and "annotation" units like `{packet}`, `{flow}`, `{route}`,
   `{event}`, `{record}` for dimensionless counts of a thing.
 - **No `_total` suffix in the source.** Monotonic counters are named without the Prometheus
   `_total` convention; that suffix is added later by the backend, not by us.
-- **Attribute keys are dotted/namespaced too** — e.g. `network.io.direction`,
+- **Attribute keys are dotted/namespaced too** - e.g. `network.io.direction`,
   `http.response.status_code`, `service.version`, `host.name`. Tailscale-specific keys use a
   `tailscale.*` prefix (e.g. `tailscale.src_node`, `tailscale.audit.action`).
 
@@ -42,7 +42,7 @@ All metrics and log attributes are authored to follow
 When OTLP metrics are ingested by Grafana Cloud (Mimir/Prometheus), the names and labels are
 rewritten by the OTLP-to-Prometheus translation rules. The rules that matter here:
 
-1. **Dots become underscores** — in both **metric names** *and* **attribute (label) keys**.
+1. **Dots become underscores** - in both **metric names** *and* **attribute (label) keys**.
    `tailscale.network.io` → `tailscale_network_io`; the label `network.io.direction` →
    `network_io_direction`; `http.response.status_code` → `http_response_status_code`.
 2. **Monotonic counters get a `_total` suffix.** `tailscale.network.io` (counter) →
@@ -54,16 +54,16 @@ rewritten by the OTLP-to-Prometheus translation rules. The rules that matter her
 4. **A unit of `1` on a gauge gets a `_ratio` suffix.** This is meant for true ratios (0..1), but
    the translation applies it to **any** gauge whose unit is `1`.
 
-> **Quirk — count gauges become `*_ratio`.** Several of our gauges are dimensionless *counts*
+> **Quirk - count gauges become `*_ratio`.** Several of our gauges are dimensionless *counts*
 > (e.g. `tailscale.devices.count`, `tailscale.acl.rules`, `tailscale.dns.nameservers.count`) that
 > carry unit `1` because UCUM has no "count" unit for a gauge. The normalizer therefore appends
 > `_ratio` to them, so you end up with `tailscale_devices_count_ratio`,
-> `tailscale_acl_rules_ratio`, etc. These are **counts, not ratios** — read the Description column.
+> `tailscale_acl_rules_ratio`, etc. These are **counts, not ratios** - read the Description column.
 > The same applies to boolean/flag gauges (online, enabled, available) which are `0`/`1` and also
 > land as `*_ratio`. This is a known cosmetic artifact of the OTLP→Prometheus mapping; the values
 > are correct, only the suffix is misleading.
 >
-> Note that annotation units in curly braces — `{packet}`/`{flow}`/`{event}`/`{route}` — are
+> Note that annotation units in curly braces - `{packet}`/`{flow}`/`{event}`/`{route}` - are
 > **dropped** entirely; they are never appended to the name, for **either** counters **or** gauges.
 > So `tailscale.network.packets` (counter) → `tailscale_network_packets_total`, and
 > `tailscale.device.routes.advertised` (gauge) → `tailscale_device_routes_advertised` (no `_routes`).
@@ -87,15 +87,15 @@ Labels follow the same dots→underscores rule, so the OTEL attributes `tailscal
 
 Instrument column: **counter** = monotonic cumulative (rendered as `_total` in Prometheus, use
 `rate()`/`increase()`); **gauge** = point-in-time value; **histogram** = a distribution with
-explicit buckets (rendered as `_bucket`/`_sum`/`_count` in Prometheus — never `_total`, and never
+explicit buckets (rendered as `_bucket`/`_sum`/`_count` in Prometheus - never `_total`, and never
 `_ratio` even at unit `1`); **updowncounter** = a non-monotonic sum (rendered without a `_total`
 suffix, unlike a counter).
 
 > **Universal attributes (every metric).** In addition to the per-metric attributes listed below,
-> every metric data point carries `tailscale.tailnet` (`tailscale_tailnet` — the tailnet name;
+> every metric data point carries `tailscale.tailnet` (`tailscale_tailnet` - the tailnet name;
 > omitted on process-global self-obs series and under Headscale) and `tailscale2otel.provider`
-> (`tailscale2otel_provider` — `tailscale` or `headscale`). These are **real labels on every backend**
-> — Grafana Cloud, the opt-in Prometheus `/metrics` pull endpoint, and self-managed Mimir/Prometheus —
+> (`tailscale2otel_provider` - `tailscale` or `headscale`). These are **real labels on every backend**
+> - Grafana Cloud, the opt-in Prometheus `/metrics` pull endpoint, and self-managed Mimir/Prometheus -
 > so you can filter/group by tailnet with a direct matcher (e.g. `{tailscale_tailnet="example.com"}`),
 > **no `target_info` join required**. Log records and trace spans carry the same two attributes.
 
@@ -216,11 +216,11 @@ exporter health.
 Aggregated, low-cardinality counters derived from flow logs and audit logs. The full-fidelity
 per-connection detail is emitted as **log records** (see [Log events](#log-events)).
 
-> **Exit traffic carries no destination — and often no source.** Records with `traffic_type=exit`
+> **Exit traffic carries no destination - and often no source.** Records with `traffic_type=exit`
 > report byte and packet counts against the *reporting* node only. A live capture found no `dst` on
 > any exit entry, and no `src` on roughly half of them; none carried a protocol number either (so
 > `network.transport` is `unknown`). Attributes derived from an absent endpoint are **omitted**
-> rather than filled with `unknown` — a missing `tailscale.dst.node` means the data never had one,
+> rather than filled with `unknown` - a missing `tailscale.dst.node` means the data never had one,
 > not that a lookup failed. To measure exit traffic use **`tailscale.exit_node.io`** and
 > **`tailscale.exit_node.packets`**, which attribute by relaying node: the only dimension exit
 > records actually supply. The same omission applies to any traffic type with an absent endpoint;
@@ -234,7 +234,7 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > `tailscale_path=derp` and `tailscale_derp_region_id`, which is what it actually is. **The
 > counterparty is not lost:** on `physical` traffic `src` is the peer's overlay address, so the node
 > you want is `tailscale_src_node`, unaffected. For the same reason a relayed connection is not
-> counted in `tailscale.network.unique.dst_peers`/`dst_ports` — a marker is not a distinct peer, and
+> counted in `tailscale.network.unique.dst_peers`/`dst_ports` - a marker is not a distinct peer, and
 > a region ID is not a port. **Totals are unchanged**: only labels are dropped, never data points.
 > The flow **log** keeps the raw `destination_address`/`destination_port` (it is the full-fidelity
 > record of what the wire said) and omits only `tailscale_dst_node`; the `/flows` page does the same,
@@ -271,10 +271,10 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > default, as ports add cardinality).
 
 > **Per-metric cardinality cap.** Every metric is bounded by `cardinality.metric_limit` (default
-> 10000) — the OTLP SDK's hard limit on distinct series per instrument per export cycle. Series past
+> 10000) - the OTLP SDK's hard limit on distinct series per instrument per export cycle. Series past
 > it collapse into a single `{otel_metric_overflow="true"}` series (silent loss of per-series
 > detail). So a label-less `tailscale_network_io_bytes_total{otel_metric_overflow="true"}` (or the
-> same on `network.packets`) means you are **over the cap** — raise `metric_limit` or lower flow
+> same on `network.packets`) means you are **over the cap** - raise `metric_limit` or lower flow
 > cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
 > the same cap, so it flags the condition too.
 
@@ -282,9 +282,9 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > temporality (what Grafana Cloud / Mimir ingest). A *synchronous* cumulative gauge would re-export a
 > stale value forever once its attribute set has been seen (upstream
 > [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)), so every churning
-> per-entity gauge — `tailscale.device.online` and its per-device siblings, the by-version/by-tag/
+> per-entity gauge - `tailscale.device.online` and its per-device siblings, the by-version/by-tag/
 > by-region/by-CIDR rollups, `tailscale.node.up`, and the per-resolver/per-search-path `tailscale.dns.*`
-> — is instead emitted as an **observable** gauge from a per-tick snapshot. An observable gauge under
+> - is instead emitted as an **observable** gauge from a per-tick snapshot. An observable gauge under
 > cumulative temporality reports only the series observed in the current collection, so when a device is
 > **removed or renamed** (or a version/tag/resolver stops appearing) its series simply **drops out of
 > the export on the next scrape** rather than ghosting, and it stops consuming a cardinality-limit slot
@@ -292,7 +292,7 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > without needing to join against a separate recency signal.
 >
 > One deliberate exception: the **forwarded node-metrics passthrough samples** (the raw series scraped
-> from each node's tailscaled `:5252` endpoint) are still synchronous — their names are dynamic and
+> from each node's tailscaled `:5252` endpoint) are still synchronous - their names are dynamic and
 > include monotonic counters, so snapshot semantics don't apply. If a node leaves discovery, its
 > `tailscale.node.up` drops out immediately, but its forwarded gauge samples can linger until an
 > exporter restart; rate-based counter panels are unaffected. Size `cardinality.metric_limit` for your
@@ -401,7 +401,7 @@ User roll-ups and per-user gauges. Per-user "id dims" = `user_id`, `user_name`.
 
 ### OAuth Apps (`tailscale.oauth_apps.count`, `tailscale.oauth_app.*`)
 
-Inventory of the tailnet's OAuth applications (device provisioning — alpha API). The collector
+Inventory of the tailnet's OAuth applications (device provisioning - alpha API). The collector
 idles silently (no error) on tailnets without the feature. App names are operator-chosen labels
 gated by `pii_filter.free_text_details`; redirect URIs are decoded only to report their count,
 while the URI values and client secrets are never emitted.
@@ -487,7 +487,7 @@ health, and the API does not expose grant-layer denials as session rows.
 ### Contacts (`tailscale.contact.*`)
 
 Tailnet contact verification status. The contact **email is never emitted** (PII); only whether each
-contact type (`account`/`support`/`security`) still needs verification — an unverified `security`
+contact type (`account`/`support`/`security`) still needs verification - an unverified `security`
 contact is worth alerting on.
 
 <!-- BEGIN GENERATED: metrics groups="Contacts" -->
@@ -498,7 +498,7 @@ contact is worth alerting on.
 
 ### Webhook endpoints (`tailscale.webhook_endpoint*.*`)
 
-Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) — distinct
+Inventory of configured webhook **endpoints** (where Tailscale posts event notifications) - distinct
 from the [stream/webhook receiver](#receivers-stream-webhook-tailscalestream-tailscalewebhook) metrics. Endpoint URL, secret and
 creator are **never emitted**. The per-endpoint subscriptions gauge is gated by
 `cardinality.per_entity.webhook`.
@@ -584,9 +584,9 @@ devices cache when available.
 
 > `tailscale.feature.enabled` for network-flow-logging is emitted in **both** ingestion modes: the
 > flowlogs poller emits it directly when polling, and under `source: stream` a lightweight feature
-> probe emits it on the flowlogs interval — so the signal is never lost when only the receiver runs.
+> probe emits it on the flowlogs interval - so the signal is never lost when only the receiver runs.
 
-### Receivers — stream & webhook (`tailscale.stream.*`, `tailscale.webhook.*`)
+### Receivers - stream & webhook (`tailscale.stream.*`, `tailscale.webhook.*`)
 
 Health/throughput counters for the optional HEC log-stream receiver and the webhook receiver.
 
@@ -611,7 +611,7 @@ Health/throughput counters for the optional HEC log-stream receiver and the webh
 
 The third flow-log ingestion path: the export Tailscale writes into an S3-compatible bucket
 (`collectors.flowlogs.source: objectstore`). The flow records themselves emit the same
-`tailscale.network.flow.*` signals every other path does — these describe the **ingestion**, which is
+`tailscale.network.flow.*` signals every other path does - these describe the **ingestion**, which is
 the part that is otherwise invisible.
 
 Watch `tailscale2otel_objectstore_backlog`: it is the number of objects listed but not yet ingested at
@@ -642,10 +642,10 @@ the end of the last cycle. A sustained non-zero value means the bucket is being 
 
 ### Node metrics scraper (`tailscale.node.*` + forwarded series)
 
-The scraper emits one curated metric — the per-target health gauge below — and otherwise forwards
-every scraped `tailscaled` series **verbatim**. Those forwarded series are runtime-named and are
-**not** part of the curated catalog; see the dedicated
-[Node metrics scraper](#node-metrics-scraper) section for the forwarding behavior and setup.
+The scraper emits target-health and discovery metrics, derives the curated node signals below,
+and forwards raw `tailscaled` series with their original names and labels. Forwarded series have
+runtime-defined names and are outside this catalog. See [Node metrics](node-metrics.md) for
+setup, filtering and curated mappings.
 
 <!-- BEGIN GENERATED: metrics groups="Node metrics" -->
 | OTEL name | Unit | Instrument | Prometheus (normalized) name | Key attributes | Description |
@@ -691,7 +691,7 @@ when `self_observability.enabled` is true; the admin status page shows the same 
 the databases regardless.
 
 `lookups` accounts for every address the flow path offered: the `skipped` database counts addresses
-that never reached a database because they are not globally routable — which is where every tailnet
+that never reached a database because they are not globally routable - which is where every tailnet
 address lands, since the CGNAT range and the Tailscale ULA are refused by construction.
 
 `database.build_time` is the signal worth alerting on. It is MaxMind's build date, not the download
@@ -717,11 +717,11 @@ time() - tailscale_geoip_database_build_time_seconds > 14 * 86400
 
 Kubernetes API requests proxied through the Tailscale operator's API-server proxy, as recorded by
 **tsrecorder** and read from its S3 bucket (`collectors.k8s_audit`). Enable it with `enableEvents` in
-the `tailscale.com/cap/kubernetes` ACL grant — a **beta** upstream feature with no schema version and
+the `tailscale.com/cap/kubernetes` ACL grant - a **beta** upstream feature with no schema version and
 no stability guarantee, which is why `tailscale.k8s.schema_drift` exists.
 
 > **These counters count ATTEMPTS, not outcomes.** The source records carry no response status, no
-> latency and no byte count — tsrecorder logs the request as the proxy forwards it, and nothing on the
+> latency and no byte count - tsrecorder logs the request as the proxy forwards it, and nothing on the
 > way back. Allowed-vs-denied, error rates and latency are therefore **not derivable from this feed at
 > all**, and no metric here should be read as implying success. If you need outcomes, you need the
 > Kubernetes API server's own audit log, which is a different source entirely.
@@ -734,7 +734,7 @@ the raw exec command line are **log attributes only** and never appear on a metr
 `tailscale.k8s.api.exec_sessions` carries `tailscale.k8s.command_class`, a bounded classification of
 the exec command line (`interactive_shell`, `recon`, `credential_read`, `package_mgmt`, `net_tool`,
 `file_transfer`, `none`, `other`). The verbatim command text is on the log record instead, under
-`tailscale.k8s.command`, and is redactable on its own via `pii_filter.command_text` — the class
+`tailscale.k8s.command`, and is redactable on its own via `pii_filter.command_text` - the class
 survives that redaction, so the exec metrics keep working with the raw text switched off.
 
 <!-- BEGIN GENERATED: metrics groups="Kubernetes audit" -->
@@ -755,7 +755,7 @@ Structured OTEL log records. They are exported via OTLP and land in **Loki** und
 `grafanacloud-logs`, all tagged with the label `service_name="tailscale2otel"`.
 
 The OTEL event type is carried in the native log-record **`EventName`** field (set via the log
-SDK's `SetEventName`, log v0.20.0+ — not a separate `event.name` attribute). Grafana Cloud's
+SDK's `SetEventName`, log v0.20.0+ - not a separate `event.name` attribute). Grafana Cloud's
 OTLP→Loki ingestion exposes it as **`event_name`**, so you filter on `event_name` in LogQL (e.g.
 `| event_name="tailscale.config.audit"`); the value keeps its dots. *Verified live against Grafana
 Cloud:* the native `EventName` produces the same `event_name` key the earlier `event.name` attribute
@@ -800,25 +800,25 @@ did, so existing queries and the bundled dashboards are unaffected by the S4-1 m
 > node IP/ID could be resolved against the device-enrichment cache; otherwise the record carries the
 > raw `tailscale_node_id`/addresses without a hostname.
 
-> **Device posture — metric vs. log.** Posture is exposed two ways. The **metric**
+> **Device posture - metric vs. log.** Posture is exposed two ways. The **metric**
 > `tailscale.device.posture` (→ `tailscale_device_posture_ratio`, a constant-`1` info gauge, one
 > series per device) carries a curated, low-cardinality label set (`os`, `os_version`, `ts_version`,
-> `auto_update`, `encrypted`, `track`) and is emitted **every scrape** — use it for fleet analytics
+> `auto_update`, `encrypted`, `track`) and is emitted **every scrape** - use it for fleet analytics
 > (version skew, auto-update/encryption coverage, release-track outliers). The **log**
 > `tailscale.device.posture` carries the full raw posture attribute set and, by default
-> (`posture_log_mode: changes`), is emitted only when a device's posture **changes** — a full
-> baseline dump on the first scrape after start, then per-device deltas — so it reads as an audit
+> (`posture_log_mode: changes`), is emitted only when a device's posture **changes** - a full
+> baseline dump on the first scrape after start, then per-device deltas - so it reads as an audit
 > trail rather than a per-minute snapshot. Note that the device's own OS is `node_os` / `node_osVersion`
 > (and the metric's `os` / `os_version` labels); the resource-level `os_type` / `os_description` on
 > any signal describe the **collector** host, not the device.
 
 > **Device posture attributes as metrics (MDM/identity integrations).** Beyond the curated
 > `tailscale.device.posture` gauge above, the allow-listed posture-attribute namespaces (default:
-> `intune`, `jamf`, `kandji`, `crowdstrike`, `sentinelone`, `kolide`, `ip` — see
+> `intune`, `jamf`, `kandji`, `crowdstrike`, `sentinelone`, `kolide`, `ip` - see
 > `collectors.devices.attribute_namespaces`) are promoted to two metrics, reusing the same per-device
 > attribute fetch (no extra API calls; both **gated** by `collect_posture`). Each attribute lands in
 > exactly one, by value type: booleans/numbers become **`tailscale_device_attribute_ratio`** (the value
-> carries meaning — `0`/`1` for booleans, the number otherwise), and strings/enums become
+> carries meaning - `0`/`1` for booleans, the number otherwise), and strings/enums become
 > **`tailscale_device_attribute_info_ratio`** (constant `1`, the value carried in the `value` label).
 > So `avg(tailscale_device_attribute_ratio{attribute="intune:isEncrypted"})` is the encrypted-fleet
 > fraction, `tailscale_device_attribute_ratio{attribute="intune:isEncrypted"} == 0` finds unencrypted
@@ -841,7 +841,7 @@ port, the required ACL grant, and per-target auth/TLS), see
 Key behavior:
 
 - **Verbatim forwarding.** Each scraped `tailscaled` series is re-emitted with its **original
-  metric name and original labels preserved** — these are *not* renamed into the curated
+  metric name and original labels preserved** - these are *not* renamed into the curated
   `tailscale.*` namespace and are *not* subject to our semconv naming. (Grafana Cloud's standard
   OTLP→Prometheus normalization still applies on ingest.)
 - **An added `tailscale_node` label.** Every forwarded series gains a `tailscale_node` label
@@ -867,7 +867,7 @@ fleet without needing resource-attribute joins.
 
 ---
 
-## Cross-source de-duplication (a failsafe — pick one method)
+## Cross-source de-duplication (a failsafe - pick one method)
 
 **Choose ONE ingestion source per log type.** For flow and audit logs, use the poller
 (`source: poll`), the HEC stream receiver (`source: stream`), or object-store ingestion
@@ -877,14 +877,14 @@ arrive twice; the exporter logs a **WARN at startup** when it detects this.
 
 When data does arrive over more than one path, the shared **audit** and **flow** processors carry a
 **dedup set** that drops already-seen records (keyed on their stable identity) before the metric
-counters and log emitters. This is a **best-effort FAILSAFE, not a guarantee** — do not rely on it
+counters and log emitters. This is a **best-effort FAILSAFE, not a guarantee** - do not rely on it
 as a supported mode:
 
 - **Flow** poll↔stream de-dup is reliable: the key is the connection tuple
   (`nodeId|start|end|proto|src|dst`), identical across both sources.
 - **Audit** poll↔stream de-dup keys on the event identity `eventGroupID|action|target.id|property`
   (time-free, because a streamed audit record has no inner `eventTime` and is timed from the HEC
-  envelope — its millisecond timestamp never matches the API's nanosecond `eventTime`). This is
+  envelope - its millisecond timestamp never matches the API's nanosecond `eventTime`). This is
   reliable in practice but theoretical edge cases exist, hence "failsafe".
 - `webhook` + `audit` de-duplication is **best-effort** on a normalized `(verb, subject, time-bucket)`
   key (the two sources don't always share a perfectly stable key), so treat overlapping
@@ -958,18 +958,19 @@ Per-connection flow records to a specific destination node:
 
 ## Where these definitions come from
 
-This page is **generated from the telemetry catalog in the code**, so it cannot drift from what the
-binary actually emits — CI fails the build if the two disagree.
+The marked tables are generated from the telemetry catalog. CI checks that they match the
+catalog; the surrounding explanations are maintained separately. Collection still depends on
+configuration, permissions and source availability.
 
-- [`tools/metricscatalog`](https://github.com/rknightion/tailscale2otel/tree/main/tools/metricscatalog) — the generator that writes this page
-- [`internal/catalog`](https://github.com/rknightion/tailscale2otel/tree/main/internal/catalog) — the metric and log-event descriptors themselves
-- [`internal/semconv`](https://github.com/rknightion/tailscale2otel/tree/main/internal/semconv) — attribute-name constants
-- [`deploy/grafana`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/grafana) — dashboards built on these signals
-- [`deploy/alerts`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts) — shipped Prometheus and Grafana alert rules
+- [`tools/metricscatalog`](https://github.com/rknightion/tailscale2otel/tree/main/tools/metricscatalog) - the generator that writes this page
+- [`internal/catalog`](https://github.com/rknightion/tailscale2otel/tree/main/internal/catalog) - the metric and log-event descriptors themselves
+- [`internal/semconv`](https://github.com/rknightion/tailscale2otel/tree/main/internal/semconv) - attribute-name constants
+- [`deploy/grafana`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/grafana) - dashboards built on these signals
+- [`deploy/alerts`](https://github.com/rknightion/tailscale2otel/tree/main/deploy/alerts) - shipped Prometheus and Grafana alert rules
 
 The running exporter also serves this same catalog live on its admin status page, alongside the
 active-series cardinality for the last export interval.
 
 Spotted a signal that is wrong, missing, or badly named?
-[Open an issue](https://github.com/rknightion/tailscale2otel/issues/new) — metric naming is a
-one-way door once dashboards depend on it, so corrections are genuinely welcome.
+[Open an issue](https://github.com/rknightion/tailscale2otel/issues/new) - metric naming is a
+compatibility concern once dashboards depend on it. Include the affected signal and expected behaviour.

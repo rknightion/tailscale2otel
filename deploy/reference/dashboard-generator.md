@@ -15,7 +15,7 @@ Prometheus rules. `alerts/gen/build_rules.py` builds the rule manifests.
   reports a metric as missing the moment its panel moves to the other, which makes splitting content
   structurally impossible. For the same reason `--flat`/`--tab` previews require `--dashboard`: a
   tab title such as "Overview" exists on both.
-- **The dashboard `apiVersion` is load-bearing - do not "simplify" it to an alpha version.** The
+- **The dashboard `apiVersion` is required - do not "simplify" it to an alpha version.** The
   `variables` field on `RowsLayoutRowSpec`/`TabsLayoutTabSpec`, which is what lets a presence
   sentinel live on the tab that consumes it instead of on the dashboard, exists only in `v2beta1`
   and `v2`. `v2alpha1` has no such field, so a downgrade drops every scoped variable silently

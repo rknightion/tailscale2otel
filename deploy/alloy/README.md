@@ -29,7 +29,7 @@ environment with `sys.env()`, and `docker-compose.yaml` requires them with
 `${VAR:?}` so `up` fails loudly on a missing value instead of starting a broken
 or unauthenticated gateway.
 
-Put them in `deploy/.env` — the repository's one canonical Compose credential
+Put them in `deploy/.env` - the repository's one canonical Compose credential
 file, git-ignored and covered by `scripts/check-secret-hygiene.sh`:
 
 ```sh
@@ -46,7 +46,7 @@ For Grafana Cloud, `GATEWAY_OTLP_USERNAME` is the numeric instance/stack ID and
 `GATEWAY_OTLP_PASSWORD` is an access-policy token with the OTLP write scopes;
 both come from the Cloud Portal (organization **Overview** → **Launch stack** →
 **Configure** on the OpenTelemetry tile). Use your own region's
-`otlp-gateway-<zone>.grafana.net` host — the exporter appends `/v1/metrics`,
+`otlp-gateway-<zone>.grafana.net` host - the exporter appends `/v1/metrics`,
 `/v1/logs` and `/v1/traces` to whatever base URL you give it.
 
 ## Run it
@@ -60,7 +60,7 @@ directory holding the compose file, which here is `deploy/alloy/`, so the
 canonical `deploy/.env` is not picked up implicitly.
 
 This file **replaces** `deploy/docker-compose.yaml`; it is not an overlay for it.
-Do not pass both with two `-f` flags — the direct-export path sets
+Do not pass both with two `-f` flags - the direct-export path sets
 `otlp.grafana_cloud.*` on the exporter, which is exactly what gateway mode moves
 out of it.
 
@@ -73,7 +73,7 @@ unauthenticated, and nothing outside the stack needs them.
 ## What this buys you, and what it does not
 
 The retry loop plus the sending queue mean a backend outage no longer costs you
-the telemetry produced during it — the gateway holds the backlog and delivers it
+the telemetry produced during it - the gateway holds the backlog and delivers it
 when the backend returns. With `otelcol.storage.file` wired in, the backlog also
 survives an Alloy restart.
 
@@ -120,7 +120,7 @@ Expect `10000` per signal, matching `queue_size` in `config.alloy`.
 backend is healthy.
 
 **3. Break the backend.** Point `GATEWAY_OTLP_ENDPOINT` at a dead port and
-recreate the Alloy container, or block egress to the real one — whichever your
+recreate the Alloy container, or block egress to the real one - whichever your
 environment makes easy. Either way the exporter now fails every send.
 
 **4. Watch the queue fill instead of the data vanishing.** Let
@@ -146,7 +146,7 @@ run the `curl` from another container on the Compose network. Then, after the
 curl -s http://127.0.0.1:12345/metrics | grep '^otelcol_exporter_queue_size'
 ```
 
-Observed: `1` for `data_type="metrics"` — a queued batch, not a dropped one.
+Observed: `1` for `data_type="metrics"` - a queued batch, not a dropped one.
 Confirm it is on disk too:
 
 ```sh
@@ -167,7 +167,7 @@ curl -s http://127.0.0.1:12345/metrics | grep '^otelcol_exporter_queue_size'
 ```
 
 Observed: still `1`. The backlog was reloaded from disk. Remove the
-`otelcol.storage.file` block and this step returns `0` instead — the backlog is
+`otelcol.storage.file` block and this step returns `0` instead - the backlog is
 gone, which is exactly the difference the component buys.
 
 **6. Restore the backend and watch it drain.**
@@ -199,7 +199,7 @@ path appending, basic auth, retry, persistent queue, and drain-on-recovery.
 
 ## Version-pinning traps
 
-**The image tag is pinned on purpose — do not move it to `latest`.** Alloy
+**The image tag is pinned on purpose - do not move it to `latest`.** Alloy
 component arguments change between minor versions, so an unpinned tag can turn a
 working `config.alloy` into a container that refuses to start on the next pull.
 
@@ -215,8 +215,8 @@ v1.19.1:
   documents a `client_auth {}` sub-block and marks the flat form deprecated, but
   those docs are built from Alloy's `main` branch and are ahead of this release.
   On v1.19.1 the `client_auth` form fails at startup with `building component:
-  no credential source provided`. Worse, **`alloy validate` accepts it** — the
-  block name parses and only the credential wiring is missing — so the offline
+  no credential source provided`. Worse, **`alloy validate` accepts it** - the
+  block name parses and only the credential wiring is missing - so the offline
   gate cannot catch this. Move to `client_auth` only when the pin moves to a
   release that supports it, and prove it with a real `run`.
 
@@ -243,5 +243,5 @@ docker compose --env-file deploy/.env -f deploy/alloy/docker-compose.yaml logs a
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:12345/-/ready
 ```
 
-Neither file here is generated, and neither is covered by a CI drift gate — the
+Neither file here is generated, and neither is covered by a CI drift gate - the
 `fmt` diff above is a convention, not an enforced check.
