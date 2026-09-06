@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-06 17:59'
-updated_date: '2026-09-06 18:29'
+updated_date: '2026-09-06 18:30'
 labels: []
 dependencies: []
 priority: high
@@ -46,6 +46,8 @@ Run four independent source-to-doc mapping lanes for configuration, deployment, 
 Four source audits and a second factual review completed. Added feature index, Kubernetes HA, PAM and event-explorer guides. Corrected PII defaults, receiver startup auth, file-credential scope, local/persistent flow exports, cursor shards, standby routing, and 40-second drain/55-second grace budget. Root applied de-AI edits; generated metric and coverage blocks preserved. Initial just check passed fmt/lint/vet/race tests/tool modules/Python/tidy/vulnerability checks, then stopped because generated-diff checks compare the working tree to the index, including changed documentation. Stage reviewed paths and rerun the full gate. No runtime change, release merge or live provider action.
 
 Final local verification passed: just check exit 0, just gen with no unstaged diff, just --fmt --check, 28 docs.toml navigation targets, and local file/heading links across 32 maintained Markdown pages. All 514 Helm render assertions and 71 Compose assertions passed. Parsed config.example.yaml and Helm values are unchanged; only comments changed. Generated metric/coverage blocks remain byte-identical. One earlier Docker hygiene probe failed without a retained engine diagnostic; the diagnostic retry and final standard gate both passed. LogQL/TraceQL syntax remains unparsed by the existing query checker (variables checked). No live collection/HA exercise or published-site visual render claimed. CodeRabbit and new tests skipped for docs/comments only.
+
+Documentation commit 49c8a4d629e0c0e5a2aa9dfc78ee2b77d2d9a909 passed the full local gate. Initial push was rejected because origin/main advanced to 4396ba41ab10fe2c28219d5199b3797cea425c63. Merged that upstream commit without conflicts; its only incoming change updates the Claude action pin in .github/actions/report-drift/action.yml. Application source and documentation are unchanged by the merge. Upstream CI run 34041976879 was successful; final merged-SHA CI is recorded in the terminal report.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
