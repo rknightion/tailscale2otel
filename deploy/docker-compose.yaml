@@ -37,7 +37,7 @@ services:
     # Override the tag with TS2OTEL_VERSION (e.g. TS2OTEL_VERSION=latest, or a
     # digest-pinned ref). The default tracks the current release automatically:
     # release-please rewrites the line below on every release.
-    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-4.0.1} # x-release-please-version
+    image: ghcr.io/rknightion/tailscale2otel:${TS2OTEL_VERSION:-5.0.0} # x-release-please-version
     restart: unless-stopped
     # Shutdown is STAGED and each stage is separately bounded in the binary:
     # the receivers drain already-ACKed requests (10s), the ingress WAL does one
