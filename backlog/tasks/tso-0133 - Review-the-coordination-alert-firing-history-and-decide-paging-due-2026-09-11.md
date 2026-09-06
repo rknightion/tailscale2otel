@@ -4,7 +4,7 @@ title: 'Review the coordination alert firing history and decide paging, due 2026
 status: To Do
 assignee: []
 created_date: '2026-09-04 07:31'
-updated_date: '2026-09-06 14:36'
+updated_date: '2026-09-06 14:52'
 labels: []
 dependencies: []
 priority: low
@@ -44,4 +44,6 @@ Finding 2026-09-06: the date was not a real dependency. Nothing on the lab runs 
 Wave 16 (goal codex/goal-2026-09-06-wave16-*.md) flips the lab to two coordinated replicas after TSO-0144 ships. The seven-day clock starts at the timestamp the wave records here when both pods are Ready and the coordination series are present on the stack.
 
 Soak started 2026-09-06T14:31:44Z: the lab runs two coordinated replicas (chart 0.35.0, image 5.0.0-rc.36) with identities tailscale2otel-0 and tailscale2otel-1; tailscale2otel_coordination_leader_ratio is present for both and the four coordination rules now have data. Earliest review: 2026-09-13. Observation from the flip day: an ordinary leader pod deletion returned the same identity within the Lease and reacquired it, so no handover was counted and the standby never took over; a real survivor takeover was proven only on Kind (about 19 s to the sole Ready endpoint at the default timings).
+
+Owner guidance 2026-09-06: no fixed review date; leave the soak running and revisit when convenient, since a paging alert would be noticed anyway. Takeovers may be simulated at will (cordon the leader node, delete the leader pod, uncordon). First real takeover simulated 2026-09-06T14:48:03Z: the standby held the Lease, carried the label and was the sole Ready endpoint 21 s after the deletion at the default 15s/10s/2s timings; the old leader returned Ready as a standby without the label once its node was uncordoned.
 <!-- SECTION:NOTES:END -->
