@@ -4,7 +4,7 @@ title: Design and ship an HA / multi-replica deployment story
 status: Done
 assignee: []
 created_date: '2026-08-30 09:02'
-updated_date: '2026-09-01 20:01'
+updated_date: '2026-09-06 11:21'
 labels: []
 milestone: m-8
 dependencies: []
@@ -158,6 +158,8 @@ Answers to the open decisions in section 6:
 Release context that bounds the work: stable is v4.0.1, three waves sit unreleased, and the owner is deliberately still holding the release. Nothing here may cut a tag. Separately, the owner's standing plan is to drain the whole board and then cut v5 in one big bang, merging that release PR by hand - so a breaking change is not available to this work either.
 
 Implementation is split into TSO-0107 (coordination core, A1), TSO-0108 (Kubernetes checkpoint store, A2) and TSO-0109 (Helm chart, RBAC and rollout).
+
+Revision 2026-09-06: the option A line "the standby reports not ready so the Service routes receiver/admin traffic to the leader only" is superseded by TSO-0144. Readiness as a traffic selector made StatefulSet rolling updates, helm --wait and Argo CD health unusable once TSO-0143 gave replicas their own claims; the leader now marks its pod with a role label and the Services select it, and standbys are Ready.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
