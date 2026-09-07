@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.0.1](https://github.com/rknightion/tailscale2otel/compare/v5.0.0...v5.0.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **app:** stop the ingress WAL startup drain blacking out a promoted leader ([9e72581](https://github.com/rknightion/tailscale2otel/commit/9e7258169b18944df3f92c1179d18a27b936b15d))
+
 ## [5.0.0](https://github.com/rknightion/tailscale2otel/compare/v4.0.1...v5.0.0) (2026-09-06)
 
 
