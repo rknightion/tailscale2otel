@@ -199,6 +199,45 @@ to the pre-v4 artifact requires stopping the target and restoring the untouched 
 including its legacy filename, before starting the old artifact; that is a deliberate state restore,
 not a rollback of the migrated file in place.
 
+## Upgrading the Helm chart to 0.36.0
+
+Chart `0.36.0` changes the `checkpoints` volume claim template. **If you deploy on Kubernetes with
+`persistence.enabled=true`, you must delete the StatefulSet once before upgrading** - the upgrade is
+rejected otherwise, and so is every upgrade after it.
+
+A StatefulSet's `volumeClaimTemplates` is immutable, and it is an atomic list: a server-side apply
+replaces it wholesale, so any difference at all makes the API server reject the entire object.
+Before `0.36.0` the claim template carried `helm.sh/chart` and `app.kubernetes.io/version`, which
+change on every release, so the first upgrade after any install failed with:
+
+```text
+StatefulSet.apps "<release-name>" is invalid: spec: Forbidden: updates to statefulset spec for
+fields other than 'replicas', 'ordinals', 'template', 'updateStrategy', 'revisionHistoryLimit',
+'persistentVolumeClaimRetentionPolicy' and 'minReadySeconds' are forbidden
+```
+
+The pod template rides in that same object, so **the image never changed either**. A GitOps
+controller can report the application as synced and healthy while the workload stays on its old
+image, because the apply it reports on never succeeded. If a deployment looks stuck on an old
+version, check that error rather than the sync status.
+
+`0.36.0` pins the claim template to the stable selector labels and to an explicit
+`persistence.volumeMode` (default `Filesystem`, unchanged behaviour), so it does not change between
+releases again.
+
+**Action.** Correcting the claim template is itself rejected by the same rule, so the StatefulSet has
+to be recreated once. Orphan-delete it - this leaves the running pods and every PVC in place - then
+upgrade. The new StatefulSet adopts the existing pods by selector and rolls them normally:
+
+```bash
+kubectl -n <namespace> delete statefulset <release-name> --cascade=orphan
+helm upgrade <release-name> <chart> ...   # or let your GitOps controller sync
+```
+
+No checkpoint, ingress-WAL or flow-store state is lost: the PVCs are never touched. Under Argo CD or
+Flux, run the delete and let the controller recreate the StatefulSet on its next sync. Deployments
+with `persistence.enabled=false`, Docker Compose deployments and fresh installs need none of this.
+
 ## Upgrading to v5.0.0
 
 Before applying the version-specific changes in this section, follow the
