@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.35.0](https://img.shields.io/badge/Version-0.35.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.0](https://img.shields.io/badge/Version-0.36.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -864,6 +864,7 @@ extraVolumeMounts:
 | persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one (empty = create one). Only used when enabled; persistence.enabled=true is required. Unsupported with config.coordination.mode=kubernetes: coordinated replicas require their own PVCs, created from the StatefulSet claim template. |
 | persistence.size | string | `"64Mi"` | PVC size. The existing 64Mi default suits checkpoints only. With the default 256Mi encoded WAL limit, request at least 512Mi for WAL entries plus staging files and metadata. If config.flows.store.directory also points into this volume (e.g. /var/lib/tailscale2otel/flows), size for that store separately — see the disk-sizing estimate in docs/flow-view.md — and add its estimate on top of the WAL/checkpoint figure above. |
 | persistence.storageClass | string | `""` | StorageClass for the PVC (empty = cluster default). Only used when enabled. |
+| persistence.volumeMode | string | `"Filesystem"` | PVC volume mode. Emitted EXPLICITLY rather than left to the API server's default, because a StatefulSet's volumeClaimTemplates is an ATOMIC list: a server-side apply replaces the whole list with exactly what is rendered here. Omitting this field renders a template that differs from the defaulted live object, so the API server rejects the entire StatefulSet with "updates to statefulset spec for fields other than ... are forbidden" — and every later change, an image bump included, is rejected with it. Leave it at Filesystem unless the volume is a raw block device. |
 | podAnnotations | object | `{}` | Extra annotations for the pod. |
 | podLabels | object | `{}` | Extra labels for the pod. |
 | podSecurityContext | object | `{"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch","runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"}}` | Pod-level security context. Runs as non-root with the RuntimeDefault seccomp profile; the app needs no special privileges. fsGroup makes the opt-in PVC persistence path (persistence.enabled=true) reliably writable by the uid-65532 container regardless of the CSI driver's default ownership behavior — a freshly provisioned block PVC is typically root:root on many drivers. The default emptyDir checkpoint volume already works without this (kubelet chmods emptyDir roots 0777, and the image pre-seeds /var/lib/tailscale2otel owned by 65532:65532). |

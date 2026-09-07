@@ -1709,6 +1709,14 @@ assert_rc0 "AC: coordinated replicas render"
 [[ -z "$(docs_of StatefulSet | yq '.spec.template.spec.volumes[] | select(.name == "checkpoints")' | tr -d '[:space:]-')" ]] \
   && ok "AC: StatefulSet leaves the checkpoint volume to its claim template" \
   || bad "AC: StatefulSet duplicated the claim-template checkpoint volume"
+# volumeClaimTemplates is an ATOMIC list, so a server-side apply replaces it wholesale. Leaving
+# volumeMode to the API server's default renders a template that differs from the defaulted live
+# object, and Kubernetes then rejects the WHOLE StatefulSet ("updates to statefulset spec for
+# fields other than ... are forbidden") — taking every later change, an image bump included, down
+# with it. That stranded the lab on a stale image while Argo still reported Synced.
+[[ "$(docs_of StatefulSet | yq '.spec.volumeClaimTemplates[] | select(.metadata.name == "checkpoints") | .spec.volumeMode')" == "Filesystem" ]] \
+  && ok "AC: checkpoint claim template pins volumeMode so server-side apply stays idempotent" \
+  || bad "AC: checkpoint claim template omits volumeMode; server-side apply will be rejected"
 [[ -z "$(docs_of PersistentVolumeClaim | tr -d '[:space:]-')" ]] \
   && ok "AC: coordinated persistence emits no singleton PVC" \
   || bad "AC: coordinated persistence emitted a singleton PVC"

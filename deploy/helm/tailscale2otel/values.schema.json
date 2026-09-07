@@ -2575,6 +2575,9 @@
                 },
                 "storageClass": {
                     "type": "string"
+                },
+                "volumeMode": {
+                    "type": "string"
                 }
             },
             "additionalProperties": false

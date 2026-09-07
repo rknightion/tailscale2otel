@@ -28,6 +28,9 @@ spec:
       spec:
         accessModes:
           - {{ .Values.persistence.accessMode | quote }}
+        {{- if .Values.persistence.volumeMode }}
+        volumeMode: {{ .Values.persistence.volumeMode | quote }}
+        {{- end }}
         resources:
           requests:
             storage: {{ .Values.persistence.size | quote }}
