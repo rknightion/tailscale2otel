@@ -9,6 +9,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/ingresswal"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
@@ -105,7 +106,6 @@ func TestReadyzHandler_ServesVerdict(t *testing.T) {
 
 func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
 	for _, state := range []ingressWALState{
-		ingressWALStateReplaying,
 		ingressWALStateRetrying,
 		ingressWALStateFull,
 		ingressWALStateFailed,
@@ -131,9 +131,16 @@ func TestReadyzHandler_GatesOnIngressWALLifecycle(t *testing.T) {
 		})
 	}
 
+	// replaying belongs HERE, not above: the live worker sets it on every drain
+	// cycle, so gating readiness on it made /readyz flap 503 against the worker's
+	// duty cycle and, on a leader promoted onto a large inherited backlog, held
+	// 503 for the whole drain — pulling the leader-labeled pod out of the
+	// receiver and admin Services. The startup drain gates readiness through
+	// walStartupPending instead, which is bounded; see the test below.
 	for _, state := range []ingressWALState{
 		ingressWALStateDisabled,
 		ingressWALStateReady,
+		ingressWALStateReplaying,
 	} {
 		t.Run(string(state), func(t *testing.T) {
 			a := &App{
@@ -161,5 +168,63 @@ func TestReadyzHandler_IngressWALFailurePrecedesCollectorsStarting(t *testing.T)
 	}
 	if got := w.Body.String(); got != appcatalog.ComponentIngressWAL+": failed" {
 		t.Fatalf("body = %q, want WAL failure to precede collector startup", got)
+	}
+}
+
+// TestReadyzHandler_StartupDrainGatesReadinessThenClears pins the replacement
+// for the removed "replaying is a failure" gate. A startup drain still holds
+// /readyz at 503, because the stream and webhook listeners are not open yet and
+// a leader-labeled pod must not be routed traffic it would refuse — but it says
+// so as a drain, reports how much is left, and clears on its own.
+func TestReadyzHandler_StartupDrainGatesReadinessThenClears(t *testing.T) {
+	wal := &coordinatorWAL{pending: []ingresswal.Envelope{{ID: "a", Body: []byte("xy")}}}
+	a := &App{
+		readyState: newComponentHealth(),
+		ingressWAL: &ingressWALCoordinator{wal: wal, state: ingressWALStateReplaying},
+	}
+	a.walStartupPending.Store(true)
+
+	w := httptest.NewRecorder()
+	a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status during startup drain = %d, want 503", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, appcatalog.ComponentIngressWAL) ||
+		!strings.Contains(body, "draining startup backlog") ||
+		!strings.Contains(body, "1 entries") {
+		t.Fatalf("body = %q, want the component, the drain, and the remaining backlog", body)
+	}
+
+	a.walStartupPending.Store(false)
+	w = httptest.NewRecorder()
+	a.readyz(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status after the drain released receivers = %d, want 200: %q", w.Code, w.Body.String())
+	}
+}
+
+// TestIngressWALReplayingIsNotAFailedComponent guards the status page against
+// the probe's old verdict: an operator looking at a promoted leader mid-drain
+// saw ingress_wal marked Failed for work that was proceeding normally.
+func TestIngressWALReplayingIsNotAFailedComponent(t *testing.T) {
+	a := &App{
+		readyState: newComponentHealth(),
+		cfg:        config.Default(),
+		ingressWAL: &ingressWALCoordinator{state: ingressWALStateReplaying},
+	}
+	if reasons := a.componentFailureReasons(); len(reasons) != 0 {
+		t.Fatalf("componentFailureReasons() = %v, want none while replaying", reasons)
+	}
+	for _, row := range a.componentStatuses(a.componentFailureReasons()) {
+		if row.Name == appcatalog.ComponentIngressWAL && row.Failed {
+			t.Fatalf("status page marked %s Failed while replaying (reason %q)", row.Name, row.Reason)
+		}
+	}
+	// A genuine failure must still be reported, or this test would pass on a
+	// gate that reports nothing at all.
+	a.ingressWAL = &ingressWALCoordinator{state: ingressWALStateFailed}
+	if reasons := a.componentFailureReasons(); len(reasons) != 1 {
+		t.Fatalf("componentFailureReasons() = %v, want the failed state reported", reasons)
 	}
 }

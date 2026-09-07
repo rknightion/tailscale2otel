@@ -166,6 +166,17 @@ func (c *ingressWALCoordinator) appender(
 		}
 	}
 	return func(ctx context.Context, body []byte, accepted time.Time) error {
+		// A WAL that has failed permanently — corrupt, incompatible, unowned, or
+		// carrying an unknown persisted route — can never be replayed, so an
+		// entry appended to it would be acknowledged to the sender and then
+		// never applied. Fail closed here rather than relying on the underlying
+		// store to reject the write: it may well accept it. The startup drain's
+		// receiver budget depends on this (see App.startIngressWAL) and so does
+		// the live worker, which can reach the same state long after the
+		// listeners have bound.
+		if c.Health().State == ingressWALStateFailed {
+			return errIngressWALAppend
+		}
 		storedBody := bytes.Clone(body)
 		id, err := ingresswal.NewID(key.tailnet, key.source, key.signal, storedBody)
 		if err != nil {
@@ -189,6 +200,17 @@ func (c *ingressWALCoordinator) appender(
 				return err
 			}
 			c.setState(ingressWALStateFailed)
+			return errIngressWALAppend
+		}
+		// Re-checked after the write, because replay can mark the WAL permanently
+		// failed while this append is in flight. The entry is on disk by now and
+		// will never replay, so refuse the REQUEST rather than acknowledge a
+		// payload that cannot be applied: the sender retries, and one orphan
+		// entry is no worse than the rest of an unreplayable WAL. Done here
+		// instead of holding a lock across Append, which would serialize every
+		// receiver behind one fsync to close a window this already makes
+		// unobservable to the sender.
+		if c.Health().State == ingressWALStateFailed {
 			return errIngressWALAppend
 		}
 		c.signalWake()

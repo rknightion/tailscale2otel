@@ -1460,6 +1460,28 @@ There is no TTL, age-based cleanup, or eviction. An exhausted byte or entry limi
 requests, and a file/directory fsync failure or corrupt state fails closed rather than acknowledging
 data whose durability is uncertain.
 
+On startup - and, in `coordination.mode: kubernetes`, on every promotion to leader - the accepted
+backlog is drained before the streaming and webhook listeners bind, so buffered ingress is replayed
+ahead of new ingress. That drain runs alongside the rest of the service rather than in front of it:
+collectors, self-observability and the admin and Prometheus listeners all start immediately, so
+`tailscale2otel.ingress_wal.pending.entries` and the rest of the WAL gauges are exported *while* a
+backlog drains rather than only after it. Only the receivers wait, and only for 30 seconds; past that
+they bind anyway and the backlog keeps draining behind them. The drain is logged at INFO when it
+begins (with the pending entries and bytes) and when it completes (with its duration), and at WARN
+when it outlasts the receiver budget.
+
+While the receivers are still held, `/readyz` answers 503 with
+`ingress_wal: draining startup backlog (N entries, N bytes)` - the listeners genuinely are not open
+yet. A replay in progress is not a component failure and does not mark `ingress_wal` failed on the
+status page.
+
+A WAL that cannot be read (corrupt, incompatible, unowned, or carrying an unknown persisted
+identity) still fails closed. Its receivers never open, `/readyz` reports `ingress_wal: failed`, and
+the process exits non-zero. Should that verdict only arrive after the receiver budget already let the
+listeners bind, they refuse every request with `wal_unavailable` instead: an entry is never appended
+to a WAL that can no longer replay it, whatever the underlying store would accept. The same applies
+long after startup, if the live drain worker reaches that state with the listeners already bound.
+
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ingress_wal.enabled` | `false` | Enable durable local acceptance and oldest-first replay for receiver request bodies. With both receivers disabled, this is a valid drain-only configuration for clearing already persisted entries. It does not require the admin server or a persistent volume. |

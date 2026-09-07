@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
@@ -317,5 +318,100 @@ func TestAppRunReplaysIngressWALBeforeStartingReceivers(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Run did not stop")
+	}
+}
+
+// TestAppRunEmitsTelemetryWhileIngressWALReplays is the regression test for the
+// outage itself. The startup drain used to run inline, ahead of the heartbeat
+// and every self-obs reporter, so a leader promoted onto a large inherited
+// backlog emitted NOTHING for the whole drain — the exporter looked dead, the
+// Exporter-down rule fired on NoData, and the one gauge that explains a slow
+// drain was gated behind the drain it describes.
+//
+// It shares TestAppRunReplaysIngressWALBeforeStartingReceivers' shape: the
+// replay is parked inside route.flush for the whole assertion window, so
+// anything observed here was emitted DURING the drain, not after it.
+func TestAppRunEmitsTelemetryWhileIngressWALReplays(t *testing.T) {
+	cfg := config.Default()
+	if !cfg.SelfObservability.Enabled {
+		t.Fatal("self-observability is off by default; this test asserts what it emits")
+	}
+	rec := telemetrytest.New()
+	a := newApp(
+		cfg,
+		"vtest",
+		nil,
+		rec.Emitter(),
+		nil,
+		func(context.Context) error { return nil },
+		provider.Tailscale(newTestClient(t, "http://127.0.0.1:0")),
+		collector.NewMemoryStore(),
+		NewAPIStats(),
+	)
+
+	envelope := coordinatorEnvelope(
+		t,
+		"example.com",
+		ingressWALSourceWebhook,
+		ingressWALSignalWebhook,
+		[]byte(`[]`),
+	)
+	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
+	flushStarted := make(chan struct{})
+	releaseFlush := make(chan struct{})
+	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+	route.flush = func(context.Context) error {
+		close(flushStarted)
+		<-releaseFlush
+		return nil
+	}
+	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+	if err != nil {
+		t.Fatalf("newIngressWALCoordinator: %v", err)
+	}
+	a.ingressWAL = coordinator
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- a.Run(ctx) }()
+	defer func() {
+		select {
+		case <-releaseFlush:
+		default:
+			close(releaseFlush)
+		}
+		cancel()
+		select {
+		case <-runDone:
+		case <-time.After(5 * time.Second):
+		}
+	}()
+
+	select {
+	case <-flushStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("startup replay did not begin")
+	}
+
+	// The drain is parked. Both of these are emitted immediately on start by
+	// their reporters, so a short poll is enough and nothing here depends on a
+	// tick interval.
+	want := []string{appcatalog.MetricUp, appcatalog.DocIngressWALPendingEntries.Name}
+	deadline := time.Now().Add(2 * time.Second)
+	for _, name := range want {
+		for len(rec.MetricPoints(name)) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s was not emitted while the ingress WAL was still replaying; "+
+					"a promoted leader is dark for the whole drain (emitted: %v)",
+					name, rec.MetricNames())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+
+	select {
+	case <-releaseFlush:
+		t.Fatal("the replay finished before the assertions; they proved nothing")
+	default:
 	}
 }

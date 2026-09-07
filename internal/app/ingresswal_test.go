@@ -26,9 +26,13 @@ type coordinatorWAL struct {
 	appendCalls        []ingresswal.Envelope
 	closeCalls         int
 	closeErr           error
+	beforeAppend       func()
 }
 
 func (w *coordinatorWAL) Append(_ context.Context, envelope ingresswal.Envelope) error {
+	if w.beforeAppend != nil {
+		w.beforeAppend()
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.appendCalls = append(w.appendCalls, cloneEnvelope(envelope))
@@ -1138,4 +1142,60 @@ func equalDurations(got, want []time.Duration) bool {
 		}
 	}
 	return true
+}
+
+// TestIngressWALCoordinator_AppendFailsClosedOnPermanentFailure pins the
+// durability boundary at the append path. A WAL in the failed state can never be
+// replayed, so an entry appended to it would be acknowledged to the sender and
+// then never applied — even when the underlying store happily accepts the write,
+// as this fake does. Both the startup drain's bounded receiver budget and the
+// live worker (which can reach this state long after the listeners bound) rely
+// on it.
+func TestIngressWALCoordinator_AppendFailsClosedOnPermanentFailure(t *testing.T) {
+	wal := &coordinatorWAL{}
+	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
+		testIngressRoute("example.com", ingressWALSourceStream, ingressWALSignalHEC),
+	})
+	if err != nil {
+		t.Fatalf("newIngressWALCoordinator: %v", err)
+	}
+	appendBody := coordinator.appender("example.com", ingressWALSourceStream, ingressWALSignalHEC)
+
+	if err := appendBody(t.Context(), []byte("first"), time.Now()); err != nil {
+		t.Fatalf("append while healthy = %v, want nil", err)
+	}
+
+	coordinator.setState(ingressWALStateFailed)
+	if err := appendBody(t.Context(), []byte("second"), time.Now()); !errors.Is(err, errIngressWALAppend) {
+		t.Fatalf("append while failed = %v, want %v", err, errIngressWALAppend)
+	}
+	wal.mu.Lock()
+	calls := len(wal.appendCalls)
+	wal.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("underlying WAL saw %d appends, want 1 — the second must never reach a store that would accept it", calls)
+	}
+}
+
+// TestIngressWALCoordinator_AppendRacingPermanentFailureIsNotAcknowledged covers
+// the interleaving the pre-write check alone cannot: replay marks the WAL
+// permanently failed WHILE an append is in flight. The entry is already on disk
+// and will never replay, so the request must still be refused rather than
+// acknowledged.
+func TestIngressWALCoordinator_AppendRacingPermanentFailureIsNotAcknowledged(t *testing.T) {
+	wal := &coordinatorWAL{}
+	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
+		testIngressRoute("example.com", ingressWALSourceStream, ingressWALSignalHEC),
+	})
+	if err != nil {
+		t.Fatalf("newIngressWALCoordinator: %v", err)
+	}
+	// Fail the WAL from inside Append, i.e. exactly between the pre-write check
+	// and the return — the window a lock around Append would be closing.
+	wal.beforeAppend = func() { coordinator.setState(ingressWALStateFailed) }
+
+	appendBody := coordinator.appender("example.com", ingressWALSourceStream, ingressWALSignalHEC)
+	if err := appendBody(t.Context(), []byte("racing"), time.Now()); !errors.Is(err, errIngressWALAppend) {
+		t.Fatalf("append racing a permanent failure = %v, want %v — the sender must not be acknowledged", err, errIngressWALAppend)
+	}
 }

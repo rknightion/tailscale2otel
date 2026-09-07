@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/grafana/pyroscope-go"
@@ -154,6 +155,21 @@ type App struct {
 	// Prometheus listeners (#306). Written by recordComponentStop, read by the
 	// readyz handler.
 	readyState *componentHealth
+
+	// walStartupPending is true while the ingress WAL's startup drain is still
+	// holding receiver startup. Written by startIngressWAL, read by
+	// ingressWALStartupReason. It is a readiness signal, not a failure one:
+	// the WAL is working, the listeners just are not open yet.
+	walStartupPending atomic.Bool
+	// walStartupFatal holds the error that ended the startup drain permanently,
+	// or nil. Written once by startIngressWAL's drain goroutine before it sends
+	// on walDone and read once by runActive after receiving from it, so the
+	// channel provides the ordering and no lock is needed.
+	walStartupFatal error
+	// walPromotionBudget overrides ingressWALPromotionBudget. Zero means the
+	// constant; tests set it small so the budget path is exercised without a
+	// wall-clock wait.
+	walPromotionBudget time.Duration
 
 	coordinationMu     sync.RWMutex
 	coordinationStatus coordination.Status
@@ -882,37 +898,26 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		a.startMetrics(ctx)
 	}
 
+	// The ingress WAL's startup drain runs CONCURRENTLY with the rest of the
+	// active lifecycle. It used to block right here, ahead of every collector,
+	// self-obs reporter and the heartbeat, so a leader promoted onto a large
+	// inherited backlog emitted nothing at all — not even tailscale2otel.up, so
+	// the only signal was an Exporter-down alert firing on NoData — until the
+	// drain finished. Worse, the one metric that explains a slow drain
+	// (ingress_wal.pending.entries, from runIngressWALReporter below) was itself
+	// gated behind the drain it describes. Only RECEIVER startup waits now, and
+	// only for a bounded budget: see startIngressWAL.
 	walEnabled := a.ingressWAL != nil && a.ingressWAL.wal != nil
 	var (
 		walCancel context.CancelFunc
 		walDone   chan error
+		walOpen   <-chan struct{}
 	)
 	if walEnabled {
-		startupErr := a.ingressWAL.ReplayStartup(ctx)
-		if startupErr != nil {
-			if ctx.Err() == nil {
-				a.logger.Error("ingress WAL startup replay unavailable", "error", startupErr)
-				a.componentError(appcatalog.ComponentIngressWAL)
-				<-ctx.Done()
-			}
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
-			shutdownErr := a.shutdown(shutdownCtx)
-			cancel()
-			closeErr := a.ingressWAL.Close()
-			if errors.Is(startupErr, context.Canceled) ||
-				errors.Is(startupErr, context.DeadlineExceeded) {
-				startupErr = nil
-			}
-			return errors.Join(startupErr, shutdownErr, closeErr)
-		}
-
 		var walCtx context.Context
 		walCtx, walCancel = context.WithCancel(context.Background())
 		defer walCancel()
-		walDone = make(chan error, 1)
-		go func() {
-			walDone <- a.ingressWAL.Run(walCtx)
-		}()
+		walDone, walOpen = a.startIngressWAL(ctx, walCtx)
 	}
 
 	interval := a.cfg.OTLP.MetricInterval.D()
@@ -1016,18 +1021,39 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	// dropped when a.shutdown() tears down the exporters first (#53, and #121's
 	// "join receivers before closing rdns" criterion).
 	var receiverWG sync.WaitGroup
+	// Non-nil only when the ingress WAL's startup drain failed permanently; it
+	// joins the return so the process still exits non-zero, as it did when the
+	// drain ran inline and returned from here directly.
+	var walFatalErr error
+	// Both receivers wait for waitIngressWALOpen before binding, so accepted
+	// ingress is replayed ahead of new ingress in the normal case. They wait in
+	// their own goroutines rather than inline, so the wait cannot delay the
+	// schedulers below — the collectors have nothing to do with the WAL and must
+	// keep the exporter's telemetry flowing while a backlog drains. A false
+	// return means the lifecycle was canceled or the WAL failed permanently:
+	// never bind, and never record a component stop for a listener that was
+	// never started.
 	if a.streamSrv != nil {
 		receiverWG.Add(1)
 		go func() {
 			defer receiverWG.Done()
+			if !waitIngressWALOpen(ctx, walOpen) {
+				return
+			}
 			a.recordComponentStop(appcatalog.ComponentStream, a.streamSrv.Run(ctx))
 		}()
 		if a.hasAutoConfigureStreaming() {
 			// Off the hot path: registering the sink makes a network call to
 			// Tailscale, which must not block the scheduler/other receivers from
 			// starting. Bounded so a hung endpoint can't linger past shutdown.
-			// Tailscale-only: Headscale has no log-stream API.
+			// Tailscale-only: Headscale has no log-stream API. Gated on the same
+			// signal as the listener it advertises — registering a sink we are
+			// not yet listening on just tells Tailscale to push into a closed
+			// port.
 			go func() {
+				if !waitIngressWALOpen(ctx, walOpen) {
+					return
+				}
 				cctx, cancel := context.WithTimeout(ctx, autoConfigureTimeout)
 				defer cancel()
 				a.autoConfigureStreaming(cctx)
@@ -1038,6 +1064,9 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		receiverWG.Add(1)
 		go func() {
 			defer receiverWG.Done()
+			if !waitIngressWALOpen(ctx, walOpen) {
+				return
+			}
 			a.recordComponentStop(appcatalog.ComponentWebhook, a.webhookSrv.Run(ctx))
 		}()
 	}
@@ -1079,11 +1108,16 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		if err := <-walDone; err != nil {
 			a.logger.Warn("ingress WAL worker stopped with a bounded failure")
 		}
-		drainCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
-		if err := a.ingressWAL.Drain(drainCtx); err != nil {
-			a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
+		// Set only when the STARTUP drain failed permanently, in which case the
+		// receivers never opened and there is nothing to drain here.
+		walFatalErr = a.walStartupFatal
+		if walFatalErr == nil {
+			drainCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
+			if err := a.ingressWAL.Drain(drainCtx); err != nil {
+				a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
+			}
+			cancel()
 		}
-		cancel()
 	}
 
 	// Drain each runtime's buffered flow rollup so the final interval's accumulated
@@ -1107,7 +1141,7 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	if cause := context.Cause(ctx); errors.Is(cause, collector.ErrKubernetesCheckpointWriteUncertain) {
 		checkpointFatalErr = cause
 	}
-	return errors.Join(schedErr, shutdownErr, closeErr, checkpointErr, checkpointFatalErr)
+	return errors.Join(schedErr, walFatalErr, shutdownErr, closeErr, checkpointErr, checkpointFatalErr)
 }
 
 // Close flushes and tears down everything New() built, for a caller that

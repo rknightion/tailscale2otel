@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -112,30 +113,78 @@ func (a *App) componentFailureReasons() []string {
 
 // ingressWALFailure returns the WAL's failure reason in the same
 // "component: reason" shape as componentHealth.reasons, or "" when the WAL is
-// disabled or ready. The WAL reports a state machine rather than a terminal
-// error, so it cannot go through componentHealth; this is where the two shapes
-// meet.
+// disabled, ready, or merely replaying. The WAL reports a state machine rather
+// than a terminal error, so it cannot go through componentHealth; this is where
+// the two shapes meet.
+//
+// replaying is deliberately NOT a failure. It is the state EVERY drain cycle
+// passes through — ingressWALCoordinator.Run sets it on each pass and clears it
+// again on success — so treating it as one made /readyz flap 503 against the
+// live worker's duty cycle, and marked the component Failed on the status page
+// for normal work. On a leader promoted onto a large inherited backlog it held
+// 503 for the whole drain, which pulled the leader-labeled pod out of the
+// receiver and admin Services and refused every inbound record on the one pod
+// allowed to accept them. A startup drain still gates readiness, but through
+// ingressWALStartupReason, which says so honestly and is bounded.
 func (a *App) ingressWALFailure() string {
 	if a.ingressWAL == nil {
 		return ""
 	}
 	state := a.ingressWAL.Health().State
-	if state == ingressWALStateDisabled || state == ingressWALStateReady {
+	switch state {
+	case ingressWALStateDisabled, ingressWALStateReady, ingressWALStateReplaying:
 		return ""
 	}
 	return appcatalog.ComponentIngressWAL + ": " + string(state)
+}
+
+// ingressWALStartupReason returns a readiness reason while the startup drain is
+// still holding receiver startup, or "" once the receivers may open.
+//
+// This is NOT a component failure and never reaches componentFailureReasons:
+// the WAL is working, and the status page must not call it failed. It is a
+// readiness reason only, because the stream and webhook listeners are not open
+// yet and a leader-labeled pod must not be routed traffic it would refuse.
+// startIngressWAL bounds how long it can stay non-empty.
+func (a *App) ingressWALStartupReason() string {
+	if !a.walStartupPending.Load() || a.ingressWAL == nil {
+		return ""
+	}
+	health := a.ingressWAL.Health().WAL
+	return fmt.Sprintf(
+		"%s: draining startup backlog (%d entries, %d bytes)",
+		appcatalog.ComponentIngressWAL, health.PendingEntries, health.PendingBytes,
+	)
+}
+
+// activeReadiness is the readiness verdict for a process doing the active
+// lifecycle's work: the singleton in coordination.mode=none and the Lease
+// holder in kubernetes mode. Standbys take their own branch in readyz.
+//
+// Order matters only in which reason is REPORTED: a hard WAL failure outranks a
+// startup drain, which outranks "still starting", because that is the order in
+// which they are actionable.
+func (a *App) activeReadiness() (bool, string) {
+	if wal := a.ingressWALFailure(); wal != "" {
+		return false, wal
+	}
+	if startup := a.ingressWALStartupReason(); startup != "" {
+		return false, startup
+	}
+	return readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
 }
 
 // readyz serves /readyz: 200 "ok" once the service is ready, otherwise 503
 // with a short plain-text reason. See readinessVerdict for the gating rules and
 // componentFailureReasons for the state behind them.
 //
-// The WAL is checked before readinessVerdict, so a WAL failure is the reported
-// reason even while collectors are still starting: buffered ingress that is not
-// draining is the more actionable fact, and "starting" would hide it behind a
-// condition that resolves on its own. Which reason is reported FIRST is the
-// only thing this ordering decides — the status page derives its verdict from
-// the same componentFailureReasons list.
+// The active-lifecycle branches share activeReadiness, which checks the WAL
+// before readinessVerdict so a WAL failure is the reported reason even while
+// collectors are still starting: buffered ingress that is not draining is the
+// more actionable fact, and "starting" would hide it behind a condition that
+// resolves on its own. Which reason is reported FIRST is the only thing that
+// ordering decides — the status page derives its verdict from the same
+// componentFailureReasons list.
 func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 	var ready bool
 	var reason string
@@ -149,16 +198,10 @@ func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 			// still retain their component-failure gating.
 			ready, reason = readinessVerdict(nil, a.readyState.reasons())
 		default:
-			if wal := a.ingressWALFailure(); wal != "" {
-				ready, reason = false, wal
-			} else {
-				ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
-			}
+			ready, reason = a.activeReadiness()
 		}
-	} else if wal := a.ingressWALFailure(); wal != "" {
-		ready, reason = false, wal
 	} else {
-		ready, reason = readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
+		ready, reason = a.activeReadiness()
 	}
 	w.Header().Set("Content-Type", "text/plain")
 	if !ready {
