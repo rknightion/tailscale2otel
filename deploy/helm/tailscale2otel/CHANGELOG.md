@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.36.0 — Stable checkpoint claim template (ACTION REQUIRED with `persistence.enabled=true`)
+
+- The `checkpoints` claim template now carries only the stable selector labels
+  and pins `volumeMode`. It previously carried the full label set, whose
+  `helm.sh/chart` and `app.kubernetes.io/version` change on every release, and
+  left `volumeMode` to the API server's default.
+- `volumeClaimTemplates` is immutable AND an atomic list, so a server-side apply
+  replaces it wholesale and any difference makes the API server reject the whole
+  StatefulSet:
+
+  ```text
+  StatefulSet.apps "<name>" is invalid: spec: Forbidden: updates to statefulset
+  spec for fields other than 'replicas', 'ordinals', 'template', 'updateStrategy',
+  'revisionHistoryLimit', 'persistentVolumeClaimRetentionPolicy' and
+  'minReadySeconds' are forbidden
+  ```
+
+  Every later change rides in that same object, so **image bumps stopped landing
+  too** — an upgrade could appear to succeed at the GitOps layer while the
+  workload stayed on its old image.
+- New `persistence.volumeMode`, default `Filesystem`, which is what the API
+  server already defaults to. Set it to `Block` only for a raw block device.
+
+**Action, only when upgrading an existing release with `persistence.enabled=true`.**
+Changing the claim template is itself rejected by the same rule, so the
+StatefulSet has to be recreated once. Orphan-delete it, which leaves the running
+pods and every PVC in place, then upgrade — the new StatefulSet adopts the
+existing pods by selector and rolls them normally:
+
+```bash
+kubectl -n <namespace> delete statefulset <release-name> --cascade=orphan
+helm upgrade <release-name> <chart> ...   # or let your GitOps controller sync
+```
+
+The PVCs are untouched, so no checkpoint, WAL or flow-store state is lost. Under
+Argo CD or Flux, run the delete and let the controller recreate the StatefulSet
+on its next sync. A fresh install needs none of this, and this is the last time
+it is needed: the claim template no longer changes between releases.
+
 ## 0.14.5 — Optional durable receiver acceptance
 
 - New `config.ingress_wal` values expose the disabled-by-default, bounded local

@@ -1717,6 +1717,14 @@ assert_rc0 "AC: coordinated replicas render"
 [[ "$(docs_of StatefulSet | yq '.spec.volumeClaimTemplates[] | select(.metadata.name == "checkpoints") | .spec.volumeMode')" == "Filesystem" ]] \
   && ok "AC: checkpoint claim template pins volumeMode so server-side apply stays idempotent" \
   || bad "AC: checkpoint claim template omits volumeMode; server-side apply will be rejected"
+# The same trap, and the one that actually bit: volumeClaimTemplates is IMMUTABLE, so any label
+# that moves between releases makes every upgrade after the first install fail. helm.sh/chart and
+# app.kubernetes.io/version both move on every release, so the claim template must carry the
+# STABLE selector labels only.
+vct_labels="$(docs_of StatefulSet | yq -o=json '.spec.volumeClaimTemplates[] | select(.metadata.name == "checkpoints") | .metadata.labels | keys' | tr -d '[:space:]')"
+[[ "$vct_labels" == '["app.kubernetes.io/name","app.kubernetes.io/instance"]' ]] \
+  && ok "AC: checkpoint claim template carries only stable selector labels" \
+  || bad "AC: checkpoint claim template carries version-varying labels ($vct_labels); every upgrade will be rejected"
 [[ -z "$(docs_of PersistentVolumeClaim | tr -d '[:space:]-')" ]] \
   && ok "AC: coordinated persistence emits no singleton PVC" \
   || bad "AC: coordinated persistence emitted a singleton PVC"

@@ -21,10 +21,19 @@ spec:
   template:{{ include "tailscale2otel.podTemplate" . | trimPrefix "\n" | nindent 0 }}
   {{- if .Values.persistence.enabled }}
   volumeClaimTemplates:
+    # SELECTOR labels only, never the full label set. volumeClaimTemplates is
+    # immutable AND an atomic list, so a server-side apply replaces it wholesale and
+    # ANY difference makes the API server reject the whole StatefulSet. The full set
+    # carries helm.sh/chart and app.kubernetes.io/version, which change on EVERY
+    # release — so shipping them here made every upgrade after the first install fail
+    # with "updates to statefulset spec for fields other than ... are forbidden",
+    # taking the image bump in the same object down with it. Selector labels are
+    # stable for the life of the release, so this list never changes again.
+    # Anything version-varying belongs on the pod template, not here.
     - metadata:
         name: checkpoints
         labels:
-          {{- include "tailscale2otel.labels" . | nindent 10 }}
+          {{- include "tailscale2otel.selectorLabels" . | nindent 10 }}
       spec:
         accessModes:
           - {{ .Values.persistence.accessMode | quote }}
