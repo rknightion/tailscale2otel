@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.0.2](https://github.com/rknightion/tailscale2otel/compare/v5.0.1...v5.0.2) (2026-09-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **helm:** stop version-varying labels on the checkpoint claim template
+
+### Bug Fixes
+
+* **helm:** pin volumeMode on the checkpoint claim template ([d24ef9c](https://github.com/rknightion/tailscale2otel/commit/d24ef9cadd41420b4918634ca3da6fd24ee0bfe9))
+* **helm:** stop version-varying labels on the checkpoint claim template ([3658371](https://github.com/rknightion/tailscale2otel/commit/36583713c1f41e7d6efe040737a2b62440ec2e7d))
+
+
+### Documentation
+
+* **helm:** chart 0.36.0 needs a one-time StatefulSet delete with persistence enabled ([9416f6a](https://github.com/rknightion/tailscale2otel/commit/9416f6aaca8433a54c54630318938a7bc78028f5))
+
 ## [5.0.1](https://github.com/rknightion/tailscale2otel/compare/v5.0.0...v5.0.1) (2026-09-07)
 
 
