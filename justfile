@@ -127,6 +127,11 @@ vet module="":
 test filter="":
     go test -race -run '{{ filter }}' ./...
 
+# compare local synthetic WAL drain workloads; never contacts a real backend
+[group('dev')]
+load-wal entries="16" flows="256" delay_ms="2" count="1":
+    WAL_LOAD_ENTRIES='{{ entries }}' WAL_LOAD_FLOWS='{{ flows }}' WAL_LOAD_DELAY_MS='{{ delay_ms }}' go test ./internal/app -run '^$' -bench '^BenchmarkIngressWALDrain$' -benchtime=1x -count='{{ count }}' -timeout=30m
+
 # build and race-test one tool module, or all four when module is empty
 [group('check')]
 [no-exit-message]

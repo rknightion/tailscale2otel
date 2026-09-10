@@ -264,6 +264,9 @@ just setup
 just check
 ```
 
+`just load-wal` runs the [local WAL throughput comparison](docs/wal-load-testing.md)
+with synthetic traffic and a loopback OTLP sink; it does not use a live tailnet.
+
 Small single-purpose packages under `internal/`: `telemetry` (OTEL facade), `collector`
 (scheduler/registry/checkpoints + one package per source), `tsapi` (Tailscale client),
 `provider`/`hsapi` (control-plane abstraction + Headscale), `flowlog`/`audit` (records + processors),
