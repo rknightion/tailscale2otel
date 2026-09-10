@@ -1,11 +1,11 @@
 ---
 id: TSO-0147
 title: Resolve recurring readiness failures and ingress WAL drain backlog
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-10 19:55'
-updated_date: '2026-09-10 20:43'
+updated_date: '2026-09-10 20:59'
 labels: []
 dependencies: []
 priority: high
@@ -65,4 +65,14 @@ Automated prerelease v5.0.3-rc.14 resolves through its annotated tag to source 4
 Container and chart publication jobs succeeded in RC run 34526425328. Published image index 037eedfaf39bb8572ea62b032bf95350bc9c369cae90e6bffa047eaa5130e775 has source revision 423c3ae40ce7b436c952b1f20b294d054bdba828 on both platforms. Found an auto-regression risk: the updater selected registry tags by semver and the old higher-numbered image has no GitHub release. Changed only this image updater to the GitHub releases datasource with v-prefix extraction, preserving RC automerge policy. Renovate JSON schema and extraction checks passed; infrastructure just check passed again; the changed rendered StatefulSet passed schema validation with zero skips. Declarative config changes did not require new tests or CodeRabbit. GitOps commit ee3979c is the deployment/updater correction; live rollout read-back remains pending.
 
 GitOps rollout completed: both replicas run published image 5.0.3-rc.14, digest 037eedfaf39bb8572ea62b032bf95350bc9c369cae90e6bffa047eaa5130e775, from source 423c3ae40ce7b436c952b1f20b294d054bdba828. Release run 34526425328 completed successfully including binaries; its redundant wait-for-ci job was intentionally skipped after the successful triggering CI. Five-minute live readiness sample: 150 of 150 HTTP 200, stable pod identity and zero restarts. One earlier post-promotion readiness 503 event remains recorded, alongside an initial log-export failure that subsequently recovered; no claim of zero lifetime failures. Four actual configuration-log requests delivered eight records and WAL pending entries/bytes returned to zero. Network-flow arrivals remain absent: read-only upstream status reports context deadline exceeded and an old last-success time, while configuration deliveries succeed at the identical destination URL. Startup WAL was already empty, so this rollout does not prove drainage of the old backlog or sustained high-cardinality throughput. Remaining boundary is restoring upstream network delivery without unrequested tailnet configuration mutation, then observing WAL flush completion under real flow load.
+
+User explicitly authorized changes to the upstream network-stream configuration. The exporter OAuth identity rejected PUT with 403; user then supplied the location of existing admin credentials. Reapplied only the existing network destination using its unchanged URL, compression and current receiver token. API PUT returned 200; read-back confirmed network configuration preserved and audit configuration unchanged. No delete, ACL change or credential scope expansion. Actual network flow delivery resumed immediately: more than 25000 records processed in the first observation window. Catch-up backlog rose to about 48 MB; metric export failures remained zero and no additional Kubernetes readiness events appeared. Monitoring loaded WAL drainage before declaring recovery.
+
+Loaded recovery observed after authorized network-stream reapply: 55765 flow records processed; WAL pending bytes fell from about 48 MB to 27 MB and then zero, with zero pending entries. Upstream delivery status recovered with an empty lastError and successful fresh requests. Metric exporter reached 377 exports with zero failures; the only log-export failure predates stream recovery and subsequent exports succeeded. Both pod UIDs remained stable with zero restarts. Kubernetes Unhealthy history remains the single earlier post-promotion event, with no additions during catch-up. The concurrent local port-forward readiness sampler had three-second transport timeouts while large metrics scrapes used the same forward; those samples are not a pass and their cause is not proven.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Resolved and deployed the premature whole-metric-flush timeout in 5.0.3-rc.14 (source 423c3ae40ce7b436c952b1f20b294d054bdba828), with failing-before/passing-after regression coverage, full just check, zero-finding final CodeRabbit review, exact-source CI and automated release proof. With explicit user authorization, reapplied only the existing upstream network-stream configuration using existing admin credentials; network and audit configuration read-back was unchanged. Authentic flow delivery resumed, 55765 records were processed and catch-up WAL backlog drained from approximately 48 MB to zero. Both deployed pod identities stayed stable with zero restarts and no new Kubernetes readiness failure events. The loaded local port-forward sample returned 139 HTTP 200 and 11 transport timeouts, not a perfect probe pass; no sampled HTTP 503. This is bounded recovery evidence, not indefinite capacity or zero-loss proof. No WAL deletion, telemetry dimension reduction or ACL change. No new application code changed during stream recovery, so previous source gates were not repeated; live read-back validates this operational change.
+<!-- SECTION:FINAL_SUMMARY:END -->
