@@ -93,7 +93,7 @@ func (a *App) closeFlowStores(ctx context.Context) error {
 //     graceful http.Server.Shutdown so already-ACKed requests finish emitting.
 //     They run in parallel goroutines joined by one Wait, so the two together
 //     cost ONE of these, not two.
-//  3. ingressWALFlushTimeout — one final bounded drain of the accepted backlog.
+//  3. ingressWALDrainTimeout — one final bounded drain of the accepted backlog.
 //  4. telemetryFlushTimeout — the OTLP exporters' final flush and shutdown.
 //  5. flowStoreCloseTimeout — each runtime's flow-store close runs concurrently
 //     under one deadline. Store.Close has no context, so a blocked close
@@ -103,6 +103,10 @@ const (
 	// receivers. Asserted equal to each package's own constant below so this
 	// cannot drift from what they actually use.
 	receiverDrainTimeout = 10 * time.Second
+
+	// ingressWALDrainTimeout bounds the final WAL drain during shutdown. It is
+	// independent of the longer per-entry flush budget used while running.
+	ingressWALDrainTimeout = 10 * time.Second
 
 	// telemetryFlushTimeout bounds the final OTLP flush in Run.
 	telemetryFlushTimeout = 10 * time.Second

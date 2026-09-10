@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/ingresswal"
@@ -501,6 +502,42 @@ func TestIngressWALCoordinator_FlushRetryDoesNotReapply(t *testing.T) {
 	if flushCalls != 2 {
 		t.Errorf("flush calls = %d, want 2", flushCalls)
 	}
+}
+
+func TestIngressWALCoordinator_CommitsAfterHealthyBatchedFlush(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`))
+		wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
+		route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+		batches := 0
+		route.flush = func(ctx context.Context) error {
+			// A cumulative collection of 150k points needs 15 sequential
+			// requests at the default batch size. Each request succeeds,
+			// but their combined duration exceeds the former 10s WAL budget.
+			for range 15 {
+				select {
+				case <-time.After(time.Second):
+					batches++
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+			return nil
+		}
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("healthy batched flush did not commit: %v (completed %d batches)", err, batches)
+		}
+		if pending := wal.Health().PendingEntries; pending != 0 {
+			t.Fatalf("pending entries = %d after successful flush, want 0", pending)
+		}
+		if batches != 15 || coordinator.Health().State != ingressWALStateReady {
+			t.Fatalf("batches = %d, state = %s; want 15 and ready", batches, coordinator.Health().State)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_BoundsEachFlushAttempt(t *testing.T) {

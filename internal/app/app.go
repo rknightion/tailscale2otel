@@ -1112,7 +1112,7 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		// receivers never opened and there is nothing to drain here.
 		walFatalErr = a.walStartupFatal
 		if walFatalErr == nil {
-			drainCtx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
+			drainCtx, cancel := context.WithTimeout(context.Background(), ingressWALDrainTimeout)
 			if err := a.ingressWAL.Drain(drainCtx); err != nil {
 				a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
 			}

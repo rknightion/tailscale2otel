@@ -17,8 +17,14 @@ const (
 	ingressWALSignalWebhook = "webhook"
 	ingressWALInitialRetry  = 100 * time.Millisecond
 	ingressWALMaximumRetry  = 5 * time.Second
-	ingressWALFlushTimeout  = 10 * time.Second
-	ingressWALWakeCapacity  = 1
+	// ForceFlush covers a whole cumulative collection, not one HTTP request.
+	// The metric reader exports its datapoint batches sequentially. A healthy
+	// collection can exceed 10s; timing out the waiter does not stop the reader,
+	// and retrying then requests another full collection without committing the
+	// WAL entry. Allow a minute for the complete barrier, still bounded and
+	// interrupted by cancellation of the parent context.
+	ingressWALFlushTimeout = time.Minute
+	ingressWALWakeCapacity = 1
 )
 
 var (

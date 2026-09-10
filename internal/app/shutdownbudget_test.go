@@ -39,13 +39,13 @@ import (
 // Flow stores are NOT summed either: every runtime gets its own close goroutine
 // under one shared flowStoreCloseTimeout.
 func worstCaseDrain() time.Duration {
-	return receiverDrainTimeout + ingressWALFlushTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
+	return receiverDrainTimeout + ingressWALDrainTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
 }
 
 // TestWorstCaseDrainIncludesFlowStoreClose keeps the fifth shutdown stage in
 // the derived deployment budget.
 func TestWorstCaseDrainIncludesFlowStoreClose(t *testing.T) {
-	want := receiverDrainTimeout + ingressWALFlushTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
+	want := receiverDrainTimeout + ingressWALDrainTimeout + telemetryFlushTimeout + flowStoreCloseTimeout
 	if got := worstCaseDrain(); got != want {
 		t.Fatalf("worstCaseDrain() = %s, want %s including the flow-store close stage", got, want)
 	}
