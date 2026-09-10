@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@codex'
 created_date: '2026-09-10 19:55'
-updated_date: '2026-09-10 20:18'
+updated_date: '2026-09-10 20:43'
 labels: []
 dependencies: []
 priority: high
@@ -23,7 +23,7 @@ Recurring readiness 503s persist beyond the bounded promotion drain. Live eviden
 <!-- AC:BEGIN -->
 - [x] #1 Identify supported causes of recurring readiness failures and sustained WAL backlog, distinguishing observed evidence from hypotheses
 - [x] #2 Implement and verify the bounded correction supported by the investigation, preserving accepted-record durability
-- [ ] #3 Report deployment identity and remaining live verification boundaries
+- [x] #3 Report deployment identity and remaining live verification boundaries
 <!-- AC:END -->
 
 ## Definition of Done
@@ -55,4 +55,14 @@ Deployed OCI index digest 812b11f50ce35181a07ed1609c077c9237e5ce6d32c14c24aefec3
 The first full gate passed formatting, all module lints and vet, then found three shutdown-budget contract failures. The tests had coupled the runtime per-entry flush constant to shutdown, whereas production actually bounded the final WAL drain using the telemetry shutdown timeout. Split out an explicit 10s ingressWALDrainTimeout and wired both production and contract arithmetic to it. The running flush gets 60s; deployment grace remains unchanged at 55s. A second final review covers this wiring correction.
 
 Final just check exited 0 after separating the runtime and shutdown budgets. All five modules passed vulnerability checks; the root and tool-module race suites passed. Final CodeRabbit review completed with zero findings across all five changed Go files. No generated artifact inputs changed semantically; drift checks passed. Next boundary: commit/push, exact-source CI and automated RC publication, then tag-only GitOps rollout and live readiness/backlog read-back.
+
+Source fix committed as 423c3ae40ce7b436c952b1f20b294d054bdba828. Exact-source CI run 34525608587 is active; automated RC publication must succeed before rollout. Deployment uses the infrastructure repository image tag override via Argo. Preserve the existing unrelated infrastructure tracker edit; only the exporter image tag is in rollout scope.
+
+Exact-source CI 34525608587 completed successfully with every job successful at 423c3ae40ce7b436c952b1f20b294d054bdba828. Automated RC run 34526425328 is now publishing that source. Independent CodeQL, Docker Security, actionlint, zizmor and Scorecard runs also succeeded.
+
+Automated prerelease v5.0.3-rc.14 resolves through its annotated tag to source 423c3ae40ce7b436c952b1f20b294d054bdba828. Infrastructure tag-only change is prepared and just check passes after restoring two missing pinned local provider packages without AWS backend access or lockfile changes. Existing infrastructure kubeconform gate skipped 129 unrelated CRD resources; this is not all-schema proof. Separate Helm rendering confirms two replicas, persistent claim template, unchanged 55s termination grace and the selected image. Image publication remains pending; no rollout yet.
+
+Container and chart publication jobs succeeded in RC run 34526425328. Published image index 037eedfaf39bb8572ea62b032bf95350bc9c369cae90e6bffa047eaa5130e775 has source revision 423c3ae40ce7b436c952b1f20b294d054bdba828 on both platforms. Found an auto-regression risk: the updater selected registry tags by semver and the old higher-numbered image has no GitHub release. Changed only this image updater to the GitHub releases datasource with v-prefix extraction, preserving RC automerge policy. Renovate JSON schema and extraction checks passed; infrastructure just check passed again; the changed rendered StatefulSet passed schema validation with zero skips. Declarative config changes did not require new tests or CodeRabbit. GitOps commit ee3979c is the deployment/updater correction; live rollout read-back remains pending.
+
+GitOps rollout completed: both replicas run published image 5.0.3-rc.14, digest 037eedfaf39bb8572ea62b032bf95350bc9c369cae90e6bffa047eaa5130e775, from source 423c3ae40ce7b436c952b1f20b294d054bdba828. Release run 34526425328 completed successfully including binaries; its redundant wait-for-ci job was intentionally skipped after the successful triggering CI. Five-minute live readiness sample: 150 of 150 HTTP 200, stable pod identity and zero restarts. One earlier post-promotion readiness 503 event remains recorded, alongside an initial log-export failure that subsequently recovered; no claim of zero lifetime failures. Four actual configuration-log requests delivered eight records and WAL pending entries/bytes returned to zero. Network-flow arrivals remain absent: read-only upstream status reports context deadline exceeded and an old last-success time, while configuration deliveries succeed at the identical destination URL. Startup WAL was already empty, so this rollout does not prove drainage of the old backlog or sustained high-cardinality throughput. Remaining boundary is restoring upstream network delivery without unrequested tailnet configuration mutation, then observing WAL flush completion under real flow load.
 <!-- SECTION:NOTES:END -->
