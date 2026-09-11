@@ -20,9 +20,6 @@ chart_dir := "deploy/helm/tailscale2otel"
 golangci_version := "v2.13.2"
 govulncheck_version := "v1.3.0"
 
-# renovate: datasource=npm depName=@nanonets/graft
-graft_version := "0.16.0"
-
 # show the task surface
 default:
     @just --list
@@ -533,14 +530,3 @@ wait-for-proxy version="":
 [group('release')]
 bump-major major="":
     scripts/bump-module-major.sh {{ major }}
-
-# Install and patch the graft CLI (re-run after a version bump)
-[group('dev')]
-graft-setup:
-    npm i -g @nanonets/graft@{{ graft_version }}
-    ~/.agents/bin/graft-postinstall
-
-# Build the local code graph
-[group('dev')]
-graft-build:
-    DO_NOT_TRACK=1 graft build .
