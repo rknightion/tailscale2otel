@@ -33,3 +33,10 @@ reviews:
       This file is hand-maintained generated-adjacent policy. Do not suggest inventing a disposition or
       restoring raw_only, omitted or pending_panel escapes. Dispositions are derived from real dashboard/rule
       references, and structural exemptions require individual justification.
+knowledge_base:
+  linked_repositories:
+  - repository: m7kni/m7kni-net-site
+    instructions: >-
+      Documentation hub. This repository dispatches documentation changes to the hub, which clones the
+      docs source and builds it. Check docs_path, config_file and the dispatch payload against this
+      repository's entry in the hub's docs-repos.json manifest.
