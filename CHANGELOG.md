@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.0.3](https://github.com/rknightion/tailscale2otel/compare/v5.0.2...v5.0.3) (2026-09-15)
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies ([#618](https://github.com/rknightion/tailscale2otel/issues/618)) ([cd0b961](https://github.com/rknightion/tailscale2otel/commit/cd0b96104984485d5bd8d5d845314c860dc9a4ca))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.6.0 ([#616](https://github.com/rknightion/tailscale2otel/issues/616)) ([56334cc](https://github.com/rknightion/tailscale2otel/commit/56334cc4add62f651f7ddc7ba5fe09601523107c))
+* **deps:** update module modernc.org/sqlite to v1.59.0 ([#632](https://github.com/rknightion/tailscale2otel/issues/632)) ([9b87e46](https://github.com/rknightion/tailscale2otel/commit/9b87e46b6ae4990b3564fd16759ea7e2433c4070))
+* **wal:** allow complete batched metric flushes before retrying ([423c3ae](https://github.com/rknightion/tailscale2otel/commit/423c3ae40ce7b436c952b1f20b294d054bdba828))
+
 ## [5.0.2](https://github.com/rknightion/tailscale2otel/compare/v5.0.1...v5.0.2) (2026-09-07)
 
 
