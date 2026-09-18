@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.0.4](https://github.com/rknightion/tailscale2otel/compare/v5.0.3...v5.0.4) (2026-09-18)
+
+
+### Bug Fixes
+
+* **alerts:** close the severity contract - validate it, and document `advisory` ([8f04a03](https://github.com/rknightion/tailscale2otel/commit/8f04a0340723400c24bffc0dc1ad28beaeff2516))
+* **deps:** pin google.golang.org/grpc to v1.83.2 (CVE-2026-84445) ([f58018e](https://github.com/rknightion/tailscale2otel/commit/f58018eca851cb0b67b618b0e1a3ce225347c959))
+
 ## [5.0.3](https://github.com/rknightion/tailscale2otel/compare/v5.0.2...v5.0.3) (2026-09-18)
 
 
