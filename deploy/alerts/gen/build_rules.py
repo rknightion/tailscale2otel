@@ -403,9 +403,12 @@ def panel_ref(title):
 # `severity` is the routing key an operator keys their notification policy on, so
 # a typo routes nowhere and fails silent. Closed set, enforced in alert() below.
 #
-# `advisory` is a REAL fourth tier here, not a mistake: it is the severity half
-# of the `advisory` evaluation policy above (Ok/Ok -- neither absence nor a
-# transient error is actionable), and 9 rules ship it today. It was absent from
+# `advisory` is a REAL fourth tier here, not a mistake, and 9 rules ship it.
+# Do not confuse it with the `advisory` EVALUATION POLICY in the POLICY table
+# above, which is a different axis carried by 23 rules: policy sets
+# noDataState/execErrState (Ok/Ok), severity is what an operator routes on, and
+# most policy="advisory" rules report severity="warning". A count of one is not
+# a count of the other. It was absent from
 # the README's contract until 2026-09-18 while being used, which is the sort of
 # gap that gets "tidied" into a breaking change by someone who assumes it was a
 # typo. It is not. Anything below `warning` is non-paging in every routing model
