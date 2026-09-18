@@ -329,8 +329,12 @@ the Grafana API server, or the Terraform
 `grafana_apps_rules_alertrule_v0alpha1` / `..._recordingrule_v0alpha1` resources,
 which take the same spec.
 
-Wire the `severity` label (`critical` / `warning` / `info`) into your
-notification policy. Thresholds, `for:` windows and the enabled/paused split all
+Wire the `severity` label into your notification policy. The closed set is
+`critical` / `warning` / `info` / `advisory`, enforced by `alert()` in
+`gen/build_rules.py` -- a value outside it is a build error rather than a rule
+that silently routes nowhere. `advisory` pairs with the `advisory` evaluation
+policy (neither absence nor a transient error is actionable) and is used by 9
+rules; treat it as non-paging, like `info`. Thresholds, `for:` windows and the enabled/paused split all
 live in `gen/build_rules.py`.
 
 ## Validating locally

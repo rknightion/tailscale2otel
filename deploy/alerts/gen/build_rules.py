@@ -400,6 +400,19 @@ def panel_ref(title):
     return _resolve_index(_panel_index(), title)
 
 
+# `severity` is the routing key an operator keys their notification policy on, so
+# a typo routes nowhere and fails silent. Closed set, enforced in alert() below.
+#
+# `advisory` is a REAL fourth tier here, not a mistake: it is the severity half
+# of the `advisory` evaluation policy above (Ok/Ok -- neither absence nor a
+# transient error is actionable), and 9 rules ship it today. It was absent from
+# the README's contract until 2026-09-18 while being used, which is the sort of
+# gap that gets "tidied" into a breaking change by someone who assumes it was a
+# typo. It is not. Anything below `warning` is non-paging in every routing model
+# this pack documents, so `info` and `advisory` differ in meaning, not delivery.
+SEVERITY_VALUES = {"critical", "warning", "info", "advisory"}
+
+
 def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
           policy, runbook, panel=None,
           ds=PROM, paused=True, lookback=3600,
@@ -410,6 +423,9 @@ def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
     if policy not in POLICY:
         raise ValueError("unknown evaluation policy %r for %s; valid: %s"
                          % (policy, uid, ", ".join(sorted(POLICY))))
+    if severity not in SEVERITY_VALUES:
+        raise ValueError("unknown severity %r for %s; valid: %s"
+                         % (severity, uid, ", ".join(sorted(SEVERITY_VALUES))))
     nodata, execerr = POLICY[policy]
     POLICY_BY_UID[uid] = policy
     annotations = {"summary": summary, "description": desc,
