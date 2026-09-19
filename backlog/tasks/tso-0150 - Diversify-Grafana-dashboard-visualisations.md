@@ -1,9 +1,11 @@
 ---
 id: TSO-0150
 title: Diversify Grafana dashboard visualisations
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@codex'
 created_date: '2026-09-19 09:52'
+updated_date: '2026-09-19 10:04'
 labels: []
 dependencies: []
 references:
@@ -13,6 +15,10 @@ references:
   - >-
     https://github.com/grafana/jsonnet-libs/blob/master/netflow-mixin/dashboards_out/netflow-overview.json
   - 'https://grafana.com/grafana/plugins/search/?type=datasource%2Cpanel'
+documentation:
+  - >-
+    backlog/docs/specifications/doc-0006 -
+    TSO-0150-dashboard-visualisation-redesign.md
 priority: high
 type: feature
 ordinal: 151000
@@ -39,3 +45,9 @@ The generated dashboard family relies too heavily on conventional time series, s
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Design approved in chat on 2026-09-19. Audit baseline: 502 generated panels; m7kni confirms Sankey 1.1.4 and Treemap 2.1.1 installed. Written design is doc-0006 and awaits review before implementation planning.
+<!-- SECTION:NOTES:END -->
