@@ -144,7 +144,7 @@ jobs:
     # v1.5.0 is the first shared release containing the checksums-locate fix (the attest step was
     # nondeterministically handed the cosign .sigstore.json bundle instead of SHA256SUMS — #176),
     # so this is no longer pinned to a floating @main SHA. Renovate maintains the bump from here.
-    uses: rknightion/.github/.github/workflows/binaries.yml@e5fb83e8b9fac5d9bcca87c9f189ec3ea946de84 # v1.21.1
+    uses: rknightion/.github/.github/workflows/binaries.yml@e6d074e42fed0c74b1e9936637b7e2fb21403779 # v1.22.0
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
