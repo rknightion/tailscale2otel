@@ -6,8 +6,8 @@ network dashboard" is delivered here, on the flagship's Network & Flows tab.
 """
 
 from builder import (BAR_NOISE, bargauge_opts, category_bar_opts, barchart_opts, logs_opts, loki_t, lot, organize,
-                     panel, PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
-                     ts_opts)
+                     panel, PII, pie_opts, pii_sentinel, prom_t, RI, row, sankey_opts, sentinel,
+                     stat_opts, thr, TNP, ts_custom, ts_opts)
 
 
 # --- rollup vs raw: pick ONE path, never add them (#391) ---------------------
@@ -29,6 +29,9 @@ ROLLUP_BYTES = "tailscale_network_io_rollup_bytes_total"
 RAW_BYTES = "tailscale_network_io_bytes_total"
 ROLLUP_PACKETS = "tailscale_network_packets_rollup_total"
 RAW_PACKETS = "tailscale_network_packets_total"
+FLOW_FILTERS = ('{%s, network_transport=~"$net_transport", '
+                'tailscale_traffic_type=~"$traffic_type"}' % TNP)
+SANKEY_CATALOGUE = "https://grafana.com/grafana/plugins/netsage-sankey-panel/"
 
 # Prerequisite sentences for the two families. Presence cannot tell "disabled" from
 # "unsupported" from "never deployed", so these name the config key and stop — they
@@ -70,6 +73,26 @@ def talker_bar(title, metric, label, display, filt, desc):
                  desc=desc)
 
 
+def topology_sankey(title, metric, prerequisite):
+    """Top-N source-to-destination byte rate for the selected flow metric family."""
+    query = ("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) "
+             "(rate(%s%s[%s])))" % (metric, FLOW_FILTERS, RI))
+    return panel(
+        title, "netsage-sankey-panel",
+        [prom_t(query, instant=True, fmt="table")],
+        unit="Bps", options=sankey_opts("Bytes/s"), version="1.1.4",
+        transformations=[organize(
+            exclude=BAR_NOISE,
+            rename={"tailscale_src_node": "Source",
+                    "tailscale_dst_node": "Destination", "Value": "Bytes/s"},
+            index={"tailscale_src_node": 0, "tailscale_dst_node": 1, "Value": 2})],
+        novalue="No source/destination flow pairs in the selected interval.",
+        desc=("Top-$topn source-to-destination paths by current byte rate. %s "
+              "This optional panel needs `netsage-sankey-panel` 1.1.4; install it from %s. "
+              "The adjacent native tables and bars remain available when the plugin is absent."
+              % (prerequisite, SANKEY_CATALOGUE)))
+
+
 def tab_network(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
     # #526 wave 3: every sentinel here gates a ROW inside this one tab, so each is
@@ -101,13 +124,12 @@ def tab_network(scope):
     # on every signal (telemetry.constLabelAttrs), so they filter with a plain matcher and
     # no target_info join. Under "All" both expand to `.*`, which also matches a series
     # carrying no such label at all — so a single-tailnet deployment is unaffected.
-    scope_sel = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
+    scope_sel = TNP
     sf = "{%s}" % scope_sel
     loki_flow = ('{service_name="tailscale2otel"} | tailscale_tailnet=~"$tailnet" '
                  '| tailscale2otel_provider=~"$provider" '
                  '| event_name=`tailscale.network.flow`')
-    tf = ('{%s, network_transport=~"$net_transport", tailscale_traffic_type=~"$traffic_type"}'
-          % scope_sel)
+    tf = FLOW_FILTERS
     # tf, but also exclude unclassified (empty-label) services so the top-services
     # barcharts name every bar instead of falling back to "Value" for the empty group.
     tsf = tf[:-1] + ", tailscale_dst_service!=\"\"}"
@@ -136,6 +158,24 @@ def tab_network(scope):
                [prom_t("sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total%s[%s]))" % (tf, RI), legend="{{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                desc="Flow rate split by traffic type (virtual/subnet/exit/physical)."), 6, 5),
+    ]
+    composition = [
+        (panel("Current flow share by transport", "piechart",
+               [prom_t("sum by (network_transport) "
+                       "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
+                       legend="{{network_transport}}", instant=True, fmt="table")],
+               unit="cps", options=pie_opts(),
+               novalue="No flow records in the selected interval.",
+               desc="Current flow-rate composition by transport. The Flow summary time series "
+                    "remains the history view."), 12, 7),
+        (panel("Current flow share by traffic type", "piechart",
+               [prom_t("sum by (tailscale_traffic_type) "
+                       "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
+                       legend="{{tailscale_traffic_type}}", instant=True, fmt="table")],
+               unit="cps", options=pie_opts(),
+               novalue="No flow records in the selected interval.",
+               desc="Current flow-rate composition by traffic type. The Flow summary time "
+                    "series remains the history view."), 12, 7),
     ]
     integrity = [
         (panel("Reporter trust & consistency", "timeseries",
@@ -357,6 +397,12 @@ def tab_network(scope):
         (talker_bar("Top $topn destination services (raw)", RAW_BYTES, "tailscale_dst_service", "Destination service", tsf,
                     "Busiest destination services by raw per-flow byte rate. " + RAW_PREREQ), 8, 8),
     ]
+    rollup_sankey = [
+        (topology_sankey("Traffic topology - ROLLUP", ROLLUP_BYTES, ROLLUP_PREREQ), 24, 10),
+    ]
+    raw_sankey = [
+        (topology_sankey("Traffic topology - RAW", RAW_BYTES, RAW_PREREQ), 24, 10),
+    ]
     # #526 decision 9: the Events & Logs tab is dissolved and its per-signal log streams
     # go to the tab that owns the signal. This one is the raw flow-log line, which is the
     # detail behind every rollup panel above — a reader who wants to know WHICH connection
@@ -372,6 +418,7 @@ def tab_network(scope):
     ]
     return [
         row("Flow summary", summary, present="has_flows"),
+        row("Current flow composition", composition, present="has_flows"),
         row("Flow integrity", integrity, present="has_flows"),
         row("Flow ingestion hygiene", hygiene, present="has_flows"),
         row("Exit-node I/O", exitio, present="has_exit_io", hide_when=["pii_node"]),
@@ -379,6 +426,8 @@ def tab_network(scope):
         row("Throughput & talkers — ROLLUP (bounded top-N)", rollup_agg, present="has_rollup_flow"),
         row("Path & DERP context — ROLLUP", rollup_path, present="has_rollup_flow"),
         row("Top talkers — ROLLUP", rollup_talkers, present="has_rollup_flow", hide_when=["pii_node"]),
+        row("Traffic topology - ROLLUP (install netsage-sankey-panel)", rollup_sankey,
+            present="has_rollup_flow", hide_when=["pii_node"]),
         # has_unique, not has_rollup_flow: both panels here need cardinality.flow.node_dims
         # on top of the rollup mode, and the unique_* gauges are the signal for that.
         # Collapsed: topology is a second-stage drill-down after rollup traffic.
@@ -386,6 +435,8 @@ def tab_network(scope):
         # Collapsed: raw views are intentionally expensive, full-detail investigations.
         row("Throughput & talkers — RAW (full detail)", raw_agg, present="has_raw_flow", collapse=True),
         row("Top talkers — RAW", raw_talkers, present="has_raw_flow", hide_when=["pii_node"], collapse=True),
+        row("Traffic topology - RAW (install netsage-sankey-panel)", raw_sankey,
+            present="has_raw_flow", hide_when=["pii_node"], collapse=True),
         row("Top node-pair talkers (flow logs)", fl_pairs, present="has_flows", hide_when=["pii_node"], collapse=True),
         row("Flow log stream", flowlogs, present="has_flows", collapse=True),
     ]

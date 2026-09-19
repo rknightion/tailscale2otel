@@ -97,6 +97,46 @@ def panels(doc):
                spec["data"]["spec"]["transformations"], exprs, spec["description"])
 
 
+def panel_spec(doc, title):
+    found = [el["spec"] for el in doc["spec"]["elements"].values()
+             if el["spec"]["title"] == title]
+    if len(found) != 1:
+        raise AssertionError("expected exactly one panel titled %r, found %d"
+                             % (title, len(found)))
+    return found[0]
+
+
+def find_tab(layout, title):
+    if layout["kind"] != "TabsLayout":
+        return None
+    for tab in layout["spec"]["tabs"]:
+        if tab["spec"]["title"] == title:
+            return tab
+        found = find_tab(tab["spec"]["layout"], title)
+        if found is not None:
+            return found
+    return None
+
+
+def network_rows(doc):
+    tab = find_tab(doc["spec"]["layout"], "Network & Flows")
+    if tab is None:
+        raise AssertionError("Network & Flows tab is missing")
+    return {row["spec"]["title"]: row["spec"]
+            for row in tab["spec"]["layout"]["spec"]["rows"]}
+
+
+def row_conditions(row_spec):
+    present, hidden = None, set()
+    group = row_spec.get("conditionalRendering") or {}
+    for item in group.get("spec", {}).get("items", []):
+        if item["spec"]["operator"] == "notMatches":
+            hidden.add(item["spec"]["variable"])
+        else:
+            present = item["spec"]["variable"]
+    return present, hidden
+
+
 # --- the raw/rollup detector, factored out so the guards-the-guard test can drive it
 
 
@@ -186,6 +226,66 @@ class RawRollupSeparationTest(unittest.TestCase):
             ["sum(rate(%s[5m]))" % rollup, "sum(rate(%s[5m]))" % raw]))
         self.assertFalse(panel_mixes_raw_and_rollup_across_targets(
             ["sum(rate(%s[5m]))" % rollup, "sum(rate(%s[5m]))" % rollup]))
+
+
+class FlowVisualisationTest(unittest.TestCase):
+    def setUp(self):
+        self.doc = dashboard.build_family()
+
+    def test_sankeys_are_bounded_ordered_and_keep_plugin_identity(self):
+        cases = {
+            "Traffic topology - ROLLUP": "tailscale_network_io_rollup_bytes_total",
+            "Traffic topology - RAW": "tailscale_network_io_bytes_total",
+        }
+        for title, metric in cases.items():
+            spec = panel_spec(self.doc, title)
+            viz = spec["vizConfig"]
+            self.assertEqual(viz["group"], "netsage-sankey-panel")
+            self.assertEqual(viz["version"], "1.1.4")
+            self.assertEqual(viz["spec"]["options"]["valueField"], "Bytes/s")
+            self.assertIn("https://grafana.com/grafana/plugins/netsage-sankey-panel/",
+                          spec["description"])
+            expr = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+            self.assertIn("topk($topn,", expr)
+            self.assertIn(metric, expr)
+            other = ("tailscale_network_io_bytes_total" if "rollup" in metric
+                     else "tailscale_network_io_rollup_bytes_total")
+            self.assertNotIn(other, expr)
+            transform = spec["data"]["spec"]["transformations"][0]["spec"]["options"]
+            self.assertEqual(transform["renameByName"], {
+                "tailscale_src_node": "Source",
+                "tailscale_dst_node": "Destination",
+                "Value": "Bytes/s",
+            })
+            self.assertEqual(transform["indexByName"], {
+                "tailscale_src_node": 0, "tailscale_dst_node": 1, "Value": 2,
+            })
+
+    def test_native_pies_preserve_the_existing_flow_rate_dimensions(self):
+        for title, dimension in (
+                ("Current flow share by transport", "network_transport"),
+                ("Current flow share by traffic type", "tailscale_traffic_type")):
+            spec = panel_spec(self.doc, title)
+            self.assertEqual(spec["vizConfig"]["group"], "piechart")
+            self.assertEqual(spec["vizConfig"]["spec"]["options"]["displayLabels"],
+                             ["name", "percent"])
+            query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]
+            self.assertTrue(query["instant"])
+            self.assertIn("sum by (%s)" % dimension, query["expr"])
+            self.assertIn("tailscale_network_flows_total", query["expr"])
+
+    def test_sankey_rows_preserve_signal_and_pii_gates(self):
+        rows = network_rows(self.doc)
+        cases = {
+            "Traffic topology - ROLLUP (install netsage-sankey-panel)":
+                ("has_rollup_flow", False),
+            "Traffic topology - RAW (install netsage-sankey-panel)":
+                ("has_raw_flow", True),
+        }
+        for title, (present, collapsed) in cases.items():
+            self.assertIn(title, rows)
+            self.assertEqual(row_conditions(rows[title]), (present, {"pii_node"}))
+            self.assertEqual(rows[title]["collapse"], collapsed)
 
 
 class TopTalkerCategoryTest(unittest.TestCase):
