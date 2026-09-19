@@ -190,10 +190,10 @@ def check_bool_polarity(title, mappings, thresholds):
                     % (title, opts[key]["color"], key, step["color"]))
 
 
-def organize(exclude=None, rename=None):
+def organize(exclude=None, rename=None, index=None):
     return {"kind": "Transformation", "group": "organize", "spec": {"options": {
         "excludeByName": {k: True for k in (exclude or [])},
-        "renameByName": rename or {}, "indexByName": {}}}}
+        "renameByName": rename or {}, "indexByName": index or {}}}}
 
 
 def merge():
@@ -271,6 +271,45 @@ def barchart_opts(legend=False):
     return {"orientation": "horizontal", "showValue": "auto", "stacking": "none",
             "legend": {"showLegend": legend, "displayMode": "list", "placement": "bottom"},
             "tooltip": {"mode": "single", "sort": "none"}}
+
+
+def pie_opts():
+    return {"displayLabels": ["name", "percent"],
+            "legend": {"displayMode": "table", "placement": "right", "showLegend": True}}
+
+
+def geomap_opts(location_field="lookup"):
+    return {"view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 1},
+            "controls": {"showZoom": True, "showAttribution": True},
+            "layers": [{"type": "markers", "name": "Devices", "config": {
+                "showLegend": True, "style": {"size": {"field": "Devices", "fixed": 5}},
+                "location": {"mode": "lookup", "lookup": location_field}}}]}
+
+
+def state_timeline_opts():
+    return {"mergeValues": True, "showValue": "auto", "alignValue": "left",
+            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+            "tooltip": {"mode": "single", "sort": "none"}}
+
+
+def heatmap_opts():
+    return {"calculate": False, "yAxis": {"axisPlacement": "left", "unit": "s"},
+            "legend": {"show": True},
+            "tooltip": {"show": True, "yHistogram": False}}
+
+
+def sankey_opts(value_field="Value"):
+    return {"monochrome": False, "nodeColor": "grey", "nodeWidth": 30,
+            "nodePadding": 24, "labelSize": 12, "iteration": 7,
+            "valueField": value_field}
+
+
+def treemap_opts(label_field, size_field, group_field=None):
+    options = {"labelBy": label_field, "sizeBy": size_field, "colorBy": size_field,
+               "tiling": "squarify", "separator": ""}
+    if group_field is not None:
+        options["groupBy"] = group_field
+    return options
 
 
 # --- top-talker category axis (#391) -----------------------------------------
