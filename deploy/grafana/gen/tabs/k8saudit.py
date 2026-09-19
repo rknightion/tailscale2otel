@@ -15,8 +15,9 @@ bounded, non-PII summary of the exec command; the raw `tailscale_k8s_command` te
 one attribute with its own redaction switch (`pii_filter.command_text`).
 """
 
-from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, organize, panel, PII,
-                     pii_sentinel, prom_t, RI, row, sentinel, thr, ts_custom, ts_opts, stat_opts)
+from builder import (BAR_NOISE, barchart_opts, bargauge_opts, logs_opts, loki_t, organize,
+                     panel, PII, pii_sentinel, prom_t, RI, row, sankey_opts, sentinel, thr,
+                     ts_custom, ts_opts, stat_opts)
 from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
 # Metric names — frozen strings from issue #462 / commit b61fe7a, never re-derived.
@@ -103,6 +104,24 @@ def tab_k8saudit(scope):
                desc="Top-N requesting clients by user agent string over the selected "
                     "range. Not identity — the same person can appear under several "
                     "agents (kubectl, a controller, a CI job)."), 24, 6),
+    ]
+    request_paths = [
+        (panel("Kubernetes request paths", "netsage-sankey-panel",
+               [prom_t("topk($topn, sum by (tailscale_k8s_user, tailscale_k8s_verb, "
+                       "tailscale_k8s_resource) (increase(%s[$__range])))" % K8S_REQUESTS,
+                       instant=True, fmt="table")],
+               unit="short", options=sankey_opts("Requests"), version="1.1.4",
+               transformations=[organize(
+                   exclude=BAR_NOISE,
+                   rename={"tailscale_k8s_user": "User", "tailscale_k8s_verb": "Verb",
+                           "tailscale_k8s_resource": "Resource", "Value": "Requests"},
+                   index={"tailscale_k8s_user": 0, "tailscale_k8s_verb": 1,
+                          "tailscale_k8s_resource": 2, "Value": 3})],
+               novalue="No Kubernetes request paths in the selected range.",
+               desc="Top-$topn requesting identity to verb to resource paths over the selected "
+                    "range. This counts attempts, not outcomes. This optional panel needs "
+                    "`netsage-sankey-panel` 1.1.4; install it from "
+                    "https://grafana.com/grafana/plugins/netsage-sankey-panel/."), 24, 10),
     ]
 
     # -------------------------------------------------------------------------------------
@@ -364,6 +383,8 @@ def tab_k8saudit(scope):
 
     return [
         row("Kubernetes API request volume", volume),
+        row("Kubernetes request paths", request_paths,
+            present="has_k8s_audit", hide_when=["pii_emails"]),
         row("Sensitive resource reads", sensitive, present="has_k8s_sensitive_reads"),
         row("Sensitive resource reads — top readers", sensitive_users,
             present="has_k8s_sensitive_reads", hide_when=["pii_emails"]),

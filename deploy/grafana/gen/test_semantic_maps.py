@@ -44,6 +44,8 @@ BOOL_PANELS = {
     ("MagicDNS", "stat"): NEUTRAL,
     ("Override local DNS", "stat"): NEUTRAL,
     ("Config valid", "stat"): HEALTHY_ON,
+    ("Device online state by node", "state-timeline"):
+        {"0": ("Offline", "red"), "1": ("Online", "green")},
     # #393/#403 — audit-pipeline and inventory flags. All three are "1 is the
     # state you want": the poll scrape succeeded, the policy validated, the
     # desired webhook category has a subscriber.

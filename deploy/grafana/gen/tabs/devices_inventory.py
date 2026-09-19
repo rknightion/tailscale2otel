@@ -55,9 +55,10 @@ renders permanently hidden, which on screen is indistinguishable from a correctl
 empty row.
 """
 
-from builder import (autogrid_row, barchart_opts, bargauge_opts, hq, logs_opts, loki_t, lot,
-                     merge, organize, panel, PII, pii_sentinel, prom_t, row,
-                     stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
+from builder import (autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
+                     loki_t, lot, merge, organize, panel, PII, pie_opts, pii_sentinel, prom_t,
+                     row, state_timeline_opts, stat_opts, thr, ts_custom, ts_opts, WIN_FAST,
+                     WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_OFF, BOOL_HEALTHY_ON, BOOL_NEUTRAL
 from tabs._devices_common import NO_PER_DEVICE, TP, flag_map, host_drilldown
 
@@ -164,11 +165,11 @@ def tab_devices_inventory(scope):
         # #392: the old expression grouped by os/authorized/external and then summed
         # the state labels straight back out, so an unauthorized macOS laptop was
         # indistinguishable from an authorized one. Keep the state in the legend.
-        (panel("Devices by OS", "bargauge",
+        (panel("Devices by OS", "piechart",
                [prom_t("sum by (os_type, tailscale_authorized, tailscale_external) (%s)"
                        % lot("tailscale_devices_count_ratio{%s}" % TP, WIN_SLOW),
                        legend="{{os_type}} · authorized={{tailscale_authorized}} · external={{tailscale_external}}")],
-               unit="short", options=bargauge_opts(),
+               unit="short", options=pie_opts(),
                desc="Device count per OS, kept split by authorization and shared-in state — "
                     "an OS total that sums those away hides the devices an admin still has to act on."), 9, 5),
     ]
@@ -339,12 +340,15 @@ def tab_devices_inventory(scope):
                     "deliberately not grouped on here; the roll-up splits by it."), 12, 7),
         # #526 pending-panel ledger: tailscale.devices.by_country reached no panel anywhere.
         # A count despite the `_ratio` suffix (unit "1" gauge -> _ratio on the Prometheus side).
-        (panel("Devices by country", "barchart",
+        (panel("Devices by country", "geomap",
                [prom_t("sum by (geo_country_iso_code) (max by (geo_country_iso_code) (%s))"
                        % lot("tailscale_devices_by_country_ratio{%s}" % TP, WIN_SLOW),
                        instant=True, fmt="table")],
-               unit="short", options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])],
+               unit="short", options=geomap_opts(),
+               transformations=[organize(
+                   exclude=["Time"],
+                   rename={"geo_country_iso_code": "lookup", "Value": "Devices"},
+                   index={"geo_country_iso_code": 0, "Value": 1})],
                novalue=_NO_GEO,
                desc="Devices per country, geolocated from the first globally-routable magicsock "
                     "endpoint each device advertises. Devices with no globally-routable endpoint, "
@@ -421,12 +425,23 @@ def tab_devices_inventory(scope):
                     "gap; set the count with the Top N variable)."), 24, 8),
     ]
 
+    online_state = [
+        (panel("Device online state by node", "state-timeline",
+               [prom_t("tailscale_device_online_ratio%s" % df, legend="{{host_name}}")],
+               mappings=bool_map("Offline", "Online", "red", "green"),
+               options=state_timeline_opts(),
+               novalue="No per-device online series — needs cardinality.per_entity.device.",
+               desc="Online/offline transitions for each device matching the current filters. "
+                    "Hidden when device identity redaction is active."), 24, 9),
+    ]
+
     return [
         row("Inventory", inv),
         row("Authorization & sharing", authsplit),
         row("Device change log", change_log, hide_when=["pii_perdevice"]),
         # Two same-size (12x7) timeseries -> AutoGrid, so the row reflows (#526 decision 6).
         autogrid_row("Trends", overtime),
+        row("Device online state by node", online_state, hide_when=["pii_perdevice"]),
         row("Fleet hygiene", hygiene),
         row("Device health", tables, hide_when=["pii_perdevice"]),
     ]

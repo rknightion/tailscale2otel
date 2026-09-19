@@ -175,7 +175,7 @@ NEW_ROWS = [
 POLICY_ROWS = [
     "Access control (ACL)", "ACL policy validation", "DNS", "Settings & features",
     "Users", "Per-user detail", "API keys & credential scopes", "Key expiry detail",
-    "OAuth applications", "Services / VIP", "VIP service detail",
+    "OAuth applications", "Services / VIP", "VIP service detail", "VIP service topology",
     "Webhook endpoint inventory", "Device-posture integrations",
 ]
 

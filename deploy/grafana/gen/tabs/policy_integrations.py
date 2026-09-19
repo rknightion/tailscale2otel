@@ -32,8 +32,8 @@ empty row.
 """
 
 from builder import (autogrid_row, bargauge_opts, logs_opts, loki_t, lot, merge, organize, panel,
-                     PII, pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
-                     ts_opts, WIN_SLOW)
+                     PII, pii_sentinel, prom_t, RI, row, sankey_opts, sentinel, stat_opts, thr,
+                     ts_custom, ts_opts, WIN_SLOW)
 from maps import BOOL_HEALTHY_OFF, BOOL_HEALTHY_ON
 
 DOCS = "https://m7kni.io/tailscale2otel"
@@ -155,6 +155,23 @@ def tab_policy_integrations(scope):
                     "to the devices inventory; host identity fields are present only when the devices "
                     "cache has refreshed that node. Hidden when host and node identity redaction is active."),
          24, 8),
+    ]
+    service_topology = [
+        (panel("VIP service topology", "netsage-sankey-panel",
+               [prom_t("topk($topn, max by (tailscale_service_display_name, host_name) (%s))"
+                       % lot(sel("tailscale_service_host_info_ratio"), WIN_SLOW),
+                       instant=True, fmt="table")],
+               unit="short", options=sankey_opts("Backing hosts"), version="1.1.4",
+               transformations=[organize(
+                   exclude=_INFRA_TBL + ["tailscale_tailnet", "tailscale2otel_provider"],
+                   rename={"tailscale_service_display_name": "Service",
+                           "host_name": "Backing host", "Value": "Backing hosts"},
+                   index={"tailscale_service_display_name": 0, "host_name": 1, "Value": 2})],
+               novalue="No VIP service backing-host identity series.",
+               desc="Top-$topn VIP service to backing-host relationships. This optional panel "
+                    "needs `netsage-sankey-panel` 1.1.4; install it from "
+                    "https://grafana.com/grafana/plugins/netsage-sankey-panel/. The native "
+                    "backing-host table remains available when the plugin is absent."), 24, 10),
     ]
 
     # ------------------------------------------------------------------
@@ -345,6 +362,8 @@ def tab_policy_integrations(scope):
         # has_svc wired (#495): per-service port gauges only
         row("VIP service detail", services_detail, present="has_svc"),
         row("Backing host identity", host_identity, present="has_svc", hide_when=["pii_perdevice"]),
+        row("VIP service topology", service_topology,
+            present="has_svc", hide_when=["pii_perdevice"]),
         row("Webhook endpoint inventory", webhookinv),
         # Four same-size panels -> AutoGrid, which reflows to the viewport (#526 decision 6).
         autogrid_row("GeoIP enrichment", [geo_age, geo_downloads, geo_lookups, geo_reloads],

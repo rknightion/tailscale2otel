@@ -35,7 +35,7 @@ and is indistinguishable on screen from a correctly-gated empty row.
 """
 
 from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge, organize,
-                     panel, PII, pii_sentinel, prom_t, row, sentinel, stat_opts, thr,
+                     panel, PII, pie_opts, pii_sentinel, prom_t, row, sentinel, stat_opts, thr,
                      WIN_FAST, WIN_SLOW)
 
 # Scrape-transport columns, excluded from every operator-facing table (#392).
@@ -128,11 +128,11 @@ def tab_security_compliance(scope):
                desc="Population accounting for the explicit Boolean intune:isEncrypted "
                     "attribute: passing devices, reporting denominator, and devices absent from "
                     "that denominator. Unknown/unsupported is not classified as noncompliant."), 6, 6),
-        (panel("Compliance distribution", "barchart",
+        (panel("Compliance distribution", "piechart",
                [prom_t("count by (attribute, value) (%s)"
                        % lot('tailscale_device_attribute_info_ratio', WIN_FAST),
                        legend="{{attribute}} = {{value}}", instant=True, fmt="table")],
-               unit="short", options=barchart_opts(),
+               unit="short", options=pie_opts(),
                transformations=[organize(exclude=["Time"])],
                desc="Distribution of attribute values for the selected posture attribute."), 18, 6),
     ]
