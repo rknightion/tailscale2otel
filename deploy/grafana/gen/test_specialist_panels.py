@@ -196,5 +196,51 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
                          ("has_svc", {"pii_perdevice"}))
 
 
+class HealthAndCostPanelContracts(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.doc = dashboard.build_family()
+
+    def test_health_state_panels_keep_their_source_metrics(self):
+        cases = {
+            "Scrape success by collector": "tailscale2otel_scrape_success_ratio",
+            "Capability availability history": "tailscale2otel_capability_status_ratio",
+        }
+        for title, metric in cases.items():
+            spec = panel_spec(self.doc, title)
+            self.assertEqual(spec["vizConfig"]["group"], "state-timeline")
+            expr = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+            self.assertIn(metric, expr)
+        capability = panel_spec(self.doc, "Capability availability history")
+        expr = capability["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+        self.assertIn("tailscale_collector", expr)
+        self.assertIn("tailscale_api_state", expr)
+
+    def test_scrape_duration_heatmap_keeps_histogram_buckets(self):
+        spec = panel_spec(self.doc, "Scrape duration distribution")
+        self.assertEqual(spec["vizConfig"]["group"], "heatmap")
+        expr = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+        self.assertIn("tailscale2otel_scrape_duration_histogram_seconds_bucket", expr)
+        self.assertIn("sum by (le)", expr)
+        self.assertIn("rate(", expr)
+
+    def test_active_series_treemap_is_bounded_and_keeps_plugin_identity(self):
+        spec = panel_spec(self.doc, "Active series by metric family")
+        viz = spec["vizConfig"]
+        self.assertEqual(viz["group"], "marcusolsson-treemap-panel")
+        self.assertEqual(viz["version"], "2.1.1")
+        self.assertEqual(viz["spec"]["options"], builder.treemap_opts("metric_name", "Value"))
+        self.assertIn("https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/",
+                      spec["description"])
+        query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+        self.assertIn("topk($topn,", query)
+        self.assertIn("max by (metric_name) (tailscale2otel_series_active)", query)
+        order = spec["data"]["spec"]["transformations"][0]["spec"]["options"]["indexByName"]
+        self.assertEqual(order, {"metric_name": 0, "Value": 1})
+        excluded = spec["data"]["spec"]["transformations"][0]["spec"]["options"]["excludeByName"]
+        self.assertIn("deployment_environment_name", excluded)
+        self.assertIn("otel_scope_name", excluded)
+
+
 if __name__ == "__main__":
     unittest.main()

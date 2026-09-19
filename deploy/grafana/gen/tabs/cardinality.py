@@ -15,8 +15,9 @@ duplicates of panels already on this tab, so nothing was added:
     consolidation since it's the panel now doing double duty.
 """
 
-from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row, sentinel,
-                     stat_opts, thr, ts_custom, ts_opts, WIN_FAST)
+from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row,
+                     sentinel, stat_opts, TBL_NOISE, thr, treemap_opts, ts_custom, ts_opts,
+                     WIN_FAST)
 
 _NO_CAP = "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
 
@@ -160,6 +161,19 @@ def tab_cardinality(scope):
                    rename={"metric_name": "Metric"})],
                desc="Metric families where overflowing_ratio == 1 (capped). 147+ series tracked; "
                     "0 overflowing is the normal live state — that is correct."), 24, 6),
+        (panel("Active series by metric family", "marcusolsson-treemap-panel",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))",
+                       instant=True, fmt="table")],
+               unit="short", options=treemap_opts("metric_name", "Value"), version="2.1.1",
+               transformations=[organize(
+                   exclude=[name for name in TBL_NOISE if name != "Value"],
+                   index={"metric_name": 0, "Value": 1})],
+               novalue="No active-series inventory from exporter self-observability.",
+               desc="Top-$topn metric families by active-series count. This optional panel "
+                    "needs `marcusolsson-treemap-panel` 2.1.1; install it from "
+                    "https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/. The "
+                    "native table and time series remain available when the plugin is absent."),
+         24, 9),
     ]
 
     # New row: ingest vs export cost (Task 1.8 Step 3 + 1H.3)

@@ -36,8 +36,9 @@ only there), so they are declared fresh here at THIS tab's scope rather than ref
 exactly the same reasoning as has_nodemetrics above.
 """
 
-from builder import (bargauge_opts, hq, lot, organize, panel, prom_t, raw_sentinel, RI, row,
-                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
+from builder import (bargauge_opts, heatmap_opts, hq, lot, organize, panel, prom_t,
+                     raw_sentinel, RI, row, sentinel, state_timeline_opts, stat_opts,
+                     TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, UP_MAP
 
 _RDNS_EMPTY = ("No reverse-DNS cache series. Requires enrichment.reverse_dns.enabled and "
@@ -135,10 +136,19 @@ def tab_health_collection(scope):
                desc="Wall-clock duration of each collector's most recent scrape (gauge, "
                     "distinct from the p50/p95/p99 quantiles derived from the histogram "
                     "series to its left)."), 12, 7),
-        (panel("Scrape success by collector", "timeseries",
+        (panel("Scrape success by collector", "state-timeline",
                [prom_t("max by (tailscale_collector) (tailscale2otel_scrape_success_ratio%s)" % cf, legend="{{tailscale_collector}}")],
-               unit="short", min_=0, max_=1, custom=ts_custom(style="line", fill=10), options=ts_opts(placement="right"),
+               unit="short", min_=0, max_=1, mappings=UP_MAP,
+               options=state_timeline_opts(),
                desc="1 when a collector's last scrape succeeded, 0 when it failed."), 12, 7),
+        (panel("Scrape duration distribution", "heatmap",
+               [prom_t("sum by (le) (rate("
+                       "tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s]))"
+                       % (cf, RI), legend="{{le}}")],
+               unit="s", options=heatmap_opts(),
+               novalue="No scrape-duration histogram buckets in the selected range.",
+               desc="Distribution of scrape wall-clock duration across collectors. The "
+                    "p50/p95/p99 panel remains the per-collector trend view."), 12, 8),
         (panel("Last scrape age", "table",
                [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds" + cf), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
@@ -282,6 +292,14 @@ def tab_health_collection(scope):
                                                  "tailscale_api_state": "State"})],
                desc="Per-operation availability, the finer-grained sibling of the capability "
                     "table above — which individual API operation is in a non-ok state."), 24, 8),
+        (panel("Capability availability history", "state-timeline",
+               [prom_t("max by (tailscale_collector, tailscale_api_state) "
+                       "(tailscale2otel_capability_status_ratio == 1)",
+                       legend="{{tailscale_collector}} / {{tailscale_api_state}}")],
+               unit="short", min_=0, max_=1, options=state_timeline_opts(),
+               novalue=_CAP_EMPTY,
+               desc="Capability-state transitions by collector and state. The current-state "
+                    "table remains the exact snapshot view."), 24, 8),
     ]
 
     # --- #526: Prometheus pull endpoint (opt-in scrape target, default :2112). Six new
