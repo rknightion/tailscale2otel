@@ -1,11 +1,11 @@
 ---
 id: TSO-0150
 title: Diversify Grafana dashboard visualisations
-status: In Progress
+status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-19 09:52'
-updated_date: '2026-09-19 10:12'
+updated_date: '2026-09-19 19:57'
 labels: []
 dependencies: []
 references:
@@ -32,18 +32,18 @@ The generated dashboard family relies too heavily on conventional time series, s
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both full-flow and rollup flow modes provide useful relationship visualisations and continue to respect their existing conditional rendering gates
-- [ ] #2 Every dashboard tab is audited and any added non-default panel type has a documented analytical purpose rather than visual novelty
-- [ ] #3 Optional plugin panels fail harmlessly when unavailable and identify the exact plugin to install
-- [ ] #4 Generated Grafana v2 artifacts reproduce deterministically and all dashboard generator contract tests pass
-- [ ] #5 The edited dashboards are visually verified on the m7kni stack after GitSync deployment
+- [x] #1 Both full-flow and rollup flow modes provide useful relationship visualisations and continue to respect their existing conditional rendering gates
+- [x] #2 Every dashboard tab is audited and any added non-default panel type has a documented analytical purpose rather than visual novelty
+- [x] #3 Optional plugin panels fail harmlessly when unavailable and identify the exact plugin to install
+- [x] #4 Generated Grafana v2 artifacts reproduce deterministically and all dashboard generator contract tests pass
+- [x] #5 The edited dashboards are visually verified on the m7kni stack after GitSync deployment
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -154,4 +154,20 @@ Design approved in chat on 2026-09-19. Audit baseline: 502 generated panels; m7k
 Written spec approved by Rob on 2026-09-19. Native same-session execution selected by the instruction to continue autonomously; implementation begins after plan review per the writing-plans gate.
 
 Plan self-review completed: spec coverage, placeholder scan, interface names, gates, and Review Focus tests checked. Corrected the cardinality metric name through an append-only plan amendment.
+
+Validation and delivery evidence (2026-09-19):
+
+- Implementation landed in five commits, ending at code SHA `bc2fd2ab56706ea26c7c9746b2c56e6b502e5927`.
+- Local gates passed: 234 dashboard tests, 134 alert tests, 48 script tests, 716 PromQL expressions, all formatter/lint/vet/race/tidy/vulnerability legs, and the complete `just check` gate. `just --fmt --check` passed. A final `just gen` completed with `git diff --exit-code` clean.
+- Sharded CodeRabbit review completed 3/3 shards with zero findings.
+- GitHub Actions CI run `35439589558` and Grafana sync run `35439589542` both completed successfully against the exact code SHA.
+- GitSync mirror commit `c7a4e5465a979c11585b4b3183b65d3d330f3443` names the exact source SHA; the deployed Tailnet and health dashboard bytes matched the generated artifacts.
+- Native Chrome verification on m7kni confirmed the rollup Sankey renders with live paths; flow composition pies, fleet geomap, device state timeline, compliance pie, VIP Sankey, scrape and capability state timelines, scrape heatmap, and cardinality treemap all render without plugin-load errors. The raw-flow and Kubernetes Sankey rows were absent because their live capability gates were false; generator contract tests prove both panels, their top-N bounds, and their existing signal/PII gates.
+- Optional panels identify `netsage-sankey-panel` 1.1.4 and `marcusolsson-treemap-panel` 2.1.1, remain isolated in dedicated rows, and retain adjacent native evidence when a plugin is unavailable.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Diversified both generated Grafana dashboards with purpose-built Sankey, pie, geomap, state-timeline, heatmap, and treemap panels while preserving native evidence, top-N bounds, raw/rollup separation, signal-presence gates, and PII gates. Verified deterministic generation and the full local gate, completed a clean sharded CodeRabbit review, proved exact-SHA CI and GitSync delivery, and visually exercised both deployed dashboards in native Chrome on m7kni.
+<!-- SECTION:FINAL_SUMMARY:END -->
