@@ -10,7 +10,7 @@ Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network fl
 
 | Name | Email | Url |
 | ---- | ------ | --- |
-| rknightion |  | <https://github.com/rknightion> |
+| rknightion | <rob@m7kni.io> | <https://github.com/rknightion> |
 
 ## Source Code
 
