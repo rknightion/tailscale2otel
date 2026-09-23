@@ -43,7 +43,7 @@ jobs:
       # `if:` is evaluated. The reusable keeps wait-for-ci for push-triggered
       # callers, so dropping this here is a startup_failure with zero jobs.
       checks: read
-    uses: rknightion/.github/.github/workflows/auto-rc.yml@4d749e93fb2ba8ae3d213c21686bc7ac204bb928 # v1.23.0
+    uses: rknightion/.github/.github/workflows/auto-rc.yml@8d14adaa295c4a7670b1d4e744b070955b710598 # v1.24.0
     with:
       # Under workflow_run, github.sha is the DEFAULT BRANCH HEAD, not the
       # commit CI ran on — it races ahead on rapid pushes. head_sha is the
@@ -139,7 +139,7 @@ jobs:
       id-token: write     # cosign keyless signing
       packages: write     # goreleaser reads the registry for existing artifacts
       attestations: write # SLSA build provenance on the archives
-    uses: rknightion/.github/.github/workflows/binaries.yml@4d749e93fb2ba8ae3d213c21686bc7ac204bb928 # v1.23.0
+    uses: rknightion/.github/.github/workflows/binaries.yml@8d14adaa295c4a7670b1d4e744b070955b710598 # v1.24.0
     with:
       release-tag: ${{ needs.rc.outputs.tag }}
       install-cosign: true
