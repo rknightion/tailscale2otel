@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.1.0](https://github.com/rknightion/tailscale2otel/compare/v5.0.4...v5.1.0) (2026-09-26)
+
+
+### Features
+
+* **dashboards:** add fleet and security visual views ([48731fd](https://github.com/rknightion/tailscale2otel/commit/48731fd1238740cd71f778d38786a9beb8cdd5ba))
+* **dashboards:** add flow topology views ([4065d0e](https://github.com/rknightion/tailscale2otel/commit/4065d0ee26a75c09600aa9ff6687ba8506bdf319))
+* **dashboards:** add specialist panel primitives ([f2ee3d4](https://github.com/rknightion/tailscale2otel/commit/f2ee3d45d3e6f5a0421a08d2a0e418a999a3716a))
+* **dashboards:** add state and cost visualisations ([25971a7](https://github.com/rknightion/tailscale2otel/commit/25971a737b71df681c2b9e3675d7d87b83c40d6d))
+* **dashboards:** diversify dashboard visualisations ([bc2fd2a](https://github.com/rknightion/tailscale2otel/commit/bc2fd2ab56706ea26c7c9746b2c56e6b502e5927))
+* **dashboards:** track visualisation diversity audit ([6872e54](https://github.com/rknightion/tailscale2otel/commit/6872e54db5738a6b78551d7423860ecfcf14c120))
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies to v0.37.1 ([#652](https://github.com/rknightion/tailscale2otel/issues/652)) ([2617306](https://github.com/rknightion/tailscale2otel/commit/261730611936bd2bfb20dfa4db4c0e31ee7d77c9))
+* **deps:** update module github.com/knadh/koanf/v2 to v2.3.7 ([#654](https://github.com/rknightion/tailscale2otel/issues/654)) ([7ea4916](https://github.com/rknightion/tailscale2otel/commit/7ea491690d6776d1faef0393b2999907f3520673))
+
 ## [5.0.4](https://github.com/rknightion/tailscale2otel/compare/v5.0.3...v5.0.4) (2026-09-18)
 
 
