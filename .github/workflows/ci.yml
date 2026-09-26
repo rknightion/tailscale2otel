@@ -351,16 +351,30 @@ jobs:
       - name: Compose assets resolve in both default and file-backed modes
         run: just compose-check
 
+      # Resolves the same Go version other jobs get from go-version-file: go.mod,
+      # for use in the cache key below. cache: false — this job never runs `go`
+      # directly, so there is no module cache to save here.
+      - name: Determine Go version
+        id: goversion
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
       # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
       # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
       # cache-mount contents across runs, so restore/save it via actions/cache and
       # let buildkit-cache-dance inject it into (and extract it from) the build.
+      # Keyed on content (Go version + go.sum) rather than github.sha, so a run
+      # with an unchanged dependency set restores the previous run's cache exactly
+      # instead of always missing and re-saving the full cache.
       - name: Restore Go build cache for Docker
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: go-build-cache
-          key: ${{ runner.os }}-docker-go-build-${{ github.sha }}
+          key: ${{ runner.os }}-docker-go-build-${{ steps.goversion.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
           restore-keys: |
+            ${{ runner.os }}-docker-go-build-${{ steps.goversion.outputs.go-version }}-
             ${{ runner.os }}-docker-go-build-
       - name: Inject Go build cache into BuildKit
         uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
@@ -379,8 +393,10 @@ jobs:
           tags: tailscale2otel:ci
           load: true
           # Layer cache (base image, go.mod copy, go mod download) across runs.
+          # cache-to only on push to main — a PR run reads the trunk cache but
+          # never writes it, so an untrusted PR build can't poison it.
           cache-from: type=gha,scope=ci-smoke
-          cache-to: type=gha,mode=max,scope=ci-smoke
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=ci-smoke' || '' }}
           build-args: |
             VERSION=ci-${{ github.sha }}
 
