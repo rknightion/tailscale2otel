@@ -15,4 +15,4 @@ jobs:
       security-events: write
       contents: read
       actions: read
-    uses: rknightion/.github/.github/workflows/zizmor.yml@8d14adaa295c4a7670b1d4e744b070955b710598 # v1.24.0
+    uses: rknightion/.github/.github/workflows/zizmor.yml@32b5e93dcbb5419fd955f9eb913720cfbc1c13f8 # v1.25.0
