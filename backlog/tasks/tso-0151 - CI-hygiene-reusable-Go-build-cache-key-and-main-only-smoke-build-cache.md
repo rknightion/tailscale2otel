@@ -1,9 +1,10 @@
 ---
 id: TSO-0151
 title: 'CI hygiene: reusable Go build cache key and main-only smoke-build cache'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-09-26 15:50'
+updated_date: '2026-09-26 17:12'
 labels: []
 dependencies: []
 priority: high
@@ -22,8 +23,8 @@ Context: fleet CI hygiene, tracked centrally as GHC-0006 in rknightion/.github. 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 docker-go-build cache key is content-hashed, and a second CI run on the same go.sum restores it exactly
-- [ ] #2 ci-smoke build writes cache only on push to main
+- [x] #1 docker-go-build cache key is content-hashed, and a second CI run on the same go.sum restores it exactly
+- [x] #2 ci-smoke build writes cache only on push to main
 <!-- AC:END -->
 
 ## Definition of Done
@@ -32,3 +33,9 @@ Context: fleet CI hygiene, tracked centrally as GHC-0006 in rknightion/.github. 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Content-hashed the docker-go-build cache key (runner.os + resolved Go version + hashFiles(go.sum)) with restore-keys prefixes, and gated ci-smoke's cache-to on github.event_name == 'push' so PR builds only read the trunk cache. just check green locally. Pushed as commit b4ef8733.
+<!-- SECTION:FINAL_SUMMARY:END -->
