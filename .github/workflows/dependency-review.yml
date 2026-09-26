@@ -12,4 +12,4 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
-    uses: rknightion/.github/.github/workflows/dependency-review.yml@e17f6f1a010f50cf878b310cf90820f14c0bbbf6 # v1.25.2
+    uses: rknightion/.github/.github/workflows/dependency-review.yml@f32275a4a7641f34db5cb005d270db961b54a680 # v1.25.3
