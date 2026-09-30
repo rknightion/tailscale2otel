@@ -36,10 +36,10 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.22.0
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
-	go.opentelemetry.io/proto/otlp v1.11.0
+	go.opentelemetry.io/proto/otlp v1.11.1
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sys v0.48.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.37.1
@@ -60,24 +60,24 @@ require (
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/jsonpointer v1.0.0 // indirect
-	github.com/go-openapi/jsonreference v1.0.0 // indirect
-	github.com/go-openapi/swag v0.28.0 // indirect
-	github.com/go-openapi/swag/cmdutils v0.28.0 // indirect
-	github.com/go-openapi/swag/conv v0.28.0 // indirect
-	github.com/go-openapi/swag/fileutils v0.28.0 // indirect
-	github.com/go-openapi/swag/jsonutils v0.28.0 // indirect
-	github.com/go-openapi/swag/loading v0.28.0 // indirect
-	github.com/go-openapi/swag/mangling v0.28.0 // indirect
-	github.com/go-openapi/swag/netutils v0.28.0 // indirect
-	github.com/go-openapi/swag/pools v0.28.0 // indirect
-	github.com/go-openapi/swag/stringutils v0.28.0 // indirect
-	github.com/go-openapi/swag/typeutils v0.28.0 // indirect
-	github.com/go-openapi/swag/yamlutils v0.28.0 // indirect
+	github.com/go-openapi/jsonpointer v1.0.1 // indirect
+	github.com/go-openapi/jsonreference v1.0.1 // indirect
+	github.com/go-openapi/swag v0.29.2 // indirect
+	github.com/go-openapi/swag/cmdutils v0.29.2 // indirect
+	github.com/go-openapi/swag/conv v0.29.2 // indirect
+	github.com/go-openapi/swag/fileutils v0.29.2 // indirect
+	github.com/go-openapi/swag/jsonutils v0.29.2 // indirect
+	github.com/go-openapi/swag/loading v0.29.2 // indirect
+	github.com/go-openapi/swag/mangling v0.29.2 // indirect
+	github.com/go-openapi/swag/netutils v0.29.2 // indirect
+	github.com/go-openapi/swag/pools v0.29.2 // indirect
+	github.com/go-openapi/swag/stringutils v0.29.2 // indirect
+	github.com/go-openapi/swag/typeutils v0.29.2 // indirect
+	github.com/go-openapi/swag/yamlutils v0.29.2 // indirect
 	github.com/google/gnostic-models v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/knadh/koanf/maps v0.1.2 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
@@ -99,8 +99,8 @@ require (
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	k8s.io/klog/v2 v2.140.0 // indirect
