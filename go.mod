@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/grafana/otel-profiling-go v0.6.0
-	github.com/grafana/pyroscope-go v1.4.2
+	github.com/grafana/pyroscope-go v1.4.3
 	github.com/klauspost/compress v1.20.1
 	github.com/knadh/koanf/parsers/yaml v1.1.1
 	github.com/knadh/koanf/providers/env/v2 v2.0.1
