@@ -1,5 +1,28 @@
 # Changelog
 
+## [5.1.0](https://github.com/rknightion/tailscale2otel/compare/v5.0.4...v5.1.0) (2026-10-03)
+
+
+### Features
+
+* **dashboards:** add fleet and security visual views ([48731fd](https://github.com/rknightion/tailscale2otel/commit/48731fd1238740cd71f778d38786a9beb8cdd5ba))
+* **dashboards:** add flow topology views ([4065d0e](https://github.com/rknightion/tailscale2otel/commit/4065d0ee26a75c09600aa9ff6687ba8506bdf319))
+* **dashboards:** add specialist panel primitives ([f2ee3d4](https://github.com/rknightion/tailscale2otel/commit/f2ee3d45d3e6f5a0421a08d2a0e418a999a3716a))
+* **dashboards:** add state and cost visualisations ([25971a7](https://github.com/rknightion/tailscale2otel/commit/25971a737b71df681c2b9e3675d7d87b83c40d6d))
+* **dashboards:** diversify dashboard visualisations ([bc2fd2a](https://github.com/rknightion/tailscale2otel/commit/bc2fd2ab56706ea26c7c9746b2c56e6b502e5927))
+* **dashboards:** track visualisation diversity audit ([6872e54](https://github.com/rknightion/tailscale2otel/commit/6872e54db5738a6b78551d7423860ecfcf14c120))
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies to v0.37.1 ([#652](https://github.com/rknightion/tailscale2otel/issues/652)) ([2617306](https://github.com/rknightion/tailscale2otel/commit/261730611936bd2bfb20dfa4db4c0e31ee7d77c9))
+* **deps:** update module github.com/grafana/pyroscope-go to v1.4.3 ([#673](https://github.com/rknightion/tailscale2otel/issues/673)) ([1076aa4](https://github.com/rknightion/tailscale2otel/commit/1076aa4da056a8b00a03a28bf43819fcf81c3676))
+* **deps:** update module github.com/knadh/koanf/v2 to v2.3.7 ([#654](https://github.com/rknightion/tailscale2otel/issues/654)) ([7ea4916](https://github.com/rknightion/tailscale2otel/commit/7ea491690d6776d1faef0393b2999907f3520673))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.7.0 ([#669](https://github.com/rknightion/tailscale2otel/issues/669)) ([d7c4afe](https://github.com/rknightion/tailscale2otel/commit/d7c4afe83f19a38b308f39cde9ef9adb51070852))
+* **deps:** update module github.com/prometheus/common to v0.72.0 ([#664](https://github.com/rknightion/tailscale2otel/issues/664)) ([c885c40](https://github.com/rknightion/tailscale2otel/commit/c885c409c06e1bc37ec8da73b9dbc22deaceb836))
+* **deps:** update module go.opentelemetry.io/proto/otlp to v1.11.1 ([#671](https://github.com/rknightion/tailscale2otel/issues/671)) ([324e504](https://github.com/rknightion/tailscale2otel/commit/324e50420d8ffa910abce1286670d9047cbb4f06))
+* **deps:** update module modernc.org/sqlite to v1.60.1 ([#668](https://github.com/rknightion/tailscale2otel/issues/668)) ([cc1bab7](https://github.com/rknightion/tailscale2otel/commit/cc1bab7b381df4c692c0ce1c28b77c1d08712c2a))
+
 ## [5.0.4](https://github.com/rknightion/tailscale2otel/compare/v5.0.3...v5.0.4) (2026-09-18)
 
 
