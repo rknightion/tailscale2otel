@@ -31,5 +31,5 @@ board, not the issue, is where it is worked.
   no edit, view or update, no supersede mechanism, no validation - so durable reference goes in
   **docs** and tasks stay the unit. MCP is frozen upstream and costs 10-50k tokens of permanent
   context against 1-2k for the CLI.
-- Read the *Wave operating model* doc before designing a fan-out wave here; the canonical fan-out
-  protocol is rendered onto this board too. Docs load on demand via `backlog doc view <id> --plain`.
+- Read the *Wave operating model* doc before designing a fan-out wave here; the loop protocol is
+  ~/repos/agent-docs/sources/loop/contract.md and planner.md. Docs load on demand via `backlog doc view <id> --plain`.

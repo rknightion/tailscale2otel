@@ -8,15 +8,15 @@ updated_date: '2026-09-06 11:12'
 This document carries **only what is true of tailscale2otel**. The campaign model itself - run
 contract and run modes, the routing contract, authority and the thread pool, child lane briefs,
 external-contract freezing, the blocker contract, the goal-file template, the run-end protocol and
-the pre-flight checklist - is the *Agent fan-out protocol (canonical)* doc, and that doc wins on any
+the pre-flight checklist - is in `~/repos/agent-docs/sources/loop/contract.md` and `~/repos/agent-docs/sources/loop/planner.md`, which win on any
 specific. Nothing here restates it. If a section below could be pasted into another repo unchanged,
 it is in the wrong document.
 
 That protocol is harness-neutral and names no model: it describes lanes by **role**, and its
-Appendix A (Codex) or Appendix B (Claude Code) resolves a role into a concrete route. Waves on this
+`harness-codex.md` or `harness-claude.md` resolves a role into a concrete route. Waves on this
 repo have historically been written by Claude and executed by Codex, so **name the harness in the
 run contract and resolve every lane's route from that harness's profile** - a lane brief carrying a
-role name alone is not routed. Appendix B defers Claude routing to the always-loaded global rules
+role name alone is not routed. `harness-claude.md` defers Claude routing to the always-loaded global rules
 and carries only the structural differences; read it for those, not for model tiers.
 
 Every rule here exists because something failed. The failure is kept with the rule; a rule without
