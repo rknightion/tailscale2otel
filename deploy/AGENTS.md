@@ -29,7 +29,6 @@ block drifts from `config.Default()`.
   derived from secret content. Stakater Reloader via `podAnnotations` is the automated alternative.
 - Config hot reload is parked. Do not add a SIGHUP handler or a reload route to make a
   config-reloader sidecar work.
-- Secret keys are `TS2OTEL_` + the dotted config path with `__` between levels.
 - `values.schema.json` (JSON Schema **draft-07** - Helm validates nothing newer) and `README.md`
   are generated and drift-checked; `just gen-helm` rebuilds them. Chart-authored objects are
   `additionalProperties: false`, and root strictness lives in the `just gen-helm-schema` flags plus

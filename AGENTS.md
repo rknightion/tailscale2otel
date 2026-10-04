@@ -1,8 +1,7 @@
 # tailscale2otel
 
 Polls the Tailscale (or Headscale) control plane and exports OpenTelemetry-native metrics and logs
-over OTLP, tuned for Grafana Cloud. Single static Go binary. `README.md` is the user-facing pitch;
-`docs/` is the published site.
+over OTLP, tuned for Grafana Cloud. Single static Go binary.
 
 This repository is PUBLIC. Keep lab-specific names, addresses, identifiers, credentials and
 observability captures out of every tracked file, `backlog/` included - write the shape, not the
@@ -76,8 +75,6 @@ tool module can never affect the main module's build.
 - Env convention is `TS2OTEL_` + the dotted key path with `__` between levels, e.g.
   `tailscale.auth.oauth.client_secret` -> `TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_SECRET`. Env
   overrides the file. Keep secrets in env vars; they never need to appear in YAML.
-- Prefer OAuth (`auth.method: oauth`, auto-refreshing) over API keys (expire in 90 days or less,
-  user-bound; config WARNs about this).
 - `config.local.yaml`, `config.smoke.yaml`, `config.lowlog.yaml`, `.env*`, `.secrets/`,
   `checkpoints.json` and `.capture/` are gitignored.
 - `auto_configure` must NEVER target a real tailnet. `gcx metrics|logs query` needs BOTH `--from`
@@ -133,14 +130,6 @@ tool module can never affect the main module's build.
   direct context only when the task genuinely cannot be done correctly through the proxy, such as
   an explicit ServiceAccount impersonation or an RBAC proof.
 
-## Task tracking
-
-Open work is `backlog/`, driven only through the `backlog` CLI. GitHub Issues was retired here and
-its issues deleted, so `gh issue view <N>` 404s; historical `#NNN` citations resolve through
-`archive/github-issues-2026-08-14.json`. New work is `TSO-NNNN`. The GitHub tracker stays open
-deliberately for external contributors and Renovate's dependency dashboard; anything arriving there
-becomes a `TSO-NNNN` task.
-
 ## Deeper references
 
 - `reference/generated-artifacts.md` - read before regenerating an artifact, changing a `gen-*`
@@ -154,7 +143,6 @@ becomes a `TSO-NNNN` task.
   Dockerfiles, Compose or the release packaging.
 - `internal/collector/` - read before adding or changing a collector.
 - `internal/telemetry/` - read before changing the OTEL facade, semconv or the metrics catalog.
-- `docs/coderabbit-sharded-review.md` - read before running a repo-wide CodeRabbit review.
 - `spec/README.md` - read before refreshing the vendored OpenAPI spec.
 
 <!-- BACKLOG.MD GUIDELINES START -->
