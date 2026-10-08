@@ -3983,7 +3983,7 @@ found,4411,tcp
 vision-mon,4413,tcp
 updog,4414,tcp
 brcd-vr-req,4415,tcp
-pjj-player,4416,tcp
+newmood-player,4416,tcp
 workflowdir,4417,tcp
 cbp,4419,tcp
 nvme,4420,tcp
@@ -4453,7 +4453,7 @@ checkoutdb,5505,tcp
 amc,5506,tcp
 psl-management,5507,tcp
 matter,5540,tcp
-qftest-licserve,5543,tcp
+qftest-lic-mcp,5543,tcp
 cbus,5550,tcp
 sgi-eventmond,5553,tcp
 sgi-esphttp,5554,tcp
@@ -9812,7 +9812,7 @@ ds-mail,4405,udp
 ds-slp,4406,udp
 smallchat,4412,udp
 vision-mon-disc,4413,udp
-pjj-player-disc,4416,udp
+newmood-player,4416,udp
 axysbridge,4418,udp
 nvme,4420,udp
 netrockey6,4425,udp
