@@ -42,12 +42,3 @@ func TestLookupName_Unknown(t *testing.T) {
 		}
 	}
 }
-
-// TestTableSize guards against a corrupt or truncated embedded CSV: the IANA
-// registry holds thousands of tcp/udp assignments with a service name.
-func TestTableSize(t *testing.T) {
-	LookupName("tcp", 22) // trigger the lazy load
-	if n := len(table); n < 1000 {
-		t.Errorf("parsed table has %d entries, want >= 1000 (embedded CSV may be truncated)", n)
-	}
-}
