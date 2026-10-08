@@ -2,11 +2,8 @@ package telemetry
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -207,33 +204,13 @@ func newSpanProcessor(exp sdktrace.SpanExporter, opts Options) sdktrace.SpanProc
 	return p
 }
 
-const metricExportBatchSizeEnv = "OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE"
-
-// newPeriodicMetricReader configures otel-go's pinned metric export batching
-// feature for reader construction, then restores the process environment. The
-// SDK reads the feature once in NewPeriodicReader, so the setting does not need
-// to leak into unrelated readers constructed later in the process.
+// newPeriodicMetricReader builds the periodic reader, bounding each export to
+// batchSize datapoints when batchSize > 0.
 func newPeriodicMetricReader(exp sdkmetric.Exporter, interval time.Duration, batchSize int) (*sdkmetric.PeriodicReader, error) {
-	if batchSize <= 0 {
-		return sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(interval)), nil
-	}
-
-	previous, existed := os.LookupEnv(metricExportBatchSizeEnv)
-	if err := os.Setenv(metricExportBatchSizeEnv, strconv.Itoa(batchSize)); err != nil {
-		return nil, fmt.Errorf("configure metric export batch size: %w", err)
-	}
-	reader := sdkmetric.NewPeriodicReader(exp, sdkmetric.WithInterval(interval))
-
-	var err error
-	if existed {
-		err = os.Setenv(metricExportBatchSizeEnv, previous)
-	} else {
-		err = os.Unsetenv(metricExportBatchSizeEnv)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("restore metric export batch size environment: %w", err)
-	}
-	return reader, nil
+	return sdkmetric.NewPeriodicReader(exp,
+		sdkmetric.WithInterval(interval),
+		sdkmetric.WithMaxExportBatchSize(batchSize),
+	), nil
 }
 
 // constAttrSpanProcessor stamps provider-scoped const attrs (tailnet/provider) on

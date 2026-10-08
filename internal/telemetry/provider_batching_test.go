@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -17,8 +16,6 @@ import (
 )
 
 func TestProvider_MetricExportBatchSizeSplitsCollection(t *testing.T) {
-	t.Setenv("OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE", "17")
-
 	var (
 		mu         sync.Mutex
 		batchSizes []int
@@ -54,9 +51,6 @@ func TestProvider_MetricExportBatchSizeSplitsCollection(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("NewProvider: %v", err)
-	}
-	if got := os.Getenv("OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE"); got != "17" {
-		t.Fatalf("OTEL_GO_X_METRIC_EXPORT_BATCH_SIZE = %q after NewProvider, want restored value 17", got)
 	}
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
