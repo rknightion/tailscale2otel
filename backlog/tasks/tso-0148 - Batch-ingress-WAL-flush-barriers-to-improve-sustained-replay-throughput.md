@@ -3,10 +3,10 @@ id: TSO-0148
 title: >-
   Decouple ingress WAL completion from metric collection to preserve configured
   DPM
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-09-10 21:02'
-updated_date: '2026-09-10 23:10'
+updated_date: '2026-10-08 21:44'
 labels: []
 dependencies: []
 priority: high
@@ -37,6 +37,12 @@ Ingress WAL completion currently calls the shared telemetry Provider.ForceFlush 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop17: design the scheduled-collection acknowledgement boundary, obtain adversarial design review, implement and prove criteria 1-6, then extend the identical-entry harness for criterion 7. Root owns reviews and publication.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

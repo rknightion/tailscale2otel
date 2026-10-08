@@ -1,10 +1,10 @@
 ---
 id: TSO-0133
 title: 'Review the coordination alert firing history and decide paging, due 2026-09-11'
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-09-04 07:31'
-updated_date: '2026-09-06 15:02'
+updated_date: '2026-10-08 21:49'
 labels: []
 dependencies: []
 priority: low
@@ -50,4 +50,6 @@ Owner guidance 2026-09-06: no fixed review date; leave the soak running and revi
 Finding from the first simulated takeover (2026-09-06 14:48Z): the summed leader gauge read 2 from 14:49:30Z to 14:53:00Z because the killed process last `coordination_state=leader` sample lingers for the five-minute Prometheus lookback while the restarted pod reports a fresh `standby` series under the same identity. CoordinationSplitBrain (sum > 1 for 5m) sat one evaluation short of a false advisory alert; a rolling restart does not double count (same identity, same state series) so only a real takeover triggers it. CoordinationNoStandby is protected by its 10m for-window; CoordinationNoLeader cannot fire on a total outage because noDataState is Ok, only on live processes reporting no leader. Candidate fix for the review: wrap the leader gauge in last_over_time(...[2m]) in build_rules.py so a dead process series drops out after two export intervals instead of five minutes.
 
 Correction 2026-09-06: promtool shows plain sum cannot meet the 5m for-window at any evaluation alignment because staleness is also exactly 5m, so no false CoordinationSplitBrain alert is reproducible offline; the live window today was about four minutes of Pending. Owner chose to fix anyway: the three leader-gauge rules now read last_over_time(...[3m]), which drops a dead process two export intervals before the for-window and restores a real margin against evaluator jitter. The fixture "split brain ignores a dead leader stale sample after a takeover" documents the shape but passes on both expressions.
+
+loop17: read-only evidence gathered; no rule or label changes. Observed lower bounds include one split-brain and two no-standby firings; older history is incomplete and incident intent/classification unresolved. Recommend keeping all advisory and explicitly captured prospective evidence before paging promotion. Park needs=owner for adjudication of evidence limits and per-rule paging. Attempts: 0 implementation attempts. Criterion 1 not certified complete.
 <!-- SECTION:NOTES:END -->
