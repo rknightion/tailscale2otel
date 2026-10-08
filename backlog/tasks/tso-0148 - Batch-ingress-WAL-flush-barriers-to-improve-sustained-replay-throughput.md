@@ -6,7 +6,7 @@ title: >-
 status: In Progress
 assignee: []
 created_date: '2026-09-10 21:02'
-updated_date: '2026-10-08 21:44'
+updated_date: '2026-10-08 22:36'
 labels: []
 dependencies: []
 priority: high
@@ -42,6 +42,8 @@ Ingress WAL completion currently calls the shared telemetry Provider.ForceFlush 
 
 <!-- SECTION:PLAN:BEGIN -->
 loop17: design the scheduled-collection acknowledgement boundary, obtain adversarial design review, implement and prove criteria 1-6, then extend the identical-entry harness for criterion 7. Root owns reviews and publication.
+
+loop17 accepted reviewed design: bounded original-generation preparation window, provider-scoped receipt programs, original-slot cumulative collection and immutable split delivery; required metric/log receipts pin until confirmed, best-effort saturation loss is explicit. Build owns existing accounting fixture normal-slot compatibility before its full gate; sustained harness follows land. Design review cleared all blockers; runtime proof remains required.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
