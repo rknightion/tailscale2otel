@@ -817,7 +817,7 @@
       "note": "predates the changelog review lane; not individually reviewed"
     },
     "changelog:2025-08-19": {
-      "title": "DERP server IP address changes for S\u00e3o Paulo",
+      "title": "DERP server IP address changes for São Paulo",
       "verdict": "pre-baseline",
       "note": "predates the changelog review lane; not individually reviewed"
     },
@@ -1449,7 +1449,7 @@
     "changelog:2026-08-03-client": {
       "title": "Tailscale v1.102.1",
       "verdict": "parked",
-      "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred until a real sample exists: the series are labeled by Tailscale Service name and the label KEY is not in the HELP text. Probed all 39 lab nodes 2026-08-10 \u2014 8 expose :5252/metrics, 7 declare the family with zero samples, and the nodes that actually host Tailscale Services (the k8s operator ingress proxies) run 1.98.9, which predates the metric and exposes no metrics endpoint. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
+      "note": "new tailscaled_serve_{inbound,outbound}_bytes_total client metrics; already forwarded verbatim by the node_metrics passthrough, so no signal is lost. Curating them into a first-class tailscale.node.serve.io (as the sibling tailscaled_{inbound,outbound}_bytes_total families are) is deferred until a real sample exists: the series are labeled by Tailscale Service name and the label KEY is not in the HELP text. Probed all 39 lab nodes 2026-08-10 — 8 expose :5252/metrics, 7 declare the family with zero samples, and the nodes that actually host Tailscale Services (the k8s operator ingress proxies) run 1.98.9, which predates the metric and exposes no metrics endpoint. Nothing else in the entry is an observability surface (CLI, TLS renewal, per-platform fixes)."
     },
     "changelog:2026-08-19-client": {
       "title": "Tailscale v1.102.3",
@@ -1460,6 +1460,16 @@
       "title": "Tailscale PAM",
       "verdict": "adopted",
       "note": "TSO-0036 (PAM telemetry collector, Border0 API) shipped 2026-09-04 in 9994c0a: connector/service/policy/identity inventory, organization and subscription shape, session counters and durations. TSO-0134 classifies the PAM_* audit events. Session recordings are deliberately not counted because they populate asynchronously after first sight; the PII-carrying per-session log record was cut and is an owner decision."
+    },
+    "changelog:2026-09-23-improved-posture-status": {
+      "title": "View device posture status",
+      "verdict": "not-relevant",
+      "note": "Admin-console UI change only. The vendored spec exposes no per-device posture evaluation or assertion-result endpoint (only /posture/integrations), so there is nothing new to poll; per-device posture attribute values are already exported by the posture collector (TSO-0039)."
+    },
+    "changelog:2026-09-10-client": {
+      "title": "Tailscale v1.102.4",
+      "verdict": "not-relevant",
+      "note": "Client bugfix release. The exit-node items fix client UI visibility with custom coordination servers; no new control-plane field, client metric or API surface."
     }
   }
 }
