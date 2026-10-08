@@ -33,8 +33,9 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - Never hand-edit anything under `deploy/grafana` or `deploy/alerts`, or text between
   `<!-- BEGIN GENERATED -->` markers; run the matching `just gen-<family>`. Regenerating
   `internal/catalog/signal_dispositions.json` cannot turn a red coverage gate green.
-- OTEL core and the OTEL log SDK are version-locked and move together; never run a casual
-  `go get` or `go mod tidy`.
+- OpenTelemetry modules (core, metric and trace SDKs, `sdk/log` at v1.x, and the 0.x log
+  exporters) move together in one Renovate PR; never bump one alone or run a casual `go get` or
+  `go mod tidy`.
 - Queries use the normalized Prometheus name: dots to underscores, `_total` on monotonic counters,
   unit suffixes, `_ratio` on unit-`1` gauges.
 - Pick exactly one ingestion path per log type (`poll` or `stream`); both double-counts.
