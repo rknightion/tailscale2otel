@@ -1,6 +1,9 @@
 # Custom self-hosted runner labels used by this repo's workflows, declared so
 # actionlint does not flag them as unknown. `tailscale-api` is the dedicated
 # runner (read-only Tailscale OAuth creds in its env) targeted by live-contract.yml.
+# `ubuntu-26.04` is GitHub-hosted but newer than actionlint 1.7.12's built-in list;
+# drop it once a pinned actionlint release knows it.
 self-hosted-runner:
   labels:
     - tailscale-api
+    - ubuntu-26.04
