@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -143,6 +144,10 @@ type deliveryEpisode struct {
 	firstAt                time.Time
 	lastSummaryAt          time.Time
 	suppressedSinceSummary int64
+	// failures is every failed export in this episode, suppressed or not. It
+	// feeds the failed_exports count on the summary and recovery lines, so those
+	// lines carry exact counts instead of any error text.
+	failures int64
 }
 
 // diagnosticsSummaryInterval is the default cadence for sustained outage
@@ -236,16 +241,25 @@ func (t *deliveryTracker) recordFailureLocked(signal, class string, err error) {
 	now := t.now()
 	ep, ok := t.episodes[key]
 	if !ok {
-		t.episodes[key] = &deliveryEpisode{firstAt: now, lastSummaryAt: now}
-		t.logDiagnostic(slog.LevelWarn, "OTLP export failing", signal, class, "error", err)
+		t.episodes[key] = &deliveryEpisode{firstAt: now, lastSummaryAt: now, failures: 1}
+		// Never log err itself: an OTLP export error can embed the backend's
+		// response body (TSO-0153). The closed class plus an allowlisted constant
+		// reason is the whole diagnostic.
+		var args []any
+		if reason := exportErrorReason(err); reason != "" {
+			args = append(args, "reason", reason)
+		}
+		t.logDiagnostic(slog.LevelWarn, "OTLP export failing", signal, class, args...)
 		return
 	}
+	ep.failures++
 	ep.suppressedSinceSummary++
 	t.emitSuppressed(signal, class)
 	if now.Sub(ep.lastSummaryAt) >= t.summaryInterval {
 		t.logDiagnostic(slog.LevelWarn, "OTLP export still failing",
 			signal, class,
 			"suppressed_since_last_summary", ep.suppressedSinceSummary,
+			"failed_exports", ep.failures,
 			"failing_since", ep.firstAt.Format(time.RFC3339))
 		ep.lastSummaryAt = now
 		ep.suppressedSinceSummary = 0
@@ -261,15 +275,25 @@ func (t *deliveryTracker) recordRecoveryLocked(signal string) {
 	if len(t.episodes) == 0 {
 		return
 	}
-	var recovered bool
-	for key := range t.episodes {
+	var (
+		recovered bool
+		failed    int64
+		since     time.Time
+	)
+	for key, ep := range t.episodes {
 		if key.signal == signal {
+			failed += ep.failures
+			if since.IsZero() || ep.firstAt.Before(since) {
+				since = ep.firstAt
+			}
 			delete(t.episodes, key)
 			recovered = true
 		}
 	}
 	if recovered {
-		t.logDiagnostic(slog.LevelInfo, "OTLP export recovered", signal, "")
+		t.logDiagnostic(slog.LevelInfo, "OTLP export recovered", signal, "",
+			"failed_exports", failed,
+			"failing_since", since.Format(time.RFC3339))
 	}
 }
 
@@ -321,10 +345,21 @@ func (t *deliveryTracker) states() []DeliveryState {
 	return out
 }
 
-// classifyExportError maps an exporter error onto the closed class set. It
-// reads the error's TEXT because the OTLP exporters return gRPC status errors
+// classifyExportError maps an exporter error onto the closed class set.
+//
+// It reads the error's TEXT because the OTLP exporters return gRPC status errors
 // and HTTP status errors through the same interface, and matching on both
-// shapes here avoids a direct grpc dependency for a display string.
+// shapes here avoids a direct grpc dependency for a display string. Backend
+// influence on that text is limited in two ways:
+//
+//   - A recognized HTTP status error ("failed to send <signal> to <url>: <code>
+//     <reason phrase> (body: ...)") is classified on the leading three-digit
+//     code alone. The reason phrase after it, and the body after "body:", are
+//     server-chosen and never consulted. A recognized gRPC status error is
+//     classified on its "code = X" token alone; its description is never read.
+//   - Only text that matches neither shape falls through to keyword matching,
+//     and that matching never treats a bare number as a status code, so an
+//     endpoint port such as :503 cannot choose the class.
 //
 // It returns only a constant from the set — never any part of err — so a
 // response body echoed by the backend cannot reach the page.
@@ -345,34 +380,160 @@ func classifyExportError(err error) string {
 		// health category; this does NOT acknowledge a required receipt.
 		return errClassPartialSuccess
 	}
-	msg := strings.ToLower(err.Error())
-	// Partial success next, and ahead of every substring check below: it is the
-	// SDK's own fixed prefix (never backend-controlled — see errClassPartialSuccess),
-	// but a rejected item's backend message could otherwise coincidentally match one
-	// of those substrings (e.g. contain "timeout" or "429").
-	if strings.Contains(msg, partialSuccessPrefix) {
+	msg := classifiableText(err)
+	// A structured status error that the SDK printed BEFORE any partial-success
+	// marker decides the class outright. The position check matters in both
+	// directions: a server reason phrase after a real status code ("500 OTLP
+	// partial success: x") must not turn a failure into a partial success, and a
+	// backend's partial-success message that quotes a status shape must not turn
+	// a partial success into a failure.
+	partialAt := strings.Index(msg, partialSuccessPrefix)
+	if shape, ok := parseExportStatus(msg); ok && (partialAt < 0 || shape.at < partialAt) {
+		return shape.class
+	}
+	// Partial success next, and ahead of every keyword check below: it is the
+	// SDK's own fixed prefix, but a rejected item's backend message could
+	// otherwise coincidentally match one of those keywords.
+	if partialAt >= 0 {
 		return errClassPartialSuccess
 	}
 	switch {
 	case strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"):
 		return errClassTimeout
-	case strings.Contains(msg, "context canceled"), strings.Contains(msg, "code = canceled"):
+	case strings.Contains(msg, "context canceled"):
 		return errClassCanceled
-	case strings.Contains(msg, "unauthenticated"), strings.Contains(msg, "permissiondenied"),
-		strings.Contains(msg, "permission denied"), strings.Contains(msg, "401"),
-		strings.Contains(msg, "403"):
+	case strings.Contains(msg, "unauthenticated"), strings.Contains(msg, "permission denied"):
 		return errClassUnauthenticated
-	case strings.Contains(msg, "resourceexhausted"), strings.Contains(msg, "429"):
-		return errClassRateLimited
 	case strings.Contains(msg, "unavailable"), strings.Contains(msg, "connection refused"),
-		strings.Contains(msg, "no such host"), strings.Contains(msg, "503"):
+		strings.Contains(msg, "no such host"):
 		return errClassUnavailable
-	case strings.Contains(msg, "invalidargument"), strings.Contains(msg, "400"),
-		strings.Contains(msg, "outofrange"):
+	default:
+		return errClassOther
+	}
+}
+
+// classifiableText is the lower-cased error text with everything from the
+// SDK's "body:" marker onward removed. The OTLP HTTP exporters append the
+// backend's response body after that marker ("... 401 Unauthorized (body: ...)"
+// and "retry-able request failure: body: ..."). This is only a first cut: the
+// reason phrase before the marker (resp.Status) is also server-chosen, which is
+// why recognized status errors are classified by parseExportStatus on their
+// numeric code or gRPC code token and never by keywords in this text.
+func classifiableText(err error) string {
+	msg := strings.ToLower(err.Error())
+	if i := strings.Index(msg, "body:"); i >= 0 {
+		msg = msg[:i]
+	}
+	return msg
+}
+
+var (
+	// httpStatusRe matches the SDK's HTTP status error: otlp{metric,log,trace}http
+	// print "failed to send [<signal> ]to <url>: <resp.Status> (body: ...)", and
+	// the metric exporter prefixes "failed to upload <signal>: ". The URL is the
+	// locally configured endpoint, so it cannot contain a space. The second
+	// alternative is the bare "failed to upload <signal>: <code> ..." shape.
+	httpStatusRe = regexp.MustCompile(`(?:failed to send(?: \w+)? to \S+|failed to upload(?: \w+)?): (\d{3})(?:\s|$)`)
+	// grpcStatusRe matches a gRPC status error's code token.
+	grpcStatusRe = regexp.MustCompile(`rpc error: code = (\w+)`)
+)
+
+// exportStatusShape is a recognized status error: its class, where in the text
+// it begins, and whether a transport reason may be read from the text.
+type exportStatusShape struct {
+	class string
+	at    int
+	// transport is true only for gRPC Unavailable, the code grpc-go uses for
+	// local dial and connection failures; every other status shape has a
+	// server-chosen reason or description.
+	transport bool
+}
+
+// parseExportStatus recognizes an HTTP or gRPC status error and classifies it
+// on its numeric code or code token only. The leftmost match wins: the SDK's own
+// text always precedes any server text, and wrappers (retry, joined causes) only
+// prepend.
+func parseExportStatus(msg string) (exportStatusShape, bool) {
+	var best exportStatusShape
+	found := false
+	if m := httpStatusRe.FindStringSubmatchIndex(msg); m != nil {
+		best = exportStatusShape{class: httpStatusClass(msg[m[2]:m[3]]), at: m[0]}
+		found = true
+	}
+	if m := grpcStatusRe.FindStringSubmatchIndex(msg); m != nil && (!found || m[0] < best.at) {
+		code := msg[m[2]:m[3]]
+		best = exportStatusShape{class: grpcCodeClass(code), at: m[0], transport: code == "unavailable"}
+		found = true
+	}
+	return best, found
+}
+
+func httpStatusClass(code string) string {
+	switch code {
+	case "401", "403":
+		return errClassUnauthenticated
+	case "429":
+		return errClassRateLimited
+	case "503":
+		return errClassUnavailable
+	case "400":
 		return errClassInvalid
 	default:
 		return errClassOther
 	}
+}
+
+// grpcCodeClass takes the lower-cased code token as grpc-go prints it.
+func grpcCodeClass(code string) string {
+	switch code {
+	case "deadlineexceeded":
+		return errClassTimeout
+	case "canceled":
+		return errClassCanceled
+	case "unauthenticated", "permissiondenied":
+		return errClassUnauthenticated
+	case "resourceexhausted":
+		return errClassRateLimited
+	case "unavailable":
+		return errClassUnavailable
+	case "invalidargument", "outofrange":
+		return errClassInvalid
+	default:
+		return errClassOther
+	}
+}
+
+// exportErrorReasons is the closed allowlist of transport-level phrases that
+// sharpen a class. The log carries the matching CONSTANT, never a slice of the
+// error, so no backend text can ride along.
+var exportErrorReasons = []string{
+	"connection refused",
+	"connection reset",
+	"no such host",
+	"i/o timeout",
+	"deadline exceeded",
+	"certificate",
+}
+
+// exportErrorReason returns the first allowlisted phrase found in text that
+// came from the local transport, or "" if none applies. A recognized HTTP
+// status error never has one (its reason phrase is server-chosen), and a gRPC
+// status error has one only for Unavailable. Text matching neither shape (a
+// dial or TLS failure from net/http, say) is searched after the "body:" cut.
+func exportErrorReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := classifiableText(err)
+	if shape, ok := parseExportStatus(msg); ok && !shape.transport {
+		return ""
+	}
+	for _, r := range exportErrorReasons {
+		if strings.Contains(msg, r) {
+			return r
+		}
+	}
+	return ""
 }
 
 // deliveryLimit is the failure streak at which a signal is treated as a
