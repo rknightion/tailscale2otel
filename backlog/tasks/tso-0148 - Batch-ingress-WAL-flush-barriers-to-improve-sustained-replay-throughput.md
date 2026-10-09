@@ -3,11 +3,11 @@ id: TSO-0148
 title: >-
   Decouple ingress WAL completion from metric collection to preserve configured
   DPM
-status: Parked
+status: Done
 assignee:
-  - '@loop18'
+  - '@loop19'
 created_date: '2026-09-10 21:02'
-updated_date: '2026-10-09 13:36'
+updated_date: '2026-10-09 19:31'
 labels: []
 dependencies: []
 priority: high
@@ -23,20 +23,20 @@ Ingress WAL completion currently calls the shared telemetry Provider.ForceFlush 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Metric collection follows the configured schedule: 60s produces the intended 1 DPM and 15s the intended 4 DPM per continuously present series. Streaming arrivals, webhook arrivals, WAL replay and log flushes neither trigger extra collections nor reset that schedule, including for unrelated metrics sharing the provider.
-- [ ] #2 Cumulative temporality remains the default and the validated delivery mode. The correction preserves existing metric families and dimensions; switching to delta, reducing detail or enlarging WAL capacity does not satisfy the cadence requirement.
-- [ ] #3 WAL entries are committed only after their effects are covered by successfully delivered scheduled metric collections and their required log delivery. Log delivery can progress independently without forcing metrics. Export failure, mixed routes, cancellation and crash replay retain the documented at-least-once durability contract; removing ForceFlush must not permit premature commits.
-- [ ] #4 Export retries do not generate newly timestamped collections or out-of-schedule catch-up samples. Collection coverage and acknowledgement semantics are explicit when a scheduled collection is split across requests or when metric and log delivery complete at different times; buffers and backpressure remain bounded.
-- [ ] #5 Startup, shutdown, restart and leadership handover have an explicit documented cadence and durability contract with regression coverage. Lifecycle flushing must not silently bypass the configured cadence or discard accepted work; any proposed cadence exception requires an explicit operator decision before implementation.
-- [ ] #6 Deterministic regression tests inspect actual exported per-series timestamps and values, including a stable unrelated collector metric, at both 60s and 15s intervals under irregular ingress, bursts, idle periods, backlog replay and exporter failures. Count samples rather than HTTP requests; multiple requests for one scheduled collection are allowed. Establish failing-before and passing-after cadence evidence.
-- [ ] #7 Extend the local harness to compare identical admitted WAL entries under sustained arrivals and slow or failing exporters, checking bounded backlog, sample cadence, exported totals and commit safety as well as throughput. Document defaults, delivery-lag tradeoffs and evidence limits; finite coalesced-body results alone do not prove the fix or production capacity.
+- [x] #1 Metric collection follows the configured schedule: 60s produces the intended 1 DPM and 15s the intended 4 DPM per continuously present series. Streaming arrivals, webhook arrivals, WAL replay and log flushes neither trigger extra collections nor reset that schedule, including for unrelated metrics sharing the provider.
+- [x] #2 Cumulative temporality remains the default and the validated delivery mode. The correction preserves existing metric families and dimensions; switching to delta, reducing detail or enlarging WAL capacity does not satisfy the cadence requirement.
+- [x] #3 WAL entries are committed only after their effects are covered by successfully delivered scheduled metric collections and their required log delivery. Log delivery can progress independently without forcing metrics. Export failure, mixed routes, cancellation and crash replay retain the documented at-least-once durability contract; removing ForceFlush must not permit premature commits.
+- [x] #4 Export retries do not generate newly timestamped collections or out-of-schedule catch-up samples. Collection coverage and acknowledgement semantics are explicit when a scheduled collection is split across requests or when metric and log delivery complete at different times; buffers and backpressure remain bounded.
+- [x] #5 Startup, shutdown, restart and leadership handover have an explicit documented cadence and durability contract with regression coverage. Lifecycle flushing must not silently bypass the configured cadence or discard accepted work; any proposed cadence exception requires an explicit operator decision before implementation.
+- [x] #6 Deterministic regression tests inspect actual exported per-series timestamps and values, including a stable unrelated collector metric, at both 60s and 15s intervals under irregular ingress, bursts, idle periods, backlog replay and exporter failures. Count samples rather than HTTP requests; multiple requests for one scheduled collection are allowed. Establish failing-before and passing-after cadence evidence.
+- [x] #7 Extend the local harness to compare identical admitted WAL entries under sustained arrivals and slow or failing exporters, checking bounded backlog, sample cadence, exported totals and commit safety as well as throughput. Document defaults, delivery-lag tradeoffs and evidence limits; finite coalesced-body results alone do not prove the fix or production capacity.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -59,4 +59,14 @@ Local harness delivered in TSO-0149. Two workload sizes each ran all six cases t
 loop18 resumes the preserved partial build without resetting prior attempts; criteria 1-6 precede the identical-entry harness for criterion 7.
 
 loop18: resumed the interrupted loop17 implementation cycle without resetting prior attempts; no completed mandatory-gate change-and-verify cycle in this run. Two same-protocol infrastructure retries exhausted with loop-pi recovery required; automatic continuation declined. Exact unfinished candidate retained; full app fixture compilation remains red, lifecycle/fixtures and all six cadence suffixes unfinished. The build is unaccepted and unlanded; criterion 7 harness is held until build land. Resume after the harness recovery defect is resolved, preserve accepted design and existing attempt history.
+
+loop19: build (criteria 1-6) landed 54915a36 after 1 implementation attempt (complex-worker) + 2 review-repair rounds (security review: readiness flap, annotation tee, export-failure accounting; CodeRabbit: construction error, window quota order, direct-path observers). Composed just check green, ci-success green. Criterion 7 harness in progress.
+
+loop19: criterion 7 harness landed ae021320 (1 attempt + 2 review-repair rounds: outage case now asserts rejections; default-suite caps bind; CI-margin widening). Composed just check && just load-wal green; CI green on containing main f759c418. Build attempts: 1 complex-worker attempt + 2 review-repair rounds. Follow-up TSO-0159 (nondeterministic cadence test seen once on CI) in progress.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+WAL completion no longer forces metric collections: ingress work stages into a bounded window and commits only after the scheduled collection and required logs are acknowledged (54915a36). Criterion 7: sustained-load harness compares identical admitted entries (ae021320). Only out-of-schedule flush: shutdown and loss of leadership (D1).
+<!-- SECTION:FINAL_SUMMARY:END -->
