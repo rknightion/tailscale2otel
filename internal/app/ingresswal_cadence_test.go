@@ -147,6 +147,14 @@ func newCadenceFixture(t *testing.T, o cadenceOptions) *cadenceRuntimeFixture {
 	}
 	if !o.noWorker {
 		f.startWorker()
+		// Return only once the worker's first pass has finished and it is parked
+		// on its wake signal, as production opens receivers only after the
+		// startup drain. Otherwise that first pass can be scheduled between a
+		// caller's first append and the appender's post-write re-check, apply the
+		// just-written original there, and turn the admission into a 503 when
+		// that application fails the coordinator (TSO-0159: the poisoned-original
+		// stage). Waiting advances no fake time.
+		synctest.Wait()
 	}
 	t.Cleanup(func() {
 		if err := f.close(); err != nil {
@@ -212,6 +220,10 @@ func cadenceWebhookBody(i int) string {
 }
 
 func (f *cadenceRuntimeFixture) post(isWebhook bool, body string) int {
+	return f.postResponse(isWebhook, body).Code
+}
+
+func (f *cadenceRuntimeFixture) postResponse(isWebhook bool, body string) *httptest.ResponseRecorder {
 	handler, path := f.app.streamSrv.Handler(), f.app.cfg.Streaming.Path
 	if isWebhook {
 		handler, path = f.app.webhookSrv.Handler(), f.app.cfg.Webhook.Path
@@ -227,13 +239,14 @@ func (f *cadenceRuntimeFixture) post(isWebhook bool, body string) int {
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, req)
-	return response.Code
+	return response
 }
 
 func (f *cadenceRuntimeFixture) admitBody(t *testing.T, isWebhook bool, body string) {
 	t.Helper()
-	if code := f.post(isWebhook, body); code != http.StatusOK {
-		t.Fatalf("original admission: HTTP %d", code)
+	if response := f.postResponse(isWebhook, body); response.Code != http.StatusOK {
+		t.Fatalf("original admission: HTTP %d %q; coordinator %+v; delivery admission %v",
+			response.Code, strings.TrimSpace(response.Body.String()), f.app.ingressWAL.Health(), f.provider.IngressFailure())
 	}
 }
 
@@ -1186,6 +1199,7 @@ func newCadenceMultiTailnet(t *testing.T, interval time.Duration, temporality st
 	m.acme = &cadenceRuntimeFixture{app: a, provider: acmeP, sink: acmeSink, epoch: epoch}
 	m.beta = &cadenceRuntimeFixture{app: a, provider: betaP, sink: betaSink, epoch: epoch}
 	m.beta.startWorker()
+	synctest.Wait() // worker parked before the first admission, as in newCadenceFixture
 	t.Cleanup(func() {
 		for _, s := range []*testIngressSink{acmeSink, betaSink} {
 			s.mu.Lock()
