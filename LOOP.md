@@ -25,6 +25,10 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 
 ## Traps
 
+- Go patch releases can turn `just check` red through `just vuln` for standard-library
+  vulnerabilities. Raise the `go` directive in all five modules and upgrade local Go to the
+  patched release; never weaken or edit the gate to bypass the vulnerability.
+
 - `go test -race ./...` at the root stops at the module boundary. The four tool modules are covered
   by the `module-verify` and `lint` matrices in ci.yml, and a workflow contract test fails if one
   drops out.

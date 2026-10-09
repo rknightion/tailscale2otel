@@ -17,7 +17,7 @@ chart_dir := "deploy/helm/tailscale2otel"
 # golangci-lint-action `version:`; govulncheck tracks the `go install` line in the
 # module-verify and govulncheck jobs. A local tool of another version reports
 # different findings than the gate.
-golangci_version := "v2.13.2"
+golangci_version := "v2.14.0"
 govulncheck_version := "v1.3.0"
 
 # show the task surface
