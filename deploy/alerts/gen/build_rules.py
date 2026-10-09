@@ -422,9 +422,18 @@ SEVERITY_VALUES = {"critical", "warning", "info", "advisory"}
 # Excluded: iOS/Android clients and Kubernetes-operator proxies (tag:k8s, tag:k8s-operator,
 # tag:k8s-egress, ...), none of which have a client auto-update toggle. `os!~` also keeps a
 # series with no `os` label. The tag label is comma-joined, so the regex matches anywhere in it.
+# AUTOUPDATE_EXEMPT_TAGS adds deployment tags for devices that cannot self-update either:
+# containerised tailscaled sidecars (updated by a new image) and Arch-based PiKVMs, where
+# `tailscale set --auto-update` answers "Auto-updates are not supported on this platform".
+# Each entry is matched as a whole tag inside the comma-joined label.
+AUTOUPDATE_EXEMPT_TAGS = (
+    "kvms", "ci-runner", "tailscale2otel", "portina-argocd", "arcane", "forgejo",
+    "n8n", "n8n-funnel", "openbao", "sshrecorder",
+)
+_AUTOUPDATE_EXEMPT_RE = "(.*,)?tag:(k8s[^,]*|" + "|".join(AUTOUPDATE_EXEMPT_TAGS) + ")(,.*)?"
 _AUTOUPDATE_ELIGIBLE = (
     "tailscale_device_posture_ratio{{{sel}os!~\"ios|android\"}} "
-    "unless on (host_id) tailscale_device_online_ratio{{tailscale_tags=~\".*tag:k8s.*\"}}"
+    "unless on (host_id) tailscale_device_online_ratio{{tailscale_tags=~\"" + _AUTOUPDATE_EXEMPT_RE + "\"}}"
 )
 
 
@@ -1217,8 +1226,9 @@ def groups():
               "lt", 0.8, "1h", "warning",
               "Fleet auto-update coverage below 80%",
               "Fewer than 80% of AUTO-UPDATE-ELIGIBLE devices report Tailscale client auto-update "
-              "enabled. Eligible excludes iOS/Android clients and Kubernetes-operator proxies (any "
-              "device tagged tag:k8s*), where the client auto-update toggle does not apply and which "
+              "enabled. Eligible excludes iOS/Android clients, Kubernetes-operator proxies (any "
+              "device tagged tag:k8s*) and devices carrying an AUTOUPDATE_EXEMPT_TAGS tag "
+              "(containerised sidecars, Arch PiKVMs), where the client auto-update toggle does not apply and which "
               "would otherwise pin the ratio low permanently. A device with no tag evidence "
               "(no tailscale_device_online_ratio series) stays counted. Gated by collect_posture; "
               "absent => not firing.",

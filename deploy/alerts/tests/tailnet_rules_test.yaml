@@ -287,6 +287,16 @@ tests:
         values: '1x120'
       - series: 'tailscale_device_online_ratio{host_id="srv4",tailscale_tags="tag:servers"}'
         values: '1x120'
+      # Exempt by deployment tag (AUTOUPDATE_EXEMPT_TAGS): a PiKVM and a containerised
+      # sidecar whose tag sits after another tag in the comma-joined label.
+      - series: 'tailscale_device_posture_ratio{host_id="kvm0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="kvm0",tailscale_tags="tag:kvms"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="sc0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="sc0",tailscale_tags="tag:servers,tag:ci-runner"}'
+        values: '1x120'
       - series: 'tailscale_device_posture_ratio{host_id="ios0",os="ios",auto_update="false"}'
         values: '1x120'
       - series: 'tailscale_device_online_ratio{host_id="ios0",tailscale_tags=""}'
