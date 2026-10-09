@@ -3,9 +3,11 @@ id: TSO-0162
 title: >-
   Ingress delivery reports retrying when an export attempt hangs past the reader
   timeout
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop20'
 created_date: '2026-10-09 22:26'
+updated_date: '2026-10-09 22:32'
 labels: []
 dependencies: []
 references:
@@ -36,3 +38,9 @@ After TSO-0148, readiness reaches delivery health only through the ingress WAL c
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement frozen scope using synctest; regression red then green; exact candidate gate and security review before landing.
+<!-- SECTION:PLAN:END -->

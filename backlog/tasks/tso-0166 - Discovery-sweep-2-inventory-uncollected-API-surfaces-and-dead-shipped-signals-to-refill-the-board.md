@@ -3,9 +3,11 @@ id: TSO-0166
 title: >-
   Discovery sweep 2: inventory uncollected API surfaces and dead shipped signals
   to refill the board
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop20'
 created_date: '2026-10-09 22:27'
+updated_date: '2026-10-09 22:59'
 labels: []
 dependencies: []
 references:
@@ -36,3 +38,15 @@ The board drained again on 2026-10-09 when loop19 closed nothing-admissible. TSO
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Read-only discovery across vendored GET APIs, PAM reference, audit events, previous dispositions and trailing-30-day shipped signals. Retain ignored ledger; root reviews and files adopted triage tasks.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Loop20 discovery: 699 fixed-schema rows; all 35 vendored GETs, all 49 Border0 reference paths, audit vocabularies, prior verdicts and 363 shipped families covered. Fixed 30-day actual sample queries found 273 sampled and 90 absent: 43 expected-quiet, 47 lab-shape gaps, none proven dead. Previous 116 absences: 33 now sampled, 83 remain; six previously sampled now absent and two new families. Independent reviewer verified every query selector/time/range and all source hashes, not just metadata. Adopted TSO-0168 (curate sampled Service throughput), needs-triage only, not admitted for implementation in loop20. New samples and service label-key evidence meet the prior parked boundary. Rejections: OAuth app count and organization count already consumed; log-stream destination already shipped; Border0 server delay is configuration not observed lag; token age has no new actionable semantics; per-object/DNS/socket GET proposals duplicate list data or add N+1 polling; PAM recordings/query data and denial/pruning/rate-limit proposals lack new authorized semantics evidence; historical unavailable Border0 paths remain dated reference verdicts, not fresh availability claims; blanket audit expansion lacks new values; no absent family is proven dead; file-checkpoint gaps do not prove current backend regression; dedup-overlap omission remains source-scoped. No lab identifiers or raw captures tracked. Ledger validator has a minor reusable-selector/time validation limitation, but independent all-family review checked current evidence; do not reuse validator as sole proof.
+<!-- SECTION:NOTES:END -->
