@@ -481,8 +481,14 @@ func (p *Provider) runIngressLogs(ctx context.Context) {
 		chunk := selected.records[offset:end]
 		selected.mu.Unlock()
 		call, cancel := context.WithTimeout(ctx, p.logTimeout)
+		reader.mu.Lock()
+		reader.logExportStarted = time.Now()
+		reader.mu.Unlock()
 		exportErr := p.serialLogs.Export(call, chunk)
 		cancel()
+		reader.mu.Lock()
+		reader.logExportStarted = time.Time{}
+		reader.mu.Unlock()
 		if exportErr != nil {
 			// As for scheduled metrics: keep tailscale2otel.export.failures
 			// counting durable-log export failures (bounded class only).

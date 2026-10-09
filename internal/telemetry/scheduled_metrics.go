@@ -117,13 +117,16 @@ type scheduledMetricReader struct {
 	// collectFailing and logFailures report CURRENT delivery trouble (the last
 	// normal Collect failed; consecutive durable-log export failures) so the
 	// ingress coordinator can tell real retrying from healthy waiting.
-	collectFailing            bool
-	logFailures               int
-	clockCancel, workerCancel context.CancelFunc
-	clockDone, workerDone     chan struct{}
-	startOnce, stopOnce       sync.Once
-	shutdownOnce              sync.Once
-	shutdownErr               error
+	collectFailing bool
+	logFailures    int
+	// Attempt start times are protected by mu and cleared as soon as Export
+	// returns, including when an exporter ignores its context deadline.
+	metricExportStarted, logExportStarted time.Time
+	clockCancel, workerCancel             context.CancelFunc
+	clockDone, workerDone                 chan struct{}
+	startOnce, stopOnce                   sync.Once
+	shutdownOnce                          sync.Once
+	shutdownErr                           error
 }
 
 func newScheduledMetricReader(exp sdkmetric.Exporter, opts Options) (*scheduledMetricReader, error) {
@@ -402,8 +405,14 @@ func (r *scheduledMetricReader) exportCollections(ctx context.Context) {
 				continue
 			}
 			call, cancel := context.WithTimeout(ctx, r.timeout)
+			r.mu.Lock()
+			r.metricExportStarted = time.Now()
+			r.mu.Unlock()
 			raw := r.exporter.Export(call, &part.data)
 			cancel()
+			r.mu.Lock()
+			r.metricExportStarted = time.Time{}
+			r.mu.Unlock()
 			if raw != nil {
 				// The pinned PeriodicReader reported every non-nil export error
 				// here; tailscale2otel.export.failures and its alert depend on it.
@@ -648,8 +657,10 @@ func (s *ProviderSet) FlushLifecycle(ctx context.Context, reason FlushReason) er
 // IngressDeliveryRetrying reports whether this provider currently has delivery
 // trouble that work waiting on it depends on: a retained collection whose
 // export has failed, a failed normal Collect not yet followed by a success, or
-// consecutive durable-log export failures. Healthy work waiting for its next
-// normal slot is NOT retrying.
+// consecutive durable-log export failures, or an in-flight metrics/durable-log
+// export older than the resolved reader timeout. Healthy work waiting for its
+// next normal slot is NOT retrying. This is the ingress WAL delivery health
+// signal, not a readiness gate for providers with ingress WAL disabled.
 func (p *Provider) IngressDeliveryRetrying() bool {
 	if p == nil || p.metricReader == nil {
 		return false
@@ -659,6 +670,12 @@ func (p *Provider) IngressDeliveryRetrying() bool {
 	defer r.mu.Unlock()
 	if r.collectFailing || r.logFailures > 0 {
 		return true
+	}
+	now := time.Now()
+	for _, started := range []time.Time{r.metricExportStarted, r.logExportStarted} {
+		if !started.IsZero() && now.Sub(started) > r.timeout {
+			return true
+		}
 	}
 	for _, c := range r.collections {
 		if c.failedAttempts > 0 {

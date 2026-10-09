@@ -1522,6 +1522,13 @@ they show on the status page as discarded collections. New WAL work for that pro
 with no effects applied, and once the unchanged `ingress_wal` limits are reached the receivers refuse
 new requests. Accepted entries are never dropped to make room.
 
+With `ingress_wal` enabled, delivery readiness also reports retrying when a metrics or durable-log
+export attempt is older than the resolved metric reader timeout (30 seconds by default, overridden
+by `OTEL_METRIC_EXPORT_TIMEOUT` in milliseconds), even if the exporter ignores cancellation and
+never returns an error. A younger attempt is not retrying merely because it is still running. The
+hung-attempt state clears automatically when the attempt returns; any delivery failure still follows
+the normal retry rules. This adds no readiness gate when `ingress_wal` is disabled.
+
 Application that fails after it has started - an error, a panic, or output exceeding the bound that
 was reserved for it before it began - poisons that entry. It is never acknowledged or reapplied in the
 same process: the WAL fails closed, the receivers refuse new requests, and the entry stays on disk for
