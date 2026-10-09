@@ -2049,6 +2049,10 @@ config: # @schema additionalProperties:false
       incremental_vacuum_interval: 0s
       # -- Maximum pages reclaimed per vacuum tick.
       incremental_vacuum_pages: 1000
+      # -- Acknowledge that directory persists flow rows, including user identities, to disk and
+      # silence the data-at-rest startup advisory (config_warnings_ratio). Set true once the PVC and
+      # its backup/retention coverage are a deliberate choice. Silences no other advisory.
+      acknowledge_data_at_rest: false
 
   events: # @schema additionalProperties:false
     # -- Build the bounded audit/webhook event store and serve /events. No effect without admin.enabled + admin.landing_page.

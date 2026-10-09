@@ -207,6 +207,10 @@ func runServer(configPath string, stderr io.Writer) int {
 		return 1
 	}
 
+	// The slog advisories above precede the OTLP log pipeline and never reach the
+	// log backend; re-emit them now that app.New has started it.
+	application.EmitConfigAdvisories()
+
 	logger.Info("tailscale2otel starting",
 		"version", version, "tailnet", cfg.Tailscale.Tailnet, "otlp_protocol", cfg.OTLP.Protocol)
 	if err := application.Run(ctx); err != nil {

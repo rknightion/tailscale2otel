@@ -25,7 +25,14 @@ directory = args[directory_index + 1]
 
 events = {
     "internal/app": [
-        {"type": "finding", "message": "a finding is still clean when complete"},
+        {"type": "finding", "severity": "major", "message": "first major finding"},
+        {"type": "finding", "severity": "major", "message": "second major finding"},
+        {"type": "status", "status": "complete"},
+    ],
+    "internal/mixed": [
+        {"type": "finding", "severity": "major", "message": "mixed major finding"},
+        {"type": "finding", "severity": "MINOR", "message": "mixed minor finding"},
+        {"type": "finding", "message": "finding with no severity"},
         {"type": "status", "status": "complete"},
     ],
     "scripts": [
@@ -57,7 +64,7 @@ class ShardedReviewTest(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_complete_shards_are_clean_and_findings_are_aggregated(self):
+    def test_complete_shards_report_finding_counts_and_clean_means_zero(self):
         aggregate = self.root / "review.ndjson"
         status = io.StringIO()
 
@@ -69,14 +76,39 @@ class ShardedReviewTest(unittest.TestCase):
             status_stream=status,
         )
 
+        # Findings are not transport failures: the exit status stays 0.
         self.assertEqual(code, 0)
         report = status.getvalue()
         self.assertIn("WARNING: --dir hides the rest of the repository", report)
-        self.assertIn("[internal/app] CLEAN", report)
+        self.assertIn("[internal/app] COMPLETE: 2 major", report)
+        self.assertNotIn("[internal/app] CLEAN", report)
         self.assertIn("[scripts] CLEAN", report)
+        summary = report.splitlines()[-1]
+        self.assertIn("1 clean, 1 with findings (2 major), 0 failed", summary)
         contents = aggregate.read_text(encoding="utf-8")
-        self.assertIn('"message": "a finding is still clean when complete"', contents)
+        self.assertIn('"message": "first major finding"', contents)
+        self.assertIn('"message": "second major finding"', contents)
         self.assertEqual(contents.count('"status": "complete"'), 2)
+
+    def test_mixed_severities_are_totalled_and_unknown_is_not_clean(self):
+        status = io.StringIO()
+
+        code = review.run_shards(
+            self.command,
+            "wave-base",
+            ["internal/app", "internal/mixed"],
+            str(self.root / "review.ndjson"),
+            status_stream=status,
+        )
+
+        self.assertEqual(code, 0)
+        report = status.getvalue()
+        self.assertIn("[internal/mixed] COMPLETE: 1 major, 1 minor, 1 unknown", report)
+        self.assertNotIn("CLEAN", report)
+        self.assertIn(
+            "0 clean, 2 with findings (3 major, 1 minor, 1 unknown), 0 failed",
+            report.splitlines()[-1],
+        )
 
     def test_missing_complete_event_fails_the_review(self):
         aggregate = self.root / "review.ndjson"
@@ -92,9 +124,12 @@ class ShardedReviewTest(unittest.TestCase):
 
         self.assertEqual(code, 1)
         report = status.getvalue()
-        self.assertIn("[internal/app] CLEAN", report)
+        self.assertIn("[internal/app] COMPLETE: 2 major", report)
         self.assertIn("[missing] FAILED", report)
         self.assertIn("missing complete line", report)
+        self.assertIn(
+            "0 clean, 1 with findings (2 major), 1 failed", report.splitlines()[-1]
+        )
 
     def test_only_a_completion_event_counts(self):
         self.assertTrue(review.has_complete_line('{"type":"status","status":"complete"}'))

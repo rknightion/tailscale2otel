@@ -288,6 +288,13 @@ type FlowsStoreConfig struct {
 	// inherits SweepInterval; IncrementalVacuumPages caps work per tick.
 	IncrementalVacuumInterval Duration `yaml:"incremental_vacuum_interval" reload:"restart"`
 	IncrementalVacuumPages    int      `yaml:"incremental_vacuum_pages" reload:"restart"`
+	// AcknowledgeDataAtRest silences the startup advisory that fires whenever
+	// Directory is set (flow rows, including user identities, persisted to
+	// disk). Set it once the on-disk store is a deliberate, retention- and
+	// backup-reviewed choice. It silences only that advisory: the store's
+	// other warnings are unaffected. Same pattern as
+	// enrichment.reverse_dns.acknowledge_cardinality.
+	AcknowledgeDataAtRest bool `yaml:"acknowledge_data_at_rest" reload:"restart"`
 }
 
 // EventsConfig configures the built-in bounded audit/webhook event explorer
@@ -1911,7 +1918,11 @@ func Load(path string) (*Config, error) {
 			return nil, unknownKeyError(u, validKeys)
 		}
 		deviceVersionChecksExplicit = fk.Exists("version_checks.devices.enabled")
-		if info.Mode().Perm()&0o044 != 0 {
+		// A kubelet-projected ConfigMap/Secret file on a read-only mount takes
+		// its mode from the volume's defaultMode and cannot be chmod'ed, so
+		// the advisory would stay red with no remedy; it is skipped only for
+		// that exact layout (see kubeletProjectedReadOnly).
+		if info.Mode().Perm()&0o044 != 0 && !kubeletProjectedReadOnly(path) {
 			cfgFileWarning = fmt.Sprintf("config file %s is readable by group/other (mode %04o); "+
 				"it may contain credentials — restrict it to 0600 (or keep secrets in TS2OTEL_* env vars)",
 				path, info.Mode().Perm())

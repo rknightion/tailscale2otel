@@ -693,6 +693,7 @@ flows:
     sweep_interval: 1h                # how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set
     incremental_vacuum_interval: 0s   # periodic SQLite page reclamation; 0 inherits sweep_interval
     incremental_vacuum_pages: 1000    # maximum pages reclaimed per vacuum tick
+    acknowledge_data_at_rest: false   # set true (once the on-disk store and its backup/retention coverage are deliberate) to silence the flows.store.directory data-at-rest advisory; silences nothing else
 
 # ── Built-in audit/webhook event explorer (served at /events on the admin server) ──
 events:

@@ -1015,6 +1015,9 @@
                         "store": {
                             "type": "object",
                             "properties": {
+                                "acknowledge_data_at_rest": {
+                                    "type": "boolean"
+                                },
                                 "batch_size": {
                                     "type": "integer"
                                 },

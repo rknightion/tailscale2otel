@@ -258,3 +258,103 @@ tests:
             exp_annotations:
               summary: "Unknown Kubernetes-audit verb values are arriving"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#kubernetes-audit-schema-drift"
+
+  # --- auto-update coverage is scoped to devices where auto-update applies ----
+  # iOS/Android clients and Kubernetes-operator proxies (any tag:k8s*) have no
+  # client auto-update toggle, so counting them pins the ratio low forever. Here
+  # 4 of 5 eligible devices have it on (0.8, not below the threshold) while 6
+  # ineligible devices report it off; the unscoped ratio would be 4/11 and fire.
+  - name: auto-update coverage ignores mobile and kubernetes proxy devices
+    interval: 1m
+    input_series:
+      - series: 'tailscale_device_posture_ratio{host_id="srv0",os="linux",auto_update="true"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv0",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv1",os="linux",auto_update="true"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv1",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv2",os="linux",auto_update="true"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv2",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv3",os="linux",auto_update="true"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv3",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv4",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv4",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      # Exempt by deployment tag (AUTOUPDATE_EXEMPT_TAGS): a PiKVM and a containerised
+      # sidecar whose tag sits after another tag in the comma-joined label.
+      - series: 'tailscale_device_posture_ratio{host_id="kvm0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="kvm0",tailscale_tags="tag:kvms"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="sc0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="sc0",tailscale_tags="tag:servers,tag:ci-runner"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="ios0",os="ios",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="ios0",tailscale_tags=""}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="ios1",os="ios",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="ios1",tailscale_tags=""}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="ios2",os="ios",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="ios2",tailscale_tags=""}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="pod0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="pod0",tailscale_tags="tag:k8s"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="pod1",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="pod1",tailscale_tags="tag:k8s-operator"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="pod2",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="pod2",tailscale_tags="tag:servers,tag:k8s-egress"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: PostureAutoUpdateCoverageLow
+        exp_alerts: []
+
+  # The scoping must not hide a real shortfall: eligible servers without
+  # auto-update still fire, and a device with no online_ratio series (so no tag
+  # evidence either way) stays counted rather than silently dropped.
+  - name: auto-update coverage still fires for eligible devices lacking it
+    interval: 1m
+    input_series:
+      - series: 'tailscale_device_posture_ratio{host_id="srv0",os="linux",auto_update="true"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv0",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv1",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="srv1",tailscale_tags="tag:servers"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="srv2",os="macos",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_posture_ratio{host_id="pod0",os="linux",auto_update="false"}'
+        values: '1x120'
+      - series: 'tailscale_device_online_ratio{host_id="pod0",tailscale_tags="tag:k8s"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: PostureAutoUpdateCoverageLow
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Fleet auto-update coverage below 80%"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"

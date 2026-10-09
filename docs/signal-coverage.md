@@ -48,8 +48,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 260 | 259 | 58 | 11 | 45 |
-| self_obs | 102 | 102 | 39 | 9 | 10 |
+| operational | 260 | 259 | 59 | 11 | 45 |
+| self_obs | 103 | 103 | 39 | 9 | 10 |
 
 ## Operational signals
 
@@ -124,7 +124,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.key_expiry_disabled` | metric | `tailscale_device_key_expiry_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.last_seen` | metric | `tailscale_device_last_seen_seconds` | visualized |  |
 | `tailscale.device.multiple_connections` | metric | `tailscale_device_multiple_connections_ratio` | visualized, alertable | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
-| `tailscale.device.online` | metric | `tailscale_device_online_ratio` | visualized, recorded, drives_a_variable |  |
+| `tailscale.device.online` | metric | `tailscale_device_online_ratio` | visualized, alertable, recorded, drives_a_variable |  |
 | `tailscale.device.posture` | metric | `tailscale_device_posture_ratio` | visualized, alertable, recorded, drives_a_variable |  |
 | `tailscale.device.posture_identity.disabled` | metric | `tailscale_device_posture_identity_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.routes.advertised` | metric | `tailscale_device_routes_advertised` | visualized, drives_a_variable |  |
@@ -320,6 +320,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | signal | kind | queried as | disposition | note |
 | --- | --- | --- | --- | --- |
+| `tailscale2otel.config.advisory` | log_event | `event_name="tailscale2otel.config.advisory"` | visualized |  |
 | `process.cpu.time` | metric | `process_cpu_time_seconds_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
 | `process.uptime` | metric | `process_uptime_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (Go runtime). |
 | `tailscale2otel.admin.auth.rejected` | metric | `tailscale2otel_admin_auth_rejected_total` | visualized, alertable |  |

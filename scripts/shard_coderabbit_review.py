@@ -9,12 +9,17 @@ machine-readable.
 
 CodeRabbit can exit before emitting its terminal event (for example when the
 review service closes the WebSocket).  A zero process exit status is therefore
-not enough to call a shard clean.  A shard is clean only when it exits zero and
-emits a JSON event whose ``type``, ``status`` or ``event`` field is
+not enough to call a shard complete.  A shard is complete only when it exits
+zero and emits a JSON event whose ``type``, ``status`` or ``event`` field is
 ``"complete"``.
 
+Completion is a transport result, not a verdict.  A complete shard is labelled
+``CLEAN`` only when its NDJSON holds no ``{"type": "finding"}`` events;
+otherwise its status line and the final summary report the finding counts by
+severity.  Findings never change the exit status.
+
 Exit codes:
-    0  every shard exited zero and emitted a completion event
+    0  every shard exited zero and emitted a completion event (findings allowed)
     1  at least one shard failed or lacked a completion event
     2  invalid arguments or an aggregate output error
 """
@@ -27,6 +32,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence, TextIO
@@ -38,6 +44,10 @@ FALSE_POSITIVE_WARNING = (
     "missing-symbol or missing-wiring finding, check the whole tree; the "
     "finding may be an artifact of this shard's scope."
 )
+
+
+SEVERITY_ORDER = ("critical", "major", "minor", "trivial", "info")
+UNKNOWN_SEVERITY = "unknown"
 
 
 @dataclass(frozen=True)
@@ -54,6 +64,45 @@ class ShardResult:
         """Whether the shard completed successfully and emitted its sentinel."""
 
         return self.returncode == 0 and self.complete
+
+    @property
+    def findings(self) -> Counter:
+        """Finding counts by lowercase severity, from the shard's NDJSON."""
+
+        return count_findings(self.stdout)
+
+
+def count_findings(output: str) -> Counter:
+    """Count ``{"type": "finding"}`` events in *output* by severity.
+
+    A finding with a missing or non-string severity is counted as ``unknown``
+    so it can never be mistaken for a clean shard.
+    """
+
+    counts: Counter = Counter()
+    for line in output.splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(event, dict) or event.get("type") != "finding":
+            continue
+        severity = event.get("severity")
+        if isinstance(severity, str) and severity.strip():
+            counts[severity.strip().lower()] += 1
+        else:
+            counts[UNKNOWN_SEVERITY] += 1
+    return counts
+
+
+def format_counts(counts: Counter) -> str:
+    """Render severity counts, most severe first (e.g. ``2 major, 1 minor``)."""
+
+    known = [severity for severity in SEVERITY_ORDER if counts.get(severity)]
+    others = sorted(severity for severity in counts if severity not in SEVERITY_ORDER)
+    return ", ".join(f"{counts[severity]} {severity}" for severity in known + others)
 
 
 def has_complete_line(output: str) -> bool:
@@ -172,7 +221,11 @@ def _write_stdout(aggregate: TextIO, stdout: str) -> None:
 
 def _print_status(result: ShardResult, stream: TextIO) -> None:
     if result.clean:
-        print(f"[{result.directory}] CLEAN (complete)", file=stream)
+        findings = result.findings
+        if findings:
+            print(f"[{result.directory}] COMPLETE: {format_counts(findings)}", file=stream)
+        else:
+            print(f"[{result.directory}] CLEAN (complete, 0 findings)", file=stream)
         return
 
     reasons = []
@@ -249,20 +302,27 @@ def run_shards(
             aggregate.close()
 
     failed = [result for result in results if not result.clean]
-    clean = len(results) - len(failed)
+    completed = [result for result in results if result.clean]
+    totals: Counter = Counter()
+    for result in completed:
+        totals.update(result.findings)
+    with_findings = sum(1 for result in completed if result.findings)
+    clean = len(completed) - with_findings
+    findings_text = (
+        f"{with_findings} with findings ({format_counts(totals)})"
+        if with_findings
+        else "0 with findings"
+    )
+    summary = f"sharded CodeRabbit review: {clean} clean, {findings_text}, {len(failed)} failed"
     if failed:
         failed_names = ", ".join(result.directory for result in failed)
         print(
-            f"sharded CodeRabbit review: {clean} clean, {len(failed)} failed; "
-            f"aggregate={aggregate_path}; failed shards: {failed_names}",
+            f"{summary}; aggregate={aggregate_path}; failed shards: {failed_names}",
             file=status_stream,
         )
         return 1
 
-    print(
-        f"sharded CodeRabbit review: {clean} clean, 0 failed; aggregate={aggregate_path}",
-        file=status_stream,
-    )
+    print(f"{summary}; aggregate={aggregate_path}", file=status_stream)
     return 0
 
 

@@ -517,3 +517,60 @@ func TestFlowsStoreDirectoryResolvesRelativeToConfigFile(t *testing.T) {
 			"not the working directory)", c.Flows.Store.Directory, want)
 	}
 }
+
+// flows.store.acknowledge_data_at_rest silences ONLY the data-at-rest
+// advisory, and only when set explicitly: a deliberate persistent store (a
+// PVC-backed deployment) should not hold config_warnings_ratio above zero
+// forever, but the default must keep warning and the acknowledgement must not
+// swallow the store's other advisories.
+func TestWarnings_FlowsStoreDataAtRestAcknowledged(t *testing.T) {
+	dir := t.TempDir()
+	hasAtRest := func(ws []string) bool {
+		for _, w := range ws {
+			if strings.Contains(w, "will be written to disk") {
+				return true
+			}
+		}
+		return false
+	}
+	hasUnreachable := func(ws []string) bool {
+		for _, w := range ws {
+			if strings.Contains(w, "flows.store.directory is set but has no effect") {
+				return true
+			}
+		}
+		return false
+	}
+
+	if config.Default().Flows.Store.AcknowledgeDataAtRest {
+		t.Fatal("flows.store.acknowledge_data_at_rest must default to false")
+	}
+
+	// Loaded through the real file layer, so the key is proven accepted by the
+	// strict unknown-key check as well as respected by Warnings().
+	// flows.enabled is false so the separate "has no effect" advisory fires
+	// too: the acknowledgement must leave it alone.
+	base := "flows:\n  enabled: false\n  store:\n    directory: " + dir + "\n"
+	cfg, err := config.Load(writeTemp(t, base))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !hasAtRest(cfg.Warnings()) {
+		t.Fatalf("default (unacknowledged) must still warn about data at rest, got %q", cfg.Warnings())
+	}
+
+	cfg, err = config.Load(writeTemp(t, base+"    acknowledge_data_at_rest: true\n"))
+	if err != nil {
+		t.Fatalf("Load with acknowledge_data_at_rest: %v", err)
+	}
+	if !cfg.Flows.Store.AcknowledgeDataAtRest {
+		t.Fatal("acknowledge_data_at_rest: true did not decode")
+	}
+	if hasAtRest(cfg.Warnings()) {
+		t.Errorf("acknowledge_data_at_rest=true must silence the data-at-rest advisory, got %q", cfg.Warnings())
+	}
+	if !hasUnreachable(cfg.Warnings()) {
+		t.Errorf("acknowledge_data_at_rest must silence ONLY the data-at-rest advisory; the "+
+			"unreachable-store advisory disappeared: %q", cfg.Warnings())
+	}
+}

@@ -447,12 +447,15 @@ func (c *Config) Warnings() []string {
 	// but every row persisted to disk here — including the identities
 	// (emails, node/tag names) a flow observation carries — survives a
 	// restart and, unless the operator excludes the path, ends up in whatever
-	// backs up that host.
-	if c.Flows.Store.Directory != "" {
+	// backs up that host. flows.store.acknowledge_data_at_rest=true silences
+	// it once that is a deliberate choice (a PVC-backed deployment), the same
+	// opt-in pattern as enrichment.reverse_dns.acknowledge_cardinality.
+	if c.Flows.Store.Directory != "" && !c.Flows.Store.AcknowledgeDataAtRest {
 		w = append(w, "flows.store.directory is set: flow rows, including user identities such as "+
 			"email addresses, will be written to disk at "+c.Flows.Store.Directory+" and will survive "+
 			"restarts and appear in backups of that path, unlike the in-memory default. Make sure "+
-			"that is intended and that the path is covered by your backup/retention policy.")
+			"that is intended and that the path is covered by your backup/retention policy, then set "+
+			"flows.store.acknowledge_data_at_rest=true to acknowledge.")
 	}
 
 	// flows.capacity_profile only tunes flowstore.Memory, the in-memory ring:
