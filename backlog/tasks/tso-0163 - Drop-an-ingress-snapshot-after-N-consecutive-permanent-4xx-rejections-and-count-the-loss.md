@@ -7,7 +7,7 @@ status: In Progress
 assignee:
   - '@loop20'
 created_date: '2026-10-09 22:26'
-updated_date: '2026-10-09 23:03'
+updated_date: '2026-10-09 23:16'
 labels: []
 dependencies:
   - TSO-0162
@@ -53,4 +53,6 @@ Implement bounded permanent-4xx drop per frozen loop20 decision, preserve transi
 
 <!-- SECTION:NOTES:BEGIN -->
 Loop20 ownership packet amended before implementation: config reaches providers through internal/app/options.go, and chart instructions mandate a Chart.yaml version bump on values changes. Root grants those narrow paths plus options mapping tests; no appVersion or extra live authority. Read-only blocked inspection consumed zero implementation attempts.
+
+Loop20 second packet amendment: public capability-count prose in README, docs/index, docs/comparison and docs/alerts, plus ingresswal config tests. Goal minimum 1 and AC4 require rejecting the new rejection-limit field below 1 unconditionally, including disabled WAL. Existing disabled storage-setting inertness remains; disabled fixture must use a valid new limit and explicitly retain old-field contract, with new disabled/enabled invalid-limit tests. This is an intended new-field contract change, not test weakening.
 <!-- SECTION:NOTES:END -->
