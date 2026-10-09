@@ -4,11 +4,13 @@ For a wave-sized diff, run the grouped recipe with the wave base and the
 changed directories:
 
 ```sh
-just review-sharded base=main dirs="internal/app internal/collector scripts"
+just review-sharded main "internal/app internal/collector scripts"
 ```
 
-The default shards are `cmd internal deploy scripts tools`; pass `dirs=` when
-the wave uses a different set. The recipe runs
+The default shards are `cmd internal deploy scripts tools`; pass the directory
+list as the second positional argument, quoted as one string, when the wave
+uses a different set. The recipe parameters are positional, so `base=main` or
+`dirs=...` is not accepted: `just` passes it through literally. The recipe runs
 `coderabbit review --agent --base <base> --dir <directory>` once per shard and
 aggregates each command's raw NDJSON stdout in a securely created temporary
 file whose path is printed at completion. Direct script callers can pass
