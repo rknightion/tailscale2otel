@@ -28,9 +28,11 @@ var exportDurationBucketsSeconds = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25
 // This handler deliberately does NOT log a per-failure warning any more (#365):
 // the SDK invokes otel.Handle(err) once per failed export with no rate limiting
 // of its own, so a sustained outage across N+1 providers previously produced a
-// warning line per failed export per provider. The single, still-diagnosable
-// (backend body included) first-failure/summary/recovery log lines now live in
-// delivery.go's deliveryTracker, which — unlike this global, provider-blind
+// warning line per failed export per provider. The first-failure/summary/recovery
+// log lines now live in delivery.go's deliveryTracker (bound to the app logger in
+// NewProvider). They carry only the signal, a bounded error class and an
+// allowlisted transport reason, never the error text or the backend's response
+// body (TSO-0153). The tracker — unlike this global, provider-blind
 // handler — is one instance per Provider and observes both success and failure
 // directly from each exporter wrapper, so it can also detect recovery (something
 // otel.Handle(err) alone never can: it is never invoked on success).

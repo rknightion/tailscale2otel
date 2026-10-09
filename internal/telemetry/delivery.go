@@ -113,8 +113,9 @@ type deliveryTracker struct {
 	summaryInterval time.Duration
 	now             func() time.Time
 
-	// Diagnostics (#365) are late-bound via setDiagnostics, mirroring the
-	// exportObserver pattern in export_counting.go: the tracker is constructed
+	// Diagnostics (#365) are late-bound via setDiagnostics (NewProvider does it,
+	// TSO-0158), mirroring the exportObserver pattern in export_counting.go: the
+	// tracker is constructed
 	// before the Emitter/logger exist, so both start nil and every use is
 	// nil-guarded. logger is always set once the app has one (diagnostics are not
 	// gated on self-observability being enabled — an operator watching plain logs

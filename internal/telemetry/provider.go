@@ -191,8 +191,11 @@ type Options struct {
 	DynamicHeaders   func() map[string]string
 	DynamicTLSConfig func() *tls.Config
 
-	// Logger receives diagnostics from the telemetry pipeline (currently
-	// label-collision resolutions in the Emitter). Nil disables that logging.
+	// Logger receives diagnostics from the telemetry pipeline: label-collision
+	// resolutions in the Emitter, and the OTLP delivery-health lines (first
+	// failure, still failing, recovered) from this provider's delivery tracker,
+	// which carry only the signal, a bounded error class and an allowlisted
+	// reason. Nil disables that logging.
 	Logger *slog.Logger
 }
 
@@ -374,6 +377,19 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		metricCounter.setObserver(obs)
 		logCounter.setObserver(obs)
 	}
+	// Late-bind the delivery-health diagnostics (#365, TSO-0158) the same way,
+	// and before the reader starts so no export can race the binding. The logger
+	// is bound whether or not self-obs is on (an operator reading plain logs
+	// still needs to know OTLP is down); the Emitter only under self-obs, since
+	// the suppression counter is its sole use. Neither can feed back: the app
+	// logger is not bridged into the OTLP log pipeline, and the counter is a
+	// synchronous instrument recorded in memory that leaves only on the next
+	// scheduled collection, never triggering one (TSO-0148).
+	var diagEmitter Emitter
+	if opts.SelfObsEnabled {
+		diagEmitter = emitter
+	}
+	delivery.setDiagnostics(opts.Logger, diagEmitter, opts.TailnetName)
 
 	provider.mp, provider.lp, provider.tp = mp, lp, tp
 	provider.tracer, provider.emitter, provider.card = tracer, emitter, card
