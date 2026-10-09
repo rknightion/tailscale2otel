@@ -1,10 +1,10 @@
 ---
 id: TSO-0133
 title: 'Review the coordination alert firing history and decide paging, due 2026-09-11'
-status: Parked
+status: Done
 assignee: []
 created_date: '2026-09-04 07:31'
-updated_date: '2026-10-08 21:49'
+updated_date: '2026-10-09 11:33'
 labels: []
 dependencies: []
 priority: low
@@ -24,16 +24,16 @@ Bring, per rule: how many times it fired, how long each firing lasted, and wheth
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-rule firing history since 2026-09-04 is gathered from the stack and presented with each firing classified as real or spurious
-- [ ] #2 The owner's per-rule paging decision is recorded, and any rule he promotes gets its label change shipped and proved by a real gcx resources push
-- [ ] #3 If a rule proved untrustworthy it is fixed or withdrawn rather than left evaluating and ignored
+- [x] #1 Per-rule firing history since 2026-09-04 is gathered from the stack and presented with each firing classified as real or spurious
+- [x] #2 The owner's per-rule paging decision is recorded, and any rule he promotes gets its label change shipped and proved by a real gcx resources push
+- [x] #3 If a rule proved untrustworthy it is fixed or withdrawn rather than left evaluating and ignored
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Notes
@@ -52,4 +52,12 @@ Finding from the first simulated takeover (2026-09-06 14:48Z): the summed leader
 Correction 2026-09-06: promtool shows plain sum cannot meet the 5m for-window at any evaluation alignment because staleness is also exactly 5m, so no false CoordinationSplitBrain alert is reproducible offline; the live window today was about four minutes of Pending. Owner chose to fix anyway: the three leader-gauge rules now read last_over_time(...[3m]), which drops a dead process two export intervals before the for-window and restores a real margin against evaluator jitter. The fixture "split brain ignores a dead leader stale sample after a takeover" documents the shape but passes on both expressions.
 
 loop17: read-only evidence gathered; no rule or label changes. Observed lower bounds include one split-brain and two no-standby firings; older history is incomplete and incident intent/classification unresolved. Recommend keeping all advisory and explicitly captured prospective evidence before paging promotion. Park needs=owner for adjudication of evidence limits and per-rule paging. Attempts: 0 implementation attempts. Criterion 1 not certified complete.
+
+Owner decision 2026-10-09: all three coordination rules (CoordinationNoLeader, CoordinationSplitBrain, CoordinationNoStandby) stay advisory and non-paging. Evidence accepted as a lower bound: NoLeader no observed firing; SplitBrain one 2m firing on 2026-09-07, real vs spurious unresolvable from retained data; NoStandby two firings (7h52m on 2026-09-14, 2m on 2026-09-18), both genuine standby loss with unknown cause. NoStandby measures lost redundancy, not an outage, so it does not page. No rule proved untrustworthy, so none is fixed or withdrawn. No label change, so no gcx push. The raw evidence stays in the gitignored codex/ tree.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Gathered the per-rule coordination firing history from the stack since the soak began (loop17, read-only), classified each recovered firing, and recorded the owner's decision: all three rules remain advisory with no paging labels. No rule or label changed; no tracked code changed, so the gate items are unaffected.
+<!-- SECTION:FINAL_SUMMARY:END -->
