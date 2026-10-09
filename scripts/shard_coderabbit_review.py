@@ -11,7 +11,8 @@ CodeRabbit can exit before emitting its terminal event (for example when the
 review service closes the WebSocket).  A zero process exit status is therefore
 not enough to call a shard complete.  A shard is complete only when it exits
 zero and emits a JSON event whose ``type``, ``status`` or ``event`` field is
-``"complete"``.
+``"complete"``. Every completion event must also report an integer ``findings``
+total matching the number of finding events received.
 
 Completion is a transport result, not a verdict.  A complete shard is labelled
 ``CLEAN`` only when its NDJSON holds no ``{"type": "finding"}`` events;
@@ -19,8 +20,8 @@ otherwise its status line and the final summary report the finding counts by
 severity.  Findings never change the exit status.
 
 Exit codes:
-    0  every shard exited zero and emitted a completion event (findings allowed)
-    1  at least one shard failed or lacked a completion event
+    0  every shard exited zero with a verified completion total (findings allowed)
+    1  at least one shard failed, lacked completion, or had an invalid total
     2  invalid arguments or an aggregate output error
 """
 
@@ -61,9 +62,13 @@ class ShardResult:
 
     @property
     def clean(self) -> bool:
-        """Whether the shard completed successfully and emitted its sentinel."""
+        """Whether the shard completed successfully with a verified findings total."""
 
-        return self.returncode == 0 and self.complete
+        return (
+            self.returncode == 0
+            and self.complete
+            and completion_findings_error(self.stdout) is None
+        )
 
     @property
     def findings(self) -> Counter:
@@ -105,8 +110,8 @@ def format_counts(counts: Counter) -> str:
     return ", ".join(f"{counts[severity]} {severity}" for severity in known + others)
 
 
-def has_complete_line(output: str) -> bool:
-    """Return whether *output* contains a structured completion event.
+def _complete_events(output: str) -> Iterable[dict]:
+    """Yield structured completion events from *output*.
 
     Agent-mode output is NDJSON, but malformed or human-readable lines should
     not be able to claim completion merely because they contain the word
@@ -124,8 +129,27 @@ def has_complete_line(output: str) -> bool:
         if not isinstance(event, dict):
             continue
         if any(event.get(field) == "complete" for field in ("type", "status", "event")):
-            return True
-    return False
+            yield event
+
+
+def has_complete_line(output: str) -> bool:
+    """Return whether *output* contains a structured completion event."""
+
+    return any(True for _ in _complete_events(output))
+
+
+def completion_findings_error(output: str) -> Optional[str]:
+    """Fail closed when a completion total cannot verify the received findings."""
+
+    counted = sum(count_findings(output).values())
+    for event in _complete_events(output):
+        reported = event.get("findings")
+        # bool is an int subclass in Python, but not a JSON integer total.
+        if type(reported) is not int:
+            return "missing or non-integer complete findings"
+        if reported != counted:
+            return f"findings count mismatch: counted {counted}, complete reports {reported}"
+    return None
 
 
 def review_command(coderabbit: str, base: str, directory: str) -> list[str]:
@@ -235,6 +259,10 @@ def _print_status(result: ShardResult, stream: TextIO) -> None:
         reasons.append(f"exit status {result.returncode}")
     if not result.complete:
         reasons.append("missing complete line")
+    else:
+        findings_error = completion_findings_error(result.stdout)
+        if findings_error:
+            reasons.append(findings_error)
     if result.error:
         reasons.append(result.error)
     print(f"[{result.directory}] FAILED ({'; '.join(reasons)})", file=stream)

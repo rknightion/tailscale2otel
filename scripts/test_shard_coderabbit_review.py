@@ -2,6 +2,8 @@
 """Tests for the directory-sharded CodeRabbit review runner."""
 
 import io
+import json
+import sys
 import pathlib
 import stat
 import subprocess
@@ -9,7 +11,10 @@ import tempfile
 import unittest
 from unittest import mock
 
-import shard_coderabbit_review as review
+if __package__:
+    from . import shard_coderabbit_review as review
+else:
+    import shard_coderabbit_review as review
 
 
 FAKE_CODERABBIT = r"""#!/usr/bin/env python3
@@ -27,16 +32,16 @@ events = {
     "internal/app": [
         {"type": "finding", "severity": "major", "message": "first major finding"},
         {"type": "finding", "severity": "major", "message": "second major finding"},
-        {"type": "status", "status": "complete"},
+        {"type": "status", "status": "complete", "findings": 2},
     ],
     "internal/mixed": [
         {"type": "finding", "severity": "major", "message": "mixed major finding"},
         {"type": "finding", "severity": "MINOR", "message": "mixed minor finding"},
         {"type": "finding", "message": "finding with no severity"},
-        {"type": "status", "status": "complete"},
+        {"type": "status", "status": "complete", "findings": 3},
     ],
     "scripts": [
-        {"type": "status", "status": "complete"},
+        {"type": "status", "status": "complete", "findings": 0},
     ],
     "missing": [
         {"type": "status", "status": "running"},
@@ -109,6 +114,48 @@ class ShardedReviewTest(unittest.TestCase):
             "0 clean, 2 with findings (3 major, 1 minor, 1 unknown), 0 failed",
             report.splitlines()[-1],
         )
+
+    def assert_cli_failure(self, events, reason):
+        output = "\n".join(json.dumps(event) for event in events) + "\n"
+        command = write_executable(
+            self.root, "fake-invalid-coderabbit",
+            "#!/usr/bin/env python3\nimport sys\nsys.stdout.write(" + repr(output) + ")\n",
+        )
+        aggregate = self.root / "invalid.ndjson"
+        result = subprocess.run(
+            [sys.executable, str(pathlib.Path(review.__file__).resolve()),
+             "--base", "wave-base", "--dir", "scripts",
+             "--coderabbit", command, "--output", str(aggregate)],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("[scripts] FAILED", result.stderr)
+        self.assertNotIn("[scripts] CLEAN", result.stderr)
+        self.assertIn(reason, result.stderr)
+        self.assertIn("0 clean, 0 with findings, 1 failed", result.stderr)
+        self.assertEqual(aggregate.read_text(encoding="utf-8"), output)
+
+    def test_complete_findings_count_mismatch_fails_cli(self):
+        for reported, findings in [(1, []), (0, [{"type": "finding"}]),
+                                   (2, [{"type": "finding", "severity": "major"}]),
+                                   (-1, [])]:
+            with self.subTest(reported=reported, findings=findings):
+                self.assert_cli_failure(
+                    findings + [{"type": "complete", "findings": reported}],
+                    f"findings count mismatch: counted {len(findings)}, complete reports {reported}",
+                )
+
+    def test_missing_or_non_integer_complete_findings_fails_cli(self):
+        for shape in [{"type": "complete"}, {"type": "status", "status": "complete"},
+                      {"event": "complete"}]:
+            with self.subTest(shape=shape, missing=True):
+                self.assert_cli_failure([shape], "missing or non-integer complete findings")
+            for value in [None, "0", 0.0, False, True, [], {}]:
+                with self.subTest(shape=shape, value=value):
+                    self.assert_cli_failure(
+                        [dict(shape, findings=value)],
+                        "missing or non-integer complete findings",
+                    )
 
     def test_missing_complete_event_fails_the_review(self):
         aggregate = self.root / "review.ndjson"
