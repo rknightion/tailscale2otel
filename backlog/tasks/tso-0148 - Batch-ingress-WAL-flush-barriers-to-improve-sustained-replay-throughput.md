@@ -3,11 +3,11 @@ id: TSO-0148
 title: >-
   Decouple ingress WAL completion from metric collection to preserve configured
   DPM
-status: In Progress
+status: Parked
 assignee:
   - '@loop18'
 created_date: '2026-09-10 21:02'
-updated_date: '2026-10-09 12:39'
+updated_date: '2026-10-09 13:36'
 labels: []
 dependencies: []
 priority: high
@@ -57,4 +57,6 @@ Local harness delivered in TSO-0149. Two workload sizes each ran all six cases t
 2026-09-11 scope correction requested by the operator: this is a high-priority metric-cadence correctness bug, not a batching enhancement. The revised description and acceptance criteria supersede the earlier throughput-first direction. Historical TSO-0149 measurements remain useful experimental evidence, but its delta case is not an actionable option for this work, and coalescing changes both disk commits and rollup windows. A design must decouple ingress durability completion from scheduled cumulative collection before any throughput claim can close this task. Source pointers: internal/app/ingresswal.go applyEnvelope; internal/app/collectors.go WAL route flush wiring; internal/telemetry/provider.go ForceFlush; internal/telemetry/processors.go newMetricReader. Task remains To Do: this update authorizes no implementation or deployment.
 
 loop18 resumes the preserved partial build without resetting prior attempts; criteria 1-6 precede the identical-entry harness for criterion 7.
+
+loop18: resumed the interrupted loop17 implementation cycle without resetting prior attempts; no completed mandatory-gate change-and-verify cycle in this run. Two same-protocol infrastructure retries exhausted with loop-pi recovery required; automatic continuation declined. Exact unfinished candidate retained; full app fixture compilation remains red, lifecycle/fixtures and all six cadence suffixes unfinished. The build is unaccepted and unlanded; criterion 7 harness is held until build land. Resume after the harness recovery defect is resolved, preserve accepted design and existing attempt history.
 <!-- SECTION:NOTES:END -->
