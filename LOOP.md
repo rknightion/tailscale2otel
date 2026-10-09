@@ -44,7 +44,11 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   unit suffixes, `_ratio` on unit-`1` gauges.
 - Pick exactly one ingestion path per log type (`poll` or `stream`); both double-counts.
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
-- A whole-repo CodeRabbit review exceeds the transport limit: use `just review-sharded`.
+- A whole-repo CodeRabbit review exceeds the transport limit: use `just review-sharded main .`.
+  Arguments are positional (base, then dirs); `base=main` passes the literal string `base=main`.
+- `helm-success` exists only for pushes touching the chart paths in `helm.yml` (no
+  `workflow_dispatch`); a non-chart push to `main` never gets one. Record it as absent, not a pass,
+  and do not make a source edit to trigger it. Pull requests always report it.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
 
 ## Mutexes
