@@ -435,6 +435,10 @@ var (
 	// locally configured endpoint, so it cannot contain a space. The second
 	// alternative is the bare "failed to upload <signal>: <code> ..." shape.
 	httpStatusRe = regexp.MustCompile(`(?:failed to send(?: \w+)? to \S+|failed to upload(?: \w+)?): (\d{3})(?:\s|$)`)
+	// net/http quotes server-controlled status/version tokens and response lines in
+	// these errors. Treat the marker as a status shape before any quoted text
+	// can impersonate a transport failure, gRPC code, or partial success.
+	malformedHTTPRe = regexp.MustCompile(`malformed http (?:status code|response|version) "`)
 	// grpcStatusRe matches a gRPC status error's code token.
 	grpcStatusRe = regexp.MustCompile(`rpc error: code = (\w+)`)
 )
@@ -451,13 +455,17 @@ type exportStatusShape struct {
 }
 
 // parseExportStatus recognizes an HTTP or gRPC status error and classifies it
-// on its numeric code or code token only. The leftmost match wins: the SDK's own
+// on its numeric code or code token only; malformed HTTP is always other. The leftmost match wins: the SDK's own
 // text always precedes any server text, and wrappers (retry, joined causes) only
 // prepend.
 func parseExportStatus(msg string) (exportStatusShape, bool) {
 	var best exportStatusShape
 	found := false
-	if m := httpStatusRe.FindStringSubmatchIndex(msg); m != nil {
+	if m := malformedHTTPRe.FindStringIndex(msg); m != nil {
+		best = exportStatusShape{class: errClassOther, at: m[0]}
+		found = true
+	}
+	if m := httpStatusRe.FindStringSubmatchIndex(msg); m != nil && (!found || m[0] < best.at) {
 		best = exportStatusShape{class: httpStatusClass(msg[m[2]:m[3]]), at: m[0]}
 		found = true
 	}
@@ -518,7 +526,8 @@ var exportErrorReasons = []string{
 
 // exportErrorReason returns the first allowlisted phrase found in text that
 // came from the local transport, or "" if none applies. A recognized HTTP
-// status error never has one (its reason phrase is server-chosen), and a gRPC
+// status error (including malformed HTTP) never has one (its reason phrase
+// or quoted response is server-chosen), and a gRPC
 // status error has one only for Unavailable. Text matching neither shape (a
 // dial or TLS failure from net/http, say) is searched after the "body:" cut.
 func exportErrorReason(err error) string {

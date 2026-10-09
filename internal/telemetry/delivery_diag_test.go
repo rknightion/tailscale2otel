@@ -208,6 +208,11 @@ func TestClassifyExportErrorIgnoresBackendBodyAndPorts(t *testing.T) {
 // rawStatusBackend answers every request with the literal status line it is
 // given, so the reason phrase is whatever the server chose.
 func rawStatusBackend(statusLine string) http.Handler {
+	return rawResponseLineBackend("HTTP/1.1 " + statusLine)
+}
+
+// rawResponseLineBackend also permits malformed protocol-version tokens.
+func rawResponseLineBackend(responseLine string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(io.Discard, r.Body)
 		conn, buf, err := w.(http.Hijacker).Hijack()
@@ -216,8 +221,8 @@ func rawStatusBackend(statusLine string) http.Handler {
 		}
 		defer conn.Close()
 		body := "echoing Authorization: Bearer " + diagSentinel
-		_, _ = fmt.Fprintf(buf, "HTTP/1.1 %s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
-			statusLine, len(body), body)
+		_, _ = fmt.Fprintf(buf, "%s\r\nContent-Type: text/plain\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+			responseLine, len(body), body)
 		_ = buf.Flush()
 	})
 }
@@ -264,6 +269,78 @@ func TestDeliveryDiagnosticsHTTPClassFollowsNumericStatusNotReasonPhrase(t *test
 				if st.LastErrorClass != tc.class || st.Failures != 1 || st.PartialSuccesses != 0 {
 					t.Errorf("%s health = %+v, want class %q, 1 failure, no partial success", signal, st, tc.class)
 				}
+			}
+		})
+	}
+}
+
+// net/http's malformed-status errors quote server-controlled text, not a
+// transport failure. None of that text may select a class or reason.
+func TestClassifyExportErrorMalformedHTTP(t *testing.T) {
+	for _, shape := range []string{"malformed HTTP status code", "malformed HTTP response", "malformed HTTP version"} {
+		for _, phrase := range []string{
+			"timeout", "i/o timeout", "deadline exceeded", "context canceled",
+			"unauthenticated", "permission denied", "unavailable",
+			"connection refused", "connection reset", "no such host", "certificate",
+			"OTLP partial success: x", "rpc error: code = Unauthenticated",
+		} {
+			t.Run(shape+"/"+phrase, func(t *testing.T) {
+				err := fmt.Errorf("failed to upload metrics: Post %q: net/http: HTTP/1.x transport connection broken: %s %q",
+					"http://example.invalid/v1/metrics", shape, "HTTP/1.1 "+phrase)
+				if got := classifyExportError(err); got != errClassOther {
+					t.Errorf("class = %q, want %q", got, errClassOther)
+				}
+				if got := exportErrorReason(err); got != "" {
+					t.Errorf("reason = %q, want empty", got)
+				}
+			})
+		}
+	}
+	for _, err := range []error{
+		errors.New(`Post "http://example.invalid": dial tcp: i/o timeout`),
+		errors.New(`Post "http://example.invalid": read tcp: i/o timeout`),
+		fmt.Errorf("export: %w", context.DeadlineExceeded),
+	} {
+		if got := classifyExportError(err); got != errClassTimeout {
+			t.Errorf("classifyExportError(%v) = %q, want timeout", err, got)
+		}
+	}
+}
+
+func TestClassifyExportErrorMalformedHTTPWire(t *testing.T) {
+	type wireCase struct {
+		responseLine string
+		wantError    string
+	}
+	var cases []wireCase
+	for _, statusLine := range []string{"timeout", "i/o timeout", "unavailable", "certificate", "OTLP partial success: x"} {
+		cases = append(cases, wireCase{"HTTP/1.1 " + statusLine, "malformed HTTP status code"})
+	}
+	for _, version := range []string{"timeout", "unavailable", "certificate"} {
+		cases = append(cases, wireCase{version + " 500 Internal Server Error", "malformed HTTP version"})
+	}
+	for _, tc := range cases {
+		t.Run(tc.responseLine, func(t *testing.T) {
+			r := newDiagRigWith(t, rawResponseLineBackend(tc.responseLine), nil)
+			for _, export := range []func(context.Context) error{r.metrics, r.logsExp} {
+				err := export(context.Background())
+				if err == nil || !strings.Contains(err.Error(), tc.wantError) {
+					t.Fatalf("want net/http %s error, got %v", tc.wantError, err)
+				}
+				if got := classifyExportError(err); got != errClassOther {
+					t.Errorf("class = %q, want other", got)
+				}
+				if got := exportErrorReason(err); got != "" {
+					t.Errorf("reason = %q, want empty", got)
+				}
+			}
+			for _, signal := range []string{SignalMetrics, SignalLogs} {
+				if st := r.state(signal); st.LastErrorClass != errClassOther || st.Failures != 1 || st.PartialSuccesses != 0 {
+					t.Errorf("%s health = %+v, want other and one failure", signal, st)
+				}
+			}
+			if out := r.logs.String(); strings.Contains(out, "reason=") || strings.Contains(out, diagSentinel) {
+				t.Errorf("diagnostic contains backend reason or body: %s", out)
 			}
 		})
 	}
