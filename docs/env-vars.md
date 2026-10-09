@@ -456,6 +456,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_FLOWS__STORE__SWEEP_INTERVAL` | `1h` | `restart` | how often retention and the row cap are enforced (1m–24h). Only takes effect once directory is set |
 | `TS2OTEL_FLOWS__STORE__INCREMENTAL_VACUUM_INTERVAL` | `0s` | `restart` | periodic SQLite page reclamation; 0 inherits sweep_interval |
 | `TS2OTEL_FLOWS__STORE__INCREMENTAL_VACUUM_PAGES` | `1000` | `restart` | maximum pages reclaimed per vacuum tick |
+| `TS2OTEL_FLOWS__STORE__ACKNOWLEDGE_DATA_AT_REST` | `false` | `restart` | set true (once the on-disk store and its backup/retention coverage are deliberate) to silence the flows.store.directory data-at-rest advisory; silences nothing else |
 | `TS2OTEL_EVENTS__ENABLED` | `true` | `restart` | keep a bounded, in-memory ring of recent audit/webhook events and serve /events; needs admin.enabled + admin.landing_page (no effect otherwise) |
 | `TS2OTEL_EVENTS__MAX_EVENTS` | `5000` | `restart` | how many individual events /events can see (100–100000). A plain count, not a time span — oldest evicted first. Lost on restart — OTLP stays the system of record |
 | `TS2OTEL_PROMETHEUS__ENABLED` | `false` | `restart` | backwards-compatible pull opt-in alongside OTLP; delivery.mode prometheus or dual also enables it |

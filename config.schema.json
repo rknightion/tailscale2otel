@@ -1924,6 +1924,11 @@
         "store": {
           "additionalProperties": false,
           "properties": {
+            "acknowledge_data_at_rest": {
+              "default": false,
+              "description": "set true (once the on-disk store and its backup/retention coverage are deliberate) to silence the flows.store.directory data-at-rest advisory; silences nothing else",
+              "type": "boolean"
+            },
             "batch_size": {
               "default": 512,
               "description": "rows committed per write transaction (1–100000); must not exceed queue_size. Only takes effect once directory is set",

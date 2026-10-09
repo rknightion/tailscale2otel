@@ -170,6 +170,12 @@ suggests it. Keys under a dynamic map (`otlp.headers.*`, a node-metrics target's
   advisories are also listed on the admin status page's **Config** tab and in `/api/status.json` as
   `advisories[]`, each with the setting it concerns - the
   `tailscale2otel_config_warnings_ratio` metric reports only the count.
+- **Config file permissions** - a `-config` file readable by group or other (for example `0644`)
+  raises a startup advisory, since the file may hold credentials. The one exemption is a file the
+  Kubernetes kubelet projects from a ConfigMap or Secret volume: when the file resolves through
+  that volume's `..data` symlink and the mount is read-only, its mode comes from the volume's
+  `defaultMode` and cannot be changed in place, so no advisory is raised. Any other file, including
+  a plain file on a read-only mount, still warns.
 
 ## Contents
 
@@ -1832,6 +1838,7 @@ before enabling this in a deployment with a shared backup destination.
 | `flows.store.sweep_interval` | `1h`, bounds `1m`-`24h` | How often the retention window and the row cap are enforced. |
 | `flows.store.incremental_vacuum_interval` | `0s` | Periodic SQLite page reclamation; `0` inherits `sweep_interval`. |
 | `flows.store.incremental_vacuum_pages` | `1000` | Maximum pages reclaimed per vacuum tick. |
+| `flows.store.acknowledge_data_at_rest` | `false` | Set `true` (once the on-disk store and its backup/retention coverage are a deliberate choice) to silence the startup advisory that fires whenever `flows.store.directory` is set, warning that flow rows including user identities are written to disk. Silences only that advisory: the "set but has no effect" and `capacity_profile` advisories still fire. |
 
 ---
 

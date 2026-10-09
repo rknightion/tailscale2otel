@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.0](https://img.shields.io/badge/Version-0.36.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.1](https://img.shields.io/badge/Version-0.36.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -537,6 +537,7 @@ extraVolumeMounts:
 | config.flows.enabled | bool | `true` | Build the flow store and serve /flows. No effect without admin.enabled + admin.landing_page. |
 | config.flows.max_future_skew | string | `"5m"` | Local-view admission only: reject records further ahead of this process clock (0–1h). OTLP emission is unchanged. |
 | config.flows.retention | string | `"6h"` | How far back /flows can see, as a ring of one-minute buckets (1m–24h). Sizes pod memory; each tailnet keeps its own store. |
+| config.flows.store.acknowledge_data_at_rest | bool | `false` | Acknowledge that directory persists flow rows, including user identities, to disk and silence the data-at-rest startup advisory (config_warnings_ratio). Set true once the PVC and its backup/retention coverage are a deliberate choice. Silences no other advisory. |
 | config.flows.store.batch_size | int | `512` | Rows written per transaction by the background writer. |
 | config.flows.store.directory | string | `""` | Directory to hold this tailnet's flows-<tailnet>.db. Empty (default) = disabled. Point it at the persistence PVC's mount, e.g. /var/lib/tailscale2otel/flows, and set persistence.enabled=true — see the sizing note on that block below. Must be writable; if it cannot be opened the flow view is switched OFF (and /flows 404s) rather than silently falling back to memory, so an operator who asked for history is never shown a view that looks like it. OTLP export is unaffected. Rows carry user identities (emails) and land on disk and in backups — the configured pii_filter is applied before a row is written, same as the OTLP export path. |
 | config.flows.store.flush_interval | string | `"5s"` | How often a partial batch is forced to disk, so a quiet tailnet's last few connections do not sit in memory indefinitely between flushes. |
