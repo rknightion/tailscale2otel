@@ -32,6 +32,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v5/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v5/internal/stream"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 	"github.com/rknightion/tailscale2otel/v5/internal/webhook"
 )
@@ -419,6 +420,10 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		options := []stream.Option{
 			stream.WithTracer(a.tracer),
 			stream.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
+			stream.WithDurableObservers(ingestObserverFor(a.cfg.SelfObservability.Enabled), acceptedEventObserverFor(a.cfg.SelfObservability.Enabled)),
+		}
+		if routeRT.delivery != nil {
+			options = append(options, stream.WithDurableBounds(routeRT.delivery.IngressLogBounds))
 		}
 		if acceptDurably {
 			options = append(options, stream.WithDurableAppend(durableAppend(
@@ -467,6 +472,10 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		options := []webhook.Option{
 			webhook.WithTracer(a.tracer),
 			webhook.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
+			webhook.WithDurableObservers(ingestObserverFor(a.cfg.SelfObservability.Enabled), acceptedEventObserverFor(a.cfg.SelfObservability.Enabled)),
+		}
+		if routeRT.delivery != nil {
+			options = append(options, webhook.WithDurableBounds(routeRT.delivery.IngressLogBounds))
 		}
 		if set := a.webhookDedupFor(routeRT); set != nil {
 			options = append(options, webhook.WithDedup(set))
@@ -568,34 +577,18 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		webhookApply := webhookServer
 		routes = append(routes,
 			ingressWALRoute{
-				tailnet: a.runtimeConfiguredName(routeRT),
-				source:  ingressWALSourceStream,
-				signal:  ingressWALSignalHEC,
-				apply: func(
-					ctx context.Context,
-					body []byte,
-					accepted time.Time,
-				) (bool, error) {
-					result, err := streamApply.ApplyDurable(ctx, body, accepted)
-					return result.FlowsApplied, err
-				},
-				drain: func() {
-					routeRT.flowProc.FlushRollup(routeRT.emitter)
-				},
-				flush: routeRT.forceFlush,
+				tailnet:  a.runtimeConfiguredName(routeRT),
+				source:   ingressWALSourceStream,
+				signal:   ingressWALSignalHEC,
+				prepare:  decorateDurable(streamApply.PrepareDurable, routeRT.durableDecorate),
+				delivery: routeRT.delivery,
 			},
 			ingressWALRoute{
-				tailnet: a.runtimeConfiguredName(routeRT),
-				source:  ingressWALSourceWebhook,
-				signal:  ingressWALSignalWebhook,
-				apply: func(
-					ctx context.Context,
-					body []byte,
-					accepted time.Time,
-				) (bool, error) {
-					return false, webhookApply.ApplyDurable(ctx, body, accepted)
-				},
-				flush: routeRT.forceFlush,
+				tailnet:  a.runtimeConfiguredName(routeRT),
+				source:   ingressWALSourceWebhook,
+				signal:   ingressWALSignalWebhook,
+				prepare:  decorateDurable(webhookApply.PrepareDurable, routeRT.durableDecorate),
+				delivery: routeRT.delivery,
 			},
 		)
 	}
@@ -636,5 +629,29 @@ func webhookOptions(c config.WebhookConfig) webhook.Options {
 		// senders cannot multiply the per-request allowance.
 		MaxConcurrentRequests:         c.MaxConcurrentRequests,
 		PerRouteMaxConcurrentRequests: c.PerRouteMaxConcurrentRequests,
+	}
+}
+
+// decorateDurable keeps durable WAL application on the runtime's annotation
+// tee, exactly as the synchronous receiver path is. The tee forwards every
+// call unchanged to the receipt's recording emitter, so metrics still wait for
+// the next scheduled collection and logs are still captured for the receipt;
+// it only additionally offers each log record to the annotation rule set, once
+// per application (the pre-existing at-least-once replay semantics).
+func decorateDurable(
+	prepare func(context.Context, []byte, time.Time) (telemetry.IngressWork, error),
+	decorate func(telemetry.Emitter) telemetry.Emitter,
+) func(context.Context, []byte, time.Time) (telemetry.IngressWork, error) {
+	if decorate == nil {
+		return prepare
+	}
+	return func(ctx context.Context, body []byte, accepted time.Time) (telemetry.IngressWork, error) {
+		work, err := prepare(ctx, body, accepted)
+		if err != nil || work.Apply == nil {
+			return work, err
+		}
+		apply := work.Apply
+		work.Apply = func(ctx context.Context, e telemetry.Emitter) error { return apply(ctx, decorate(e)) }
+		return work, nil
 	}
 }

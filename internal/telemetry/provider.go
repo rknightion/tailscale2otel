@@ -58,6 +58,7 @@ type Options struct {
 	// The application default is 10000; zero leaves the pinned SDK feature unset
 	// for direct package callers.
 	MetricExportBatchSize int
+	MetricProducers       []sdkmetric.Producer
 
 	// MaxLogBodyBytes and MaxLogAttrValueBytes bound one log record before
 	// export (#366): a single oversized HEC, audit or webhook record must not
@@ -216,7 +217,15 @@ type Provider struct {
 	// under self-observability: the queueing wrappers it needs replace the plain
 	// SDK processors, so a deployment that exports no self-telemetry keeps the
 	// untouched SDK code path rather than paying for instrumentation nobody reads.
-	batchQueues *BatchQueueTracker
+	batchQueues                   *BatchQueueTracker
+	metricReader                  *scheduledMetricReader
+	serialLogs                    *serialLogExporter
+	options                       Options
+	metricsExcluded, logsExcluded bool
+	logBatchSize                  int
+	logTimeout                    time.Duration
+	logCancel                     context.CancelFunc
+	logDone                       chan struct{}
 }
 
 // NewProvider builds the telemetry pipeline for the given options.
@@ -290,9 +299,14 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		mpOpts = append(mpOpts, sdkmetric.WithReader(promReader))
 	}
 	mp := sdkmetric.NewMeterProvider(mpOpts...)
+	serialLogs := newSerialLogExporter(logExp)
+	provider := &Provider{metricReader: metricReader, serialLogs: serialLogs, options: opts,
+		metricsExcluded: !signalEnabled(opts.Signals.Metrics), logsExcluded: !signalEnabled(opts.Signals.Logs),
+		logBatchSize: opts.Batch.Logs.resolve(dfltLogQueueConfig).batchSize,
+		logTimeout:   opts.Batch.Logs.resolve(dfltLogQueueConfig).exportTimeout, logDone: make(chan struct{})}
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(logRes),
-		sdklog.WithProcessor(newLogProcessor(logExp, opts)),
+		sdklog.WithProcessor(&ingressLogProcessor{owner: provider, next: newLogProcessor(serialLogs, opts)}),
 	)
 
 	var tp *sdktrace.TracerProvider
@@ -361,22 +375,16 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		logCounter.setObserver(obs)
 	}
 
-	return &Provider{
-		mp:      mp,
-		lp:      lp,
-		tp:      tp,
-		tracer:  tracer,
-		emitter: emitter,
-		card:    card,
-
-		metricCounter: metricCounter,
-		logCounter:    logCounter,
-		spanCounter:   spanCounter,
-		delivery:      delivery,
-
-		promReg:     promReg,
-		batchQueues: opts.Batch.Tracker,
-	}, nil
+	provider.mp, provider.lp, provider.tp = mp, lp, tp
+	provider.tracer, provider.emitter, provider.card = tracer, emitter, card
+	provider.metricCounter, provider.logCounter, provider.spanCounter = metricCounter, logCounter, spanCounter
+	provider.delivery, provider.promReg, provider.batchQueues = delivery, promReg, opts.Batch.Tracker
+	metricReader.emitter = emitter
+	metricReader.Start()
+	logCtx, logCancel := context.WithCancel(context.Background())
+	provider.logCancel = logCancel
+	go func() { defer close(provider.logDone); provider.runIngressLogs(logCtx) }()
+	return provider, nil
 }
 
 // ExportStats returns the cumulative count of data points and log records handed
@@ -402,7 +410,18 @@ func (p *Provider) ExportStats() ExportStats {
 // Delivery returns this provider's per-signal OTLP delivery state: what the
 // exporters actually shipped, as opposed to what the collectors produced. Always
 // populated, self-obs or not.
-func (p *Provider) Delivery() []DeliveryState { return p.delivery.states() }
+func (p *Provider) Delivery() []DeliveryState {
+	states := p.delivery.states()
+	if p.metricReader != nil {
+		stats := p.CollectionStats()
+		for i := range states {
+			if states[i].Signal == SignalMetrics {
+				states[i].Collection = &stats
+			}
+		}
+	}
+	return states
+}
 
 // Emitter returns the Emitter collectors should use.
 func (p *Provider) Emitter() Emitter { return p.emitter }
@@ -437,7 +456,7 @@ func (p *Provider) Tracer() trace.Tracer { return p.tracer }
 // consume the shared budget before the other starts. Traces are deliberately
 // excluded: this barrier covers ingress-derived metrics and logs only.
 func (p *Provider) ForceFlush(ctx context.Context) error {
-	return shutdownAll(ctx, p.mp.ForceFlush, p.lp.ForceFlush)
+	return shutdownAll(ctx, p.mp.ForceFlush, p.lp.ForceFlush, p.flushIngressLogs)
 }
 
 // Shutdown flushes and stops the metric, log, and trace pipelines. The three are
@@ -446,11 +465,40 @@ func (p *Provider) ForceFlush(ctx context.Context) error {
 // not consume the shared shutdown budget and rob the log and trace pipelines of
 // their chance to flush.
 func (p *Provider) Shutdown(ctx context.Context) error {
-	fns := []func(context.Context) error{p.mp.Shutdown, p.lp.Shutdown}
+	if p.metricReader != nil {
+		bounded, cancel := boundedReaderContext(ctx, p.metricReader.timeout)
+		defer cancel()
+		ctx = bounded
+	}
+	var lifecycleErr, workerErr error
+	if p.metricReader != nil {
+		lifecycleErr = shutdownAll(ctx,
+			func(ctx context.Context) error { return p.metricReader.flushLifecycle(ctx, FlushShutdown) },
+			p.flushIngressLogs)
+		p.logCancel()
+		select {
+		case <-p.logDone:
+		case <-ctx.Done():
+			workerErr = ctx.Err()
+		}
+	}
+	metricShutdown := p.mp.Shutdown
+	if p.metricReader != nil {
+		metricShutdown = func(ctx context.Context) error {
+			// The SDK may short-circuit Shutdown on an already expired context.
+			// Our owned workers must receive cancellation even in that case.
+			return errors.Join(p.metricReader.Shutdown(ctx), p.mp.Shutdown(ctx))
+		}
+	}
+	fns := []func(context.Context) error{metricShutdown, p.lp.Shutdown}
 	if p.tp != nil {
 		fns = append(fns, p.tp.Shutdown)
 	}
-	return shutdownAll(ctx, fns...)
+	err := shutdownAll(ctx, fns...)
+	if p.serialLogs != nil && err == nil && workerErr == nil {
+		err = p.serialLogs.close(ctx)
+	}
+	return errors.Join(lifecycleErr, workerErr, err)
 }
 
 // shutdownAll runs every shutdown function concurrently under ctx and returns the

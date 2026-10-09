@@ -10,6 +10,11 @@ import (
 )
 
 func (a *App) buildIngressWAL(routes []ingressWALRoute) error {
+	// New always calls this after every runtime is built, so it is the single
+	// construction point that refuses a runtime without its scheduled producer.
+	if a.runtimeSetupErr != nil {
+		return a.runtimeSetupErr
+	}
 	if !a.cfg.IngressWAL.Enabled {
 		coordinator, err := newIngressWALCoordinator(nil, nil)
 		if err != nil {

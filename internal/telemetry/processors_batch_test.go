@@ -13,11 +13,16 @@ package telemetry_test
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
 	"testing"
+	"testing/synctest"
 	"time"
+
+	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
@@ -92,45 +97,73 @@ func TestNewProvider_ZeroBatchOptionsLogsFlowThrough(t *testing.T) {
 // counterpart: zero BatchOptions must still deliver spans via the plain
 // sdktrace.NewBatchSpanProcessor(exp) path.
 func TestNewProvider_ZeroBatchOptionsTracesFlowThrough(t *testing.T) {
-	done := make(chan struct{}, 1)
+	// The server and watchdog live outside the fake clock: socket I/O is real,
+	// while the unmodified SDK batch processor's five-second boundary is fake.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	watchdog := ctx.Done() // Create this real-clock channel outside the bubble.
+	done := make(chan *collectortrace.ExportTraceServiceRequest, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case done <- struct{}{}:
-		default:
+		if r.URL.Path != "/v1/traces" {
+			w.WriteHeader(http.StatusOK)
+			return // An unrelated metric/log request cannot satisfy this proof.
 		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+		var request collectortrace.ExportTraceServiceRequest
+		if err != nil || proto.Unmarshal(body, &request) != nil {
+			t.Error("invalid trace protobuf request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		done <- &request
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 
-	ctx := context.Background()
-	p, err := telemetry.NewProvider(ctx, telemetry.Options{
-		ServiceName:    "t358",
-		Protocol:       "http",
-		Endpoint:       srv.URL,
-		TracingEnabled: true,
-	})
-	if err != nil {
-		t.Fatalf("NewProvider: %v", err)
-	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := p.Shutdown(shutdownCtx); err != nil {
-			t.Errorf("Shutdown: %v", err)
+	synctest.Test(t, func(t *testing.T) {
+		// Close sockets before leaving the bubble, joining SDK transport loops.
+		defer srv.Close()
+		p, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+			ServiceName: "t358", Protocol: "http", Endpoint: srv.URL,
+			TracingEnabled: true, // Batch deliberately remains entirely zero.
+		})
+		if err != nil {
+			t.Fatalf("NewProvider: %v", err)
 		}
-	}()
-
-	_, span := p.Tracer().Start(ctx, "test-span")
-	span.End()
-	if err := p.ForceFlush(ctx); err != nil {
-		t.Fatalf("ForceFlush: %v", err)
-	}
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("span never reached the exporter under zero BatchOptions")
-	}
+		defer func() {
+			shutdownCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+			defer stop()
+			if err := p.Shutdown(shutdownCtx); err != nil {
+				t.Errorf("Shutdown: %v", err)
+			}
+		}()
+		_, span := p.Tracer().Start(context.Background(), "test-span")
+		identity := span.SpanContext()
+		span.End()
+		if err := p.ForceFlush(context.Background()); err != nil {
+			t.Fatalf("ForceFlush: %v", err)
+		}
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("trace exported before normal SDK batch boundary")
+		default:
+		}
+		time.Sleep(5 * time.Second)
+		select {
+		case request := <-done:
+			if len(request.ResourceSpans) != 1 || len(request.ResourceSpans[0].ScopeSpans) != 1 || len(request.ResourceSpans[0].ScopeSpans[0].Spans) != 1 {
+				t.Fatalf("want exactly one trace span: %v", request)
+			}
+			got := request.ResourceSpans[0].ScopeSpans[0].Spans[0]
+			traceID, spanID := identity.TraceID(), identity.SpanID()
+			if got.Name != "test-span" || string(got.TraceId) != string(traceID[:]) || string(got.SpanId) != string(spanID[:]) {
+				t.Fatalf("wrong exported trace identity: %v", got)
+			}
+		case <-watchdog:
+			t.Fatal("span never reached trace endpoint under zero BatchOptions")
+		}
+	})
 }
 
 // TestBatchQueueTracker_LogsSaturateAndDropUnderStalledExporter is the #358

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
@@ -38,14 +37,18 @@ type tailnetRuntime struct {
 	emitter        telemetry.Emitter
 	card           *telemetry.CardinalityTracker
 	exportStats    func() telemetry.ExportStats
-	forceFlush     func(context.Context) error
-	cp             *provider.Provider
-	client         *tsapi.Client // concrete Tailscale client; nil under provider: headscale
-	cache          *enrich.DeviceCache
-	registry       *collector.Registry
-	sched          *collector.Scheduler
-	status         *collector.StatusTracker
-	apiStats       *APIStats
+	delivery       *telemetry.Provider
+	// durableDecorate wraps the emitter each durable WAL application records
+	// through, so durable logs reach the same annotation tee as the runtime's
+	// ordinary emitter. Nil-safe: an unset annotator passes the emitter through.
+	durableDecorate func(telemetry.Emitter) telemetry.Emitter
+	cp              *provider.Provider
+	client          *tsapi.Client // concrete Tailscale client; nil under provider: headscale
+	cache           *enrich.DeviceCache
+	registry        *collector.Registry
+	sched           *collector.Scheduler
+	status          *collector.StatusTracker
+	apiStats        *APIStats
 	// apiState records each API operation's latest availability state, and
 	// coverage tallies per-entity subrequests. Both are per-tailnet: a scope
 	// denial on one tailnet says nothing about another, and merging them would

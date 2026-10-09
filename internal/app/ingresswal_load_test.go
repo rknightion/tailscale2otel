@@ -26,7 +26,10 @@ import (
 )
 
 // This is a finite-backlog experiment, not a steady-state capacity test. All
-// cases use the production coordinator. Coalescing HEC bodies BEFORE admission
+// cases use the production coordinator. Since TSO-0148 the drain completes on
+// NORMAL scheduled metric slots at an explicit fixture interval rather than a
+// per-body ForceFlush, so its wall-clock results are not comparable with the
+// historical per-flush measurements. Coalescing HEC bodies BEFORE admission
 // explores fewer flush barriers without pretending to implement group commit.
 type walLoadCase struct {
 	name     string
@@ -133,7 +136,7 @@ type walLoadResult struct {
 	pendingBytes int64
 }
 
-func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay time.Duration) walLoadResult {
+func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay, interval time.Duration) walLoadResult {
 	tb.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -148,7 +151,7 @@ func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay time.Du
 	}
 	p, err := telemetry.NewProvider(ctx, telemetry.Options{
 		Protocol: "http", Endpoint: server.URL, Insecure: true,
-		ServiceName: "wal-load", MetricInterval: time.Hour,
+		ServiceName: "wal-load", MetricInterval: interval,
 		MetricExportBatchSize: tc.batch, CardinalityLimit: entries*flows*4 + 1000,
 		MetricTemporality: temporality,
 	})
@@ -183,7 +186,7 @@ func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay time.Du
 		tb.Fatal(err)
 	}
 	a.addRuntimeConfigured("example.com", "example.com", p.Emitter(), nil, nil,
-		p.ForceFlush, provider.Tailscale(client), false)
+		p, provider.Tailscale(client), false)
 	if err := a.buildIngressWAL(a.buildReceivers()); err != nil {
 		tb.Fatal(err)
 	}
@@ -224,6 +227,10 @@ func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay time.Du
 		tb.Fatal(err)
 	}
 	result.drain = time.Since(started)
+	// Completion must come from normal slots, never a lifecycle collection.
+	if stats := p.CollectionStats(); stats.RequiredSnapshotsAcknowledged == 0 || stats.TerminalAttempts != 0 || stats.ScheduledAttempts == 0 {
+		tb.Fatalf("drain did not complete on normal scheduled collections: %+v", stats)
+	}
 	if health := a.ingressWAL.Health(); !a.ingressWAL.Ready() || health.WAL.PendingEntries != 0 || health.WAL.PendingBytes != 0 {
 		tb.Fatalf("incomplete drain: %+v", health)
 	}
@@ -252,7 +259,7 @@ func runWALLoad(tb testing.TB, tc walLoadCase, entries, flows int, delay time.Du
 func TestIngressWALLoadAccounting(t *testing.T) {
 	for _, tc := range walLoadCases() {
 		t.Run(tc.name, func(t *testing.T) {
-			runWALLoad(t, tc, 9, 3, 0) // Includes a partial coalesced group.
+			runWALLoad(t, tc, 9, 3, 0, time.Second) // Includes a partial coalesced group.
 		})
 	}
 }
@@ -276,12 +283,13 @@ func BenchmarkIngressWALDrain(b *testing.B) {
 		b.Fatal("WAL load is limited to 65536 total flows per case")
 	}
 	delay := time.Duration(walLoadInt(b, "WAL_LOAD_DELAY_MS", 2, 100)) * time.Millisecond
+	interval := time.Duration(walLoadInt(b, "WAL_LOAD_INTERVAL_MS", 1000, 60000)) * time.Millisecond
 	for _, tc := range walLoadCases() {
 		b.Run(tc.name, func(b *testing.B) {
 			var drain, seed time.Duration
 			var requests, points, pending, walEntries float64
 			for range b.N {
-				r := runWALLoad(b, tc, entries, flows, delay)
+				r := runWALLoad(b, tc, entries, flows, delay, interval)
 				drain += r.drain
 				seed += r.seed
 				requests += float64(r.requests)

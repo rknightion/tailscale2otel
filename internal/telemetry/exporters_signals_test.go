@@ -45,7 +45,7 @@ func TestSignals_ZeroValueIsByteIdenticalToCommon(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 
@@ -96,7 +96,7 @@ func TestSignals_MetricsOverrideIndependentEndpoint(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 
@@ -146,7 +146,7 @@ func TestSignals_CredentialsNeverCrossSignals(t *testing.T) {
 	}
 
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 	_, span := p.Tracer().Start(ctx, "test-span")
@@ -214,7 +214,7 @@ func TestSignals_LogsDisabledSuppressesExport(t *testing.T) {
 
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
 	p.Emitter().LogEvent(telemetry.Event{Body: "hello"})
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 

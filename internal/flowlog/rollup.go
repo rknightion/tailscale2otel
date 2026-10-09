@@ -470,3 +470,26 @@ func lessRollupKey(a, b rollupKey) bool {
 	}
 	return false
 }
+
+// Stage detaches one bounded ordinary accumulator at a collection boundary.
+// Its tape survives failed SDK Collect without draining newer work or re-adding
+// counters. Required originals use their own context-scoped accumulators.
+func (a *rollupAccumulator) Stage() telemetry.CollectionStage {
+	if a == nil {
+		return nil
+	}
+	a.mu.Lock()
+	if len(a.entries) == 0 && len(a.dstPeers) == 0 && len(a.dstPorts) == 0 {
+		a.mu.Unlock()
+		return nil
+	}
+	detached := newRollupAccumulator(a.topN, a.nodes, a.identity, a.geo)
+	detached.entries, detached.dstPeers, detached.dstPorts = a.entries, a.dstPeers, a.dstPorts
+	a.entries = map[rollupKey]*rollupEntry{}
+	a.dstPeers = map[string]map[string]struct{}{}
+	a.dstPorts = map[string]map[string]struct{}{}
+	a.mu.Unlock()
+	emitter, program := telemetry.NewCollectionProgram()
+	detached.Flush(emitter)
+	return program
+}

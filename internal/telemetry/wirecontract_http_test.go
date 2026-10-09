@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
 // TestWireHTTP_RequestPathsPerSignal guards otlpHTTPURL's whole reason for
@@ -142,7 +143,7 @@ func TestWireHTTP_MutualTLSRejectsMissingClientCert(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.mtls_reject", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err == nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
 		t.Fatal("ForceFlush succeeded against an mTLS server with no client certificate configured — the handshake should have failed")
 	}
 	if got := len(s.rec.all()); got != 0 {
@@ -175,7 +176,7 @@ func TestWireHTTP_NonOKResponseIsDeliveryFailure(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.counter404", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err == nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
 		t.Fatal("ForceFlush against a 404 endpoint returned a nil error — a 404 must be treated as a failed export, not a successful one")
 	}
 
@@ -224,7 +225,7 @@ func TestWireHTTP_PartialSuccessSurfacesAsExportFailure(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.partial_success", "1", "", 1, nil)
-	err = p.ForceFlush(ctx)
+	err = telemetry.CollectAndFlushForTest(ctx, p)
 	if got := len(s.rec.all()); got == 0 {
 		t.Fatal("server never received the request")
 	}
@@ -284,4 +285,46 @@ func TestWireHTTP_DeltaTemporalityConfigured(t *testing.T) {
 
 	assertDeltaTemporality(t, s.rec.all())
 	assertWireTestGauge(t, got["metrics"].metrics)
+}
+
+// TestWireHTTP_ScheduledExportFailureCountsExportFailures pins the error-handler
+// path the pinned PeriodicReader provided: every failed scheduled metric export
+// reaches otel.Handle, so tailscale2otel.export.failures (and the shipped
+// export-failures alert) keep counting, attributed to the metrics signal.
+func TestWireHTTP_ScheduledExportFailureCountsExportFailures(t *testing.T) {
+	rec := telemetrytest.New()
+	restore := telemetry.InstallExportErrorHandler(rec.Emitter(), nil)
+	defer restore()
+	s := newWireHTTPServer(t, nil)
+	s.setStatus(http.StatusNotFound)
+
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+		ServiceName:    "tailscale2otel",
+		Protocol:       "http",
+		Endpoint:       s.ts.URL,
+		MetricInterval: time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = p.Shutdown(sctx)
+	}()
+	p.Emitter().Counter("tailscale.wiretest.failure_counter", "1", "", 1, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
+		t.Fatal("scheduled export against a 404 endpoint reported success")
+	}
+	var failures float64
+	for _, point := range rec.MetricPoints("tailscale2otel.export.failures") {
+		if point.Attrs["signal"] == "metrics" {
+			failures += point.Value
+		}
+	}
+	if failures < 1 {
+		t.Fatalf("tailscale2otel.export.failures{signal=metrics} = %v after a failed scheduled export, want >= 1", failures)
+	}
 }

@@ -120,6 +120,9 @@ type WAL interface {
 	Append(context.Context, Envelope) error
 	Commit(context.Context, string) error
 	Replay(context.Context, Handler, CommitObserver) error
+	PrepareWindow(context.Context, WindowLimits, []Generation, GenerationObserver) ([]PreparedEntry, error)
+	CommitPrepared(context.Context, Generation) (PreparedOutcome, error)
+	ReleasePrepared(Generation) error
 	Health() Health
 	Close() error
 }
@@ -158,6 +161,7 @@ type Store struct {
 	nextEntry    uint64
 	nextMarker   uint64
 	closed       bool
+	prepared     map[Generation]PreparedOutcome
 }
 
 type fileOps struct {

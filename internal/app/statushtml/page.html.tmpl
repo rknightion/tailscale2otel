@@ -809,7 +809,7 @@ a.cta:hover{background:var(--t2o-hover);filter:none}
       not a reason to pull every replica out of rotation.{{if gt (len .Tailnets) 1}} One process-wide
       exporter per signal serves every tailnet, so this is never per-tailnet data.{{end}}</div>
     <table style="margin-top:8px">
-      <thead><tr><th>Signal</th><th>State</th><th class="num">Exports</th><th class="num">Failures</th><th>Last success</th><th>Last failure</th><th class="num">Last duration</th><th>Error class</th></tr></thead>
+      <thead><tr><th>Signal</th><th>State</th><th class="num">Exports</th><th class="num">Failures</th><th>Last success</th><th>Last failure</th><th class="num">Last duration</th><th>Error class</th><th>Collection clock / retention</th></tr></thead>
       <tbody id="deliveryBody">
         {{range .Delivery}}
         <tr>
@@ -821,6 +821,7 @@ a.cta:hover{background:var(--t2o-hover);filter:none}
           <td>{{if .LastFailureAt}}{{.LastFailureAt}}{{else}}—{{end}}</td>
           <td class="num">{{.LastDurationMs}} ms</td>
           <td class="mono">{{if .LastErrorClass}}{{.LastErrorClass}}{{else}}—{{end}}</td>
+          <td>{{with .Collection}}scheduled {{.ScheduledAttempts}}; failures {{.CollectFailures}}; discarded {{.BestEffortDiscardedFull}}; evicted {{.BestEffortEvicted}}; required ACKs {{.RequiredSnapshotsAcknowledged}}; retained {{.RetainedCredits}}; reserved {{.ReservedCredits}}; terminal {{.TerminalAttempts}} / skipped-full {{.TerminalSkippedFull}}{{else}}—{{end}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -1300,6 +1301,8 @@ function rebuildDelivery(rows){
     tr.appendChild(el('td',{'class':'num'}, String(sig.last_duration_ms)+' ms'));
     // A closed class set, never the backend's response text.
     tr.appendChild(el('td',{'class':'mono'}, sig.last_error_class || '—'));
+    var c=sig.collection;
+    tr.appendChild(el('td',null,c ? 'scheduled '+c.scheduled_attempts+'; failures '+c.collect_failures+'; discarded '+c.best_effort_discarded_full+'; evicted '+c.best_effort_evicted+'; required ACKs '+c.required_snapshots_acknowledged+'; retained '+c.retained_credits+'; reserved '+c.reserved_credits+'; terminal '+c.terminal_attempts+' / skipped-full '+c.terminal_skipped_full : '—'));
     tb.appendChild(tr);
   });
 }

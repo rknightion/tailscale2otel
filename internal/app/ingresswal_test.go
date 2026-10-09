@@ -4,109 +4,133 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/ingresswal"
-	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/webhook"
 )
 
+// coordinatorWAL is the coordinator's WAL fixture. Store-backed fixtures
+// (newCoordinatorWAL) delegate preparation, generation tokens and
+// generation-checked completion to a real ingresswal.Store, because opaque
+// Generation tokens can only be minted by a Store; the injected errors wrap
+// those real operations. A zero-value fixture is an in-memory appender and
+// Health seam only: it records appends and prepares nothing.
 type coordinatorWAL struct {
-	mu                 sync.Mutex
-	pending            []ingresswal.Envelope
-	appendErr          error
-	commitErrs         []error
-	replayErr          error
-	replayErrs         []error
-	beforeHandlerErrAt int
-	beforeHandlerErr   error
-	appendCalls        []ingresswal.Envelope
-	closeCalls         int
-	closeErr           error
-	beforeAppend       func()
+	mu           sync.Mutex
+	store        *ingresswal.Store
+	pending      []ingresswal.Envelope // in-memory fixtures only
+	appendErr    error
+	commitErrs   []error
+	replayErr    error   // PrepareWindow fails while set
+	replayErrs   []error // queued PrepareWindow outcomes; nil passes through
+	prepareLimit int     // >0 caps the entries one PrepareWindow returns
+	appendCalls  []ingresswal.Envelope
+	closeCalls   int
+	closeErr     error
+	beforeAppend func()
 }
 
-func (w *coordinatorWAL) Append(_ context.Context, envelope ingresswal.Envelope) error {
+func newCoordinatorWAL(t *testing.T, envelopes ...ingresswal.Envelope) *coordinatorWAL {
+	t.Helper()
+	store, err := ingresswal.New(ingresswal.Options{Directory: filepath.Join(t.TempDir(), "ingress-wal"), MaxBytes: 1 << 20, MaxEntries: 100})
+	if err != nil {
+		t.Fatalf("ingresswal.New: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	for _, envelope := range envelopes {
+		if err := store.Append(context.Background(), envelope); err != nil {
+			t.Fatalf("seed append: %v", err)
+		}
+	}
+	return &coordinatorWAL{store: store}
+}
+
+func (w *coordinatorWAL) Append(ctx context.Context, envelope ingresswal.Envelope) error {
 	if w.beforeAppend != nil {
 		w.beforeAppend()
 	}
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.appendCalls = append(w.appendCalls, cloneEnvelope(envelope))
 	if w.appendErr != nil {
+		w.mu.Unlock()
 		return w.appendErr
 	}
-	w.pending = append(w.pending, cloneEnvelope(envelope))
-	return nil
-}
-
-func (w *coordinatorWAL) Commit(_ context.Context, id string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if len(w.commitErrs) > 0 {
-		err := w.commitErrs[0]
-		w.commitErrs = w.commitErrs[1:]
-		if err != nil {
-			return err
-		}
-	}
-	for i := range w.pending {
-		if w.pending[i].ID == id {
-			w.pending = append(w.pending[:i], w.pending[i+1:]...)
-			break
-		}
-	}
-	return nil
-}
-
-func (w *coordinatorWAL) Replay(
-	ctx context.Context,
-	handler ingresswal.Handler,
-	observer ingresswal.CommitObserver,
-) error {
-	w.mu.Lock()
-	snapshot := make([]ingresswal.Envelope, len(w.pending))
-	for i := range w.pending {
-		snapshot[i] = cloneEnvelope(w.pending[i])
-	}
-	replayErr := w.replayErr
-	if len(w.replayErrs) > 0 {
-		replayErr = w.replayErrs[0]
-		w.replayErrs = w.replayErrs[1:]
+	store := w.store
+	if store == nil {
+		w.pending = append(w.pending, cloneEnvelope(envelope))
 	}
 	w.mu.Unlock()
-	if replayErr != nil {
-		return replayErr
-	}
-	for i, envelope := range snapshot {
-		w.mu.Lock()
-		var beforeHandlerErr error
-		if w.beforeHandlerErr != nil && i == w.beforeHandlerErrAt {
-			beforeHandlerErr = w.beforeHandlerErr
-			w.beforeHandlerErr = nil
-		}
-		w.mu.Unlock()
-		if beforeHandlerErr != nil {
-			return beforeHandlerErr
-		}
-		if err := handler(ctx, envelope); err != nil {
-			return err
-		}
-		if err := w.Commit(ctx, envelope.ID); err != nil {
-			return err
-		}
-		if observer != nil {
-			observer(envelope.ID)
-		}
+	if store != nil {
+		return store.Append(ctx, envelope)
 	}
 	return nil
+}
+
+func (w *coordinatorWAL) Commit(ctx context.Context, id string) error {
+	if w.store == nil {
+		return nil
+	}
+	return w.store.Commit(ctx, id)
+}
+
+func (w *coordinatorWAL) Replay(ctx context.Context, handler ingresswal.Handler, observer ingresswal.CommitObserver) error {
+	if w.store == nil {
+		return nil
+	}
+	return w.store.Replay(ctx, handler, observer)
+}
+
+func (w *coordinatorWAL) PrepareWindow(ctx context.Context, limits ingresswal.WindowLimits, held []ingresswal.Generation, observe ingresswal.GenerationObserver) ([]ingresswal.PreparedEntry, error) {
+	w.mu.Lock()
+	err := w.replayErr
+	if len(w.replayErrs) > 0 {
+		err = w.replayErrs[0]
+		w.replayErrs = w.replayErrs[1:]
+	}
+	if w.prepareLimit > 0 {
+		limits.MaxEntries = min(limits.MaxEntries, w.prepareLimit)
+	}
+	store := w.store
+	w.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if store == nil {
+		return nil, ctx.Err()
+	}
+	return store.PrepareWindow(ctx, limits, held, observe)
+}
+
+func (w *coordinatorWAL) CommitPrepared(ctx context.Context, g ingresswal.Generation) (ingresswal.PreparedOutcome, error) {
+	w.mu.Lock()
+	var err error
+	if len(w.commitErrs) > 0 {
+		err = w.commitErrs[0]
+		w.commitErrs = w.commitErrs[1:]
+	}
+	w.mu.Unlock()
+	if err != nil {
+		return ingresswal.PreparedPending, err
+	}
+	return w.store.CommitPrepared(ctx, g)
+}
+
+func (w *coordinatorWAL) ReleasePrepared(g ingresswal.Generation) error {
+	return w.store.ReleasePrepared(g)
 }
 
 func (w *coordinatorWAL) Health() ingresswal.Health {
+	if w.store != nil {
+		return w.store.Health()
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var bytes int64
@@ -123,9 +147,16 @@ func (w *coordinatorWAL) Health() ingresswal.Health {
 
 func (w *coordinatorWAL) Close() error {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.closeCalls++
-	return w.closeErr
+	closeErr := w.closeErr
+	store := w.store
+	w.mu.Unlock()
+	if store != nil {
+		if err := store.Close(); err != nil {
+			return err
+		}
+	}
+	return closeErr
 }
 
 func cloneEnvelope(envelope ingresswal.Envelope) ingresswal.Envelope {
@@ -133,25 +164,120 @@ func cloneEnvelope(envelope ingresswal.Envelope) ingresswal.Envelope {
 	return envelope
 }
 
-func testIngressRoute(tailnet, source, signal string) ingressWALRoute {
-	route := ingressWALRoute{
-		tailnet: tailnet,
-		source:  source,
-		signal:  signal,
-		apply: func(context.Context, []byte, time.Time) (bool, error) {
-			return false, nil
+// testIngressInterval is the fixture providers' normal metric slot. Commits
+// need a real scheduled collection, so replay-driving tests run in synctest.
+const testIngressInterval = 10 * time.Second
+
+// testIngressSink is the real stdout exporter's writer: failures and delays
+// are observed by actual SDK metric and log export attempts.
+type testIngressSink struct {
+	mu     sync.Mutex
+	fail   bool
+	delay  time.Duration
+	block  chan struct{} // non-nil: writes stall until it closes
+	failIf func([]byte) bool
+	data   bytes.Buffer
+	writes int
+	// attempts keeps every payload handed to the sink, accepted or failed, so
+	// retries can be compared byte for byte with the original attempt.
+	attempts [][]byte
+}
+
+func (s *testIngressSink) Write(b []byte) (int, error) {
+	s.mu.Lock()
+	delay, block := s.delay, s.block
+	s.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
+	if block != nil {
+		<-block
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writes++
+	s.attempts = append(s.attempts, bytes.Clone(b))
+	if s.fail || (s.failIf != nil && s.failIf(b)) {
+		return 0, errors.New("backend included secret free text")
+	}
+	return s.data.Write(b)
+}
+
+func (s *testIngressSink) setFail(fail bool) {
+	s.mu.Lock()
+	s.fail = fail
+	s.mu.Unlock()
+}
+
+func (s *testIngressSink) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return bytes.Clone(s.data.Bytes())
+}
+
+func (s *testIngressSink) Writes() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writes
+}
+
+func newTestIngressDelivery(t *testing.T, interval time.Duration) (*telemetry.Provider, *testIngressSink) {
+	t.Helper()
+	sink := &testIngressSink{}
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+		Protocol: "stdout", StdoutWriter: sink, ServiceName: "synthetic-ingress", MetricInterval: interval,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = p.Shutdown(ctx)
+	})
+	return p, sink
+}
+
+type testIngressApply func(ctx context.Context, body []byte, accepted time.Time, e telemetry.Emitter) error
+
+// testIngressRouteOn builds prepared work whose callback runs apply and then
+// records one counter, so every original owns a required metric first cover.
+func testIngressRouteOn(tailnet, source, signal string, delivery *telemetry.Provider, apply testIngressApply) ingressWALRoute {
+	return ingressWALRoute{
+		tailnet:  tailnet,
+		source:   source,
+		signal:   signal,
+		delivery: delivery,
+		prepare: func(ctx context.Context, body []byte, accepted time.Time) (telemetry.IngressWork, error) {
+			if err := ctx.Err(); err != nil {
+				return telemetry.IngressWork{}, err
+			}
+			body = bytes.Clone(body)
+			return telemetry.IngressWork{
+				Bounds: telemetry.WorkBounds{InputBytes: int64(len(body)), MetricOps: 64, MetricBytes: 1 << 16},
+				Apply: func(ctx context.Context, e telemetry.Emitter) error {
+					if apply != nil {
+						if err := apply(ctx, body, accepted, e); err != nil {
+							return err
+						}
+					}
+					e.Counter("synthetic.ingress.applied", "1", "synthetic applied originals", 1, nil)
+					return nil
+				},
+			}, nil
 		},
-		flush: func(context.Context) error { return nil },
 	}
-	if source == ingressWALSourceStream && signal == ingressWALSignalHEC {
-		route.drain = func() {}
-	}
-	return route
+}
+
+func testIngressRoute(t *testing.T, tailnet, source, signal string) ingressWALRoute {
+	t.Helper()
+	delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+	return testIngressRouteOn(tailnet, source, signal, delivery, nil)
 }
 
 func TestIngressWALCoordinator_ConfiguredDashRouteIsExact(t *testing.T) {
 	wal := &coordinatorWAL{}
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
+	route := testIngressRoute(t, "-", ingressWALSourceStream, ingressWALSignalHEC)
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -171,11 +297,12 @@ func TestIngressWALCoordinator_ConfiguredDashRouteIsExact(t *testing.T) {
 func TestIngressWALCoordinator_MissingOrMismatchedRouteHasNoEffects(t *testing.T) {
 	wal := &coordinatorWAL{}
 	var effects int
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		effects++
-		return false, nil
-	}
+	delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+	route := testIngressRouteOn("-", ingressWALSourceStream, ingressWALSignalHEC, delivery,
+		func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+			effects++
+			return nil
+		})
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -209,7 +336,7 @@ func TestIngressWALCoordinator_MissingOrMismatchedRouteHasNoEffects(t *testing.T
 func TestIngressWALCoordinator_AppenderPersistsExactEnvelopeThenSignalsOnce(t *testing.T) {
 	wal := &coordinatorWAL{}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -253,7 +380,7 @@ func TestIngressWALCoordinator_AppenderPersistsExactEnvelopeThenSignalsOnce(t *t
 func TestIngressWALCoordinator_AppendFailureDoesNotWake(t *testing.T) {
 	wal := &coordinatorWAL{appendErr: ingresswal.ErrFull}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -291,344 +418,404 @@ func coordinatorEnvelope(t *testing.T, tailnet, source, signal string, body []by
 	}
 }
 
-func TestIngressWALCoordinator_ReplayAppliesDrainsThenFlushes(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "-", ingressWALSourceStream, ingressWALSignalHEC, []byte(`{"event":"flow"}`),
-	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-	var order []string
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
-	route.apply = func(_ context.Context, body []byte, accepted time.Time) (bool, error) {
-		if !bytes.Equal(body, envelope.Body) || !accepted.Equal(envelope.Accepted) {
-			t.Errorf("apply body/time = %q/%v, want exact persisted values", body, accepted)
+// advanceIngressSlot lets exactly one fixture provider slot elapse and every
+// bubble goroutine (clock, export worker) settle before the caller observes.
+func advanceIngressSlot() {
+	time.Sleep(testIngressInterval)
+	synctest.Wait()
+}
+
+func appliedOriginals(t *testing.T, sink *testIngressSink) float64 {
+	t.Helper()
+	return cadenceRuntimeLatestTotal(cadenceRuntimeSignals(t, sink.Bytes()), "synthetic.ingress.applied")
+}
+
+// The old per-body apply -> drain -> ForceFlush -> commit order is replaced by
+// apply -> scheduled first cover -> ACK -> generation-checked commit. The
+// application itself performs no collection.
+func TestIngressWALCoordinator_ReplayAppliesThenCommitsOnlyAfterScheduledCover(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "-", ingressWALSourceStream, ingressWALSignalHEC, []byte(`{"event":"flow"}`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		delivery, sink := newTestIngressDelivery(t, testIngressInterval)
+		var order []string
+		route := testIngressRouteOn("-", ingressWALSourceStream, ingressWALSignalHEC, delivery,
+			func(_ context.Context, body []byte, accepted time.Time, _ telemetry.Emitter) error {
+				if !bytes.Equal(body, envelope.Body) || !accepted.Equal(envelope.Accepted) {
+					t.Errorf("apply body/time = %q/%v, want exact persisted values", body, accepted)
+				}
+				order = append(order, "apply")
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
 		}
-		order = append(order, "apply")
-		return true, nil
-	}
-	route.drain = func() { order = append(order, "drain") }
-	route.flush = func(context.Context) error {
-		order = append(order, "flush")
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
 
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("Replay: %v", err)
-	}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want the applied original pending its scheduled cover", err)
+		}
+		if got := wal.Health().PendingEntries; got != 1 {
+			t.Fatalf("pending entries before the scheduled cover = %d, want 1", got)
+		}
+		if stats := delivery.CollectionStats(); stats.ScheduledAttempts != 0 || stats.SnapshotsCollected != 0 || stats.TerminalAttempts != 0 {
+			t.Fatalf("application collected out of schedule: %+v", stats)
+		}
+		advanceIngressSlot()
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("Replay: %v", err)
+		}
 
-	if got, want := order, []string{"apply", "drain", "flush"}; !equalStrings(got, want) {
-		t.Errorf("effect order = %v, want %v", got, want)
-	}
-	if got := wal.Health().PendingEntries; got != 0 {
-		t.Errorf("pending entries = %d, want 0", got)
-	}
-	if !coordinator.Ready() {
-		t.Errorf("coordinator state = %q, want ready", coordinator.Health().State)
-	}
+		if got, want := order, []string{"apply"}; !equalStrings(got, want) {
+			t.Errorf("effect order = %v, want %v", got, want)
+		}
+		if got := wal.Health().PendingEntries; got != 0 {
+			t.Errorf("pending entries = %d, want 0", got)
+		}
+		if !coordinator.Ready() {
+			t.Errorf("coordinator state = %q, want ready", coordinator.Health().State)
+		}
+		if stats := delivery.CollectionStats(); stats.ScheduledAttempts != 1 || stats.RequiredSnapshotsAcknowledged != 1 {
+			t.Errorf("collection stats = %+v, want one normal slot acknowledging the first cover", stats)
+		}
+		if got := appliedOriginals(t, sink); got != 1 {
+			t.Errorf("exported applied total = %v, want 1", got)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_ReappliesAfterCrashBetweenApplyAndCommit(t *testing.T) {
-	const tailnet = "example.com"
-	body := []byte(`[{"timestamp":"2026-08-30T09:00:00Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"node created"}]`)
-	accepted := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
-	dir := filepath.Join(t.TempDir(), "ingress-wal")
-	opts := ingresswal.Options{Directory: dir, MaxBytes: 1 << 20, MaxEntries: 10}
-	store, err := ingresswal.New(opts)
-	if err != nil {
-		t.Fatalf("ingresswal.New: %v", err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	id, err := ingresswal.NewID(tailnet, ingressWALSourceWebhook, ingressWALSignalWebhook, body)
-	if err != nil {
-		t.Fatalf("ingresswal.NewID: %v", err)
-	}
-	if err := store.Append(context.Background(), ingresswal.Envelope{
-		ID: id, Tailnet: tailnet, Source: ingressWALSourceWebhook, Signal: ingressWALSignalWebhook,
-		Accepted: accepted, Body: body,
-	}); err != nil {
-		t.Fatalf("store.Append: %v", err)
-	}
-
-	rec := telemetrytest.New()
-	firstReceiver := webhook.New(webhook.Options{}, rec.Emitter(), nil)
-	firstCoordinator, err := newIngressWALCoordinator(store, []ingressWALRoute{{
-		tailnet: tailnet,
-		source:  ingressWALSourceWebhook,
-		signal:  ingressWALSignalWebhook,
-		apply: func(ctx context.Context, body []byte, accepted time.Time) (bool, error) {
-			return false, firstReceiver.ApplyDurable(ctx, body, accepted)
-		},
-		flush: func(context.Context) error {
-			return errors.New("simulated crash before WAL commit")
-		},
-	}})
-	if err != nil {
-		t.Fatalf("first newIngressWALCoordinator: %v", err)
-	}
-	if err := firstCoordinator.Replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
-		t.Fatalf("first Replay error = %v, want bounded flush error", err)
-	}
-	if got := store.Health().PendingEntries; got != 1 {
-		t.Fatalf("pending entries after apply-before-commit failure = %d, want 1", got)
-	}
-
-	// A process crash discards the coordinator's in-memory progress ledger. Close
-	// and reopen the real WAL so the second coordinator also reads the durable
-	// pending envelope from the same directory.
-	if err := store.Close(); err != nil {
-		t.Fatalf("close first WAL: %v", err)
-	}
-	firstCoordinator = nil
-	reopened, err := ingresswal.New(opts)
-	if err != nil {
-		t.Fatalf("reopen ingress WAL: %v", err)
-	}
-	t.Cleanup(func() { _ = reopened.Close() })
-	secondReceiver := webhook.New(webhook.Options{}, rec.Emitter(), nil)
-	secondCoordinator, err := newIngressWALCoordinator(reopened, []ingressWALRoute{{
-		tailnet: tailnet,
-		source:  ingressWALSourceWebhook,
-		signal:  ingressWALSignalWebhook,
-		apply: func(ctx context.Context, body []byte, accepted time.Time) (bool, error) {
-			return false, secondReceiver.ApplyDurable(ctx, body, accepted)
-		},
-		flush: func(context.Context) error { return nil },
-	}})
-	if err != nil {
-		t.Fatalf("second newIngressWALCoordinator: %v", err)
-	}
-	if err := secondCoordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("second Replay: %v", err)
-	}
-	if got := reopened.Health().PendingEntries; got != 0 {
-		t.Fatalf("pending entries after healthy replay = %d, want 0", got)
-	}
-
-	logs := rec.LogRecords()
-	if got := len(logs); got != 2 {
-		t.Fatalf("webhook log records = %d, want 2", got)
-	}
-	for i, log := range logs {
-		if log.EventName != "tailscale.webhook.nodeCreated" || log.Body != "node created" {
-			t.Errorf("webhook log %d = (%q, %q), want nodeCreated/node created", i, log.EventName, log.Body)
-		}
-	}
-	points := rec.MetricPoints(webhook.MetricEvents)
-	if len(points) != 1 {
-		t.Fatalf("webhook event metric points = %d, want 1: %+v", len(points), points)
-	}
-	if got := points[0].Attrs["tailscale.webhook.type"]; got != "nodeCreated" {
-		t.Fatalf("webhook event metric type = %q, want nodeCreated", got)
-	}
-	if got := points[0].Value; got != 2 {
-		t.Fatalf("webhook event metric value = %v, want 2", got)
-	}
-}
-
-func TestIngressWALCoordinator_WebhookReplayDoesNotDrain(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
-	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-	var order []string
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		order = append(order, "apply")
-		// A webhook route never drains even if a faulty adapter reports flow
-		// effects; the closed source/signal route owns that decision.
-		return true, nil
-	}
-	route.drain = func() { order = append(order, "drain") }
-	route.flush = func(context.Context) error {
-		order = append(order, "flush")
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("Replay: %v", err)
-	}
-
-	if got, want := order, []string{"apply", "flush"}; !equalStrings(got, want) {
-		t.Errorf("effect order = %v, want %v", got, want)
-	}
-}
-
-func TestIngressWALCoordinator_FlushRetryDoesNotReapply(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "-", ingressWALSourceStream, ingressWALSignalHEC, []byte(`{"event":"flow"}`),
-	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-	applyCalls, drainCalls, flushCalls := 0, 0, 0
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		applyCalls++
-		return true, nil
-	}
-	route.drain = func() { drainCalls++ }
-	route.flush = func(context.Context) error {
-		flushCalls++
-		if flushCalls == 1 {
-			return errors.New("backend included secret free text")
-		}
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-
-	if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
-		t.Fatalf("first Replay error = %v, want bounded flush error", err)
-	} else if bytes.Contains([]byte(err.Error()), []byte("secret free text")) {
-		t.Fatalf("flush error exposes backend free text: %q", err)
-	}
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("second Replay: %v", err)
-	}
-
-	if applyCalls != 1 {
-		t.Errorf("apply calls = %d, want 1", applyCalls)
-	}
-	if drainCalls != 2 {
-		t.Errorf("drain calls = %d, want 2 (safe repeat before each flush attempt)", drainCalls)
-	}
-	if flushCalls != 2 {
-		t.Errorf("flush calls = %d, want 2", flushCalls)
-	}
-}
-
-func TestIngressWALCoordinator_CommitsAfterHealthyBatchedFlush(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		envelope := coordinatorEnvelope(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`))
-		wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-		route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-		batches := 0
-		route.flush = func(ctx context.Context) error {
-			// A cumulative collection of 150k points needs 15 sequential
-			// requests at the default batch size. Each request succeeds,
-			// but their combined duration exceeds the former 10s WAL budget.
-			for range 15 {
-				select {
-				case <-time.After(time.Second):
-					batches++
-				case <-ctx.Done():
-					return ctx.Err()
+		const tailnet = "example.com"
+		body := []byte(`[{"timestamp":"2026-08-30T09:00:00Z","version":1,"type":"nodeCreated","tailnet":"example.com","message":"node created"}]`)
+		accepted := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+		dir := filepath.Join(t.TempDir(), "ingress-wal")
+		opts := ingresswal.Options{Directory: dir, MaxBytes: 1 << 20, MaxEntries: 10}
+		store, err := ingresswal.New(opts)
+		if err != nil {
+			t.Fatalf("ingresswal.New: %v", err)
+		}
+		t.Cleanup(func() { _ = store.Close() })
+		id, err := ingresswal.NewID(tailnet, ingressWALSourceWebhook, ingressWALSignalWebhook, body)
+		if err != nil {
+			t.Fatalf("ingresswal.NewID: %v", err)
+		}
+		if err := store.Append(context.Background(), ingresswal.Envelope{
+			ID: id, Tailnet: tailnet, Source: ingressWALSourceWebhook, Signal: ingressWALSignalWebhook,
+			Accepted: accepted, Body: body,
+		}); err != nil {
+			t.Fatalf("store.Append: %v", err)
+		}
+
+		applies := 0
+		webhookRoute := func(delivery *telemetry.Provider) ingressWALRoute {
+			receiver := webhook.New(webhook.Options{}, delivery.Emitter(), nil)
+			return ingressWALRoute{
+				tailnet: tailnet, source: ingressWALSourceWebhook, signal: ingressWALSignalWebhook, delivery: delivery,
+				prepare: func(ctx context.Context, body []byte, accepted time.Time) (telemetry.IngressWork, error) {
+					work, err := receiver.PrepareDurable(ctx, body, accepted)
+					apply := work.Apply
+					work.Apply = func(ctx context.Context, e telemetry.Emitter) error { applies++; return apply(ctx, e) }
+					return work, err
+				},
+			}
+		}
+		// The first process applies the original, but its delivery never
+		// acknowledges the covering snapshot, so the generation stays pending.
+		firstDelivery, firstSink := newTestIngressDelivery(t, testIngressInterval)
+		firstSink.setFail(true)
+		firstCoordinator, err := newIngressWALCoordinator(store, []ingressWALRoute{webhookRoute(firstDelivery)})
+		if err != nil {
+			t.Fatalf("first newIngressWALCoordinator: %v", err)
+		}
+		if err := firstCoordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want bounded pending delivery", err)
+		}
+		advanceIngressSlot()
+		if err := firstCoordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass after failed delivery = %v, want bounded pending delivery", err)
+		}
+		if got := store.Health().PendingEntries; got != 1 {
+			t.Fatalf("pending entries after apply-before-commit failure = %d, want 1", got)
+		}
+
+		// A process crash discards the coordinator's in-memory progress ledger.
+		// Close and reopen the real WAL so a fresh provider epoch reads the
+		// durable pending envelope from the same directory.
+		if err := store.Close(); err != nil {
+			t.Fatalf("close first WAL: %v", err)
+		}
+		firstCoordinator = nil
+		reopened, err := ingresswal.New(opts)
+		if err != nil {
+			t.Fatalf("reopen ingress WAL: %v", err)
+		}
+		t.Cleanup(func() { _ = reopened.Close() })
+		secondDelivery, secondSink := newTestIngressDelivery(t, testIngressInterval)
+		secondCoordinator, err := newIngressWALCoordinator(reopened, []ingressWALRoute{webhookRoute(secondDelivery)})
+		if err != nil {
+			t.Fatalf("second newIngressWALCoordinator: %v", err)
+		}
+		if err := secondCoordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("second Replay: %v", err)
+		}
+		if got := reopened.Health().PendingEntries; got != 0 {
+			t.Fatalf("pending entries after healthy replay = %d, want 0", got)
+		}
+		if applies != 2 {
+			t.Fatalf("applications = %d, want 2 (at-least-once reapply after the crash)", applies)
+		}
+		if got := len(firstSink.Bytes()); got != 0 {
+			t.Fatalf("failed first delivery accepted %d bytes", got)
+		}
+		signals := cadenceRuntimeSignals(t, secondSink.Bytes())
+		logs := 0
+		for _, signal := range signals {
+			if signal.EventName != "" {
+				logs++
+				if signal.EventName != "tailscale.webhook.nodeCreated" || !bytes.Contains(signal.Body, []byte("node created")) {
+					t.Errorf("webhook log = (%q, %s), want nodeCreated/node created", signal.EventName, signal.Body)
 				}
 			}
-			return nil
 		}
+		if logs != 1 {
+			t.Fatalf("second-process webhook log records = %d, want 1", logs)
+		}
+		if got := cadenceRuntimeLatestTotal(signals, webhook.MetricEvents); got != 1 {
+			t.Fatalf("second-process webhook event total = %v, want 1 in its fresh cumulative epoch", got)
+		}
+	})
+}
+
+// Replaces WebhookReplayDoesNotDrain: no route owns a drain or flush any more,
+// so the invariant is now that application performs no collection at all.
+func TestIngressWALCoordinator_WebhookReplayDoesNotCollectOutOfSchedule(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+		var order []string
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+			func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+				order = append(order, "apply")
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("pass = %v, want pending delivery", err)
+		}
+		if got, want := order, []string{"apply"}; !equalStrings(got, want) {
+			t.Errorf("effect order = %v, want %v", got, want)
+		}
+		if stats := delivery.CollectionStats(); stats != (telemetry.CollectionStats{ReservedCredits: 1}) {
+			t.Errorf("webhook application touched collection: %+v", stats)
+		}
+		advanceIngressSlot()
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("Replay: %v", err)
+		}
+	})
+}
+
+func TestIngressWALCoordinator_ExportRetryDoesNotReapply(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "-", ingressWALSourceStream, ingressWALSignalHEC, []byte(`{"event":"flow"}`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		delivery, sink := newTestIngressDelivery(t, testIngressInterval)
+		sink.setFail(true)
+		applyCalls := 0
+		route := testIngressRouteOn("-", ingressWALSourceStream, ingressWALSignalHEC, delivery,
+			func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+				applyCalls++
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
+
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want pending delivery", err)
+		}
+		advanceIngressSlot()
+		err = coordinator.replay(context.Background())
+		if !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("pass after failed export = %v, want bounded pending delivery", err)
+		} else if bytes.Contains([]byte(err.Error()), []byte("secret free text")) {
+			t.Fatalf("delivery error exposes backend free text: %q", err)
+		}
+		if got := coordinator.Health().State; got != ingressWALStateRetrying {
+			t.Fatalf("state = %q, want retrying", got)
+		}
+		sink.setFail(false)
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("Replay after recovery: %v", err)
+		}
+
+		if applyCalls != 1 {
+			t.Errorf("apply calls = %d, want 1", applyCalls)
+		}
+		if stats := delivery.CollectionStats(); stats.ScheduledAttempts != 1 || stats.RequiredSnapshotsAcknowledged != 1 {
+			t.Errorf("collection stats = %+v, want the original snapshot retried without a new collection", stats)
+		}
+		if got := appliedOriginals(t, sink); got != 1 {
+			t.Errorf("exported applied total = %v, want 1", got)
+		}
+	})
+}
+
+// A cumulative collection split into many parts that together outlast the
+// former 10s per-body flush budget still acknowledges and commits.
+func TestIngressWALCoordinator_CommitsAfterHealthyBatchedDelivery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`))
+		wal := newCoordinatorWAL(t, envelope)
+		sink := &testIngressSink{delay: time.Second}
+		delivery, err := telemetry.NewProvider(context.Background(), telemetry.Options{
+			Protocol: "stdout", StdoutWriter: sink, ServiceName: "synthetic-ingress",
+			MetricInterval: testIngressInterval, MetricExportBatchSize: 1,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			// The deliberately slow writer ignores cancellation; let it finish
+			// promptly so shutdown can join the export worker.
+			sink.mu.Lock()
+			sink.delay = 0
+			sink.mu.Unlock()
+			if err := delivery.Shutdown(ctx); err != nil {
+				t.Errorf("Shutdown: %v", err)
+			}
+		})
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+			func(_ context.Context, _ []byte, _ time.Time, e telemetry.Emitter) error {
+				for i := range 15 {
+					e.Counter("synthetic.ingress.batched", "1", "synthetic", 1, telemetry.Attrs{"part": fmt.Sprint(i)})
+				}
+				return nil
+			})
 		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if err := coordinator.Replay(context.Background()); err != nil {
-			t.Fatalf("healthy batched flush did not commit: %v (completed %d batches)", err, batches)
+			t.Fatalf("healthy batched delivery did not commit: %v (writes %d)", err, sink.Writes())
 		}
 		if pending := wal.Health().PendingEntries; pending != 0 {
-			t.Fatalf("pending entries = %d after successful flush, want 0", pending)
+			t.Fatalf("pending entries = %d after successful delivery, want 0", pending)
 		}
-		if batches != 15 || coordinator.Health().State != ingressWALStateReady {
-			t.Fatalf("batches = %d, state = %s; want 15 and ready", batches, coordinator.Health().State)
+		if writes := sink.Writes(); writes < 16 || coordinator.Health().State != ingressWALStateReady {
+			t.Fatalf("writes = %d, state = %s; want >= 16 one-point parts and ready", writes, coordinator.Health().State)
+		}
+		if got := cadenceRuntimeLatestTotal(cadenceRuntimeSignals(t, sink.Bytes()), "synthetic.ingress.batched"); got != 15 {
+			t.Fatalf("batched total = %v, want 15", got)
 		}
 	})
 }
 
-func TestIngressWALCoordinator_BoundsEachFlushAttempt(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t,
-		"example.com",
-		ingressWALSourceWebhook,
-		ingressWALSignalWebhook,
-		[]byte(`[]`),
-	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-	route := testIngressRoute(
-		"example.com",
-		ingressWALSourceWebhook,
-		ingressWALSignalWebhook,
-	)
-	route.flush = func(ctx context.Context) error {
-		<-ctx.Done()
-		return ctx.Err()
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-	coordinator.flushTimeout = 10 * time.Millisecond
-
-	start := time.Now()
-	err = coordinator.Replay(context.Background())
-	if !errors.Is(err, errIngressWALFlush) {
-		t.Fatalf("Replay error = %v, want bounded retryable flush failure", err)
-	}
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("bounded flush attempt took %v", elapsed)
-	}
-	if got := wal.Health().PendingEntries; got != 1 {
-		t.Fatalf("pending entries = %d, want retryable entry retained", got)
-	}
-	if got := coordinator.Health().State; got != ingressWALStateRetrying {
-		t.Fatalf("state = %q, want retrying", got)
-	}
+// Replaces BoundsEachFlushAttempt: the coordinator no longer makes a per-body
+// flush call, so the invariant is that a replay pass never waits on a stalled
+// exporter (per-attempt export bounds live in the telemetry reader).
+func TestIngressWALCoordinator_ReplayPassDoesNotWaitOnStalledDelivery(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`))
+		wal := newCoordinatorWAL(t, envelope)
+		delivery, sink := newTestIngressDelivery(t, testIngressInterval)
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery, nil)
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want pending delivery", err)
+		}
+		stall := make(chan struct{})
+		sink.mu.Lock()
+		sink.block = stall
+		sink.mu.Unlock()
+		defer close(stall)              // release the non-cooperative writer before cleanup
+		time.Sleep(testIngressInterval) // the slot's export now stalls in the writer
+		start := time.Now()
+		err = coordinator.replay(context.Background())
+		if !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("pass = %v, want bounded retryable pending delivery", err)
+		}
+		if elapsed := time.Since(start); elapsed != 0 {
+			t.Fatalf("replay pass waited %v on a stalled exporter", elapsed)
+		}
+		if got := wal.Health().PendingEntries; got != 1 {
+			t.Fatalf("pending entries = %d, want retryable entry retained", got)
+		}
+		// An export still in flight has not failed: like work awaiting its
+		// normal slot it is not a readiness failure. A failed attempt is what
+		// surfaces as retrying (TestIngressWALReadiness_FailingDeliverySurfacesRetrying).
+		if got := coordinator.Health().State; got != ingressWALStateReady {
+			t.Fatalf("state = %q, want ready while the export is in flight", got)
+		}
+	})
 }
 
-func TestIngressWALCoordinator_CommitRetryDoesNotReapplyOrReflush(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
-	)
-	wal := &coordinatorWAL{
-		pending:    []ingresswal.Envelope{envelope},
-		commitErrs: []error{errors.New("commit path and free text"), nil},
-	}
-	applyCalls, flushCalls := 0, 0
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		applyCalls++
-		return false, nil
-	}
-	route.flush = func(context.Context) error {
-		flushCalls++
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-
-	if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
-		t.Fatalf("first Replay error = %v, want bounded replay error", err)
-	} else if bytes.Contains([]byte(err.Error()), []byte("free text")) {
-		t.Fatalf("commit error exposes backend free text: %q", err)
-	}
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("second Replay: %v", err)
-	}
-
-	if applyCalls != 1 {
-		t.Errorf("apply calls = %d, want 1", applyCalls)
-	}
-	if flushCalls != 1 {
-		t.Errorf("flush calls = %d, want 1", flushCalls)
-	}
+func TestIngressWALCoordinator_CommitRetryDoesNotReapplyOrRecollect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		wal.commitErrs = []error{errors.New("commit path and free text"), nil}
+		delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+		applyCalls := 0
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+			func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+				applyCalls++
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want pending delivery", err)
+		}
+		advanceIngressSlot()
+		if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
+			t.Fatalf("Replay with failing commit = %v, want bounded replay error", err)
+		} else if bytes.Contains([]byte(err.Error()), []byte("free text")) {
+			t.Fatalf("commit error exposes backend free text: %q", err)
+		}
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("second Replay: %v", err)
+		}
+		if applyCalls != 1 {
+			t.Errorf("apply calls = %d, want 1", applyCalls)
+		}
+		if stats := delivery.CollectionStats(); stats.ScheduledAttempts != 1 || stats.RequiredSnapshotsAcknowledged != 1 {
+			t.Errorf("collection stats = %+v, want commit retry without another collection", stats)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_UnknownPersistedRouteFailsClosed(t *testing.T) {
 	envelope := coordinatorEnvelope(t, "-", "unknown", "unknown", []byte(`sensitive`))
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
+	wal := newCoordinatorWAL(t, envelope)
 	effects := 0
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		effects++
-		return true, nil
-	}
+	delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+	route := testIngressRouteOn("-", ingressWALSourceStream, ingressWALSignalHEC, delivery,
+		func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+			effects++
+			return nil
+		})
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -652,154 +839,171 @@ func TestIngressWALCoordinator_UnknownPersistedRouteFailsClosed(t *testing.T) {
 }
 
 func TestIngressWALCoordinator_ProgressClearsAfterSuccessfulReplay(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
-	)
-	wal := &coordinatorWAL{
-		pending:    []ingresswal.Envelope{envelope},
-		commitErrs: []error{errors.New("once"), nil},
-	}
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-
-	if err := coordinator.Replay(context.Background()); err == nil {
-		t.Fatal("first Replay unexpectedly succeeded")
-	}
-	if got := coordinatorProgressLen(coordinator); got != 1 {
-		t.Fatalf("progress entries after commit failure = %d, want 1", got)
-	}
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("second Replay: %v", err)
-	}
-	if got := coordinatorProgressLen(coordinator); got != 0 {
-		t.Errorf("progress entries after successful replay = %d, want 0", got)
-	}
-	for range 10 {
-		if err := coordinator.Replay(context.Background()); err != nil {
-			t.Fatalf("empty Replay: %v", err)
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		wal.commitErrs = []error{errors.New("once"), nil}
+		route := testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
 		}
-	}
-	if got := coordinatorProgressLen(coordinator); got != 0 {
-		t.Errorf("progress entries leaked across empty replays = %d, want 0", got)
-	}
+
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want pending delivery", err)
+		}
+		advanceIngressSlot()
+		if err := coordinator.Replay(context.Background()); err == nil {
+			t.Fatal("Replay with failing commit unexpectedly succeeded")
+		}
+		if got := coordinatorProgressLen(coordinator); got != 1 {
+			t.Fatalf("progress entries after commit failure = %d, want 1", got)
+		}
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("second Replay: %v", err)
+		}
+		if got := coordinatorProgressLen(coordinator); got != 0 {
+			t.Errorf("progress entries after successful replay = %d, want 0", got)
+		}
+		for range 10 {
+			if err := coordinator.Replay(context.Background()); err != nil {
+				t.Fatalf("empty Replay: %v", err)
+			}
+		}
+		if got := coordinatorProgressLen(coordinator); got != 0 {
+			t.Errorf("progress entries leaked across empty replays = %d, want 0", got)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_ReAdmittedCommittedIDIsAppliedAgainAfterInterveningReplayError(t *testing.T) {
-	bodyA := []byte(`{"record":"A"}`)
-	bodyB := []byte(`{"record":"B"}`)
-	envelopeA := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, bodyA,
-	)
-	envelopeB := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, bodyB,
-	)
-	wal := &coordinatorWAL{
-		pending:            []ingresswal.Envelope{envelopeA, envelopeB},
-		beforeHandlerErrAt: 1,
-		beforeHandlerErr:   errors.New("fail before B handler"),
-	}
-	applies := map[string]int{}
-	flushes := 0
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.apply = func(_ context.Context, body []byte, _ time.Time) (bool, error) {
-		applies[string(body)]++
-		return false, nil
-	}
-	route.flush = func(context.Context) error {
-		flushes++
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		bodyA := []byte(`{"record":"A"}`)
+		bodyB := []byte(`{"record":"B"}`)
+		envelopeA := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, bodyA,
+		)
+		envelopeB := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, bodyB,
+		)
+		wal := newCoordinatorWAL(t, envelopeA, envelopeB)
+		wal.prepareLimit = 1
+		applies := map[string]int{}
+		delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+			func(_ context.Context, body []byte, _ time.Time, _ telemetry.Emitter) error {
+				applies[string(body)]++
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
 
-	if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
-		t.Fatalf("first Replay error = %v, want bounded replay error", err)
-	}
-	if got := applies[string(bodyA)]; got != 1 {
-		t.Fatalf("first A apply calls = %d, want 1", got)
-	}
-	if got := applies[string(bodyB)]; got != 0 {
-		t.Fatalf("B apply calls before injected error = %d, want 0", got)
-	}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want A pending delivery", err)
+		}
+		advanceIngressSlot()
+		wal.mu.Lock()
+		wal.replayErrs = []error{errors.New("fail before B is prepared")}
+		wal.mu.Unlock()
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
+			t.Fatalf("second pass = %v, want bounded replay error", err)
+		}
+		if got := applies[string(bodyA)]; got != 1 {
+			t.Fatalf("first A apply calls = %d, want 1", got)
+		}
+		if got := applies[string(bodyB)]; got != 0 {
+			t.Fatalf("B apply calls before injected error = %d, want 0", got)
+		}
+		if got := wal.Health().PendingEntries; got != 1 {
+			t.Fatalf("pending after A commit = %d, want only B", got)
+		}
 
-	reaccepted := time.Unix(1_800_000_000, 456).UTC()
-	if err := coordinator.appender(
-		"example.com", ingressWALSourceWebhook, ingressWALSignalWebhook,
-	)(context.Background(), bodyA, reaccepted); err != nil {
-		t.Fatalf("re-admit A: %v", err)
-	}
-	if got := wal.appendCalls[len(wal.appendCalls)-1].ID; got != envelopeA.ID {
-		t.Fatalf("re-admitted A ID = %q, want deterministic original ID %q", got, envelopeA.ID)
-	}
+		reaccepted := time.Unix(1_800_000_000, 456).UTC()
+		if err := coordinator.appender(
+			"example.com", ingressWALSourceWebhook, ingressWALSignalWebhook,
+		)(context.Background(), bodyA, reaccepted); err != nil {
+			t.Fatalf("re-admit A: %v", err)
+		}
+		if got := wal.appendCalls[len(wal.appendCalls)-1].ID; got != envelopeA.ID {
+			t.Fatalf("re-admitted A ID = %q, want deterministic original ID %q", got, envelopeA.ID)
+		}
 
-	if err := coordinator.Replay(context.Background()); err != nil {
-		t.Fatalf("second Replay: %v", err)
-	}
-	if got := applies[string(bodyA)]; got != 2 {
-		t.Errorf("A apply calls after deterministic re-admission = %d, want 2", got)
-	}
-	if got := applies[string(bodyB)]; got != 1 {
-		t.Errorf("B apply calls = %d, want 1", got)
-	}
-	if flushes != 3 {
-		t.Errorf("flush calls = %d, want 3 (first A, B, second A)", flushes)
-	}
+		wal.mu.Lock()
+		wal.prepareLimit = 0
+		wal.mu.Unlock()
+		if err := coordinator.Replay(context.Background()); err != nil {
+			t.Fatalf("second Replay: %v", err)
+		}
+		if got := applies[string(bodyA)]; got != 2 {
+			t.Errorf("A apply calls after deterministic re-admission = %d, want 2", got)
+		}
+		if got := applies[string(bodyB)]; got != 1 {
+			t.Errorf("B apply calls = %d, want 1", got)
+		}
+		if got := wal.Health().PendingEntries; got != 0 {
+			t.Errorf("pending entries = %d, want 0", got)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_CommitFailureRetainsProgressUntilRetryCommitObserved(t *testing.T) {
-	envelopeA := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`{"record":"A"}`),
-	)
-	envelopeB := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`{"record":"B"}`),
-	)
-	wal := &coordinatorWAL{
-		pending:    []ingresswal.Envelope{envelopeA, envelopeB},
-		commitErrs: []error{errors.New("commit failed"), nil},
-	}
-	applyCalls, flushCalls := 0, 0
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		applyCalls++
-		return false, nil
-	}
-	route.flush = func(context.Context) error {
-		flushCalls++
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		envelopeA := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`{"record":"A"}`),
+		)
+		envelopeB := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`{"record":"B"}`),
+		)
+		wal := newCoordinatorWAL(t, envelopeA, envelopeB)
+		wal.prepareLimit = 1
+		wal.commitErrs = []error{errors.New("commit failed"), nil}
+		delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+		applyCalls := 0
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+			func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+				applyCalls++
+				return nil
+			})
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
 
-	if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
-		t.Fatalf("first Replay error = %v, want bounded replay error", err)
-	}
-	if got := coordinatorProgressLen(coordinator); got != 1 {
-		t.Fatalf("progress after commit failure = %d, want retained flushed phase", got)
-	}
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("first pass = %v, want A pending delivery", err)
+		}
+		advanceIngressSlot()
+		wal.mu.Lock()
+		wal.replayErrs = []error{errors.New("hold B"), nil}
+		wal.mu.Unlock()
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
+			t.Fatalf("second pass = %v, want bounded replay error", err)
+		}
+		if got := coordinatorProgressLen(coordinator); got != 1 {
+			t.Fatalf("progress after commit failure = %d, want retained acknowledged phase", got)
+		}
+		stats := delivery.CollectionStats()
 
-	wal.mu.Lock()
-	wal.beforeHandlerErrAt = 1
-	wal.beforeHandlerErr = errors.New("fail after retry commit before B handler")
-	wal.mu.Unlock()
-	if err := coordinator.Replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
-		t.Fatalf("second Replay error = %v, want bounded later replay error", err)
-	}
-	if got := coordinatorProgressLen(coordinator); got != 0 {
-		t.Errorf("progress after observed retry commit = %d, want 0", got)
-	}
-	if applyCalls != 1 {
-		t.Errorf("A apply calls across commit retry = %d, want 1", applyCalls)
-	}
-	if flushCalls != 1 {
-		t.Errorf("A flush calls across commit retry = %d, want 1", flushCalls)
-	}
+		wal.mu.Lock()
+		wal.replayErrs = []error{errors.New("fail after retry commit before B is prepared")}
+		wal.mu.Unlock()
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALReplay) {
+			t.Fatalf("third pass = %v, want bounded later replay error", err)
+		}
+		if got := coordinatorProgressLen(coordinator); got != 0 {
+			t.Errorf("progress after observed retry commit = %d, want 0", got)
+		}
+		if applyCalls != 1 {
+			t.Errorf("A apply calls across commit retry = %d, want 1", applyCalls)
+		}
+		if got := delivery.CollectionStats(); got.ScheduledAttempts != stats.ScheduledAttempts {
+			t.Errorf("commit retry collected again: %+v -> %+v", stats, got)
+		}
+	})
 }
 
 func coordinatorProgressLen(coordinator *ingressWALCoordinator) int {
@@ -832,7 +1036,7 @@ func TestIngressWALCoordinator_ConstructionStateAndRouteValidation(t *testing.T)
 		t.Error("disabled coordinator reported ready")
 	}
 
-	route := testIngressRoute("-", ingressWALSourceStream, ingressWALSignalHEC)
+	route := testIngressRoute(t, "-", ingressWALSourceStream, ingressWALSignalHEC)
 	enabled, err := newIngressWALCoordinator(&coordinatorWAL{}, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("enabled coordinator: %v", err)
@@ -847,7 +1051,7 @@ func TestIngressWALCoordinator_ConstructionStateAndRouteValidation(t *testing.T)
 	for name, routes := range map[string][]ingressWALRoute{
 		"missing":   nil,
 		"duplicate": {route, route},
-		"open pair": {testIngressRoute("-", ingressWALSourceStream, "flow")},
+		"open pair": {testIngressRoute(t, "-", ingressWALSourceStream, "flow")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := newIngressWALCoordinator(&coordinatorWAL{}, routes)
@@ -884,7 +1088,7 @@ func TestIngressWALCoordinator_ReadyOnlyInReadyState(t *testing.T) {
 func TestIngressWALCoordinator_WakeCoalesces(t *testing.T) {
 	wal := &coordinatorWAL{}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -927,7 +1131,7 @@ func TestIngressWALCoordinator_RunRetryBackoffResetsOnWake(t *testing.T) {
 	transient := errors.New("transient backend detail")
 	wal := &coordinatorWAL{replayErrs: []error{transient, transient, transient}}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -958,61 +1162,62 @@ func TestIngressWALCoordinator_RunRetryBackoffResetsOnWake(t *testing.T) {
 }
 
 func TestIngressWALCoordinator_RunRetryBackoffResetsOnProgress(t *testing.T) {
-	transient := errors.New("transient backend detail")
-	first := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[{"first":true}]`),
-	)
-	second := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[{"second":true}]`),
-	)
-	wal := &coordinatorWAL{
-		pending:    []ingresswal.Envelope{first, second},
-		replayErrs: []error{transient, transient, nil},
-	}
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	flushCalls := 0
-	route.flush = func(context.Context) error {
-		flushCalls++
-		if flushCalls == 2 {
-			return transient
+	synctest.Test(t, func(t *testing.T) {
+		transient := errors.New("transient backend detail")
+		first := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[{"first":true}]`),
+		)
+		second := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[{"second":true}]`),
+		)
+		wal := newCoordinatorWAL(t, first, second)
+		// Pass 1 applies only the first original; the next two passes fail to
+		// prepare, so the only progress is the first original's commit.
+		wal.prepareLimit = 1
+		wal.replayErrs = []error{nil, transient, transient}
+		route := testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
 		}
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-	var delays []time.Duration
-	coordinator.wait = func(_ context.Context, _ <-chan struct{}, delay time.Duration) ingressWALWaitResult {
-		delays = append(delays, delay)
-		if len(delays) == 3 {
-			return ingressWALWaitCanceled
+		var delays []time.Duration
+		coordinator.wait = func(_ context.Context, _ <-chan struct{}, delay time.Duration) ingressWALWaitResult {
+			delays = append(delays, delay)
+			switch len(delays) {
+			case 2:
+				// Let the first original's scheduled cover be acknowledged.
+				advanceIngressSlot()
+			case 3:
+				return ingressWALWaitCanceled
+			}
+			return ingressWALWaitTimer
 		}
-		return ingressWALWaitTimer
-	}
 
-	if err := coordinator.Run(context.Background()); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
+		if err := coordinator.Run(context.Background()); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
 
-	if got, want := delays, []time.Duration{
-		ingressWALInitialRetry,
-		2 * ingressWALInitialRetry,
-		ingressWALInitialRetry,
-	}; !equalDurations(got, want) {
-		t.Errorf("retry delays = %v, want %v", got, want)
-	}
-	if got := wal.Health().PendingEntries; got != 1 {
-		t.Errorf("pending entries after partial progress = %d, want 1", got)
-	}
-	if got := coordinatorProgressLen(coordinator); got != 1 {
-		t.Errorf("progress entries after partial replay = %d, want bounded to 1 pending entry", got)
-	}
+		// 1: Replay's own pending-delivery wait; 2: first failure; 3: reset to
+		// the initial delay because the commit made progress (else 200ms).
+		if got, want := delays, []time.Duration{
+			ingressWALInitialRetry,
+			ingressWALInitialRetry,
+			ingressWALInitialRetry,
+		}; !equalDurations(got, want) {
+			t.Errorf("retry delays = %v, want %v", got, want)
+		}
+		if got := wal.Health().PendingEntries; got != 1 {
+			t.Errorf("pending entries after partial progress = %d, want 1", got)
+		}
+		if got := coordinatorProgressLen(coordinator); got != 0 {
+			t.Errorf("progress entries after partial replay = %d, want the retired original released", got)
+		}
+	})
 }
 
 func TestIngressWALCoordinator_RunCancellationIsClean(t *testing.T) {
 	coordinator, err := newIngressWALCoordinator(&coordinatorWAL{}, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1042,67 +1247,79 @@ func TestIngressWALCoordinator_RunCancellationIsClean(t *testing.T) {
 }
 
 func TestIngressWALCoordinator_DrainStateAndIdempotentClose(t *testing.T) {
-	envelope := coordinatorEnvelope(
-		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
-	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
-	flushStarted := make(chan struct{})
-	releaseFlush := make(chan struct{})
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.flush = func(context.Context) error {
-		close(flushStarted)
-		<-releaseFlush
-		return nil
-	}
-	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
-	if err != nil {
-		t.Fatalf("newIngressWALCoordinator: %v", err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- coordinator.Drain(context.Background()) }()
-	<-flushStarted
-	if got := coordinator.Health().State; got != ingressWALStateDraining {
-		t.Errorf("state during Drain = %q, want draining", got)
-	}
-	if coordinator.Ready() {
-		t.Error("draining coordinator reported ready")
-	}
-	close(releaseFlush)
-	if err := <-done; err != nil {
-		t.Fatalf("Drain: %v", err)
-	}
-	if got := coordinator.Health().State; got != ingressWALStateDraining {
-		t.Errorf("state after Drain = %q, want draining until Close", got)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		envelope := coordinatorEnvelope(
+			t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
+		)
+		wal := newCoordinatorWAL(t, envelope)
+		delivery, sink := newTestIngressDelivery(t, testIngressInterval)
+		route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery, nil)
+		coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+		if err != nil {
+			t.Fatalf("newIngressWALCoordinator: %v", err)
+		}
+		// Applied and covered at its normal slot, but delivery is failing: the
+		// terminal drain may only retry this existing receipt.
+		sink.setFail(true)
+		if err := coordinator.replay(context.Background()); !errors.Is(err, errIngressWALFlush) {
+			t.Fatalf("pass = %v, want pending delivery", err)
+		}
+		advanceIngressSlot()
+		done := make(chan error, 1)
+		go func() { done <- coordinator.Drain(context.Background()) }()
+		synctest.Wait()
+		if got := coordinator.Health().State; got != ingressWALStateDraining {
+			t.Errorf("state during Drain = %q, want draining", got)
+		}
+		if coordinator.Ready() {
+			t.Error("draining coordinator reported ready")
+		}
+		select {
+		case err := <-done:
+			t.Fatalf("Drain returned %v before the covered receipt was delivered", err)
+		default:
+		}
+		sink.setFail(false)
+		if err := <-done; err != nil {
+			t.Fatalf("Drain: %v", err)
+		}
+		if got := wal.Health().PendingEntries; got != 0 {
+			t.Errorf("pending entries after Drain = %d, want 0", got)
+		}
+		if got := coordinator.Health().State; got != ingressWALStateDraining {
+			t.Errorf("state after Drain = %q, want draining until Close", got)
+		}
 
-	if err := coordinator.Close(); err != nil {
-		t.Fatalf("first Close: %v", err)
-	}
-	if err := coordinator.Close(); err != nil {
-		t.Fatalf("second Close: %v", err)
-	}
-	if wal.closeCalls != 1 {
-		t.Errorf("WAL Close calls = %d, want 1", wal.closeCalls)
-	}
-	if got := coordinator.Health().State; got != ingressWALStateStopped {
-		t.Errorf("state after Close = %q, want stopped", got)
-	}
-	if coordinator.Ready() {
-		t.Error("stopped coordinator reported ready")
-	}
+		if err := coordinator.Close(); err != nil {
+			t.Fatalf("first Close: %v", err)
+		}
+		if err := coordinator.Close(); err != nil {
+			t.Fatalf("second Close: %v", err)
+		}
+		if wal.closeCalls != 1 {
+			t.Errorf("WAL Close calls = %d, want 1", wal.closeCalls)
+		}
+		if got := coordinator.Health().State; got != ingressWALStateStopped {
+			t.Errorf("state after Close = %q, want stopped", got)
+		}
+		if coordinator.Ready() {
+			t.Error("stopped coordinator reported ready")
+		}
+	})
 }
 
 func TestIngressWALCoordinator_CanceledReplayHasNoEffects(t *testing.T) {
 	envelope := coordinatorEnvelope(
 		t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`),
 	)
-	wal := &coordinatorWAL{pending: []ingresswal.Envelope{envelope}}
+	wal := newCoordinatorWAL(t, envelope)
 	effects := 0
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
-	route.apply = func(context.Context, []byte, time.Time) (bool, error) {
-		effects++
-		return false, nil
-	}
+	delivery, _ := newTestIngressDelivery(t, testIngressInterval)
+	route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery,
+		func(context.Context, []byte, time.Time, telemetry.Emitter) error {
+			effects++
+			return nil
+		})
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1120,7 +1337,7 @@ func TestIngressWALCoordinator_CanceledReplayHasNoEffects(t *testing.T) {
 
 func TestIngressWALCoordinator_SuccessfulAppendDoesNotMaskRetryingWorker(t *testing.T) {
 	wal := &coordinatorWAL{replayErr: errors.New("transient free text")}
-	route := testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+	route := testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1151,7 +1368,7 @@ func TestIngressWALCoordinator_SuccessfulAppendDoesNotMaskRetryingWorker(t *test
 func TestIngressWALCoordinator_CloseErrorIsBoundedAndStillStops(t *testing.T) {
 	wal := &coordinatorWAL{closeErr: errors.New("secret filesystem path")}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1191,7 +1408,7 @@ func equalDurations(got, want []time.Duration) bool {
 func TestIngressWALCoordinator_AppendFailsClosedOnPermanentFailure(t *testing.T) {
 	wal := &coordinatorWAL{}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceStream, ingressWALSignalHEC),
+		testIngressRoute(t, "example.com", ingressWALSourceStream, ingressWALSignalHEC),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1222,7 +1439,7 @@ func TestIngressWALCoordinator_AppendFailsClosedOnPermanentFailure(t *testing.T)
 func TestIngressWALCoordinator_AppendRacingPermanentFailureIsNotAcknowledged(t *testing.T) {
 	wal := &coordinatorWAL{}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceStream, ingressWALSignalHEC),
+		testIngressRoute(t, "example.com", ingressWALSourceStream, ingressWALSignalHEC),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -1235,4 +1452,83 @@ func TestIngressWALCoordinator_AppendRacingPermanentFailureIsNotAcknowledged(t *
 	if err := appendBody(t.Context(), []byte("racing"), time.Now()); !errors.Is(err, errIngressWALAppend) {
 		t.Fatalf("append racing a permanent failure = %v, want %v — the sender must not be acknowledged", err, errIngressWALAppend)
 	}
+}
+
+// runReadinessFixture starts the live worker over one applied webhook original
+// and returns the pieces the readiness tests observe.
+func runReadinessFixture(t *testing.T) (*App, *coordinatorWAL, *testIngressSink, func()) {
+	t.Helper()
+	envelope := coordinatorEnvelope(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, []byte(`[]`))
+	wal := newCoordinatorWAL(t, envelope)
+	delivery, sink := newTestIngressDelivery(t, testIngressInterval)
+	route := testIngressRouteOn("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook, delivery, nil)
+	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{route})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{ingressWAL: coordinator, readyState: newComponentHealth()}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- coordinator.Run(ctx) }()
+	return a, wal, sink, func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	}
+}
+
+// An applied original that is only waiting for its normal scheduled
+// collection is healthy work: readiness must not fail and the WAL must not
+// report itself as retrying for up to one metric interval after each arrival.
+func TestIngressWALReadiness_HealthyAwaitingCoverStaysReady(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, wal, _, stop := runReadinessFixture(t)
+		defer stop()
+		time.Sleep(2 * time.Second) // applied, before the first slot
+		synctest.Wait()
+		if got := wal.Health().PendingEntries; got != 1 {
+			t.Fatalf("setup: pending=%d, want one applied original awaiting its cover", got)
+		}
+		if reason := a.ingressWALFailure(); reason != "" {
+			t.Fatalf("readiness failure %q while healthy work awaits its scheduled cover", reason)
+		}
+		if state := a.ingressWAL.Health().State; state == ingressWALStateRetrying || state == ingressWALStateFailed {
+			t.Fatalf("WAL state %q while healthy work awaits its scheduled cover", state)
+		}
+		time.Sleep(testIngressInterval)
+		synctest.Wait()
+		if got := wal.Health().PendingEntries; got != 0 {
+			t.Fatalf("pending=%d after the healthy cover, want 0", got)
+		}
+		if reason := a.ingressWALFailure(); reason != "" {
+			t.Fatalf("readiness failure %q after the healthy cover", reason)
+		}
+	})
+}
+
+// Genuine delivery failure still surfaces: retrying, and not ready.
+func TestIngressWALReadiness_FailingDeliverySurfacesRetrying(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		a, wal, sink, stop := runReadinessFixture(t)
+		defer stop()
+		sink.setFail(true)
+		time.Sleep(testIngressInterval + time.Second) // the cover's export fails
+		synctest.Wait()
+		if state := a.ingressWAL.Health().State; state != ingressWALStateRetrying {
+			t.Fatalf("WAL state %q with a failing exporter, want retrying", state)
+		}
+		if reason := a.ingressWALFailure(); reason != appcatalog.ComponentIngressWAL+": retrying" {
+			t.Fatalf("readiness reason %q with a failing exporter, want ingress_wal: retrying", reason)
+		}
+		sink.setFail(false)
+		time.Sleep(6 * time.Second) // retry backoff, inside the slot
+		synctest.Wait()
+		if got := wal.Health().PendingEntries; got != 0 {
+			t.Fatalf("pending=%d after recovery, want 0", got)
+		}
+		if reason := a.ingressWALFailure(); reason != "" {
+			t.Fatalf("readiness failure %q after recovery", reason)
+		}
+	})
 }

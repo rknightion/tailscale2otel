@@ -74,7 +74,7 @@ Other state stays local to each replica:
 | State | Handover behavior |
 |---|---|
 | `checkpoint.evidence_store` | Only `file` and `memory` are supported. ACL provenance on one pod is not replicated to another. |
-| Ingress WAL | Accepted bodies remain on the accepting pod's volume. Another leader does not replay that pod's WAL. Preserve the volume and account for delayed replay when its owner becomes active again. |
+| Ingress WAL | Accepted bodies remain on the accepting pod's volume. Another leader does not replay that pod's WAL. Preserve the volume and account for delayed replay when its owner becomes active again. On loss of leadership the stepping-down pod makes at most one final metric collection per provider - with shutdown, the only exception to `otlp.metric_interval` - and commits only entries already applied and delivered within the 10-second drain; the rest stay on its volume. |
 | Persistent flow store | Each pod retains its own SQLite history. The new leader's view is not a merged history of the deployment. |
 | In-memory dedup, enrichment and event history | Rebuilt or repopulated in the active process. Handover can leave gaps in local views and allow replayed records through. |
 

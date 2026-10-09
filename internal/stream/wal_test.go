@@ -19,6 +19,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/stream"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
@@ -622,4 +623,47 @@ func TestWithDurableAppendNilPreservesSynchronousPath(t *testing.T) {
 		t.Fatalf("synchronous callbacks = accepted:%d ingest:%d, want 2/3", len(accepted), len(ingestCalls))
 	}
 	assertFlowAndAuditOnce(t, rec)
+}
+
+// The receipt-scoped durable observers apply only to durable application. A
+// direct (non-WAL) HEC delivery must still drive Options.OnIngest/OnAccepted,
+// as it did before durable observers existed, and must not touch them.
+func TestHandler_DurableObserversApplyOnlyToDurableApplication(t *testing.T) {
+	var ingestCalls []ingestCall
+	var accepted []ingest.AcceptedEvent
+	durableCalls := 0
+	rec := telemetrytest.New()
+	s := stream.New(stream.Options{
+		Token: testToken,
+		OnIngest: func(source, signal string, records, bytes int) {
+			ingestCalls = append(ingestCalls, ingestCall{source, signal, records, bytes})
+		},
+		OnAccepted: func(event ingest.AcceptedEvent) { accepted = append(accepted, event) },
+	}, flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{NodeDims: true}),
+		audit.NewProcessor(), rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)),
+		stream.WithDurableObservers(
+			func(telemetry.Emitter, string, string, int, int) { durableCalls++ },
+			func(telemetry.Emitter, ingest.AcceptedEvent) { durableCalls++ },
+		))
+	body := captureFlowRecord + "\n" + captureAuditRecord
+	resp := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("direct delivery status = %d: %s", resp.Code, resp.Body.String())
+	}
+	if len(ingestCalls) == 0 || len(accepted) == 0 || durableCalls != 0 {
+		t.Fatalf("direct path observers: OnIngest=%d OnAccepted=%d durable=%d, want Options observers only", len(ingestCalls), len(accepted), durableCalls)
+	}
+
+	ingestBefore, acceptedBefore := len(ingestCalls), len(accepted)
+	work, err := s.PrepareDurable(context.Background(), []byte(body), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := work.Apply(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if durableCalls == 0 || len(ingestCalls) != ingestBefore || len(accepted) != acceptedBefore {
+		t.Fatalf("durable application observers: durable=%d OnIngest=%d->%d OnAccepted=%d->%d, want durable observers only",
+			durableCalls, ingestBefore, len(ingestCalls), acceptedBefore, len(accepted))
+	}
 }

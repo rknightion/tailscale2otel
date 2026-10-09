@@ -71,7 +71,8 @@ const partialSuccessPrefix = "otlp partial success:"
 // collector-success timestamp under the label "last export", so a completely
 // broken OTLP pipeline still read as recent delivery.
 type DeliveryState struct {
-	Signal string
+	Signal     string
+	Collection *CollectionStats // Metrics only; accounting, never a receipt ACK.
 	// Exports is every completed attempt; Failures is how many of them failed.
 	Exports  int64
 	Failures int64
@@ -338,6 +339,11 @@ func classifyExportError(err error) string {
 		return errClassTimeout
 	case errors.Is(err, context.Canceled):
 		return errClassCanceled
+	case errors.Is(err, errACKRejected):
+		// The validating HTTP guard rejects nonzero counts before the SDK can
+		// construct its partial-success leaf. Preserve the existing delivery
+		// health category; this does NOT acknowledge a required receipt.
+		return errClassPartialSuccess
 	}
 	msg := strings.ToLower(err.Error())
 	// Partial success next, and ahead of every substring check below: it is the
@@ -441,6 +447,12 @@ func (s *ProviderSet) Delivery() []DeliveryState {
 			m.Exports += st.Exports
 			m.Failures += st.Failures
 			m.PartialSuccesses += st.PartialSuccesses
+			if st.Collection != nil {
+				if m.Collection == nil {
+					m.Collection = &CollectionStats{}
+				}
+				m.Collection.add(*st.Collection)
+			}
 			if st.ConsecutiveFailures > m.ConsecutiveFailures {
 				m.ConsecutiveFailures = st.ConsecutiveFailures
 			}

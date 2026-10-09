@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
@@ -353,7 +354,13 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 	if p.cache != nil {
 		p.cache.UpsertUnverified(flow.nodeRefs())
 	}
+	if views, ok := ctx.Value(preparedMetricViewContextKey{}).(map[metricFlowKey]*preparedMetricView); ok {
+		ctx = context.WithValue(ctx, metricFrameContextKey{}, views[metricKey(flow)])
+	}
 	reporter := p.reporterDiagnosis(flow)
+	if view := metricFrame(ctx); view != nil {
+		reporter = view.reporter
+	}
 	e.Counter(docReporterObservations.Name, docReporterObservations.Unit, docReporterObservations.Description, 1, telemetry.Attrs{
 		"trust":       reporter.trust,
 		"consistency": reporter.consistency,
@@ -430,7 +437,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// on 100% of exit series — a label claiming a lookup that was never possible.
 	// Use tailscale.exit_node.io/packets to measure exit traffic; they attribute
 	// by reporting node, the only dimension exit records actually supply.
-	srcNode := p.resolveEndpoint(cc.Src, srcAddr)
+	srcNode := p.resolveEndpointCtx(ctx, cc.Src, srcAddr)
 	// How the two nodes actually reached each other, read off the underlay
 	// endpoint. Computed once here and shared by the raw metrics, the rollup and
 	// the flow store, so the classification runs once per connection.
@@ -440,7 +447,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// it yields neither a node nor a service — see relayedDestination.
 	dstNode, dstService := "", ""
 	if !relayedDestination(storePath) {
-		dstNode = p.resolveEndpoint(cc.Dst, dstAddr)
+		dstNode = p.resolveEndpointCtx(ctx, cc.Dst, dstAddr)
 		dstService = serviceName(transport, dstPort)
 	}
 
@@ -448,8 +455,8 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// allocation-free, and geoip.Lookup itself refuses every non-global address
 	// -- including the tailnet CGNAT range and ULA -- so a tailnet endpoint
 	// simply comes back empty and contributes no attributes at all.
-	srcGeo := p.lookupGeo(srcAddr)
-	dstGeo := p.lookupGeo(dstAddr)
+	srcGeo := p.lookupGeoCtx(ctx, srcAddr)
+	dstGeo := p.lookupGeoCtx(ctx, dstAddr)
 
 	// Raw per-connection io/packets families (all/both mode). In rollup mode the
 	// bounded *.rollup families are emitted by FlushRollup from the accumulator
@@ -511,7 +518,11 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// Bounded rollup accumulation (rollup/both mode); drained by FlushRollup. The
 	// rollup deliberately carries no L4 ports — they stay in the flow logs and in
 	// the per-source-node unique gauges.
-	if p.rollup != nil {
+	rollup := p.rollup
+	if selected, ok := ctx.Value(durableRollupContextKey{}).(*rollupAccumulator); ok {
+		rollup = selected
+	}
+	if rollup != nil {
 		d := rollupDims{
 			transport:   transport,
 			trafficType: trafficType,
@@ -523,7 +534,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 		}
 		// Resolving the node blocks is only worth it when the accumulator will
 		// actually key on identity — refByAddr walks the record's embedded blocks.
-		if p.rollup.wantsIdentity() {
+		if rollup.wantsIdentity() {
 			d.identity = identityOf(flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
 		}
 		d.geo = geoKey{
@@ -532,12 +543,12 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 			dstCountry:   dstGeo.CountryISO,
 			dstContinent: dstGeo.ContinentCode,
 		}
-		p.rollup.record(d,
+		rollup.record(d,
 			float64(cc.TxBytes), float64(cc.RxBytes), float64(cc.TxPkts), float64(cc.RxPkts))
 		// A destination that does not exist is not a distinct peer: counting it
 		// would add exactly one phantom peer per source node to the unique gauge.
 		if dstNode != "" {
-			p.rollup.observeUnique(srcNode, dstNode, dstPort)
+			rollup.observeUnique(srcNode, dstNode, dstPort)
 		}
 	}
 
@@ -1384,4 +1395,143 @@ func networkType(src, dst string) string {
 		return semconv.NetworkTypeIPv4
 	}
 	return ""
+}
+
+type durableRollupContextKey struct{}
+
+func (p *Processor) WithDurableRollup(ctx context.Context) (context.Context, func(telemetry.Emitter)) {
+	var accumulator *rollupAccumulator
+	if p.rollup != nil {
+		accumulator = newRollupAccumulator(p.rollup.topN, p.rollup.nodes, p.rollup.identity, p.rollup.geo)
+	}
+	var once sync.Once
+	return context.WithValue(ctx, durableRollupContextKey{}, accumulator), func(e telemetry.Emitter) { once.Do(func() { accumulator.Flush(e) }) }
+}
+func (p *Processor) StageRollup() telemetry.CollectionStage { return p.rollup.Stage() }
+
+// Choices are copied only for decoded endpoints/reporters, never the complete
+// cache. The ordered isolated overlay reproduces first-body self enrichment,
+// while authoritative device/service choices keep precedence.
+type preparedMetricViewContextKey struct{}
+type metricFrameContextKey struct{}
+type metricFlowKey struct {
+	node       string
+	start, end time.Time
+	ref        *NodeRef
+	first      *ConnectionCounts
+}
+type preparedMetricView struct {
+	names    map[string]string
+	geo      map[string]geoip.Result
+	reporter reporterDiagnosis
+}
+
+func metricKey(f FlowLog) metricFlowKey {
+	key := metricFlowKey{node: f.NodeID, start: f.Start, end: f.End, ref: f.SrcNode}
+	for _, set := range [][]ConnectionCounts{f.VirtualTraffic, f.SubnetTraffic, f.ExitTraffic, f.PhysicalTraffic} {
+		if len(set) > 0 {
+			key.first = &set[0]
+			break
+		}
+	}
+	return key
+}
+func metricFrame(ctx context.Context) *preparedMetricView {
+	v, _ := ctx.Value(metricFrameContextKey{}).(*preparedMetricView)
+	return v
+}
+func PreparedMetricContext(ctx, prepared context.Context) context.Context {
+	return context.WithValue(ctx, preparedMetricViewContextKey{}, prepared.Value(preparedMetricViewContextKey{}))
+}
+func (p *Processor) PrepareMetricView(ctx context.Context, flows []FlowLog) (context.Context, int64, error) {
+	views := make(map[metricFlowKey]*preparedMetricView, len(flows))
+	overlay := enrich.NewDeviceCache()
+	var charge int64
+	for _, f := range flows {
+		if err := ctx.Err(); err != nil {
+			return nil, 0, err
+		}
+		overlay.UpsertUnverified(f.nodeRefs())
+		view := &preparedMetricView{names: map[string]string{}, geo: map[string]geoip.Result{}, reporter: p.reporterDiagnosis(f)}
+		var identityBytes int64
+		refs := append([]NodeRef(nil), f.DstNodes...)
+		if f.SrcNode != nil {
+			refs = append(refs, *f.SrcNode)
+		}
+		for _, ref := range refs {
+			identityBytes += int64(len(ref.User) + len(ref.OS) + len(ref.Name) + len(ref.NodeID))
+			for _, tag := range ref.Tags {
+				identityBytes += int64(len(tag)) + 1
+			}
+		}
+		for _, set := range [][]ConnectionCounts{f.VirtualTraffic, f.SubnetTraffic, f.ExitTraffic, f.PhysicalTraffic} {
+			for _, cc := range set {
+				n := identityBytes + int64(len(cc.Src)+len(cc.Dst)) + 256
+				for _, endpoint := range []string{cc.Src, cc.Dst} {
+					host, _ := splitEndpoint(endpoint)
+					name := p.resolveEndpoint(endpoint, host)
+					if p.cache != nil && endpoint != "" {
+						original, provenance := p.cache.ResolveNameAny(endpoint)
+						if provenance != enrich.ProvenanceAuthoritative {
+							if hint, prov := overlay.ResolveNameAny(endpoint); prov == enrich.ProvenanceUnverified {
+								name = enrich.Mark(hint, prov)
+							} else if provenance == enrich.ProvenanceUnverified {
+								name = enrich.Mark(original, provenance)
+							}
+						}
+					}
+					view.names[endpoint] = name
+					view.geo[host] = p.lookupGeo(host)
+					geo := view.geo[host]
+					n += int64(len(name) + len(geo.CountryISO) + len(geo.ContinentCode))
+				}
+				if n > math.MaxInt64-charge {
+					return nil, 0, fmt.Errorf("flow metric view charge overflow")
+				}
+				charge += n
+			}
+		}
+		views[metricKey(f)] = view
+	}
+	return context.WithValue(ctx, preparedMetricViewContextKey{}, views), charge, nil
+}
+func (p *Processor) resolveEndpointCtx(ctx context.Context, endpoint, host string) string {
+	if v := metricFrame(ctx); v != nil {
+		if name, ok := v.names[endpoint]; ok {
+			return name
+		}
+	}
+	return p.resolveEndpoint(endpoint, host)
+}
+func (p *Processor) lookupGeoCtx(ctx context.Context, host string) geoip.Result {
+	if v := metricFrame(ctx); v != nil {
+		if geo, ok := v.geo[host]; ok {
+			return geo
+		}
+	}
+	return p.lookupGeo(host)
+}
+
+// Required log counts use the existing per-ProcessCtx policy, not an admission
+// body cap or a new whole-envelope budget. Dedup may only reduce this bound.
+func (p *Processor) DurableLogCount(flows []FlowLog) (int64, error) {
+	var total int64
+	for _, f := range flows {
+		n := int64(len(f.VirtualTraffic)) + int64(len(f.SubnetTraffic)) + int64(len(f.ExitTraffic)) + int64(len(f.PhysicalTraffic))
+		switch p.logMode {
+		case logPerRecord:
+			n = 1
+		case logPerConnection:
+		default:
+			n = 0
+		}
+		if p.maxLogs > 0 {
+			n = min(n, int64(p.maxLogs))
+		}
+		if n > math.MaxInt64-total {
+			return 0, fmt.Errorf("flow log bound overflow")
+		}
+		total += n
+	}
+	return total, nil
 }

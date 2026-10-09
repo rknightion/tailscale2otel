@@ -14,6 +14,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
@@ -475,5 +476,47 @@ func TestHandler_NilDurableAppenderPreservesSynchronousBehavior(t *testing.T) {
 	if ingestCalls != 1 || acceptedCalls != 2 || len(rec.LogRecords()) != 2 {
 		t.Fatalf("synchronous effects ingest/accepted/logs = %d/%d/%d, want 1/2/2",
 			ingestCalls, acceptedCalls, len(rec.LogRecords()))
+	}
+}
+
+// The receipt-scoped durable observers apply only to durable application. A
+// direct (non-WAL) delivery must still drive Options.OnIngest/OnAccepted, as it
+// did before durable observers existed, and must not touch the durable ones.
+func TestDurableObserversApplyOnlyToDurableApplication(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	rec := telemetrytest.New()
+	ingestCalls, acceptedCalls, durableCalls := 0, 0, 0
+	s := New(Options{
+		Listen:     "127.0.0.1:0",
+		Path:       "/webhook",
+		Secret:     testSecret,
+		OnIngest:   func(string, string, int, int) { ingestCalls++ },
+		OnAccepted: func(ingest.AcceptedEvent) { acceptedCalls++ },
+	}, rec.Emitter(), slog.New(slog.NewTextHandler(io.Discard, nil)),
+		WithClock(func() time.Time { return now }),
+		WithDurableObservers(
+			func(telemetry.Emitter, string, string, int, int) { durableCalls++ },
+			func(telemetry.Emitter, ingest.AcceptedEvent) { durableCalls++ },
+		),
+	)
+	rw := serveDurablePost(t, context.Background(), s.Handler(), twoEventBody, signBody(testSecret, now, twoEventBody), nil)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("direct delivery status = %d", rw.Code)
+	}
+	if ingestCalls == 0 || acceptedCalls == 0 || durableCalls != 0 {
+		t.Fatalf("direct path observers: OnIngest=%d OnAccepted=%d durable=%d, want Options observers only", ingestCalls, acceptedCalls, durableCalls)
+	}
+
+	ingestBefore, acceptedBefore := ingestCalls, acceptedCalls
+	work, err := s.PrepareDurable(context.Background(), []byte(twoEventBody), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := work.Apply(context.Background(), telemetrytest.New().Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if durableCalls == 0 || ingestCalls != ingestBefore || acceptedCalls != acceptedBefore {
+		t.Fatalf("durable application observers: durable=%d OnIngest=%d->%d OnAccepted=%d->%d, want durable observers only",
+			durableCalls, ingestBefore, ingestCalls, acceptedBefore, acceptedCalls)
 	}
 }

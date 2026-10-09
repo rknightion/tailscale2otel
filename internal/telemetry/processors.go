@@ -148,19 +148,8 @@ const stdoutDefaultMetricInterval = 5 * time.Second
 // or stdoutDefaultMetricInterval) instead of the production 60s default (#384) —
 // stdout is documented as a local debugging sink, so waiting a full minute to see
 // a metric defeats the point of it.
-func newMetricReader(exp sdkmetric.Exporter, opts Options) (*sdkmetric.PeriodicReader, error) {
-	interval := opts.MetricInterval
-	if interval <= 0 {
-		if opts.Protocol == "stdout" {
-			interval = opts.Stdout.MetricInterval
-			if interval <= 0 {
-				interval = stdoutDefaultMetricInterval
-			}
-		} else {
-			interval = defaultMetricInterval
-		}
-	}
-	return newPeriodicMetricReader(exp, interval, opts.MetricExportBatchSize)
+func newMetricReader(exp sdkmetric.Exporter, opts Options) (*scheduledMetricReader, error) {
+	return newScheduledMetricReader(exp, opts)
 }
 
 // newLogProcessor builds the log processor for opts. It is the single seam
@@ -202,15 +191,6 @@ func newSpanProcessor(exp sdktrace.SpanExporter, opts Options) sdktrace.SpanProc
 	p := newQueueingSpanProcessor(exp, opts.Batch.Traces.resolve(dfltTraceQueueConfig))
 	opts.Batch.Tracker.register(SignalTraces, p.q)
 	return p
-}
-
-// newPeriodicMetricReader builds the periodic reader, bounding each export to
-// batchSize datapoints when batchSize > 0.
-func newPeriodicMetricReader(exp sdkmetric.Exporter, interval time.Duration, batchSize int) (*sdkmetric.PeriodicReader, error) {
-	return sdkmetric.NewPeriodicReader(exp,
-		sdkmetric.WithInterval(interval),
-		sdkmetric.WithMaxExportBatchSize(batchSize),
-	), nil
 }
 
 // constAttrSpanProcessor stamps provider-scoped const attrs (tailnet/provider) on

@@ -157,7 +157,7 @@ func TestWireGRPC_MutualTLSRejectsMissingClientCert(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.mtls_reject", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err == nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
 		t.Fatal("ForceFlush succeeded against an mTLS gRPC server with no client certificate configured — the handshake should have failed")
 	}
 	if got := len(s.rec.all()); got != 0 {
@@ -190,7 +190,7 @@ func TestWireGRPC_NonOKResponseIsDeliveryFailure(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.counter_grpc_err", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err == nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
 		t.Fatal("ForceFlush against a server returning codes.Unauthenticated returned a nil error")
 	}
 
@@ -223,7 +223,7 @@ func TestWireGRPC_PartialSuccessSurfacesAsExportFailure(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.wiretest.partial_success_grpc", "1", "", 1, nil)
-	err = p.ForceFlush(ctx)
+	err = telemetry.CollectAndFlushForTest(ctx, p)
 	if got := len(s.rec.all()); got == 0 {
 		t.Fatal("server never received the request")
 	}

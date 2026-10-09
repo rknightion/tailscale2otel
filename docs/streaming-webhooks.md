@@ -51,6 +51,13 @@ happens after - whether the OTLP gateway accepted the batch, whether the backend
 outside every boundary in the table. A checkpoint that has advanced means "these records were handed
 to the emitter", not "these records are queryable".
 
+With the opt-in ingress WAL the local boundary is stricter than "handed to the emitter": an accepted
+body is only removed from the WAL once the scheduled metric collection that first contains its effects
+and all of its log records have been delivered by the exporter. Arrivals and replay never add a metric
+collection, so the configured `otlp.metric_interval` sample rate holds however irregular the traffic
+is. See [Metric cadence and the WAL completion boundary](configuration.md#metric-cadence-and-the-wal-completion-boundary)
+for the retry, saturation and shutdown rules.
+
 The network and configuration exports are **separate objects in separate key spaces**, so each signal
 reads its own destination: `collectors.flowlogs.objectstore` and `collectors.auditlogs.objectstore`
 (or, with a `tailnets:` list, each entry's `objectstore.flow` and `objectstore.audit`). Nothing is

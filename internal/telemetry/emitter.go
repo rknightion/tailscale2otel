@@ -365,25 +365,29 @@ func truncateLogValue(s string, limit int) (out string, droppedBytes int, trunca
 	return s[:keep] + logTruncationMarker, len(s) - keep, true
 }
 
-// observeLogTruncation records that one field (body or attribute) was
+// observeLogTruncationTo records into sink that one field (body or attribute) was
 // truncated and how many bytes it dropped. field is a fixed, bounded value
 // ("body" or "attribute") — never attacker-controlled — so it is safe as a
 // metric label.
-func (e *otelEmitter) observeLogTruncation(field string, droppedBytes int) {
+//
+// sink is the provider's own emitter on the normal path and the receipt's
+// recording emitter on durable WAL work, so the observation joins that work's
+// metric program instead of reaching the live SDK out of band.
+func observeLogTruncationTo(sink Emitter, field string, droppedBytes int) {
 	attrs := Attrs{"field": field}
-	e.Counter(docLogRecordTruncated.Name, docLogRecordTruncated.Unit, docLogRecordTruncated.Description, 1, attrs)
+	sink.Counter(docLogRecordTruncated.Name, docLogRecordTruncated.Unit, docLogRecordTruncated.Description, 1, attrs)
 	if droppedBytes > 0 {
-		e.Counter(docLogTruncatedBytes.Name, docLogTruncatedBytes.Unit, docLogTruncatedBytes.Description, float64(droppedBytes), attrs)
+		sink.Counter(docLogTruncatedBytes.Name, docLogTruncatedBytes.Unit, docLogTruncatedBytes.Description, float64(droppedBytes), attrs)
 	}
 }
 
-// boundedLogKV truncates every STRING-valued log key-value in kvs to
+// boundedLogKVWithSink truncates every STRING-valued log key-value in kvs to
 // defaultMaxLogAttrValueBytes, in place. Non-string kinds (bool/int64/float64)
 // are fixed-size by construction and left untouched. This only ever runs over
 // LOG attributes (built from an Event's Attrs by toLogKV) — it never touches a
 // metric data-point attribute, so operational metric labels are never
 // truncated or merged by this path.
-func (e *otelEmitter) boundedLogKV(kvs []attribute.KeyValue) []attribute.KeyValue {
+func (e *otelEmitter) boundedLogKVWithSink(kvs []attribute.KeyValue, sink Emitter) []attribute.KeyValue {
 	for i := range kvs {
 		if kvs[i].Value.Type() != attribute.STRING {
 			continue
@@ -394,7 +398,7 @@ func (e *otelEmitter) boundedLogKV(kvs []attribute.KeyValue) []attribute.KeyValu
 			continue
 		}
 		kvs[i].Value = attribute.StringValue(truncatedVal)
-		e.observeLogTruncation("attribute", dropped)
+		observeLogTruncationTo(sink, "attribute", dropped)
 	}
 	return kvs
 }
@@ -412,6 +416,9 @@ func (e *otelEmitter) LogEvent(ev Event) {
 // LogEvent uses) carries no span context, so the record is unchanged from
 // before #367.
 func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
+	e.logEventWithSink(ctx, ev, e)
+}
+func (e *otelEmitter) logEventWithSink(ctx context.Context, ev Event, sink Emitter) {
 	// Redact the body BEFORE the attrs — the body scrub reads the original attr
 	// values to know what to strip (a disabled category's value must not survive
 	// in the body just because bodies bypass the attribute filter, #197).
@@ -424,7 +431,7 @@ func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
 	// partially-redacted string.
 	if truncatedBody, dropped, truncated := truncateLogValue(body, e.logLimits.body()); truncated {
 		body = truncatedBody
-		e.observeLogTruncation("body", dropped)
+		observeLogTruncationTo(sink, "body", dropped)
 	}
 
 	var r log.Record
@@ -442,7 +449,7 @@ func (e *otelEmitter) LogEventCtx(ctx context.Context, ev Event) {
 	if ev.Name != "" {
 		r.SetEventName(ev.Name)
 	}
-	r.AddAttributes(e.boundedLogKV(toLogKV(ev.Attrs))...)
+	r.AddAttributes(e.boundedLogKVWithSink(toLogKV(ev.Attrs), sink)...)
 	if len(e.constAttrs) > 0 {
 		r.AddAttributes(e.constAttrs...)
 	}

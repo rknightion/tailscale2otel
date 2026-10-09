@@ -129,6 +129,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
 	"github.com/rknightion/tailscale2otel/v5/internal/ingest"
 	"github.com/rknightion/tailscale2otel/v5/internal/listenaddr"
+	"github.com/rknightion/tailscale2otel/v5/internal/metricdoc"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
@@ -144,6 +145,13 @@ var noopStreamTracer = tracenoop.NewTracerProvider().Tracer("")
 
 // Option configures a Server at construction time.
 type Option func(*Server)
+
+func WithDurableObservers(onIngest func(telemetry.Emitter, string, string, int, int), onAccepted func(telemetry.Emitter, ingest.AcceptedEvent)) Option {
+	return func(s *Server) { s.durableIngest = onIngest; s.durableAccepted = onAccepted }
+}
+func WithDurableBounds(bounds func(int64, []string, int64) (telemetry.LogBounds, error)) Option {
+	return func(s *Server) { s.durableBounds = bounds }
+}
 
 // WithTracer sets the tracer for one span per received request. A nil tracer
 // disables span emission (the server falls back to the noop tracer).
@@ -460,13 +468,16 @@ type Server struct {
 	// milliseconds instead of waiting out the real 30s budget.
 	processDeadline time.Duration
 
-	flowProc   *flowlog.Processor
-	auditProc  *audit.Processor
-	emitter    telemetry.Emitter
-	logger     *slog.Logger
-	onIngest   func(source, signal string, records, bytes int)
-	onAccepted ingest.AcceptedObserver
-	tracer     trace.Tracer
+	flowProc        *flowlog.Processor
+	auditProc       *audit.Processor
+	emitter         telemetry.Emitter
+	logger          *slog.Logger
+	onIngest        func(source, signal string, records, bytes int)
+	onAccepted      ingest.AcceptedObserver
+	durableIngest   func(telemetry.Emitter, string, string, int, int)
+	durableAccepted func(telemetry.Emitter, ingest.AcceptedEvent)
+	durableBounds   func(int64, []string, int64) (telemetry.LogBounds, error)
+	tracer          trace.Tracer
 	// remoteParent is the inbound-traceparent trust policy (#373); empty means
 	// trust, which is the pre-#373 behavior.
 	remoteParent string
@@ -1142,7 +1153,7 @@ classifyLoop:
 	// either decoded cleanly or is a forward-compatible unknown). NOW emit —
 	// route the staged records, count skips, and ack success. Nothing above this
 	// point touched a processor.
-	if _, err := s.applyDecoded(ctx, raw, batch, time.Now, r.Context().Err); err != nil {
+	if _, err := s.applyDecoded(ctx, raw, batch, time.Now, r.Context().Err, s.emitter, false); err != nil {
 		s.phase2DeadlineExceeded(r.Context(), w, span)
 		return
 	}
@@ -1187,10 +1198,70 @@ func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.
 	if err := ctx.Err(); err != nil {
 		return ApplyResult{}, err
 	}
-	return s.applyDecoded(ctx, body, batch, func() time.Time { return acceptedAt }, noEffectGuard)
+	return s.applyDecoded(ctx, body, batch, func() time.Time { return acceptedAt }, noEffectGuard, s.emitter, false)
 }
 
 func noEffectGuard() error { return nil }
+
+func (s *Server) PrepareDurable(ctx context.Context, body []byte, acceptedAt time.Time) (telemetry.IngressWork, error) {
+	batch, err := decodeDurableBatch(body)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	flows := make([]flowlog.FlowLog, len(batch.flows))
+	var connections int64
+	for i, record := range batch.flows {
+		flows[i] = record.log
+		f := record.log
+		connections += int64(len(f.VirtualTraffic)) + int64(len(f.SubnetTraffic)) + int64(len(f.ExitTraffic)) + int64(len(f.PhysicalTraffic))
+	}
+	view, labels, err := s.flowProc.PrepareMetricView(ctx, flows)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	count, err := s.flowProc.DurableLogCount(flows)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	count += int64(len(batch.audits))
+	var keys []string
+	var eventName int64
+	for _, catalog := range [][]metricdoc.LogEvent{flowlog.LogCatalog(), audit.LogCatalog()} {
+		for _, event := range catalog {
+			keys = append(keys, event.Attributes...)
+			eventName = max(eventName, int64(len(event.Name)))
+		}
+	}
+	bound := s.durableBounds
+	if bound == nil {
+		bound = telemetry.DefaultIngressLogBounds
+	}
+	logs, err := bound(count, keys, eventName)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	// Includes every direct/rollup/observer site and two truncation counters per
+	// log attribute/body. Policy filtering/dedup can only reduce these counts.
+	per := int64(64 + 2*len(keys))
+	records := int64(len(flows) + len(batch.audits) + batch.classifyUnknown + batch.unwrapDropped + 1)
+	if connections > math.MaxInt64-records || connections+records > math.MaxInt64/per {
+		return telemetry.IngressWork{}, errors.New("stream work bounds overflow")
+	}
+	ops := (connections + records) * per
+	if ops > math.MaxInt64/8192 || labels > (math.MaxInt64-ops*8192)/128 {
+		return telemetry.IngressWork{}, errors.New("stream work bounds overflow")
+	}
+	bounds := telemetry.WorkBounds{InputBytes: int64(len(body)), Logs: logs, MetricOps: ops, MetricBytes: ops*8192 + labels*128}
+	return telemetry.IngressWork{Bounds: bounds, Apply: func(ctx context.Context, e telemetry.Emitter) error {
+		ctx = flowlog.PreparedMetricContext(ctx, view)
+		ctx, finalize := s.flowProc.WithDurableRollup(ctx)
+		_, err := s.applyDecoded(ctx, body, batch, func() time.Time { return acceptedAt }, noEffectGuard, e, true)
+		if err == nil {
+			finalize(e)
+		}
+		return err
+	}}, nil
+}
 
 // decodeDurableBatch reparses trusted stored bytes without request-time resource
 // or semantic policy. Any impossible structural or typed shape means the stored
@@ -1247,15 +1318,30 @@ func (s *Server) applyDecoded(
 	batch decodedBatch,
 	nowAccepted func() time.Time,
 	guard func() error,
+	emitter telemetry.Emitter,
+	durable bool,
 ) (ApplyResult, error) {
+	// Receipt-scoped durable observers apply only to durable application, where
+	// their effects join the receipt's recording emitter. Direct delivery keeps
+	// Options.OnIngest/OnAccepted exactly as before.
+	onIngest := s.onIngest
+	if durable && s.durableIngest != nil {
+		onIngest = func(source, signal string, records, bytes int) {
+			s.durableIngest(emitter, source, signal, records, bytes)
+		}
+	}
+	onAccepted := s.onAccepted
+	if durable && s.durableAccepted != nil {
+		onAccepted = func(event ingest.AcceptedEvent) { s.durableAccepted(emitter, event) }
+	}
 	if err := guard(); err != nil {
 		return ApplyResult{}, err
 	}
-	if s.onIngest != nil && len(raw) > 0 {
+	if onIngest != nil && len(raw) > 0 {
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		s.onIngest(semconv.IngestSourceStream, "", 0, len(raw))
+		onIngest(semconv.IngestSourceStream, "", 0, len(raw))
 	}
 	for i := range batch.flows {
 		if err := guard(); err != nil {
@@ -1263,9 +1349,9 @@ func (s *Server) applyDecoded(
 		}
 		flowRecord := batch.flows[i]
 		flow := flowRecord.log
-		s.flowProc.ProcessCtx(ctx, flow, s.emitter)
-		if s.onAccepted != nil {
-			s.onAccepted(ingest.AcceptedEvent{
+		s.flowProc.ProcessCtx(ctx, flow, emitter)
+		if onAccepted != nil {
+			onAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceStream,
 				Signal:      semconv.IngestSignalFlow,
 				EventTime:   flowlog.EventTimestamp(flow),
@@ -1279,9 +1365,9 @@ func (s *Server) applyDecoded(
 			return ApplyResult{}, err
 		}
 		auditRecord := batch.audits[i]
-		s.auditProc.ProcessCtx(ctx, auditRecord.event, s.emitter)
-		if s.onAccepted != nil {
-			s.onAccepted(ingest.AcceptedEvent{
+		s.auditProc.ProcessCtx(ctx, auditRecord.event, emitter)
+		if onAccepted != nil {
+			onAccepted(ingest.AcceptedEvent{
 				Source:      semconv.IngestSourceStream,
 				Signal:      semconv.IngestSignalAudit,
 				EventTime:   auditRecord.event.EventTime,
@@ -1299,40 +1385,40 @@ func (s *Server) applyDecoded(
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
+		emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(flows),
 			telemetry.Attrs{attrType: typeFlow})
-		if s.onIngest != nil {
+		if onIngest != nil {
 			if err := guard(); err != nil {
 				return ApplyResult{}, err
 			}
-			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
+			onIngest(semconv.IngestSourceStream, semconv.IngestSignalFlow, flows, 0)
 		}
 	}
 	if audits > 0 {
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		s.emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
+		emitter.Counter(docStreamRecords.Name, docStreamRecords.Unit, docStreamRecords.Description, float64(audits),
 			telemetry.Attrs{attrType: typeAudit})
-		if s.onIngest != nil {
+		if onIngest != nil {
 			if err := guard(); err != nil {
 				return ApplyResult{}, err
 			}
-			s.onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
+			onIngest(semconv.IngestSourceStream, semconv.IngestSignalAudit, audits, 0)
 		}
 	}
 	if batch.classifyUnknown > 0 {
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+		emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
 			float64(batch.classifyUnknown), telemetry.Attrs{attrReason: reasonUnclassified})
 	}
 	if batch.unwrapDropped > 0 {
 		if err := guard(); err != nil {
 			return ApplyResult{}, err
 		}
-		s.emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
+		emitter.Counter(docStreamSkipped.Name, docStreamSkipped.Unit, docStreamSkipped.Description,
 			float64(batch.unwrapDropped), telemetry.Attrs{attrReason: reasonUnwrapDrop})
 	}
 	if skipped > 0 {

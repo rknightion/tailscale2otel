@@ -51,7 +51,7 @@ func TestDynamicHeaders_RotatedTokenReachesTheWire(t *testing.T) {
 		ServiceName:    "tailscale2otel",
 		Protocol:       "http",
 		Endpoint:       srv.URL,
-		MetricInterval: time.Hour, // never fire on the timer; ForceFlush drives exports
+		MetricInterval: time.Hour, // never fire on the timer; CollectAndFlushForTest drives exports
 		DynamicHeaders: func() map[string]string {
 			mu.Lock()
 			defer mu.Unlock()
@@ -71,7 +71,7 @@ func TestDynamicHeaders_RotatedTokenReachesTheWire(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.credrotation.test", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("first ForceFlush: %v", err)
 	}
 
@@ -80,7 +80,7 @@ func TestDynamicHeaders_RotatedTokenReachesTheWire(t *testing.T) {
 	mu.Unlock()
 
 	p.Emitter().Counter("tailscale.credrotation.test", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("second ForceFlush: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func TestDynamicHeaders_NilKeepsStaticHeaders(t *testing.T) {
 	}()
 
 	p.Emitter().Counter("tailscale.credrotation.static", "1", "", 1, nil)
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 

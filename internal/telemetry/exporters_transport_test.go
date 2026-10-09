@@ -139,9 +139,9 @@ func TestTransport_MaxRequestSizeRejectsOversizedExport(t *testing.T) {
 	for _, id := range []string{"a", "b", "c", "d", "e"} {
 		p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{"id": id})
 	}
-	// ForceFlush is expected to report an error: the serialized request exceeds
+	// The collect-and-flush barrier is expected to report an error: the serialized request exceeds
 	// the 16-byte ceiling, so the exporter must refuse to send it.
-	if err := p.ForceFlush(ctx); err == nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err == nil {
 		t.Fatal("ForceFlush succeeded despite MaxRequestSize being exceeded, want error")
 	}
 
@@ -186,7 +186,7 @@ func TestTransport_TimeoutBoundsExportAttempt(t *testing.T) {
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
 
 	start := time.Now()
-	err = p.ForceFlush(ctx)
+	err = telemetry.CollectAndFlushForTest(ctx, p)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("ForceFlush succeeded against a slow backend, want a timeout error")
@@ -226,7 +226,7 @@ func TestTransport_RetryDisabledFailsFast(t *testing.T) {
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
 
 	start := time.Now()
-	err = p.ForceFlush(ctx)
+	err = telemetry.CollectAndFlushForTest(ctx, p)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("ForceFlush succeeded against a 503 backend, want error")
@@ -259,7 +259,7 @@ func TestTransport_GRPCReconnectionPeriodAccepted(t *testing.T) {
 }
 
 // runOneExport builds a Provider from opts, emits one counter, force-flushes,
-// and shuts down. It fails the test if NewProvider or ForceFlush errors.
+// and shuts down. It fails the test if NewProvider or the collect-and-flush barrier errors.
 func runOneExport(t *testing.T, opts telemetry.Options) {
 	t.Helper()
 	ctx := context.Background()
@@ -273,7 +273,7 @@ func runOneExport(t *testing.T, opts telemetry.Options) {
 		_ = p.Shutdown(shutdownCtx)
 	}()
 	p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{})
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 }

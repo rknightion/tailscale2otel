@@ -22,25 +22,46 @@ import (
 type blockingWAL struct {
 	release   chan struct{}
 	replayErr error
+	mu        sync.Mutex
+	released  bool
 }
 
 func (w *blockingWAL) Append(context.Context, ingresswal.Envelope) error { return nil }
 func (w *blockingWAL) Commit(context.Context, string) error              { return nil }
 func (w *blockingWAL) Close() error                                      { return nil }
 
-func (w *blockingWAL) Replay(ctx context.Context, _ ingresswal.Handler, _ ingresswal.CommitObserver) error {
+func (w *blockingWAL) Replay(context.Context, ingresswal.Handler, ingresswal.CommitObserver) error {
+	return nil
+}
+
+// PrepareWindow is where the windowed coordinator's drain parks: preparation
+// is the first WAL operation of every replay pass.
+func (w *blockingWAL) PrepareWindow(ctx context.Context, _ ingresswal.WindowLimits, _ []ingresswal.Generation, _ ingresswal.GenerationObserver) ([]ingresswal.PreparedEntry, error) {
 	if w.replayErr != nil {
-		return w.replayErr
+		return nil, w.replayErr
 	}
 	select {
 	case <-w.release:
-		return nil
+		w.mu.Lock()
+		w.released = true
+		w.mu.Unlock()
+		return nil, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
+func (w *blockingWAL) CommitPrepared(context.Context, ingresswal.Generation) (ingresswal.PreparedOutcome, error) {
+	return ingresswal.PreparedPending, nil
+}
+func (w *blockingWAL) ReleasePrepared(ingresswal.Generation) error { return nil }
 
 func (w *blockingWAL) Health() ingresswal.Health {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.released {
+		// Released: the parked backlog has drained.
+		return ingresswal.Health{MaxEntries: 100, MaxBytes: 1 << 20}
+	}
 	return ingresswal.Health{PendingEntries: 7, PendingBytes: 70, MaxEntries: 100, MaxBytes: 1 << 20}
 }
 
@@ -49,7 +70,7 @@ func startupTestApp(t *testing.T, wal ingresswal.WAL) *App {
 	cfg := config.Default()
 	cfg.SelfObservability.Enabled = false
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceStream, ingressWALSignalHEC),
+		testIngressRoute(t, "example.com", ingressWALSourceStream, ingressWALSignalHEC),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)
@@ -207,14 +228,22 @@ func (w *slowFailWAL) Health() ingresswal.Health {
 	return ingresswal.Health{MaxEntries: 100, MaxBytes: 1 << 20}
 }
 
-func (w *slowFailWAL) Replay(ctx context.Context, _ ingresswal.Handler, _ ingresswal.CommitObserver) error {
+func (w *slowFailWAL) Replay(context.Context, ingresswal.Handler, ingresswal.CommitObserver) error {
+	return nil
+}
+
+func (w *slowFailWAL) PrepareWindow(ctx context.Context, _ ingresswal.WindowLimits, _ []ingresswal.Generation, _ ingresswal.GenerationObserver) ([]ingresswal.PreparedEntry, error) {
 	select {
 	case <-w.release:
-		return ingresswal.ErrCorrupt
+		return nil, ingresswal.ErrCorrupt
 	case <-ctx.Done():
-		return ctx.Err()
+		return nil, ctx.Err()
 	}
 }
+func (w *slowFailWAL) CommitPrepared(context.Context, ingresswal.Generation) (ingresswal.PreparedOutcome, error) {
+	return ingresswal.PreparedPending, nil
+}
+func (w *slowFailWAL) ReleasePrepared(ingresswal.Generation) error { return nil }
 
 // TestStartIngressWAL_PermanentFailureAfterBudgetFailsClosed covers the one
 // window the receiver budget cannot close: the drain outlasts the budget (so the

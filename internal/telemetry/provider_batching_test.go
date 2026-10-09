@@ -63,7 +63,7 @@ func TestProvider_MetricExportBatchSizeSplitsCollection(t *testing.T) {
 	for _, id := range []string{"a", "b", "c", "d", "e"} {
 		p.Emitter().Counter("tailscale.test.counter", "1", "", 1, telemetry.Attrs{"id": id})
 	}
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 

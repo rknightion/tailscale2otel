@@ -904,7 +904,8 @@ const (
 	wiretestServiceVersion = "9.9.9-wiretest"
 )
 
-// driveWirePipeline drives the pipeline and uses ForceFlush/Shutdown as
+// driveWirePipeline drives the pipeline and uses one test-only slot collection
+// plus the non-collecting ForceFlush barrier, then Shutdown, as
 // deterministic exporter completion barriers before inspecting the recorder
 // snapshot (no sleeps or polling). configure may override any Options field
 // (TLS, headers, protocol-specific endpoint quirks) before NewProvider runs.
@@ -956,13 +957,13 @@ func driveWirePipeline(t *testing.T, rec *wireRecorder, protocol, endpoint strin
 	})
 	_, span := p.Tracer().Start(ctx, "wiretest-span")
 
-	if err := p.ForceFlush(ctx); err != nil {
+	if err := telemetry.CollectAndFlushForTest(ctx, p); err != nil {
 		t.Fatalf("ForceFlush: %v", err)
 	}
 	span.End()
 
 	got := make(map[string]capturedRequest, 3)
-	// ForceFlush waits for the metric and log exporters to finish. Capture those
+	// The barrier waits for the metric and log exporters to finish. Capture those
 	// requests before Shutdown triggers their second collection; delta sums are
 	// intentionally empty on that second collection while cumulative gauges and
 	// UpDownCounters remain present.

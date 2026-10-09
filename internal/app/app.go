@@ -88,11 +88,15 @@ type App struct {
 	delivery     func() []telemetry.DeliveryState
 	metricGroups map[string]string // metric source-name -> catalog group, for series.by_group rollup
 
-	shutdown      func(context.Context) error // flushes telemetry on stop
-	restore       func()                      // restores the prior otel error handler
-	runtimeHist   *runtimeHistory             // short-term runtime/cardinality trends, for the status page
-	store         collector.CheckpointStore   // poll-cursor store; read for window-collector state on the status page
-	evidenceStore collector.CheckpointStore   // restart-stable semantic evidence (ACL revision/audit provenance)
+	shutdown  func(context.Context) error // flushes telemetry on stop
+	lifecycle func(context.Context, telemetry.FlushReason) error
+	// runtimeSetupErr records a runtime whose provider could not take its
+	// scheduled rollup producer. New (via buildIngressWAL) refuses to start.
+	runtimeSetupErr error
+	restore         func()                    // restores the prior otel error handler
+	runtimeHist     *runtimeHistory           // short-term runtime/cardinality trends, for the status page
+	store           collector.CheckpointStore // poll-cursor store; read for window-collector state on the status page
+	evidenceStore   collector.CheckpointStore // restart-stable semantic evidence (ACL revision/audit provenance)
 	// checkpointEffective is the store kind actually in use ("file"|"memory"),
 	// which can differ from cfg.Checkpoint.Store after a fallback (unwritable path
 	// or a corrupt file). The status page and the checkpoint reporter use this, not
@@ -320,6 +324,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	}
 
 	a := newAppShell(cfg, version, logger, ps.Process().Emitter(), ps.Process().Tracer(), ps.Shutdown, stores.Cursors.Store)
+	a.lifecycle = ps.FlushLifecycle
 	a.pamClient = pamClient
 	a.evidenceStore = stores.Evidence.Store
 	a.credReload = reloaders
@@ -439,7 +444,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 			a.annotator.Decorate("headscale", a.procEmitter),
 			nil,
 			nil,
-			ps.Process().ForceFlush,
+			ps.Process(),
 			cp,
 			multi,
 		)
@@ -475,7 +480,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 				emitter,
 				tp.Cardinality(),
 				tp.ExportStats,
-				tp.ForceFlush,
+				tp,
 				cp,
 				multi,
 			)
@@ -511,6 +516,9 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 	// transitions, tailnet renames) so window cursors survive instead of silently
 	// cold-starting and re-emitting the overlap window (#105).
 	a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
+	if a.runtimeSetupErr != nil {
+		return nil, a.runtimeSetupErr
+	}
 	ingressRoutes := a.buildReceivers()
 	if err := a.buildIngressWAL(ingressRoutes); err != nil {
 		return nil, fmt.Errorf("ingress WAL: %w", err)
@@ -697,7 +705,7 @@ func (a *App) addRuntime(
 		emitter,
 		card,
 		exportStats,
-		func(context.Context) error { return nil },
+		nil,
 		cp,
 		multi,
 	)
@@ -709,20 +717,23 @@ func (a *App) addRuntimeConfigured(
 	emitter telemetry.Emitter,
 	card *telemetry.CardinalityTracker,
 	exportStats func() telemetry.ExportStats,
-	forceFlush func(context.Context) error,
+	delivery *telemetry.Provider,
 	cp *provider.Provider,
 	multi bool,
 ) *tailnetRuntime {
-	if forceFlush == nil {
-		forceFlush = func(context.Context) error { return nil }
-	}
+	annotationName := configuredName
 	rt := &tailnetRuntime{
+		durableDecorate: func(e telemetry.Emitter) telemetry.Emitter {
+			// Same tailnet label New passes to Decorate for this runtime's
+			// ordinary emitter; read lazily so a later-started annotator applies.
+			return a.annotator.Decorate(annotationName, e)
+		},
 		configuredName: configuredName,
 		name:           name,
 		emitter:        emitter,
 		card:           card,
 		exportStats:    exportStats,
-		forceFlush:     forceFlush,
+		delivery:       delivery,
 		cp:             cp,
 		apiStats:       NewAPIStats(),
 	}
@@ -755,6 +766,17 @@ func (a *App) addRuntimeConfigured(
 		multi:         multi,
 		primary:       len(a.runtimes) == 0, // the first runtime owns process-global static targets
 	})
+	if delivery != nil && rt.flowProc != nil {
+		// Installed before producer startup; the provider alone owns drains at
+		// original collection boundaries, including the explicit terminal one.
+		if err := delivery.SetBeforeCollect(rt.flowProc.StageRollup); err != nil {
+			// Nothing else drains this runtime's rollup on the schedule, so this
+			// is a construction error, never a silent degradation.
+			a.runtimeSetupErr = errors.Join(a.runtimeSetupErr,
+				fmt.Errorf("tailnet %q: scheduled metric producer registration: %w", configuredName, err))
+			rt.delivery = nil // Durable route validation fails closed as well.
+		}
+	}
 	a.runtimes = append(a.runtimes, rt)
 	return rt
 }
@@ -783,7 +805,7 @@ func newApp(
 		emitter,
 		nil,
 		nil,
-		func(context.Context) error { return nil },
+		nil,
 		cp,
 		false,
 	)
@@ -1004,14 +1026,8 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		go a.tsRelease.Run(ctx)
 	}
 
-	// Bounded flow-metric rollups (the default output): drain each runtime's
-	// accumulator on the export interval. Independent of self-observability — it
-	// must run whenever rollup metrics are the configured output.
-	if m := a.cfg.Cardinality.Flow.MetricsMode; m == "rollup" || m == "both" {
-		for _, rt := range a.runtimes {
-			go runRollupFlusher(ctx, rt.flowProc, rt.emitter, interval)
-		}
-	}
+	// Provider SetBeforeCollect hooks own active rollup drains. No independent
+	// ticker can race first-cover staging or manufacture ingress samples.
 
 	// receiverWG tracks the stream/webhook receiver goroutines so they are joined
 	// AFTER the schedulers stop but BEFORE the telemetry pipeline is shut down and
@@ -1113,6 +1129,13 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		walFatalErr = a.walStartupFatal
 		if walFatalErr == nil {
 			drainCtx, cancel := context.WithTimeout(context.Background(), ingressWALDrainTimeout)
+			reason := telemetry.FlushShutdown
+			if a.currentCoordination().State == coordination.StateSteppedDown {
+				reason = telemetry.FlushLeadershipLost
+			}
+			if err := a.flushMetricLifecycle(drainCtx, reason); err != nil {
+				a.logger.Warn("terminal metric delivery incomplete; pending originals remain for restart")
+			}
 			if err := a.ingressWAL.Drain(drainCtx); err != nil {
 				a.logger.Warn("ingress WAL final drain incomplete; pending entries remain for restart")
 			}
@@ -1126,7 +1149,9 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 	// this is a no-op in "all" mode (nil accumulator).
 	// FlushRollup stays sequential: it is synchronous in-memory work with no context or I/O.
 	for _, rt := range a.runtimes {
-		rt.flowProc.FlushRollup(rt.emitter)
+		if rt.delivery == nil {
+			rt.flowProc.FlushRollup(rt.emitter)
+		}
 	}
 	checkpointErr := a.flushCheckpointStores()
 
@@ -1155,9 +1180,13 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 // own teardown. Safe to call at most once; ctx bounds the flush.
 func (a *App) Close(ctx context.Context) error {
 	for _, rt := range a.runtimes {
-		if rt != nil && rt.flowProc != nil {
+		if rt != nil && rt.flowProc != nil && rt.delivery == nil {
 			rt.flowProc.FlushRollup(rt.emitter)
 		}
+	}
+	lifecycleErr := a.flushMetricLifecycle(ctx, telemetry.FlushShutdown)
+	if a.ingressWAL != nil {
+		lifecycleErr = errors.Join(lifecycleErr, a.ingressWAL.Drain(ctx))
 	}
 	// Close is also the supported lifecycle path for callers that use New plus
 	// RunOnce instead of Run. Those callers never reach Run's deferred resource
@@ -1182,7 +1211,30 @@ func (a *App) Close(ctx context.Context) error {
 		a.restore()
 	}
 	shutdownErr := a.shutdown(ctx)
-	return errors.Join(shutdownErr, closeErr, flowStoreErr, checkpointErr)
+	return errors.Join(lifecycleErr, shutdownErr, closeErr, flowStoreErr, checkpointErr)
+}
+
+func (a *App) flushMetricLifecycle(ctx context.Context, reason telemetry.FlushReason) error {
+	if a.lifecycle != nil {
+		return a.lifecycle(ctx, reason)
+	}
+	// Construction seams may own providers directly rather than a ProviderSet.
+	seen := make(map[*telemetry.Provider]bool)
+	var providers []*telemetry.Provider
+	for _, rt := range a.runtimes {
+		if rt.delivery != nil && !seen[rt.delivery] {
+			seen[rt.delivery] = true
+			providers = append(providers, rt.delivery)
+		}
+	}
+	errs := make([]error, len(providers))
+	var wg sync.WaitGroup
+	for i, p := range providers {
+		wg.Add(1)
+		go func() { defer wg.Done(); errs[i] = p.FlushLifecycle(ctx, reason) }()
+	}
+	wg.Wait()
+	return errors.Join(errs...)
 }
 
 // flushCheckpointStores makes shutdown a synchronous durability boundary even

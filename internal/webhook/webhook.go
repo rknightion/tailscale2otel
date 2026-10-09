@@ -252,16 +252,19 @@ type Options struct {
 
 // Server receives and verifies Tailscale webhook POSTs and emits telemetry.
 type Server struct {
-	opts           Options
-	e              telemetry.Emitter
-	logger         *slog.Logger
-	now            func() time.Time // injectable clock; defaults to time.Now
-	secretProvider func() string
-	dedup          *dedup.Set // optional cross-source de-dup set (see WithDedup)
-	durableAppend  DurableAppend
-	onIngest       func(source, signal string, records, bytes int)
-	onAccepted     ingest.AcceptedObserver
-	tracer         trace.Tracer
+	opts            Options
+	e               telemetry.Emitter
+	logger          *slog.Logger
+	now             func() time.Time // injectable clock; defaults to time.Now
+	secretProvider  func() string
+	dedup           *dedup.Set // optional cross-source de-dup set (see WithDedup)
+	durableAppend   DurableAppend
+	onIngest        func(source, signal string, records, bytes int)
+	onAccepted      ingest.AcceptedObserver
+	durableIngest   func(telemetry.Emitter, string, string, int, int)
+	durableAccepted func(telemetry.Emitter, ingest.AcceptedEvent)
+	durableBounds   func(int64, []string, int64) (telemetry.LogBounds, error)
+	tracer          trace.Tracer
 	// remoteParent is the inbound-traceparent trust policy (#373); empty means
 	// trust, which is the pre-#373 behavior.
 	remoteParent string
@@ -634,6 +637,13 @@ func webhookTailnet(body []byte) (string, error) {
 // Option configures a Server at construction time.
 type Option func(*Server)
 
+func WithDurableObservers(onIngest func(telemetry.Emitter, string, string, int, int), onAccepted func(telemetry.Emitter, ingest.AcceptedEvent)) Option {
+	return func(s *Server) { s.durableIngest = onIngest; s.durableAccepted = onAccepted }
+}
+func WithDurableBounds(bounds func(int64, []string, int64) (telemetry.LogBounds, error)) Option {
+	return func(s *Server) { s.durableBounds = bounds }
+}
+
 // DurableAppend persists one already-authenticated, completely validated raw
 // request body before the receiver acknowledges it. The app binds the function
 // to the configured route; transport headers and route selection stay outside
@@ -968,6 +978,36 @@ func (s *Server) ApplyDurable(ctx context.Context, body []byte, acceptedAt time.
 	return nil
 }
 
+func (s *Server) PrepareDurable(ctx context.Context, body []byte, acceptedAt time.Time) (telemetry.IngressWork, error) {
+	batch, err := decodeAcceptedBatchContext(ctx, body)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	var keys []string
+	for _, event := range LogCatalog() {
+		keys = append(keys, event.Attributes...)
+	}
+	var eventName int64
+	for _, event := range batch.events {
+		eventName = max(eventName, int64(len(eventNamePrefix)+len(event.Type)))
+	}
+	bound := s.durableBounds
+	if bound == nil {
+		bound = telemetry.DefaultIngressLogBounds
+	}
+	logs, err := bound(int64(len(batch.events)), keys, eventName)
+	if err != nil {
+		return telemetry.IngressWork{}, err
+	}
+	per := int64(32 + 2*len(keys))
+	ops := (int64(len(batch.events)) + 1) * per
+	bounds := telemetry.WorkBounds{InputBytes: int64(len(body)), Logs: logs, MetricOps: ops, MetricBytes: ops*8192 + int64(len(body))*128}
+	return telemetry.IngressWork{Bounds: bounds, Apply: func(ctx context.Context, e telemetry.Emitter) error {
+		s.applyAcceptedBatchSelected(ctx, batch, len(body), func() time.Time { return acceptedAt }, e, true)
+		return nil
+	}}, nil
+}
+
 func decodeAcceptedBatch(body []byte) (acceptedBatch, error) {
 	return decodeAcceptedBatchContext(context.Background(), body)
 }
@@ -1036,17 +1076,30 @@ func decodeAcceptedBatchContext(ctx context.Context, body []byte) (acceptedBatch
 // emitted log record is a child of it. Without it the webhook path emits
 // orphaned records while the poll path emits correlated ones (#367).
 func (s *Server) applyAcceptedBatch(ctx context.Context, batch acceptedBatch, bodyBytes int, acceptedAt func() time.Time) {
-	if s.onIngest != nil {
+	s.applyAcceptedBatchSelected(ctx, batch, bodyBytes, acceptedAt, s.e, false)
+}
+
+// applyAcceptedBatchSelected applies one decoded batch through emitter. The
+// receipt-scoped durable observers apply only when durable is set; direct
+// delivery keeps Options.OnIngest/OnAccepted exactly as before.
+func (s *Server) applyAcceptedBatchSelected(ctx context.Context, batch acceptedBatch, bodyBytes int, acceptedAt func() time.Time, emitter telemetry.Emitter, durable bool) {
+	if durable && s.durableIngest != nil {
+		s.durableIngest(emitter, semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(batch.events), bodyBytes)
+	} else if s.onIngest != nil {
 		s.onIngest(semconv.IngestSourceWebhook, semconv.IngestSignalWebhook, len(batch.events), bodyBytes)
 	}
 	for i, ev := range batch.events {
 		if !s.delivery.Add(batch.digests[i]) {
-			s.e.Counter(docWebhookDuplicates.Name, docWebhookDuplicates.Unit, docWebhookDuplicates.Description, 1, nil)
+			emitter.Counter(docWebhookDuplicates.Name, docWebhookDuplicates.Unit, docWebhookDuplicates.Description, 1, nil)
 			continue
 		}
-		s.emit(ctx, ev)
-		if s.onAccepted != nil {
-			s.onAccepted(ingest.AcceptedEvent{
+		s.emitSelected(ctx, ev, emitter)
+		onAccepted := s.onAccepted
+		if durable && s.durableAccepted != nil {
+			onAccepted = func(event ingest.AcceptedEvent) { s.durableAccepted(emitter, event) }
+		}
+		if onAccepted != nil {
+			onAccepted(ingest.AcceptedEvent{
 				Source:     semconv.IngestSourceWebhook,
 				Signal:     semconv.IngestSignalWebhook,
 				EventTime:  parseTimestamp(ev.Timestamp),
@@ -1125,7 +1178,8 @@ func expectedSignature(secret string, ts time.Time, body []byte) string {
 
 // emit converts one event into an OTEL log record plus a counter increment.
 // The counter carries only the low-cardinality event type.
-func (s *Server) emit(ctx context.Context, ev event) {
+func (s *Server) emit(ctx context.Context, ev event) { s.emitSelected(ctx, ev, s.e) }
+func (s *Server) emitSelected(ctx context.Context, ev event, emitter telemetry.Emitter) {
 	if s.dedup != nil {
 		if key, ok := crossKey(ev); ok && !s.dedup.Add(key) {
 			// Same change already emitted via the audit logs (or a prior webhook):
@@ -1149,7 +1203,7 @@ func (s *Server) emit(ctx context.Context, ev event) {
 		}
 	}
 
-	s.e.LogEventCtx(ctx, telemetry.Event{
+	emitter.LogEventCtx(ctx, telemetry.Event{
 		Name:      eventNamePrefix + dim,
 		Body:      ev.Message,
 		Severity:  severityForType(ev.Type),
@@ -1160,14 +1214,14 @@ func (s *Server) emit(ctx context.Context, ev event) {
 		Attrs:   attrs,
 	})
 
-	s.e.Counter(docWebhookEvents.Name, docWebhookEvents.Unit, docWebhookEvents.Description, 1, telemetry.Attrs{
+	emitter.Counter(docWebhookEvents.Name, docWebhookEvents.Unit, docWebhookEvents.Description, 1, telemetry.Attrs{
 		attrType: dim,
 	})
 	status := "known"
 	if ev.Version != 1 {
 		status = "unknown"
 	}
-	s.e.Counter(docWebhookSchemaDrift.Name, docWebhookSchemaDrift.Unit, docWebhookSchemaDrift.Description, 1, telemetry.Attrs{
+	emitter.Counter(docWebhookSchemaDrift.Name, docWebhookSchemaDrift.Unit, docWebhookSchemaDrift.Description, 1, telemetry.Attrs{
 		attrSchemaField: "version", attrSchemaStatus: status,
 	})
 

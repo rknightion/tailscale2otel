@@ -246,6 +246,19 @@ func (a *App) deliverySignals() []statusdata.DeliverySignal {
 			LastDurationMs:      int64(st.LastDurationSeconds * 1000),
 			LastErrorClass:      st.LastErrorClass,
 		}
+		if st.Collection != nil {
+			c := st.Collection
+			row.Collection = &statusdata.CollectionStats{
+				ScheduledAttempts: c.ScheduledAttempts, CollectFailures: c.CollectFailures,
+				SnapshotsCollected: c.SnapshotsCollected, BestEffortDiscardedFull: c.BestEffortDiscardedFull,
+				BestEffortEvicted: c.BestEffortEvicted, RequiredSnapshotsAcknowledged: c.RequiredSnapshotsAcknowledged,
+				RetainedCredits: c.RetainedCredits, ReservedCredits: c.ReservedCredits,
+				TerminalSkippedFull: c.TerminalSkippedFull, TerminalAttempts: c.TerminalAttempts,
+			}
+			if !c.LastSlotAt.IsZero() {
+				row.Collection.LastSlotAt = c.LastSlotAt.UTC().Format(rfc3339)
+			}
+		}
 		if !st.LastSuccessAt.IsZero() {
 			row.LastSuccessAt = st.LastSuccessAt.UTC().Format(rfc3339)
 		}

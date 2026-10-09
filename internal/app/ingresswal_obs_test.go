@@ -16,7 +16,7 @@ func TestEmitIngressWALHealthUsesProcessGlobalAttributeFreeGauges(t *testing.T) 
 		{Body: []byte("three")},
 	}
 	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)

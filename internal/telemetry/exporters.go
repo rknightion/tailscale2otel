@@ -1,14 +1,17 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
@@ -81,11 +84,16 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		if w == nil {
 			w = os.Stdout
 		}
-		mo := []stdoutmetric.Option{stdoutmetric.WithWriter(w)}
+		buf := &bytes.Buffer{}
+		mo := []stdoutmetric.Option{stdoutmetric.WithWriter(buf)}
 		if opts.Stdout.Pretty {
 			mo = append(mo, stdoutmetric.WithPrettyPrint())
 		}
-		return stdoutmetric.New(mo...)
+		inner, err := stdoutmetric.New(mo...)
+		if err != nil {
+			return nil, err
+		}
+		return &stdoutMetricExporter{Exporter: inner, buf: buf, w: w}, nil
 	case "", "http":
 		o := []otlpmetrichttp.Option{otlpmetrichttp.WithTemporalitySelector(metricTemporalitySelector(opts.MetricTemporality))}
 		if opts.Endpoint != "" {
@@ -117,11 +125,13 @@ func newMetricExporter(ctx context.Context, opts Options) (sdkmetric.Exporter, e
 		if opts.Transport.MaxRequestSize > 0 {
 			o = append(o, otlpmetrichttp.WithMaxRequestSize(opts.Transport.MaxRequestSize))
 		}
-		// Dynamic credentials replace the transport wholesale, so this must come
-		// AFTER the static TLS option above — it supersedes it (#362).
-		if hc := dynamicHTTPClient(opts); hc != nil {
-			o = append(o, otlpmetrichttp.WithHTTPClient(hc))
+		// The response guard wraps the effective client, including SDK-env TLS
+		// and timeout sources which WithHTTPClient otherwise bypasses.
+		hc, err := guardedHTTPClient(opts, "metrics")
+		if err != nil {
+			return nil, err
 		}
+		o = append(o, otlpmetrichttp.WithHTTPClient(hc))
 		return otlpmetrichttp.New(ctx, o...)
 	case "grpc":
 		o := []otlpmetricgrpc.Option{otlpmetricgrpc.WithTemporalitySelector(metricTemporalitySelector(opts.MetricTemporality))}
@@ -177,11 +187,16 @@ func newLogExporter(ctx context.Context, opts Options) (sdklog.Exporter, error) 
 		if w == nil {
 			w = os.Stdout
 		}
-		lo := []stdoutlog.Option{stdoutlog.WithWriter(w)}
+		buf := &bytes.Buffer{}
+		lo := []stdoutlog.Option{stdoutlog.WithWriter(buf)}
 		if opts.Stdout.Pretty {
 			lo = append(lo, stdoutlog.WithPrettyPrint())
 		}
-		return stdoutlog.New(lo...)
+		inner, err := stdoutlog.New(lo...)
+		if err != nil {
+			return nil, err
+		}
+		return &stdoutLogExporter{Exporter: inner, buf: buf, w: w}, nil
 	case "", "http":
 		o := []otlploghttp.Option{}
 		if opts.Endpoint != "" {
@@ -215,9 +230,11 @@ func newLogExporter(ctx context.Context, opts Options) (sdklog.Exporter, error) 
 		}
 		// Dynamic credentials replace the transport wholesale, so this must come
 		// AFTER the static TLS option above — it supersedes it (#362).
-		if hc := dynamicHTTPClient(opts); hc != nil {
-			o = append(o, otlploghttp.WithHTTPClient(hc))
+		hc, err := guardedHTTPClient(opts, "logs")
+		if err != nil {
+			return nil, err
 		}
+		o = append(o, otlploghttp.WithHTTPClient(hc))
 		return otlploghttp.New(ctx, o...)
 	case "grpc":
 		o := []otlploggrpc.Option{}
@@ -861,4 +878,49 @@ func effectiveTLSConfig(opts Options) (*tls.Config, error) {
 		return opts.DynamicTLSConfig(), nil
 	}
 	return tlsConfig(opts)
+}
+
+// stdoutMetricExporter and stdoutLogExporter keep a failed stdout write
+// retryable. The SDK stdout exporters wrap one json.Encoder whose first write
+// error is sticky, so a single transient write failure would otherwise fail
+// every later export, and the scheduled reader would retry a retained required
+// snapshot forever. Each export encodes into a private buffer that cannot fail,
+// then hands the whole export to the real writer in one Write.
+type stdoutMetricExporter struct {
+	sdkmetric.Exporter
+	mu  sync.Mutex
+	buf *bytes.Buffer
+	w   io.Writer
+}
+
+func (e *stdoutMetricExporter) Export(ctx context.Context, data *metricdata.ResourceMetrics) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.buf.Reset()
+	if err := e.Exporter.Export(ctx, data); err != nil {
+		return err
+	}
+	_, err := e.w.Write(e.buf.Bytes())
+	return err
+}
+
+type stdoutLogExporter struct {
+	sdklog.Exporter
+	mu  sync.Mutex
+	buf *bytes.Buffer
+	w   io.Writer
+}
+
+func (e *stdoutLogExporter) Export(ctx context.Context, records []sdklog.Record) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.buf.Reset()
+	if err := e.Exporter.Export(ctx, records); err != nil {
+		return err
+	}
+	if e.buf.Len() == 0 {
+		return nil
+	}
+	_, err := e.w.Write(e.buf.Bytes())
+	return err
 }

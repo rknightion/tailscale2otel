@@ -19,10 +19,18 @@ var ingestAgeBucketsSeconds = []float64{0, 1, 5, 10, 30, 60, 300, 900, 3600, 216
 // emits ingest.records{source,signal}; bytes>0 emits ingest.bytes{source}; a call
 // may carry either or both.
 func ingestObserver(e telemetry.Emitter, selfObs bool) func(source, signal string, records, bytes int) {
+	selected := ingestObserverFor(selfObs)
+	if selected == nil {
+		return nil
+	}
+	return func(source, signal string, records, bytes int) { selected(e, source, signal, records, bytes) }
+}
+
+func ingestObserverFor(selfObs bool) func(telemetry.Emitter, string, string, int, int) {
 	if !selfObs {
 		return nil
 	}
-	return func(source, signal string, records, bytes int) {
+	return func(e telemetry.Emitter, source, signal string, records, bytes int) {
 		if records > 0 {
 			e.Counter(appcatalog.DocIngestRecords.Name, appcatalog.DocIngestRecords.Unit, appcatalog.DocIngestRecords.Description,
 				float64(records), telemetry.Attrs{
@@ -42,12 +50,20 @@ func ingestObserver(e telemetry.Emitter, selfObs bool) func(source, signal strin
 // processor. Its state is per runtime, preventing cross-tailnet freshness from
 // being merged.
 func acceptedEventObserver(e telemetry.Emitter, selfObs bool) ingest.AcceptedObserver {
+	selected := acceptedEventObserverFor(selfObs)
+	if selected == nil {
+		return nil
+	}
+	return func(event ingest.AcceptedEvent) { selected(e, event) }
+}
+
+func acceptedEventObserverFor(selfObs bool) func(telemetry.Emitter, ingest.AcceptedEvent) {
 	if !selfObs {
 		return nil
 	}
 	var mu sync.Mutex
 	last := make(map[[2]string]time.Time)
-	return func(event ingest.AcceptedEvent) {
+	return func(e telemetry.Emitter, event ingest.AcceptedEvent) {
 		if event.EventTime.IsZero() {
 			return
 		}

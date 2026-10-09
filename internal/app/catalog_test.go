@@ -72,7 +72,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 	// ingress_wal.*: an empty in-memory seam emits all five attribute-free
 	// capacity/cleanup gauges.
 	walCoordinator, err := newIngressWALCoordinator(&coordinatorWAL{}, []ingressWALRoute{
-		testIngressRoute("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
+		testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook),
 	})
 	if err != nil {
 		t.Fatalf("newIngressWALCoordinator: %v", err)

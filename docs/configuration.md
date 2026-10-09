@@ -502,7 +502,7 @@ OTLP.
 |-----|---------|-------------|
 | `otlp.protocol` | `http` | Transport. One of `grpc`, `http`, or `stdout`. `stdout` prints signals to the console for local debugging (no backend, no network). |
 | `otlp.endpoint` | `https://otlp-gateway-prod-us-central-0.grafana.net/otlp` | OTLP endpoint (ignored when `protocol: stdout`). For `protocol: http` this is a full base **URL** - for Grafana Cloud use the `…/otlp` base and the per-signal `/v1/metrics`, `/v1/logs`, and `/v1/traces` paths are appended for you (traces are a real third signal - see [`tracing`](#tracing-otel-traces-pillar) - and the exporter appends its path the same way as metrics and logs). For `protocol: grpc` it must instead be a bare **`host:port`** address (no scheme or path, e.g. `otlp-gateway-prod-us-central-0.grafana.net:443`); a URL-shaped value is rejected at startup. |
-| `otlp.metric_interval` | `60s` | How often metrics are pushed. `60s` aligns with the default 1 data-point-per-minute scrape cadence and avoids Grafana Cloud DPM churn. |
+| `otlp.metric_interval` | `60s` | How often metrics are collected and pushed. `60s` aligns with the default 1 data-point-per-minute scrape cadence and avoids Grafana Cloud DPM churn. Collection happens only on this schedule: ingress, WAL replay and export retries never add a sample (see [Metric cadence and the WAL completion boundary](#metric-cadence-and-the-wal-completion-boundary)). |
 | `otlp.metric_export_batch_size` | `10000` | Maximum datapoints per OTLP metric request. The metric SDK splits one cumulative collection into sequential requests at this boundary, preventing a single high-cardinality payload from blocking all metric delivery. This is not an exact byte limit: serialized size varies with metric names, labels, and values. Smaller values reduce request size at the cost of more requests per export interval. |
 | `otlp.metric_temporality` | `cumulative` | Metric aggregation temporality: `cumulative` (required guidance for Grafana Cloud) or `delta`. |
 | `otlp.outage_summary_interval` | `5m` | How often a continuing OTLP delivery outage is summarized again. |
@@ -1474,6 +1474,63 @@ While the receivers are still held, `/readyz` answers 503 with
 `ingress_wal: draining startup backlog (N entries, N bytes)` - the listeners genuinely are not open
 yet. A replay in progress is not a component failure and does not mark `ingress_wal` failed on the
 status page.
+
+### Metric cadence and the WAL completion boundary
+
+Metric collection follows `otlp.metric_interval` and nothing else. Each telemetry provider collects
+once per interval, starting one interval after it starts: `60s` gives one sample per minute for every
+continuously present series and `15s` gives four. Receiver arrivals, WAL replay, log export, export
+retries and backend recovery never start an extra collection or reset that schedule, and this holds
+for every metric sharing the provider, not just the ones ingress produced.
+
+A replayed entry is applied without waiting for delivery. Its metric effects are held until the next
+scheduled collection, which takes them all at once, and the entry is only committed (removed from the
+WAL) when both of these hold:
+
+- the first scheduled collection that contains all of its metric effects has been delivered in full -
+  when `otlp.metric_export_batch_size` splits a collection into several requests, every request has
+  to be acknowledged; and
+- every log record it produced has been delivered.
+
+The two can finish in either order, and log delivery never forces a metric collection. A signal that
+is explicitly disabled (`otlp.metrics.enabled` or `otlp.logs.enabled` set to `false`) is not an obligation; an enabled signal always is. Up to
+64 entries (and at most `ingress_wal.max_bytes` of them) are prepared and applied ahead of their
+acknowledgement, so a burst or a replayed backlog shares collections instead of taking one interval
+per entry. Expect a body's effects to appear at the first scheduled collection after it is applied,
+so roughly one interval of delivery lag in normal running.
+
+That window also sets peak memory. Everything applied ahead of its acknowledgement is held until the
+next scheduled collection: each prepared entry's decoded body and work, its recorded metric effects
+and its captured log records, for up to 64 entries and up to `ingress_wal.max_bytes` of encoded input.
+Decoded and recorded data is larger than the stored bytes, so a full window of large bodies can cost a
+multiple of `ingress_wal.max_bytes` in memory; size the container's memory for that, not for the WAL's
+disk footprint alone.
+
+When delivery fails, the exporter retries the same retained collection, with its original timestamps
+and values, using 100ms exponential backoff capped at 5s. A retry is never a new collection and there
+is no catch-up sample after recovery: the next sample is the next scheduled one. Each provider keeps
+at most two collections for delivery. A collection that carries WAL-covered effects stays pinned until
+it is delivered. In a sustained outage the schedule keeps collecting, but once both places are held a
+newer collection with no WAL coverage is discarded and counted; those are the only samples lost, and
+they show on the status page as discarded collections. New WAL work for that provider waits on disk
+with no effects applied, and once the unchanged `ingress_wal` limits are reached the receivers refuse
+new requests. Accepted entries are never dropped to make room.
+
+Application that fails after it has started - an error, a panic, or output exceeding the bound that
+was reserved for it before it began - poisons that entry. It is never acknowledged or reapplied in the
+same process: the WAL fails closed, the receivers refuse new requests, and the entry stays on disk for
+the next process to replay.
+
+**Lifecycle.** Startup replay can apply entries before the first collection but cannot bring that
+collection forward. A restarted process starts new cumulative series (a new start time) and
+acknowledges nothing on behalf of the old one; whatever was not committed replays. Process shutdown
+and loss of leadership are the **only** exceptions to the schedule. On either, each provider makes at
+most one extra collection, and only if a retention place is free or the ready WAL work already owns
+one; otherwise it is skipped and counted, and the entries stay on disk. The final drain, inside the
+existing 10-second budget, only retries and commits entries that were already applied - it applies
+nothing new - and everything unfinished replays on the next start. The status page reports normal
+attempts, collect failures, discarded and evicted collections, acknowledged WAL-covering collections,
+retained and reserved places, and the terminal attempts and skips separately from the normal ones.
 
 A WAL that cannot be read (corrupt, incompatible, unowned, or carrying an unknown persisted
 identity) still fails closed. Its receivers never open, `/readyz` reports `ingress_wal: failed`, and

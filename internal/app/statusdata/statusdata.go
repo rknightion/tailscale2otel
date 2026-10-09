@@ -665,10 +665,27 @@ type ConfigAdvisory struct {
 // every OTLP request was failing (#317). Emitted and delivered are kept
 // separate on purpose: ThroughputInfo counts what was handed to an exporter,
 // this counts what came back.
+// CollectionStats describes the collection clock independently of export
+// attempts. Aggregation across providers is diagnostics only, not WAL coverage.
+type CollectionStats struct {
+	ScheduledAttempts             uint64 `json:"scheduled_attempts"`
+	CollectFailures               uint64 `json:"collect_failures"`
+	SnapshotsCollected            uint64 `json:"snapshots_collected"`
+	BestEffortDiscardedFull       uint64 `json:"best_effort_discarded_full"`
+	BestEffortEvicted             uint64 `json:"best_effort_evicted"`
+	RequiredSnapshotsAcknowledged uint64 `json:"required_snapshots_acknowledged"`
+	RetainedCredits               int    `json:"retained_credits"`
+	ReservedCredits               int    `json:"reserved_credits"`
+	LastSlotAt                    string `json:"last_slot_at,omitempty"`
+	TerminalSkippedFull           uint64 `json:"terminal_skipped_full"`
+	TerminalAttempts              uint64 `json:"terminal_attempts"`
+}
+
 type DeliverySignal struct {
-	Signal   string `json:"signal"`
-	Exports  int64  `json:"exports"`
-	Failures int64  `json:"failures"`
+	Collection *CollectionStats `json:"collection,omitempty"`
+	Signal     string           `json:"signal"`
+	Exports    int64            `json:"exports"`
+	Failures   int64            `json:"failures"`
 	// ConsecutiveFailures is the current streak; Failing marks it sustained
 	// rather than a blip, and is what drags overall health to degraded.
 	ConsecutiveFailures int64  `json:"consecutive_failures"`

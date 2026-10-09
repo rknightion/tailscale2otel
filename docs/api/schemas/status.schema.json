@@ -580,6 +580,47 @@
     "delivery": {
       "items": {
         "properties": {
+          "collection": {
+            "properties": {
+              "best_effort_discarded_full": {
+                "type": "integer"
+              },
+              "best_effort_evicted": {
+                "type": "integer"
+              },
+              "collect_failures": {
+                "type": "integer"
+              },
+              "last_slot_at": {
+                "type": "string"
+              },
+              "required_snapshots_acknowledged": {
+                "type": "integer"
+              },
+              "reserved_credits": {
+                "type": "integer"
+              },
+              "retained_credits": {
+                "type": "integer"
+              },
+              "scheduled_attempts": {
+                "type": "integer"
+              },
+              "snapshots_collected": {
+                "type": "integer"
+              },
+              "terminal_attempts": {
+                "type": "integer"
+              },
+              "terminal_skipped_full": {
+                "type": "integer"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "consecutive_failures": {
             "type": "integer"
           },
