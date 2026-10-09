@@ -14,7 +14,7 @@
     "annotations": {
       "__dashboardUid__": "tailscale2otel-tailnet",
       "__panelId__": "201",
-      "description": "Fewer than 80% of devices report Tailscale client auto-update enabled. Gated by collect_posture; absent => not firing.",
+      "description": "Fewer than 80% of AUTO-UPDATE-ELIGIBLE devices report Tailscale client auto-update enabled. Eligible excludes iOS/Android clients and Kubernetes-operator proxies (any device tagged tag:k8s*), where the client auto-update toggle does not apply and which would otherwise pin the ratio low permanently. A device with no tag evidence (no tailscale_device_online_ratio series) stays counted. Gated by collect_posture; absent => not firing.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage",
       "summary": "Fleet auto-update coverage below 80%"
     },
@@ -28,7 +28,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)",
+          "expr": "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\", os!~\"ios|android\"} unless on (host_id) tailscale_device_online_ratio{tailscale_tags=~\".*tag:k8s.*\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio{os!~\"ios|android\"} unless on (host_id) tailscale_device_online_ratio{tailscale_tags=~\".*tag:k8s.*\"})), 1)",
           "instant": false,
           "intervalMs": 1000,
           "maxDataPoints": 43200,

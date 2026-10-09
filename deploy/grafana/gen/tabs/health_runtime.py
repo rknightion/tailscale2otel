@@ -14,7 +14,7 @@ empty state, the same pattern tabs/diagnostics.py already uses for the object-st
 subrequest families (#399/#386).
 """
 
-from builder import (hq, panel, prom_t, pyroscope_t, RI, row, stat_opts, ts_custom,
+from builder import (hq, logs_opts, loki_t, panel, prom_t, pyroscope_t, RI, row, stat_opts, ts_custom,
                      ts_opts, WIN_FAST)
 
 _PROFILING_EMPTY = ("No profile-upload series. Requires profiling.pyroscope.server_address "
@@ -202,6 +202,22 @@ def tab_health_runtime(scope):
                desc="Seconds since the oldest reported successful persistent flow-store WAL "
                     "checkpoint. Absent until the first checkpoint."), 12, 6),
     ]
+    # Startup advisories are written to the process log before OTLP logging exists, so
+    # this event is the only queryable copy; the Overview "Config warnings" stat is the count.
+    config_advisories = [
+        (panel("Config advisories", "logs",
+               [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale2otel.config.advisory`",
+                       maxlines=100)],
+               options=logs_opts(),
+               novalue="No advisories logged in this time range - the config has none, or the "
+                       "process has not restarted since.",
+               desc="One WARN line per configuration advisory (config.Warnings()), emitted once "
+                    "at startup as soon as the OTLP log pipeline is up, so it appears at each "
+                    "process start. The text names the setting and what to change; the Overview "
+                    "Config warnings stat is the live count."), 24, 7),
+    ]
+
     return [row("Go runtime", goruntime), row("GC & memory", gcmem),
             row("Profiling upload", profiling), row("Profiles", profiles),
-            row("TLS certificate", tls), row("Flow-store persistence", flowstore, collapse=True)]
+            row("TLS certificate", tls), row("Flow-store persistence", flowstore, collapse=True),
+            row("Config advisories", config_advisories)]

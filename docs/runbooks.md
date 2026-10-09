@@ -507,7 +507,7 @@ rather than one key per device.
 
 **Legitimate causes.** Platforms differ. Client auto-update is not available on every OS, and state
 encryption depends on the platform keystore, so a mixed fleet has a structural ceiling below 100% -
-tune the threshold to *your* fleet rather than chasing 100%. A low integration match rate right after
+tune the threshold to *your* fleet rather than chasing 100%. `ts2o-posture-autoupdate-low` already excludes iOS/Android clients and Kubernetes-operator proxies (any device tagged `tag:k8s*`), so what remains is a real shortfall on devices where auto-update applies. A low integration match rate right after
 onboarding a new MDM is expected while enrolment catches up.
 
 **Not legitimate.** A coverage ratio that *drops*. A sustained fall means devices are dropping out of

@@ -846,9 +846,29 @@ func Catalog() []metricdoc.Metric {
 	}
 }
 
-// LogCatalog returns the log events the app layer emits (none).
+// EventConfigAdvisory is the log event name for one startup configuration
+// advisory, and AttrConfigKey the attribute carrying the config key it concerns.
+const (
+	EventConfigAdvisory = "tailscale2otel.config.advisory"
+	AttrConfigKey       = "config.key"
+)
+
+// DocConfigAdvisory documents the per-advisory startup log event.
+var DocConfigAdvisory = metricdoc.LogEvent{
+	Name:     EventConfigAdvisory,
+	Severity: "WARN",
+	Description: "One configuration advisory from config.Warnings(), emitted once per advisory right after the " +
+		"OTLP pipeline starts. Startup also writes each advisory to the process log, but that happens before OTLP " +
+		"logging exists and so never reaches the log backend; this event is the queryable copy. The body is the " +
+		"advisory text; `config.key` is the setting it concerns (empty when the text does not open with one). " +
+		"`tailscale2otel.config.warnings` carries the count.",
+	Attributes: []string{AttrConfigKey},
+	Group:      GroupSelfObs,
+}
+
+// LogCatalog returns the log events the app layer emits.
 func LogCatalog() []metricdoc.LogEvent {
-	return nil
+	return []metricdoc.LogEvent{DocConfigAdvisory}
 }
 
 // Capability-matrix metric source names (#425/#430). The matrix itself is built

@@ -536,7 +536,7 @@ groups:
           summary: "Auth/API key {{ $labels.tailscale_key_id }} expires in <48h"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
       - alert: "PostureAutoUpdateCoverageLow"
-        expr: "(count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)) < 0.8"
+        expr: "(count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\", os!~\"ios|android\"} unless on (host_id) tailscale_device_online_ratio{tailscale_tags=~\".*tag:k8s.*\"})) / clamp_min(count(max by (host_id) (tailscale_device_posture_ratio{os!~\"ios|android\"} unless on (host_id) tailscale_device_online_ratio{tailscale_tags=~\".*tag:k8s.*\"})), 1)) < 0.8"
         for: "1h"
         labels:
           severity: "warning"

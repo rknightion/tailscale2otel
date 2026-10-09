@@ -416,6 +416,18 @@ def panel_ref(title):
 SEVERITY_VALUES = {"critical", "warning", "info", "advisory"}
 
 
+# Population for the auto-update coverage alert. The posture gauge carries `os` but no tags,
+# so tags come from tailscale_device_online_ratio (emitted for every device) via
+# `unless on (host_id)`: a device with no online series has no tag evidence and stays counted.
+# Excluded: iOS/Android clients and Kubernetes-operator proxies (tag:k8s, tag:k8s-operator,
+# tag:k8s-egress, ...), none of which have a client auto-update toggle. `os!~` also keeps a
+# series with no `os` label. The tag label is comma-joined, so the regex matches anywhere in it.
+_AUTOUPDATE_ELIGIBLE = (
+    "tailscale_device_posture_ratio{{{sel}os!~\"ios|android\"}} "
+    "unless on (host_id) tailscale_device_online_ratio{{tailscale_tags=~\".*tag:k8s.*\"}}"
+)
+
+
 def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
           policy, runbook, panel=None,
           ds=PROM, paused=True, lookback=3600,
@@ -1200,12 +1212,16 @@ def groups():
               domain="security", paused=False,
               policy="optional", runbook="credential-expiry", panel="Key expiry (time until)"),
         alert("ts2o-posture-autoupdate-low", "Posture: auto-update coverage low",
-              "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / "
-              "clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)",
+              "count(max by (host_id) (" + _AUTOUPDATE_ELIGIBLE.format(sel="auto_update=\"true\", ") + ")) / "
+              "clamp_min(count(max by (host_id) (" + _AUTOUPDATE_ELIGIBLE.format(sel="") + ")), 1)",
               "lt", 0.8, "1h", "warning",
               "Fleet auto-update coverage below 80%",
-              "Fewer than 80% of devices report Tailscale client auto-update enabled. Gated by "
-              "collect_posture; absent => not firing.",
+              "Fewer than 80% of AUTO-UPDATE-ELIGIBLE devices report Tailscale client auto-update "
+              "enabled. Eligible excludes iOS/Android clients and Kubernetes-operator proxies (any "
+              "device tagged tag:k8s*), where the client auto-update toggle does not apply and which "
+              "would otherwise pin the ratio low permanently. A device with no tag evidence "
+              "(no tailscale_device_online_ratio series) stays counted. Gated by collect_posture; "
+              "absent => not firing.",
               domain="security", hygiene=True, paused=False,
               policy="optional", runbook="device-posture-coverage", panel="Client posture population"),
         alert("ts2o-posture-encryption-low", "Posture: state-encryption coverage low",
@@ -1951,7 +1967,7 @@ def groups():
         record("ts2o-rec-posture-autoupdate", "tailscale:posture_autoupdate:ratio",
                "count(max by (host_id) (tailscale_device_posture_ratio{auto_update=\"true\"})) / "
                "clamp_min(count(max by (host_id) (tailscale_device_posture_ratio)), 1)",
-               "Fraction of devices with client auto-update enabled (feeds PostureAutoUpdateLow + the Security tab).",
+               "Fraction of ALL devices with client auto-update enabled (feeds the Security tab; PostureAutoUpdateLow uses a narrower auto-update-eligible population).",
                domain="security", paused=False),
         record("ts2o-rec-posture-encrypted", "tailscale:posture_encrypted:ratio",
                "count(max by (host_id) (tailscale_device_posture_ratio{encrypted=\"true\"})) / "

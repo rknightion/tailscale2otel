@@ -276,6 +276,14 @@
       ]
     },
     {
+      "kind": "log_event",
+      "name": "tailscale2otel.config.advisory",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
       "kind": "metric",
       "name": "process.cpu.time",
       "prom_name": "process_cpu_time_seconds_total",
@@ -681,6 +689,7 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
+        "alertable",
         "recorded",
         "drives_a_variable"
       ]

@@ -175,7 +175,7 @@ var nonIdentifier = map[string]bool{
 	"network.protocol.name": true, "source.port": true, "destination.port": true,
 	"os.type": true, "os.version": true, "tailscale.traffic_type": true,
 	"tailscale.dst.service": true, "tailscale.tags": true, "tailscale.collector": true,
-	"tailscale.feature": true, "metric.name": true, "component": true, "dedup.set": true,
+	"tailscale.feature": true, "metric.name": true, "component": true, "dedup.set": true, "config.key": true,
 	"source": true, "signal": true, "outcome": true, "operation": true, "receiver": true,
 	"metric.group": true, "cpu.mode": true,
 	"tailscale.webhook.type": true, "reason": true, "type": true, "status": true, "field": true,
