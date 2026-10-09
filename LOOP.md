@@ -29,6 +29,11 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   vulnerabilities. Raise the `go` directive in all five modules and upgrade local Go to the
   patched release; never weaken or edit the gate to bypass the vulnerability.
 
+- `golangci-lint` and `govulncheck` install into the shared `~/go/bin`, and another repo's
+  `just setup` can overwrite them with a different pin. If `just lint` or `just vuln` fails its
+  version assertion, re-run `just setup` here and retry; never edit the pin or the assertion.
+  Check that `command -v golangci-lint` is the binary `just setup` installed, not a mise shim.
+
 - `go test -race ./...` at the root stops at the module boundary. The four tool modules are covered
   by the `module-verify` and `lint` matrices in ci.yml, and a workflow contract test fails if one
   drops out.
