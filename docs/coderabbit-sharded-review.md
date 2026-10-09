@@ -18,12 +18,20 @@ file whose path is printed at completion. Direct script callers can pass
 15-minute timeout by default; direct callers can adjust it with
 `--timeout-seconds`.
 
-The status printed for each shard is a transport result, not a finding verdict:
-`CLEAN` means the command exited zero and emitted a structured `complete` event;
-`FAILED` means a command failed or did not emit that event. Any failed shard,
-including one with no `complete` line, makes the recipe exit nonzero. A shard
-can therefore be `CLEAN` while its aggregate still contains findings that need
-triage.
+Each shard's status line reports both the transport result and its findings.
+A shard whose command exited zero and emitted a structured `complete` event is
+either `CLEAN (complete, 0 findings)`, meaning its NDJSON holds no
+`{"type":"finding"}` events, or `COMPLETE: 2 major, 1 minor`, the finding counts
+by severity (`critical`, `major`, `minor`, `trivial`, `info`; a finding with no
+severity counts as `unknown`). `FAILED` means a command failed or did not emit
+the `complete` event. The final line totals the run, for example
+`1 clean, 1 with findings (2 major, 1 minor), 0 failed`.
+
+Findings are not transport failures, so a completed shard with findings still
+exits zero. Only a failed shard, including one with no `complete` line or one
+that timed out, makes the recipe exit nonzero. Read the summary for finding
+counts, and triage the findings in the aggregate before treating a zero exit as
+a pass.
 
 ## Scope warning
 
