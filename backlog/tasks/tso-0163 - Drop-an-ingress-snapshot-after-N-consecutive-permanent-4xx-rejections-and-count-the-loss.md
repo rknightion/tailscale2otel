@@ -3,9 +3,11 @@ id: TSO-0163
 title: >-
   Drop an ingress snapshot after N consecutive permanent 4xx rejections and
   count the loss
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop20'
 created_date: '2026-10-09 22:26'
+updated_date: '2026-10-09 23:03'
 labels: []
 dependencies:
   - TSO-0162
@@ -40,3 +42,15 @@ A metrics collection or log batch that the backend rejects permanently (for exam
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement bounded permanent-4xx drop per frozen loop20 decision, preserve transient/auth retry behavior, complete WAL members with explicit per-signal loss accounting, wire config/status/catalog/advisory alert and regenerate owned outputs; prove regression and runtime drain, then root security review and CodeRabbit before landing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Loop20 ownership packet amended before implementation: config reaches providers through internal/app/options.go, and chart instructions mandate a Chart.yaml version bump on values changes. Root grants those narrow paths plus options mapping tests; no appVersion or extra live authority. Read-only blocked inspection consumed zero implementation attempts.
+<!-- SECTION:NOTES:END -->

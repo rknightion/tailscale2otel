@@ -3,9 +3,11 @@ id: TSO-0165
 title: >-
   Run the OTLP ACK probe against the Grafana Cloud gateway and decide whether
   the ACK guard is safe
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop20'
 created_date: '2026-10-09 22:27'
+updated_date: '2026-10-09 23:13'
 labels: []
 dependencies:
   - TSO-0164
@@ -32,3 +34,15 @@ This is the live half of TSO-0164 (the OTLP ACK probe recipe). Rob authorised it
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Run exactly one allowlisted first-token probe on reviewed landed code, count emitted signal requests, allow fallback only on 401/403 and only if first run consumed one request, otherwise abort before exceeding three. Record public-safe ACK shapes and file a guard bug only for nonempty nonprotobuf 2xx.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Live ACK probe on reviewed landed SHA d5f023fadc688a486d8ea9f9d9b33bfd23d92e81, once, exit 0, two requests. Logs: status 204, Content-Type empty, body length 0, protobuf-decode true. Metrics: status 200, Content-Type application/x-protobuf, body length 0, protobuf-decode true. First credential succeeded, no fallback and no additional request. Neither response has a nonempty nonprotobuf 2xx body, so the guard is safe against these observed gateway ACK shapes. This proves ACK response shape only, not backend ingestion, partial acceptance semantics or future availability; no guard bug is warranted by this evidence. No endpoint/user/token/body captured in tracked notes.
+<!-- SECTION:NOTES:END -->
