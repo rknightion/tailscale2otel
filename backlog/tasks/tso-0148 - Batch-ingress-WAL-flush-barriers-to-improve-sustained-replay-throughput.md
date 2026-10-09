@@ -4,9 +4,10 @@ title: >-
   Decouple ingress WAL completion from metric collection to preserve configured
   DPM
 status: In Progress
-assignee: []
+assignee:
+  - '@loop18'
 created_date: '2026-09-10 21:02'
-updated_date: '2026-10-08 22:36'
+updated_date: '2026-10-09 12:39'
 labels: []
 dependencies: []
 priority: high
@@ -54,4 +55,6 @@ TSO-0149 supplies the local comparison harness. Its coalesced-body experiment re
 Local harness delivered in TSO-0149. Two workload sizes each ran all six cases twice with exact exported byte accounting and zero pending WAL state. On the larger local case, fewer-barrier coalescing drained in about 2s versus about 15s baseline; delta about 2.45s; external collapsing about 1.6s; rollup-only about 8s; smaller OTLP batches 40-47s. These are synthetic finite-drain results with documented confounders, not production sizing or implemented multi-entry batching. See docs/wal-load-testing.md.
 
 2026-09-11 scope correction requested by the operator: this is a high-priority metric-cadence correctness bug, not a batching enhancement. The revised description and acceptance criteria supersede the earlier throughput-first direction. Historical TSO-0149 measurements remain useful experimental evidence, but its delta case is not an actionable option for this work, and coalescing changes both disk commits and rollup windows. A design must decouple ingress durability completion from scheduled cumulative collection before any throughput claim can close this task. Source pointers: internal/app/ingresswal.go applyEnvelope; internal/app/collectors.go WAL route flush wiring; internal/telemetry/provider.go ForceFlush; internal/telemetry/processors.go newMetricReader. Task remains To Do: this update authorizes no implementation or deployment.
+
+loop18 resumes the preserved partial build without resetting prior attempts; criteria 1-6 precede the identical-entry harness for criterion 7.
 <!-- SECTION:NOTES:END -->
