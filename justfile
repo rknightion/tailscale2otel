@@ -129,6 +129,11 @@ test filter="":
 load-wal entries="16" flows="256" delay_ms="2" count="1" sustained_entries="60" arrival_ms="250" slow_ms="1500" outage_ms="2000":
     WAL_LOAD_ENTRIES='{{ entries }}' WAL_LOAD_FLOWS='{{ flows }}' WAL_LOAD_DELAY_MS='{{ delay_ms }}' WAL_LOAD_SUSTAINED_ENTRIES='{{ sustained_entries }}' WAL_LOAD_ARRIVAL_MS='{{ arrival_ms }}' WAL_LOAD_SLOW_MS='{{ slow_ms }}' WAL_LOAD_OUTAGE_MS='{{ outage_ms }}' go test ./internal/app -run '^$' -bench '^BenchmarkIngressWAL(Drain|Sustained)$' -benchtime=1x -count='{{ count }}' -timeout=30m
 
+# probe OTLP/HTTP ACK shapes using only OTLP_ACK_PROBE_ENDPOINT, OTLP_ACK_PROBE_USER and OTLP_ACK_PROBE_TOKEN_FILE
+[group('dev')]
+probe-otlp-ack:
+    go run ./scripts/otlpackprobe
+
 # build and race-test one tool module, or all four when module is empty
 [group('check')]
 [no-exit-message]
