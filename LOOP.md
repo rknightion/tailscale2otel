@@ -35,6 +35,11 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   A mise shim precedes `~/go/bin` on PATH, so run the gate as
   `PATH="$HOME/go/bin:$PATH" just check </dev/null` to use the binaries `just setup` installed.
 
+- `codex/` is gitignored, but a `.go` file in it outside a nested `go.mod` joins the root module, so
+  `just check` in the primary checkout goes red at `fmt-check` and `vet` on loop evidence. Run every
+  composed or post-land gate in a fresh detached worktree of the exact SHA. Save Go evidence as
+  `.go.txt`. Never exclude `codex/` in `.golangci.yml` or the justfile.
+
 - `go test -race ./...` at the root stops at the module boundary. The four tool modules are covered
   by the `module-verify` and `lint` matrices in ci.yml, and a workflow contract test fails if one
   drops out.
@@ -54,8 +59,9 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   Arguments are positional (base, then dirs); `base=main` passes the literal string `base=main`.
 - CodeRabbit returns `No files to review` for staged Python under `deploy/grafana/gen` and
   `deploy/alerts/gen`. That shard is unreviewed, not clean.
-- `helm-success` exists only for pushes touching `helm.yml`'s push paths (the chart,
-  `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`; no `workflow_dispatch`);
+- `helm-success` exists only for pushes touching `helm.yml`'s push paths (`deploy/helm/**`,
+  `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`, `helm.yml` itself; no
+  `workflow_dispatch`);
   any other push to `main` never gets one. Record it as absent, not a pass,
   and do not make a source edit to trigger it. Pull requests always report it.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
