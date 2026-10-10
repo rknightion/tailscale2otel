@@ -1,5 +1,30 @@
 # Changelog
 
+## [5.2.0](https://github.com/rknightion/tailscale2otel/compare/v5.1.0...v5.2.0) (2026-10-10)
+
+
+### Features
+
+* **config:** acknowledge the flow store at rest; skip perm advisory on kubelet RO mounts ([45d541f](https://github.com/rknightion/tailscale2otel/commit/45d541f597f8ff41659ca3cbec97c2b5aeb07628))
+* **nodemetrics:** curate sampled Service throughput with scoped dashboard ([3393e3c](https://github.com/rknightion/tailscale2otel/commit/3393e3c2d4feab34418cf8ee434f98b59d5f3679))
+* **probe:** inspect OTLP HTTP acknowledgements safely ([d5f023f](https://github.com/rknightion/tailscale2otel/commit/d5f023fadc688a486d8ea9f9d9b33bfd23d92e81))
+
+
+### Bug Fixes
+
+* **alerts:** exempt devices that cannot self-update from auto-update coverage ([a7123cf](https://github.com/rknightion/tailscale2otel/commit/a7123cf4a2d8a31f0c487270d3953e35c8c18105))
+* **alerts:** scope auto-update posture rule; surface config advisories in Loki ([98d4f39](https://github.com/rknightion/tailscale2otel/commit/98d4f39fc177ffdcbcd4fee7ed712c561c24a8a6))
+* **deps:** update module golang.org/x/sys to v0.49.0 ([#699](https://github.com/rknightion/tailscale2otel/issues/699)) ([c854778](https://github.com/rknightion/tailscale2otel/commit/c85477861c2f7923a34aae496442e53fda4df520))
+* **docs:** gate README overview capability counts ([c071d91](https://github.com/rknightion/tailscale2otel/commit/c071d9110b02d6236d2718d3907627d7ce47f40b))
+* **ingress:** bound permanent rejection retries and count data loss ([c30c532](https://github.com/rknightion/tailscale2otel/commit/c30c532923029be90e23e712fafae2812e362a4f))
+* **review:** require complete finding totals to match events ([50cb41a](https://github.com/rknightion/tailscale2otel/commit/50cb41a27f72e973b362dfee460b00514bf91bba))
+* **scripts:** report CodeRabbit finding counts in sharded review summary ([02f11c2](https://github.com/rknightion/tailscale2otel/commit/02f11c27c9223d86599895215d9d5305d2ab1b80))
+* **telemetry:** bind delivery-health diagnostics in every provider ([7977987](https://github.com/rknightion/tailscale2otel/commit/79779879038c7e3ea4bd40ef6894a29350953037))
+* **telemetry:** decouple ingress WAL completion from metric collection ([3f2b465](https://github.com/rknightion/tailscale2otel/commit/3f2b4658ff777cd21174fddf6be2c9d99182d884))
+* **telemetry:** distrust malformed HTTP response classification ([07acc0e](https://github.com/rknightion/tailscale2otel/commit/07acc0e93b2d7dee6dca290da2da21f7fe9726da))
+* **telemetry:** log only bounded classes in export failure diagnostics ([303616b](https://github.com/rknightion/tailscale2otel/commit/303616b9f79cb34262de853a748e75d959e4df79))
+* **telemetry:** report hung ingress exports as retrying ([df6cd72](https://github.com/rknightion/tailscale2otel/commit/df6cd7225e175c9e739e3d9fdce2879c18f67939))
+
 ## [5.1.0](https://github.com/rknightion/tailscale2otel/compare/v5.0.4...v5.1.0) (2026-10-08)
 
 
