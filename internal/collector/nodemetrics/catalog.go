@@ -21,6 +21,7 @@ const groupNodeMetrics = "Node metrics"
 // forward (see curated.go for the source-family -> curated-metric mapping).
 const (
 	metricNodeIO             = "tailscale.node.io"
+	metricNodeServiceIO      = "tailscale.node.service.io"
 	metricNodePackets        = "tailscale.node.packets"
 	metricNodePacketsDropped = "tailscale.node.packets.dropped"
 	metricNodeHealthMessages = "tailscale.node.health_messages"
@@ -43,12 +44,18 @@ const (
 // drop reason can be added without a new series name.
 const attrReason = semconv.AttrReason
 
+// attrServiceName reuses the Services collector's identity spelling and the
+// existing service_addrs PII classification (there is no semconv constant for
+// this established key). Do not use the unknown raw key "service" for curation.
+const attrServiceName = "tailscale.service.name"
+
 // reasonMetricNameBudget is the sole attrReason value emitted today.
 const reasonMetricNameBudget = "metric_name_budget"
 
 // Curated metric descriptions (also passed to the emitter so the emitted
 // signal can't drift from the declared one).
 const (
+	descNodeServiceIO          = "Bytes carried by Tailscale Serve, by receive/transmit direction, node and Service identity. Curated from tailscaled_serve_{inbound,outbound}_bytes_total using the shared raw per-series delta (raw series still forwarded verbatim). Only service labels matching svc:<single lowercase DNS-style label, up to 63 characters> are retained; absent or unsupported shapes fold to __other__. Service and node identities follow service_addrs and node identity PII filtering; redacted counter identities merge additively. Existing node-metrics scrape/baseline bounds and the OTEL per-instrument cardinality limit apply."
 	descNodeIO                 = "Bytes carried over the tailnet data plane, by direction and folded path. Curated from tailscaled_{inbound,outbound}_bytes_total (raw series still forwarded verbatim)."
 	descNodePackets            = "Packets carried over the tailnet data plane, by direction and folded path. Curated from tailscaled_{inbound,outbound}_packets_total (raw series still forwarded verbatim)."
 	descNodePacketsDropped     = "Packets dropped on the tailnet data plane, by direction and bounded reason. Curated from tailscaled_{inbound,outbound}_dropped_packets_total (raw series still forwarded verbatim)."
@@ -107,6 +114,14 @@ var (
 		Instrument:  metricdoc.Counter,
 		Description: descNodeIO,
 		Attributes:  []string{attrInstance, semconv.NetworkIODirection, semconv.AttrPath},
+		Group:       groupNodeMetrics,
+	}
+	docNodeServiceIO = metricdoc.Metric{
+		Name:        metricNodeServiceIO,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Counter,
+		Description: descNodeServiceIO,
+		Attributes:  []string{attrInstance, attrServiceName, semconv.NetworkIODirection},
 		Group:       groupNodeMetrics,
 	}
 	docNodePackets = metricdoc.Metric{
@@ -181,7 +196,7 @@ var (
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		docNodeUp, docDiscoverySuccess, docDiscoveredTargets, docScrapeFailures,
-		docNodeIO, docNodePackets, docNodePacketsDropped,
+		docNodeIO, docNodeServiceIO, docNodePackets, docNodePacketsDropped,
 		docNodeHealthMessages, docNodeDERPHomeRegion,
 		docNodePeerRelayIO, docNodePeerRelayPackets, docNodePeerRelayEndpoints,
 		docMetricNamesDropped,

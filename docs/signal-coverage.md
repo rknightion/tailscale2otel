@@ -48,7 +48,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 260 | 259 | 59 | 11 | 45 |
+| operational | 261 | 260 | 59 | 11 | 46 |
 | self_obs | 104 | 104 | 40 | 9 | 10 |
 
 ## Operational signals
@@ -214,6 +214,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.node.peer_relay.endpoints` | metric | `tailscale_node_peer_relay_endpoints_ratio` | visualized, alertable |  |
 | `tailscale.node.peer_relay.io` | metric | `tailscale_node_peer_relay_io_bytes_total` | visualized |  |
 | `tailscale.node.peer_relay.packets` | metric | `tailscale_node_peer_relay_packets_total` | visualized | Packet counterpart of the visualized tailscale.node.io / tailscale.node.peer_relay.io byte counters; kept for ad-hoc PromQL rather than doubling every traffic panel. |
+| `tailscale.node.service.io` | metric | `tailscale_node_service_io_bytes_total` | visualized, drives_a_variable |  |
 | `tailscale.node.up` | metric | `tailscale_node_up_ratio` | visualized, alertable, drives_a_variable |  |
 | `tailscale.oauth_app.node_attributes` | metric | `tailscale_oauth_app_node_attributes_ratio` | visualized |  |
 | `tailscale.oauth_app.redirect_uris` | metric | `tailscale_oauth_app_redirect_uris_ratio` | visualized |  |

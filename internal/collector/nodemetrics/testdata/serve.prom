@@ -1,0 +1,9 @@
+# Redacted captured shape: retained series queries expose these families with
+# service="svc:<safe suffix>". Other Grafana/provider labels are not scrape labels.
+# All identifiers and values below are synthetic, not copied from the captures.
+# TYPE tailscaled_serve_inbound_bytes_total counter
+tailscaled_serve_inbound_bytes_total{service="svc:sample-api"} 100
+tailscaled_serve_inbound_bytes_total{service="svc:sample-web"} 200
+# TYPE tailscaled_serve_outbound_bytes_total counter
+tailscaled_serve_outbound_bytes_total{service="svc:sample-api"} 300
+tailscaled_serve_outbound_bytes_total{service="svc:sample-web"} 400

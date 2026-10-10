@@ -1564,6 +1564,16 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.node.service.io",
+      "prom_name": "tailscale_node_service_io_bytes_total",
+      "surface": "operational",
+      "dispositions": [
+        "visualized",
+        "drives_a_variable"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.node.up",
       "prom_name": "tailscale_node_up_ratio",
       "surface": "operational",

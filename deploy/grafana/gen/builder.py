@@ -443,6 +443,7 @@ _SENTINEL_ORDER = [
     "has_processor_queue", "has_log_truncation", "has_siem",
     # Wave 12: the opt-in Border0 PAM collector's dedicated tab.
     "has_pam",
+    "has_node_service_io",
 ]
 
 # --- scopes (#526) ----------------------------------------------------------

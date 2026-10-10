@@ -1,6 +1,7 @@
 package nodemetrics
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
@@ -48,10 +49,12 @@ type curatedGauge struct {
 // curatedCounters is the source-family -> curated-counter table. Inbound/outbound
 // families map to one curated metric distinguished by network.io.direction.
 var curatedCounters = map[string]curatedCounter{
-	"tailscaled_inbound_bytes_total":    {metricNodeIO, semconv.UnitBytes, descNodeIO, ioAttrs(semconv.DirectionReceive)},
-	"tailscaled_outbound_bytes_total":   {metricNodeIO, semconv.UnitBytes, descNodeIO, ioAttrs(semconv.DirectionTransmit)},
-	"tailscaled_inbound_packets_total":  {metricNodePackets, semconv.UnitPackets, descNodePackets, ioAttrs(semconv.DirectionReceive)},
-	"tailscaled_outbound_packets_total": {metricNodePackets, semconv.UnitPackets, descNodePackets, ioAttrs(semconv.DirectionTransmit)},
+	"tailscaled_inbound_bytes_total":        {metricNodeIO, semconv.UnitBytes, descNodeIO, ioAttrs(semconv.DirectionReceive)},
+	"tailscaled_outbound_bytes_total":       {metricNodeIO, semconv.UnitBytes, descNodeIO, ioAttrs(semconv.DirectionTransmit)},
+	"tailscaled_serve_inbound_bytes_total":  {metricNodeServiceIO, semconv.UnitBytes, descNodeServiceIO, serviceIOAttrs(semconv.DirectionReceive)},
+	"tailscaled_serve_outbound_bytes_total": {metricNodeServiceIO, semconv.UnitBytes, descNodeServiceIO, serviceIOAttrs(semconv.DirectionTransmit)},
+	"tailscaled_inbound_packets_total":      {metricNodePackets, semconv.UnitPackets, descNodePackets, ioAttrs(semconv.DirectionReceive)},
+	"tailscaled_outbound_packets_total":     {metricNodePackets, semconv.UnitPackets, descNodePackets, ioAttrs(semconv.DirectionTransmit)},
 
 	"tailscaled_inbound_dropped_packets_total":  {metricNodePacketsDropped, semconv.UnitPackets, descNodePacketsDropped, dropAttrs(semconv.DirectionReceive)},
 	"tailscaled_outbound_dropped_packets_total": {metricNodePacketsDropped, semconv.UnitPackets, descNodePacketsDropped, dropAttrs(semconv.DirectionTransmit)},
@@ -78,6 +81,27 @@ func ioAttrs(direction string) func(map[string]string) telemetry.Attrs {
 		return telemetry.Attrs{
 			semconv.NetworkIODirection: direction,
 			semconv.AttrPath:           foldPath(labels["path"]),
+		}
+	}
+}
+
+// safeServiceName admits a conservative subset of the captured svc:<suffix>
+// shape: one DNS-style label of at most 63 ASCII characters. Never copy URLs,
+// addresses, free text, or arbitrary future shapes into a curated dimension.
+// Invalid and absent identities share a single overflow bucket. The existing
+// per-response/sample, baseline and SDK cardinality limits still apply; this
+// is a syntax boundary, not authorization of a node's claimed Service identity.
+var safeServiceName = regexp.MustCompile(`^svc:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
+
+func serviceIOAttrs(direction string) func(map[string]string) telemetry.Attrs {
+	return func(labels map[string]string) telemetry.Attrs {
+		name := labels["service"]
+		if !safeServiceName.MatchString(name) {
+			name = "__other__"
+		}
+		return telemetry.Attrs{
+			semconv.NetworkIODirection: direction,
+			attrServiceName:            name,
 		}
 	}
 }

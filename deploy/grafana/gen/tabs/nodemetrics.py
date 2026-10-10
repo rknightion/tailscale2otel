@@ -1,7 +1,7 @@
 """tab_nodemetrics() — moved out of build.py in the module split."""
 
 from builder import (BAR_NOISE, category_bar_opts, bargauge_opts, derp_byte_fraction, lot, organize,
-                     panel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom, ts_opts)
+                     panel, prom_t, RI, row, sel, sentinel, stat_opts, thr, ts_custom, ts_opts)
 from maps import UP_MAP
 from builder import DASHBOARD  # #526: wave 1 leaves every sentinel dashboard-level
 
@@ -13,6 +13,7 @@ NODE_DROPPED = "tailscale_node_packets_dropped_total"
 NODE_RELAY_BYTES = "tailscale_node_peer_relay_io_bytes_total"
 NODE_RELAY_PACKETS = "tailscale_node_peer_relay_packets_total"
 NODE_RELAY_ENDPOINTS = "tailscale_node_peer_relay_endpoints_ratio"
+NODE_SERVICE_BYTES = "tailscale_node_service_io_bytes_total"
 
 # An ACL drop is the packet filter enforcing policy, i.e. the tailnet working as
 # configured. Charting it in the same panel as `error`/`too_short`/`fragment` — worse,
@@ -44,6 +45,7 @@ def tab_nodemetrics(scope):
     # gates its own row.
     sentinel("has_dropped", "tailscaled_outbound_dropped_packets_total", scope)
     sentinel("has_node_curated", "tailscale_node_io_bytes_total", scope)
+    sentinel("has_node_service_io", NODE_SERVICE_BYTES, scope)
 
     # Two summary tiles, not the full five-panel row this tab used to carry (#526).
     # The scraper's own health is EXPORTER health, so its detail — target counts, the
@@ -290,10 +292,26 @@ def tab_nodemetrics(scope):
                     "share is the shape to alert on; a transient `connecting` spike after a "
                     "restart is not."), 12, 6),
     ]
+    serviceio = [
+        (panel("Service throughput by node", "timeseries",
+               [prom_t("sum by (tailscale_node, tailscale_service_name, network_io_direction) "
+                       "(rate(%s[%s]))" % (sel(NODE_SERVICE_BYTES), RI),
+                       legend="{{tailscale_service_name}} {{tailscale_node}} {{network_io_direction}}")],
+               unit="Bps", custom=ts_custom(), options=ts_opts(placement="right"),
+               desc="Sampled Tailscale Serve byte rate by Service, node and receive/transmit "
+                    "direction, curated from both Serve byte families using the raw per-series "
+                    "delta. Raw forwarding remains available; do not add raw and curated rates "
+                    "because they measure the same bytes. Absent or unsupported Service shapes "
+                    "fold to __other__. service_addrs PII filtering removes Service identity; "
+                    "node identity follows hostname/IP PII settings. Filtered identities merge "
+                    "additively, so legends may lack those dimensions. The first scrape only "
+                    "establishes a baseline; traffic must increase before a rate is available."), 24, 7),
+    ]
     return [row("Scraper health", health), row("Traffic (tailscaled)", traffic),
             row("Packet drops (raw tailscaled)", rawdrops, present="has_dropped"),
             row("Connection paths (DERP vs direct)", paths, present="has_path"),
             row("Client health (curated)", clienthealth, present="has_node_curated"),
+            row("Service throughput (curated)", serviceio, present="has_node_service_io"),
             row("Packet drops & peer relay (curated)", dropsrelay, present="has_node_curated"),
             row("DERP regions (tailnet rollup)", derprollup, present="has_derp_rollup"),
             row("Routing & health", routing)]

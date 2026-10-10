@@ -21,7 +21,7 @@ It runs as one static Go binary and supports a reduced collector set for
 
 | | |
 |---|---|
-| **333** metrics + **30** log-event types | across **17** collectors |
+| **334** metrics + **30** log-event types | across **17** collectors |
 | **19** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
 | **135** shipped rules | **112** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
@@ -249,7 +249,7 @@ reference](https://m7kni.io/tailscale2otel/configuration/#reload-classifications
 | [Getting started](https://m7kni.io/tailscale2otel/getting-started/) | First telemetry through OTLP, Prometheus or stdout |
 | [Installation](https://m7kni.io/tailscale2otel/installation/) | Docker, Helm, compose, binaries |
 | [Configuration](https://m7kni.io/tailscale2otel/configuration/) | Every key, default and gotcha |
-| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 333 metrics and 31 log events |
+| [Metrics catalog](https://m7kni.io/tailscale2otel/metrics/) | All 334 metrics and 31 log events |
 | [Node metrics](https://m7kni.io/tailscale2otel/node-metrics/) | Central `tailscaled` scraping |
 | [Streaming & webhooks](https://m7kni.io/tailscale2otel/streaming-webhooks/) | HEC receiver and webhooks |
 | [Architecture](https://m7kni.io/tailscale2otel/architecture/) | How it fits together |
