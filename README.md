@@ -21,7 +21,7 @@ It runs as one static Go binary and supports a reduced collector set for
 
 | | |
 |---|---|
-| **334** metrics + **30** log-event types | across **17** collectors |
+| **334** metrics + **31** log-event types | across **17** collectors |
 | **19** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
 | **135** shipped rules | **112** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |

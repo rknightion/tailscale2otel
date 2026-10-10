@@ -29,6 +29,11 @@ class SummaryPattern:
 
 
 SUMMARY_PATTERNS = (
+    SummaryPattern(
+        "README.md",
+        r"\| \*\*(?P<metrics>\d+)\*\* metrics \+ \*\*(?P<log_events>\d+)\*\* "
+        r"log-event types \| across \*\*(?P<collectors>\d+)\*\* collectors \|",
+    ),
     SummaryPattern("README.md", r"ships (?P<dashboards>\d+) dashboards"),
     SummaryPattern(
         "README.md",

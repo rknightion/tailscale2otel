@@ -1,9 +1,11 @@
 ---
 id: TSO-0170
 title: Scope the node-metrics dashboard tab by tailnet and provider
-status: To Do
-assignee: []
+status: Parked
+assignee:
+  - '@loop24'
 created_date: '2026-10-10 21:46'
+updated_date: '2026-10-10 23:05'
 labels: []
 dependencies: []
 priority: high
@@ -31,3 +33,15 @@ Loop23 security review of TSO-0168 found that a new node-metrics panel summed tr
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Scope all node-metrics queries, retain synthetic fail-before/pass-after promtool evidence, prove collector attributes and stable generated metadata, then staged full gate and independent/security plus CodeRabbit review before root landing.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop24: 1 worker implementation attempt; security review rejected staged candidate because its newly introduced discovered Python test requires promtool before CI installs it. No full gate, CodeRabbit, commit, push or acceptance. Query/label/invariance and fail-before/pass-after proof remain valid. Resume after owner approves relocation of this new outcome harness to retained evidence (recommended, preserving executor and assertions), or permanent post-install integration; do not weaken, skip or delete tests under current fence. Exact candidate retained in /Users/rob/repos/tailscale2otel/codex/loop24/feature-0170, tree c56b7ce3755c9dc7a05bea04cab9c2e8c05076d3 on base 78fd2e62f73e3115a54fd194a11731900defdede; binary patch /Users/rob/repos/tailscale2otel/codex/loop24/evidence-0170/base-to-tree.patch and security review /Users/rob/repos/tailscale2otel/codex/loop24/security-review-0170.md. No retry dispatched because no compliant remedy exists under present fences.
+<!-- SECTION:NOTES:END -->
