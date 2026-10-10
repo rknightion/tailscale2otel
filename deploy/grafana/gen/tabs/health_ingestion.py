@@ -232,6 +232,16 @@ def tab_health_ingestion(scope):
     # --- durable ingress WAL (receiver acceptance before processing), moved
     # from tabs/diagnostics.py #386.
     wal = [
+        (panel("Ingress permanently rejected units lost", "timeseries",
+               [prom_t("sum by (tailscale_tailnet, signal) (increase(tailscale2otel_ingress_wal_permanent_drops_total[%s]))" % RI,
+                       legend="{{tailscale_tailnet}} {{signal}}")],
+               unit="short", custom=ts_custom(), options=ts_opts(),
+               novalue="No permanent rejection losses recorded.",
+               desc="Deliberately lost pinned metrics collections or durable log batches after "
+                    "ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx "
+                    "rejections, excluding 401/403/408/429. One unit per collection/batch, "
+                    "not per WAL entry or record. Member WAL obligations resolve so later "
+                    "work can proceed. The paired advisory alert never pages."), 12, 6),
         (panel("Ingress WAL on-disk bytes", "timeseries",
                [prom_t("max(tailscale2otel_ingress_wal_pending_size_bytes)", legend="pending"),
                 prom_t("max(tailscale2otel_ingress_wal_orphan_size_bytes)", legend="retained staging", refid="B")],

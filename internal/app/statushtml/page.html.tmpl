@@ -821,7 +821,7 @@ a.cta:hover{background:var(--t2o-hover);filter:none}
           <td>{{if .LastFailureAt}}{{.LastFailureAt}}{{else}}—{{end}}</td>
           <td class="num">{{.LastDurationMs}} ms</td>
           <td class="mono">{{if .LastErrorClass}}{{.LastErrorClass}}{{else}}—{{end}}</td>
-          <td>{{with .Collection}}scheduled {{.ScheduledAttempts}}; failures {{.CollectFailures}}; discarded {{.BestEffortDiscardedFull}}; evicted {{.BestEffortEvicted}}; required ACKs {{.RequiredSnapshotsAcknowledged}}; retained {{.RetainedCredits}}; reserved {{.ReservedCredits}}; terminal {{.TerminalAttempts}} / skipped-full {{.TerminalSkippedFull}}{{else}}—{{end}}</td>
+          <td>{{with .Collection}}scheduled {{.ScheduledAttempts}}; failures {{.CollectFailures}}; discarded {{.BestEffortDiscardedFull}}; evicted {{.BestEffortEvicted}}; required ACKs {{.RequiredSnapshotsAcknowledged}}; permanent losses metrics {{.PermanentMetricsDropped}} / logs {{.PermanentLogBatchesDropped}}; retained {{.RetainedCredits}}; reserved {{.ReservedCredits}}; terminal {{.TerminalAttempts}} / skipped-full {{.TerminalSkippedFull}}{{else}}—{{end}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -1302,7 +1302,7 @@ function rebuildDelivery(rows){
     // A closed class set, never the backend's response text.
     tr.appendChild(el('td',{'class':'mono'}, sig.last_error_class || '—'));
     var c=sig.collection;
-    tr.appendChild(el('td',null,c ? 'scheduled '+c.scheduled_attempts+'; failures '+c.collect_failures+'; discarded '+c.best_effort_discarded_full+'; evicted '+c.best_effort_evicted+'; required ACKs '+c.required_snapshots_acknowledged+'; retained '+c.retained_credits+'; reserved '+c.reserved_credits+'; terminal '+c.terminal_attempts+' / skipped-full '+c.terminal_skipped_full : '—'));
+    tr.appendChild(el('td',null,c ? 'scheduled '+c.scheduled_attempts+'; failures '+c.collect_failures+'; discarded '+c.best_effort_discarded_full+'; evicted '+c.best_effort_evicted+'; required ACKs '+c.required_snapshots_acknowledged+'; permanent losses metrics '+c.permanent_metrics_dropped+' / logs '+c.permanent_log_batches_dropped+'; retained '+c.retained_credits+'; reserved '+c.reserved_credits+'; terminal '+c.terminal_attempts+' / skipped-full '+c.terminal_skipped_full : '—'));
     tb.appendChild(tr);
   });
 }

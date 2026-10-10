@@ -358,6 +358,7 @@ var ruleApplications = []string{
 	"delivery.mode",
 	"flows.capacity_profile",
 	"ingress_wal.corruption",
+	"ingress_wal.max_permanent_rejections",
 	"log_format",
 	"log_level",
 	"otlp.compression",

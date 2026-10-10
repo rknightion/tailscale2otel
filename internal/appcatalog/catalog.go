@@ -182,6 +182,7 @@ const (
 	MetricIngressWALOrphanStages       = "tailscale2otel.ingress_wal.orphan.stages"
 	MetricIngressWALOrphanSize         = "tailscale2otel.ingress_wal.orphan.size"
 	MetricIngressWALCompletionMarkers  = "tailscale2otel.ingress_wal.completion.markers"
+	MetricIngressWALPermanentDrops     = "tailscale2otel.ingress_wal.permanent.drops"
 )
 
 // Ingestion-volume self-observability metric names. Emitted (via an app-built
@@ -385,6 +386,14 @@ var (
 )
 
 var (
+	DocIngressWALPermanentDrops = metricdoc.Metric{
+		Name:        MetricIngressWALPermanentDrops,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: "Pinned metrics collections or durable log batches deliberately dropped after ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections (excluding 401, 403, 408 and 429). One per dropped unit, not per WAL entry or record. Member WAL entries retire once both signals resolve; this is explicit data loss, not successful backend delivery.",
+		Attributes:  []string{semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
 	DocIngressWALPendingEntries = metricdoc.Metric{
 		Name:        MetricIngressWALPendingEntries,
 		Unit:        semconv.UnitDimensionless,
@@ -831,7 +840,7 @@ func Catalog() []metricdoc.Metric {
 		DocReceiverMisconfigured,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
-		DocIngressWALPendingEntries, DocIngressWALPendingSize,
+		DocIngressWALPermanentDrops, DocIngressWALPendingEntries, DocIngressWALPendingSize,
 		DocIngressWALPendingEntriesFill, DocIngressWALPendingSizeFill,
 		DocIngressWALOrphanStages, DocIngressWALOrphanSize, DocIngressWALCompletionMarkers,
 		DocIngestRecords, DocIngestBytes, DocIngestEventAge, DocIngestCaptureDelay,

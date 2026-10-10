@@ -1493,10 +1493,10 @@ A replayed entry is applied without waiting for delivery. Its metric effects are
 scheduled collection, which takes them all at once, and the entry is only committed (removed from the
 WAL) when both of these hold:
 
-- the first scheduled collection that contains all of its metric effects has been delivered in full -
+- the first scheduled collection that contains all of its metric effects has been delivered in full (or deliberately dropped by the permanent-rejection policy below) -
   when `otlp.metric_export_batch_size` splits a collection into several requests, every request has
-  to be acknowledged; and
-- every log record it produced has been delivered.
+  to be acknowledged, unless the collection is deliberately dropped; and
+- every log batch it produced has been delivered or deliberately dropped by that policy.
 
 The two can finish in either order, and log delivery never forces a metric collection. A signal that
 is explicitly disabled (`otlp.metrics.enabled` or `otlp.logs.enabled` set to `false`) is not an obligation; an enabled signal always is. Up to
@@ -1516,11 +1516,32 @@ When delivery fails, the exporter retries the same retained collection, with its
 and values, using 100ms exponential backoff capped at 5s. A retry is never a new collection and there
 is no catch-up sample after recovery: the next sample is the next scheduled one. Each provider keeps
 at most two collections for delivery. A collection that carries WAL-covered effects stays pinned until
-it is delivered. In a sustained outage the schedule keeps collecting, but once both places are held a
-newer collection with no WAL coverage is discarded and counted; those are the only samples lost, and
-they show on the status page as discarded collections. New WAL work for that provider waits on disk
-with no effects applied, and once the unchanged `ingress_wal` limits are reached the receivers refuse
-new requests. Accepted entries are never dropped to make room.
+it is delivered or the permanent-rejection threshold is reached. In a sustained transient outage the
+schedule keeps collecting, but once both places are held a newer collection with no WAL coverage is
+discarded and counted; these capacity-related discards show on the status page. New WAL work for that
+provider waits on disk with no effects applied, and once the unchanged `ingress_wal` limits are reached
+the receivers refuse new requests. There is no capacity eviction of accepted entries.
+
+**Permanent rejection is an explicit data-loss tradeoff.** This supersedes the previous design's
+“permanent rejection is retained, never an automatic drop of required data” stance. After
+`ingress_wal.max_permanent_rejections` consecutive permanent HTTP rejections (default **5**), the pinned
+metrics collection or durable log batch is deliberately dropped so the next work can proceed.
+Permanent means any **4xx except 401, 403, 408 and 429**; no 5xx, timeout, cancellation, transport,
+unknown or partial-success failure triggers this policy. A success or any other failure class breaks
+the consecutive run. Successful metric parts are not resent; a successful part resets the run, and
+log batches each receive their own allowance.
+
+Dropped members resolve that signal's WAL obligation instead of being poisoned. Once their other
+signal also resolves, their WAL entries complete and are removed, so the rejected unit will not replay
+on restart. The monotonic `tailscale2otel.ingress_wal.permanent.drops` counter records **one per dropped
+collection or log batch**, not per entry, point or record, labelled `signal=metrics|logs` with the
+provider's standard tailnet attributes. It is emitted even when optional self-observability is off;
+its advisory Grafana alert is non-paging (`page=false`) on any increase. A first positive observation
+without a sample five minutes earlier also alerts, so the first loss is visible even when no zero
+baseline reached the backend. A monitoring gap can re-raise this advisory; an established positive
+total without further loss stays quiet. This intentionally favors progress over keeping data the
+backend repeatedly refuses (for example, stale timestamps). The loss
+counter is in memory until export and is not a durable audit trail; a crash can lose its last update.
 
 With `ingress_wal` enabled, delivery readiness also reports retrying when a metrics or durable-log
 export attempt is older than the resolved metric reader timeout (30 seconds by default, overridden
@@ -1558,6 +1579,7 @@ long after startup, if the live drain worker reaches that state with the listene
 | `ingress_wal.directory` | `/var/lib/tailscale2otel/ingress-wal` | WAL directory. When enabled, it must be an absolute, filepath-clean path and must not be the filesystem root. The existing parent must be writable; the WAL creates and secures the final directory. |
 | `ingress_wal.max_bytes` | `268435456` (256 MiB) | Encoded byte ceiling. Must be `> 0` and `< 9223372036854775807`. Counts pending entries and staging/recovery state; full means new receiver requests fail closed. |
 | `ingress_wal.max_entries` | `10000` | Encoded entry ceiling. Must be `> 0`; full means new receiver requests fail closed. |
+| `ingress_wal.max_permanent_rejections` | `5` | Consecutive permanent HTTP rejections before a pinned metric collection or durable log batch is deliberately dropped with explicit loss accounting. Must be `>= 1` even when the WAL is disabled. This delivery threshold also applies to scheduled best-effort metric collections. |
 | `ingress_wal.corruption` | `fail` | Corruption policy. `fail` is the only supported value: malformed, truncated, checksum-invalid, or incompatible state blocks startup/drain instead of being discarded. |
 
 The WAL is process-global and provider-neutral: `provider: headscale` is valid. It does not require
@@ -1567,7 +1589,9 @@ It also has no dependency on the admin listener.
 Each enabled receiver must set its own `max_body_bytes` to a positive value no larger than
 `67108864` (64 MiB) while the WAL is enabled. The receiver cap bounds one accepted payload before it
 becomes an encoded WAL entry. The usual `0` receiver defaults and negative unlimited values remain
-valid when the WAL is disabled, and dormant WAL fields are not validated.
+valid when the WAL is disabled, and dormant WAL storage fields are not validated. The
+`max_permanent_rejections` delivery-policy floor is always validated because scheduled metric
+collections also use it when the WAL is disabled.
 
 The directory is owner-only and held under an exclusive writer lock for the process lifetime. A
 second writer, a symlink/non-regular object, or state with unsafe permissions is refused. Keep one

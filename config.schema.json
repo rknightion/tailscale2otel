@@ -2281,6 +2281,12 @@
           "default": 10000,
           "description": "encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction",
           "type": "integer"
+        },
+        "max_permanent_rejections": {
+          "default": 5,
+          "description": "\u003e=1 even when WAL disabled; drop a pinned metric collection/log batch after N consecutive permanent HTTP 4xx (except 401/403/408/429), count explicit loss and retire member WAL entries",
+          "minimum": 1,
+          "type": "integer"
         }
       },
       "type": "object"

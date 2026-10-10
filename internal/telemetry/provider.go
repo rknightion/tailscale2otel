@@ -29,9 +29,15 @@ const scopeName = "github.com/rknightion/tailscale2otel"
 
 // Options configures the OTLP/stdout telemetry pipeline.
 type Options struct {
-	ServiceName    string
-	ServiceVersion string
-	InstanceID     string
+	// MaxPermanentRejections bounds consecutive permanent HTTP rejections of a
+	// pinned metrics collection or durable log batch. Zero resolves to five.
+	MaxPermanentRejections int
+	// OnPermanentDrop records explicit loss through the provider's emitter.
+	// Called outside delivery locks, once per dropped collection/log batch.
+	OnPermanentDrop func(Emitter, string)
+	ServiceName     string
+	ServiceVersion  string
+	InstanceID      string
 
 	Protocol string // "grpc" | "http" | "stdout" (empty defaults to "http")
 	Endpoint string // full URL for http (incl. /otlp); host:port for grpc

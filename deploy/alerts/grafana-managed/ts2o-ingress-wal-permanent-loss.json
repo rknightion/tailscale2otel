@@ -8,17 +8,17 @@
     "labels": {
       "grafana.app/folder": "tailscale2otel"
     },
-    "name": "ts2o-processor-queue-drops"
+    "name": "ts2o-ingress-wal-permanent-loss"
   },
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "92",
-      "description": "This app's own log/trace batch processor queue was full when records or spans were offered, so they were dropped before any export was attempted. Nothing downstream sees them and no export-failure rule fires, because the loss happens upstream of the exporter. Split by signal and reason on purpose: deliberate load-shedding and a saturated queue need different answers, and collapsing them would hide which one is happening. Fix by raising the processor's capacity or by accepting the shedding policy as intended. Absence stays OK.",
-      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#otlp-export-health",
-      "summary": "{{ $labels.signal }} records are being dropped ({{ $labels.reason }})"
+      "__panelId__": "72",
+      "description": "A pinned metrics collection or durable log batch reached ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections (excluding 401, 403, 408 and 429). The unit was deliberately lost and its member WAL obligations resolved so later work can proceed. This counts collections/batches, not entries or records. Check destination timestamp and payload acceptance constraints; this advisory never pages. A first positive observation with no five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
+      "summary": "Permanently rejected {{ $labels.signal }} work was dropped for {{ $labels.tailscale_tailnet }}"
     },
-    "execErrState": "Error",
+    "execErrState": "Ok",
     "expressions": {
       "A": {
         "datasourceUID": "grafanacloud-prom",
@@ -28,7 +28,7 @@
             "uid": "grafanacloud-prom"
           },
           "editorMode": "code",
-          "expr": "sum by (signal, reason) (rate(tailscale2otel_processor_dropped_total[10m]))",
+          "expr": "sum by (tailscale_tailnet, signal) ((increase(tailscale2otel_ingress_wal_permanent_drops_total[5m]) > 0) or ((tailscale2otel_ingress_wal_permanent_drops_total > 0) unless tailscale2otel_ingress_wal_permanent_drops_total offset 5m))",
           "instant": false,
           "intervalMs": 1000,
           "maxDataPoints": 43200,
@@ -90,16 +90,17 @@
         "source": true
       }
     },
-    "for": "10m0s",
+    "for": "0s",
     "labels": {
       "domain": "observability",
+      "page": "false",
       "service": "tailscale2otel",
       "severity": "advisory",
       "skipinvestigation": "true"
     },
     "noDataState": "Ok",
     "paused": false,
-    "title": "Processor queue drops",
+    "title": "Ingress permanently rejected data lost",
     "trigger": {
       "interval": "1m"
     }

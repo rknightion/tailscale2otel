@@ -625,3 +625,71 @@ tests:
             exp_annotations:
               summary: "Pyroscope profile uploads have failed more than twice in a row"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#profiling-upload-health"
+
+  # The real loss counter is first emitted as 1, not with invented pre-loss zeros.
+  - name: first permanent loss fires for either signal without a prior sample and clears
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="metrics"}'
+        values: '_ _ 1+0x8'
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="logs"}'
+        values: '_ _ 1+0x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts:
+          - exp_labels:
+              tailscale_tailnet: example.com
+              signal: metrics
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              page: "false"
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: Permanently rejected metrics work was dropped for example.com
+              runbook_url: https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers
+          - exp_labels:
+              tailscale_tailnet: example.com
+              signal: logs
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              page: "false"
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: Permanently rejected logs work was dropped for example.com
+              runbook_url: https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers
+      - eval_time: 7m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts: []
+
+  - name: established positive permanent loss totals stay quiet without another loss
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="metrics"}'
+        values: '2+0x10'
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="logs"}'
+        values: '3+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts: []
+
+  - name: zero permanent loss totals never alert
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="metrics"}'
+        values: '0+0x8'
+      - series: 'tailscale2otel_ingress_wal_permanent_drops_total{tailscale_tailnet="example.com",signal="logs"}'
+        values: '0+0x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: IngressPermanentlyRejectedDataLost
+        exp_alerts: []

@@ -115,6 +115,49 @@ func scheduledTestPoints(data []metricdata.ResourceMetrics, name string) []metri
 	}
 	return result
 }
+func TestScheduledMetrics_PermanentDropCollectionMembersAndPartSuccess(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rejection := &httpExportRejection{code: 400, signal: SignalMetrics}
+		// One part succeeds after limit-1 rejections; the next part must receive
+		// a fresh consecutive allowance. The whole collection is the loss unit.
+		exp := &permanentScriptMetrics{errors: []error{rejection, nil, rejection, rejection}}
+		p := permanentScriptProvider(t, SignalMetrics, exp, &permanentScriptLogs{}, 2)
+		p.metricReader.batchSize = 1
+		var members []*IngressReceipt
+		for range 2 {
+			work := scheduledTestWork(1)
+			r, err := p.ReserveIngress(work.Bounds)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := p.ApplyIngress(context.Background(), r, work); err != nil {
+				t.Fatal(err)
+			}
+			members = append(members, r)
+		}
+		p.SealIngress()
+		if err := CollectSlotForTest(context.Background(), p); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		time.Sleep(100 * time.Millisecond)
+		synctest.Wait()
+		if exp.calls.Load() != 3 || members[0].Eligible() {
+			t.Fatal("successful part did not reset consecutive allowance")
+		}
+		time.Sleep(200 * time.Millisecond)
+		synctest.Wait()
+		for _, r := range members {
+			if !r.Eligible() || r.Phase() == Poisoned {
+				t.Fatal("collection member did not resolve after loss")
+			}
+		}
+		if p.CollectionStats().PermanentMetricsDropped != 1 {
+			t.Fatal("must count one collection, not parts or members")
+		}
+	})
+}
+
 func TestScheduledMetrics_OriginalSlotsAndNonCollectingForceFlush(t *testing.T) {
 	for _, interval := range []time.Duration{60 * time.Second, 15 * time.Second} {
 		t.Run(interval.String(), func(t *testing.T) {

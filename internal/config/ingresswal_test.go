@@ -30,6 +30,9 @@ func TestIngressWALDefaults(t *testing.T) {
 	if got.MaxEntries != defaultIngressWALMaxEntries {
 		t.Errorf("IngressWAL.MaxEntries = %d, want %d", got.MaxEntries, defaultIngressWALMaxEntries)
 	}
+	if got.MaxPermanentRejections != 5 {
+		t.Errorf("IngressWAL.MaxPermanentRejections = %d, want 5", got.MaxPermanentRejections)
+	}
 	if got.Corruption != "fail" {
 		t.Errorf("IngressWAL.Corruption = %q, want fail", got.Corruption)
 	}
@@ -42,6 +45,7 @@ ingress_wal:
   directory: /srv/tailscale2otel/wal
   max_bytes: 33554432
   max_entries: 1234
+  max_permanent_rejections: 2
   corruption: fail
 `
 	cfg, err := config.Load(writeTemp(t, y))
@@ -50,7 +54,7 @@ ingress_wal:
 	}
 	got := cfg.IngressWAL
 	if !got.Enabled || got.Directory != "/srv/tailscale2otel/wal" ||
-		got.MaxBytes != 33554432 || got.MaxEntries != 1234 || got.Corruption != "fail" {
+		got.MaxBytes != 33554432 || got.MaxEntries != 1234 || got.MaxPermanentRejections != 2 || got.Corruption != "fail" {
 		t.Errorf("IngressWAL = %+v, want enabled YAML values", got)
 	}
 }
@@ -60,6 +64,7 @@ func TestLoadIngressWALFromEnvironment(t *testing.T) {
 	t.Setenv("TS2OTEL_INGRESS_WAL__DIRECTORY", "/srv/tailscale2otel/env-wal")
 	t.Setenv("TS2OTEL_INGRESS_WAL__MAX_BYTES", "16777216")
 	t.Setenv("TS2OTEL_INGRESS_WAL__MAX_ENTRIES", "4321")
+	t.Setenv("TS2OTEL_INGRESS_WAL__MAX_PERMANENT_REJECTIONS", "3")
 	t.Setenv("TS2OTEL_INGRESS_WAL__CORRUPTION", "fail")
 
 	cfg, err := config.Load("")
@@ -68,19 +73,35 @@ func TestLoadIngressWALFromEnvironment(t *testing.T) {
 	}
 	got := cfg.IngressWAL
 	if !got.Enabled || got.Directory != "/srv/tailscale2otel/env-wal" ||
-		got.MaxBytes != 16777216 || got.MaxEntries != 4321 || got.Corruption != "fail" {
+		got.MaxBytes != 16777216 || got.MaxEntries != 4321 || got.MaxPermanentRejections != 3 || got.Corruption != "fail" {
 		t.Errorf("IngressWAL = %+v, want enabled environment values", got)
 	}
 }
 
-func TestValidateIngressWALDisabledIsFullyInert(t *testing.T) {
+func TestValidateIngressWALPermanentRejectionsFloorEnabledAndDisabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		for _, limit := range []int{-1, 0} {
+			t.Run(strconv.FormatBool(enabled)+"/"+strconv.Itoa(limit), func(t *testing.T) {
+				cfg := config.Default()
+				cfg.IngressWAL.Enabled = enabled
+				cfg.IngressWAL.MaxPermanentRejections = limit
+				if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "ingress_wal.max_permanent_rejections") {
+					t.Fatalf("enabled=%v limit=%d: expected rejection policy minimum error, got %v", enabled, limit, err)
+				}
+			})
+		}
+	}
+}
+
+func TestValidateIngressWALDisabledLegacyStorageSettingsInertWithValidRejectionPolicy(t *testing.T) {
 	cfg := config.Default()
 	cfg.IngressWAL = config.IngressWALConfig{
-		Enabled:    false,
-		Directory:  "../not-clean",
-		MaxBytes:   math.MinInt64,
-		MaxEntries: -1,
-		Corruption: "discard",
+		MaxPermanentRejections: 5,
+		Enabled:                false,
+		Directory:              "../not-clean",
+		MaxBytes:               math.MinInt64,
+		MaxEntries:             -1,
+		Corruption:             "discard",
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate disabled ingress WAL: %v", err)

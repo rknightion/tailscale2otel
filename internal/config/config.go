@@ -1624,11 +1624,12 @@ type CheckpointConfig struct {
 // IngressWALConfig configures the process-global write-ahead log for accepted
 // streaming and webhook request bodies. It is disabled by default.
 type IngressWALConfig struct {
-	Enabled    bool   `yaml:"enabled" reload:"restart"`
-	Directory  string `yaml:"directory" reload:"restart"`
-	MaxBytes   int64  `yaml:"max_bytes" reload:"restart"`
-	MaxEntries int    `yaml:"max_entries" reload:"restart"`
-	Corruption string `yaml:"corruption" reload:"restart"`
+	MaxPermanentRejections int    `yaml:"max_permanent_rejections" reload:"restart"`
+	Enabled                bool   `yaml:"enabled" reload:"restart"`
+	Directory              string `yaml:"directory" reload:"restart"`
+	MaxBytes               int64  `yaml:"max_bytes" reload:"restart"`
+	MaxEntries             int    `yaml:"max_entries" reload:"restart"`
+	Corruption             string `yaml:"corruption" reload:"restart"`
 }
 
 // StreamingConfig configures the HEC-style streaming receiver.

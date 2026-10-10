@@ -354,7 +354,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(111, len(alert_rules()))
+        self.assertEqual(112, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_readme_policy_counts_match_the_catalogue(self):
@@ -485,6 +485,25 @@ class AlertableSignalCoverageTest(unittest.TestCase):
         expr = rules.rule_expr(rules.rules_by_uid()["ts2o-node-ip-forwarding"])
         self.assertIn("exitNodeIPForwardingNotEnabled", expr)
         self.assertIn("subnetIPForwardingNotEnabled", expr)
+
+
+class IngressPermanentLossAlertTest(unittest.TestCase):
+    def test_any_increase_is_enabled_advisory_and_never_pages(self):
+        rule = rules.rules_by_uid()["ts2o-ingress-wal-permanent-loss"]
+        self.assertEqual(
+            "sum by (tailscale_tailnet, signal) ("
+            "(increase(tailscale2otel_ingress_wal_permanent_drops_total[5m]) > 0) or "
+            "((tailscale2otel_ingress_wal_permanent_drops_total > 0) unless "
+            "tailscale2otel_ingress_wal_permanent_drops_total offset 5m))",
+            rules.rule_expr(rule))
+        self.assertEqual("gt", rule["_prom"]["op"])
+        self.assertEqual(0, rule["_prom"]["thr"])
+        self.assertEqual("0s", rule["_prom"]["dur"])
+        self.assertFalse(rule["paused"])
+        self.assertEqual("advisory", rule["labels"]["severity"])
+        self.assertEqual("false", rule["labels"]["page"])
+        self.assertEqual("advisory", rules.POLICY_BY_UID[rule["uid"]])
+        self.assertIn("__panelId__", rule["annotations"])
 
 
 class CoordinationAlertTest(unittest.TestCase):

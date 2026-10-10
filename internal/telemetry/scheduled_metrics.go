@@ -45,6 +45,7 @@ type CollectionObservation struct {
 	Err                 error
 }
 type CollectionStats struct {
+	PermanentMetricsDropped, PermanentLogBatchesDropped                                                                               uint64
 	ScheduledAttempts, CollectFailures, SnapshotsCollected, BestEffortDiscardedFull, BestEffortEvicted, RequiredSnapshotsAcknowledged uint64
 	RetainedCredits, ReservedCredits                                                                                                  int
 	LastSlotAt                                                                                                                        time.Time
@@ -52,6 +53,8 @@ type CollectionStats struct {
 }
 
 func (s *CollectionStats) add(other CollectionStats) {
+	s.PermanentMetricsDropped += other.PermanentMetricsDropped
+	s.PermanentLogBatchesDropped += other.PermanentLogBatchesDropped
 	s.ScheduledAttempts += other.ScheduledAttempts
 	s.CollectFailures += other.CollectFailures
 	s.SnapshotsCollected += other.SnapshotsCollected
@@ -87,8 +90,9 @@ type metricCollection struct {
 	required, inFlight bool
 	// failedAttempts/lastErr let a ForceFlush barrier report a failed delivery
 	// attempt instead of silently waiting out its deadline. Retries continue.
-	failedAttempts uint64
-	lastErr        error
+	failedAttempts      uint64
+	permanentRejections int
+	lastErr             error
 }
 
 var providerEpoch atomic.Uint64
@@ -98,6 +102,8 @@ type scheduledMetricReader struct {
 	exporter                    sdkmetric.Exporter
 	interval, timeout           time.Duration
 	batchSize                   int
+	maxPermanentRejections      int
+	onPermanentDrop             func(Emitter, string)
 	epoch                       uint64
 	mu                          sync.Mutex
 	collectMu                   sync.Mutex
@@ -149,7 +155,11 @@ func newScheduledMetricReader(exp sdkmetric.Exporter, opts Options) (*scheduledM
 	for _, producer := range opts.MetricProducers {
 		options = append(options, sdkmetric.WithProducer(producer))
 	}
-	return &scheduledMetricReader{ManualReader: sdkmetric.NewManualReader(options...), exporter: exp, interval: interval, timeout: timeout, batchSize: opts.MetricExportBatchSize, epoch: providerEpoch.Add(1), receipts: make(map[*IngressReceipt]bool), changed: make(chan struct{}), clockDone: make(chan struct{}), workerDone: make(chan struct{})}, nil
+	limit := opts.MaxPermanentRejections
+	if limit <= 0 {
+		limit = 5
+	}
+	return &scheduledMetricReader{onPermanentDrop: opts.OnPermanentDrop, maxPermanentRejections: limit, ManualReader: sdkmetric.NewManualReader(options...), exporter: exp, interval: interval, timeout: timeout, batchSize: opts.MetricExportBatchSize, epoch: providerEpoch.Add(1), receipts: make(map[*IngressReceipt]bool), changed: make(chan struct{}), clockDone: make(chan struct{}), workerDone: make(chan struct{})}, nil
 }
 func (r *scheduledMetricReader) signalLocked() { close(r.changed); r.changed = make(chan struct{}) }
 func (r *scheduledMetricReader) Start() {
@@ -421,6 +431,11 @@ func (r *scheduledMetricReader) exportCollections(ctx context.Context) {
 			}
 			result := classifyExportResult(raw, SignalMetrics)
 			if !result.ack {
+				if permanentExportRejection(raw) {
+					collection.permanentRejections++
+				} else {
+					collection.permanentRejections = 0
+				}
 				ack = false
 				exportErr = result.err
 				if exportErr == nil {
@@ -428,11 +443,18 @@ func (r *scheduledMetricReader) exportCollections(ctx context.Context) {
 				}
 				break
 			}
+			collection.permanentRejections = 0
 			part.acknowledged = true
 		}
 		r.mu.Lock()
 		collection.inFlight = false
-		if ack {
+		dropped := !ack && collection.permanentRejections >= r.maxPermanentRejections
+		if ack || dropped {
+			if dropped {
+				r.stats.PermanentMetricsDropped++
+			}
+			// A deliberate, counted loss resolves the signal's receipt just like
+			// delivery. It must retire the WAL generation, not poison the body.
 			for _, m := range collection.members {
 				m.mu.Lock()
 				if m.phase != Poisoned {
@@ -445,12 +467,15 @@ func (r *scheduledMetricReader) exportCollections(ctx context.Context) {
 				m.mu.Unlock()
 			}
 			r.collections = r.collections[1:]
-			if collection.required {
+			if collection.required && !dropped {
 				r.stats.RequiredSnapshotsAcknowledged++
 			}
 			failures = 0
 			r.signalLocked()
 			r.mu.Unlock()
+			if dropped && r.onPermanentDrop != nil {
+				r.onPermanentDrop(r.emitter, SignalMetrics)
+			}
 			continue
 		}
 		failures++

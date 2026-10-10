@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.1](https://img.shields.io/badge/Version-0.36.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.2](https://img.shields.io/badge/Version-0.36.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -583,6 +583,7 @@ extraVolumeMounts:
 | config.ingress_wal.enabled | bool | `false` | Persist accepted receiver bodies before acknowledging them. Off by default. |
 | config.ingress_wal.max_bytes | int | `268435456` | Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
 | config.ingress_wal.max_entries | int | `10000` | Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction. |
+| config.ingress_wal.max_permanent_rejections | int | `5` | Drop a pinned metric collection/log batch after this many consecutive permanent HTTP 4xx rejections (except 401/403/408/429). Minimum 1 even when WAL disabled; explicit loss is counted and member WAL entries retire. This is not capacity eviction. @schema minimum:1 |
 | config.log_format | string | `"text"` | Operational log encoding: `text` or `json`. JSON is one record per line, for a cluster log pipeline that parses rather than greps. |
 | config.log_level | string | `"info"` | Log verbosity: debug | info | warn | error. |
 | config.otlp.batch.logs.export_interval | string | `"0s"` | How often a partial batch is flushed. 0 = SDK default. |

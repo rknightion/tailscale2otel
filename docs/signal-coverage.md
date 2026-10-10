@@ -49,7 +49,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 260 | 259 | 59 | 11 | 45 |
-| self_obs | 103 | 103 | 39 | 9 | 10 |
+| self_obs | 104 | 104 | 40 | 9 | 10 |
 
 ## Operational signals
 
@@ -373,6 +373,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingress_wal.pending.entries.fill` | metric | `tailscale2otel_ingress_wal_pending_entries_fill_ratio` | visualized, alertable |  |
 | `tailscale2otel.ingress_wal.pending.size` | metric | `tailscale2otel_ingress_wal_pending_size_bytes` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.size.fill` | metric | `tailscale2otel_ingress_wal_pending_size_fill_ratio` | visualized, alertable |  |
+| `tailscale2otel.ingress_wal.permanent.drops` | metric | `tailscale2otel_ingress_wal_permanent_drops_total` | visualized, alertable |  |
 | `tailscale2otel.log.record.truncated` | metric | `tailscale2otel_log_record_truncated_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
 | `tailscale2otel.log.truncated.bytes` | metric | `tailscale2otel_log_truncated_bytes_total` | visualized | #526 wave 2/3: panel scheduled on health/Ingestion (log truncation). |
 | `tailscale2otel.metrics.auth.rejected` | metric | `tailscale2otel_metrics_auth_rejected_total` | visualized | #526 wave 2/3: panel scheduled on health/Collection (metrics endpoint). |

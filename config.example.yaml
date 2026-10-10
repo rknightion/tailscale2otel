@@ -585,6 +585,7 @@ ingress_wal:
   directory: /var/lib/tailscale2otel/ingress-wal   # absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters
   max_bytes: 268435456               # encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction
   max_entries: 10000                 # encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction
+  max_permanent_rejections: 5        # >=1 even when WAL disabled; drop a pinned metric collection/log batch after N consecutive permanent HTTP 4xx (except 401/403/408/429), count explicit loss and retire member WAL entries
   corruption: fail                   # only supported mode: fail closed rather than discard corrupt state
 
 # ── Streaming receiver (OPTIONAL: RECEIVE logs instead of polling) ──────────────

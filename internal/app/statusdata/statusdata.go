@@ -668,6 +668,8 @@ type ConfigAdvisory struct {
 // CollectionStats describes the collection clock independently of export
 // attempts. Aggregation across providers is diagnostics only, not WAL coverage.
 type CollectionStats struct {
+	PermanentMetricsDropped       uint64 `json:"permanent_metrics_dropped"`
+	PermanentLogBatchesDropped    uint64 `json:"permanent_log_batches_dropped"`
 	ScheduledAttempts             uint64 `json:"scheduled_attempts"`
 	CollectFailures               uint64 `json:"collect_failures"`
 	SnapshotsCollected            uint64 `json:"snapshots_collected"`

@@ -249,6 +249,7 @@ func (a *App) deliverySignals() []statusdata.DeliverySignal {
 		if st.Collection != nil {
 			c := st.Collection
 			row.Collection = &statusdata.CollectionStats{
+				PermanentMetricsDropped: c.PermanentMetricsDropped, PermanentLogBatchesDropped: c.PermanentLogBatchesDropped,
 				ScheduledAttempts: c.ScheduledAttempts, CollectFailures: c.CollectFailures,
 				SnapshotsCollected: c.SnapshotsCollected, BestEffortDiscardedFull: c.BestEffortDiscardedFull,
 				BestEffortEvicted: c.BestEffortEvicted, RequiredSnapshotsAcknowledged: c.RequiredSnapshotsAcknowledged,

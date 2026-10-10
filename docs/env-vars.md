@@ -385,6 +385,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_INGRESS_WAL__DIRECTORY` | `/var/lib/tailscale2otel/ingress-wal` | `restart` | absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters |
 | `TS2OTEL_INGRESS_WAL__MAX_BYTES` | `268435456` | `restart` | encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction |
 | `TS2OTEL_INGRESS_WAL__MAX_ENTRIES` | `10000` | `restart` | encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction |
+| `TS2OTEL_INGRESS_WAL__MAX_PERMANENT_REJECTIONS` | `5` | `restart` | >=1 even when WAL disabled; drop a pinned metric collection/log batch after N consecutive permanent HTTP 4xx (except 401/403/408/429), count explicit loss and retire member WAL entries |
 | `TS2OTEL_INGRESS_WAL__CORRUPTION` | `fail` | `restart` | only supported mode: fail closed rather than discard corrupt state |
 | `TS2OTEL_STREAMING__ENABLED` | `false` | `restart` | run the Splunk-HEC receiver to INGEST pushed logs (set the relevant collectors' source: stream) |
 | `TS2OTEL_STREAMING__LISTEN` | `:8088` | `restart` | bind address for the Splunk-HEC-compatible receiver |

@@ -263,6 +263,18 @@ groups:
         annotations:
           summary: "tailscale2otel component {{ $labels.component }} erroring"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"
+      - alert: "IngressPermanentlyRejectedDataLost"
+        expr: "(sum by (tailscale_tailnet, signal) ((increase(tailscale2otel_ingress_wal_permanent_drops_total[5m]) > 0) or ((tailscale2otel_ingress_wal_permanent_drops_total > 0) unless tailscale2otel_ingress_wal_permanent_drops_total offset 5m))) > 0"
+        for: "0s"
+        labels:
+          severity: "advisory"
+          service: "tailscale2otel"
+          domain: "observability"
+          page: "false"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Permanently rejected {{ $labels.signal }} work was dropped for {{ $labels.tailscale_tailnet }}"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
       - alert: "IngressWALNearCapacity"
         expr: "(max by (limit) (label_replace(tailscale2otel_ingress_wal_pending_entries_fill_ratio, \"limit\", \"entries\", \"\", \"\") or label_replace(tailscale2otel_ingress_wal_pending_size_fill_ratio, \"limit\", \"bytes\", \"\", \"\"))) > 0.8"
         for: "10m"

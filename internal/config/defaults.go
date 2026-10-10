@@ -342,11 +342,12 @@ func Default() *Config {
 			WriteDebounce: 0,
 		},
 		IngressWAL: IngressWALConfig{
-			Enabled:    false,
-			Directory:  "/var/lib/tailscale2otel/ingress-wal",
-			MaxBytes:   268435456,
-			MaxEntries: 10000,
-			Corruption: "fail",
+			MaxPermanentRejections: 5,
+			Enabled:                false,
+			Directory:              "/var/lib/tailscale2otel/ingress-wal",
+			MaxBytes:               268435456,
+			MaxEntries:             10000,
+			Corruption:             "fail",
 		},
 		Streaming: StreamingConfig{
 			Enabled:                       false,

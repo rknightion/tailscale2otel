@@ -49,6 +49,7 @@ type IngressReceipt struct {
 	records                       []sdklog.Record
 	recordBytes                   int64
 	logOffset                     int
+	logPermanentRejections        int
 	metricsExcluded, logsExcluded bool
 	metricAck, logAck             bool
 	firstCoverID                  collectionID
@@ -495,9 +496,20 @@ func (p *Provider) runIngressLogs(ctx context.Context) {
 			handleExportError(exportErr)
 		}
 		result := classifyExportResult(exportErr, SignalLogs)
-		if result.ack {
+		selected.mu.Lock()
+		if !result.ack && permanentExportRejection(exportErr) {
+			selected.logPermanentRejections++
+		} else {
+			selected.logPermanentRejections = 0
+		}
+		dropped := !result.ack && selected.logPermanentRejections >= reader.maxPermanentRejections
+		selected.mu.Unlock()
+		if result.ack || dropped {
 			failures = 0
 			reader.mu.Lock()
+			if dropped {
+				reader.stats.PermanentLogBatchesDropped++
+			}
 			reader.logFailures = 0
 			reader.mu.Unlock()
 			selected.mu.Lock()
@@ -505,6 +517,7 @@ func (p *Provider) runIngressLogs(ctx context.Context) {
 				selected.recordBytes -= recordCharge(&selected.records[i])
 				selected.records[i] = sdklog.Record{}
 			}
+			selected.logPermanentRejections = 0
 			selected.logOffset = end
 			if end == len(selected.records) {
 				selected.records = nil
@@ -518,6 +531,9 @@ func (p *Provider) runIngressLogs(ctx context.Context) {
 			reader.mu.Lock()
 			reader.signalLocked()
 			reader.mu.Unlock()
+			if dropped && reader.onPermanentDrop != nil {
+				reader.onPermanentDrop(p.emitter, SignalLogs)
+			}
 			continue
 		}
 		failures++

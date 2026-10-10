@@ -1774,6 +1774,11 @@ config: # @schema additionalProperties:false
     max_bytes: 268435456
     # -- Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction.
     max_entries: 10000
+    # -- Drop a pinned metric collection/log batch after this many consecutive permanent HTTP
+    # 4xx rejections (except 401/403/408/429). Minimum 1 even when WAL disabled; explicit loss
+    # is counted and member WAL entries retire. This is not capacity eviction.
+    # @schema minimum:1
+    max_permanent_rejections: 5
     # -- Corruption policy. Only fail is supported: startup/drain stops rather than discarding data.
     corruption: fail
 

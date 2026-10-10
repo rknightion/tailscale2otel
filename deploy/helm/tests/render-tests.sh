@@ -244,6 +244,8 @@ default_config="$(docs_of ConfigMap | yq -r '.data."config.yaml"')"
   && ok "H: WAL default byte limit rendered" || bad "H: WAL default byte limit mismatch"
 [[ "$(yq '.ingress_wal.max_entries' <<<"$default_config")" == "10000" ]] \
   && ok "H: WAL default entry limit rendered" || bad "H: WAL default entry limit mismatch"
+[[ "$(yq '.ingress_wal.max_permanent_rejections' <<<"$default_config")" == "5" ]] \
+  && ok "H: WAL default permanent rejection limit rendered" || bad "H: WAL default permanent rejection limit mismatch"
 [[ "$(yq '.ingress_wal.corruption' <<<"$default_config")" == "fail" ]] \
   && ok "H: WAL fail-closed corruption mode rendered" || bad "H: WAL corruption mode mismatch"
 
@@ -251,7 +253,8 @@ render \
   --set config.ingress_wal.enabled=true \
   --set config.ingress_wal.directory=/state/wal \
   --set config.ingress_wal.max_bytes=33554432 \
-  --set config.ingress_wal.max_entries=321
+  --set config.ingress_wal.max_entries=321 \
+  --set config.ingress_wal.max_permanent_rejections=2
 assert_rc0 "H: override renders"
 override_config="$(docs_of ConfigMap | yq -r '.data."config.yaml"')"
 [[ "$(yq '.ingress_wal.enabled' <<<"$override_config")" == "true" ]] \
@@ -262,6 +265,18 @@ override_config="$(docs_of ConfigMap | yq -r '.data."config.yaml"')"
   && ok "H: WAL byte override rendered" || bad "H: WAL byte override missing"
 [[ "$(yq '.ingress_wal.max_entries' <<<"$override_config")" == "321" ]] \
   && ok "H: WAL entry override rendered" || bad "H: WAL entry override missing"
+[[ "$(yq '.ingress_wal.max_permanent_rejections' <<<"$override_config")" == "2" ]] \
+  && ok "H: WAL permanent rejection override rendered" || bad "H: WAL permanent rejection override missing"
+for enabled in false true; do
+  for limit in 0 -1; do
+    render --set config.ingress_wal.enabled="$enabled" --set config.ingress_wal.max_permanent_rejections="$limit"
+    if [[ $RENDER_RC -ne 0 ]] && grep -q 'max_permanent_rejections' <<<"$RENDER"; then
+      ok "H: permanent rejection limit $limit rejected with WAL enabled=$enabled"
+    else
+      bad "H: invalid permanent rejection limit $limit accepted with WAL enabled=$enabled"
+    fi
+  done
+done
 
 # --------------------------------------------------------------------------
 case_ "I. state volume keeps the existing emptyDir/PVC and nonroot security contracts"

@@ -594,6 +594,12 @@
               "last_slot_at": {
                 "type": "string"
               },
+              "permanent_log_batches_dropped": {
+                "type": "integer"
+              },
+              "permanent_metrics_dropped": {
+                "type": "integer"
+              },
               "required_snapshots_acknowledged": {
                 "type": "integer"
               },

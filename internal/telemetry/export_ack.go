@@ -31,6 +31,50 @@ var (
 	errACKTLS      = errors.New("OTLP HTTP TLS configuration failed")
 )
 
+// httpExportRejection carries only the actual response status, never a backend
+// reason/body. Returning it through the HTTP client preserves identity through
+// the SDK's wrapping, so server text cannot choose the destructive drop policy.
+type httpExportRejection struct {
+	code   int
+	signal string
+}
+
+func (e *httpExportRejection) Error() string {
+	return "failed to upload " + e.signal + ": " + strconv.Itoa(e.code)
+}
+
+func permanentHTTPStatus(code int) bool {
+	return code >= 400 && code < 500 && code != 401 && code != 403 && code != 408 && code != 429
+}
+
+// Every leaf must be a confirmed permanent HTTP rejection. Joined transient,
+// cancellation, serialization, partial-success and unknown errors fail closed.
+// In particular, never classify a destructive loss by arbitrary error text.
+func permanentExportRejection(err error) bool {
+	if err == nil {
+		return false
+	}
+	switch e := err.(type) { //nolint:errorlint // Inspect one node, not one matching descendant of a join.
+	case *httpExportRejection:
+		return permanentHTTPStatus(e.code)
+	case interface{ Unwrap() []error }:
+		children := e.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !permanentExportRejection(child) {
+				return false
+			}
+		}
+		return true
+	case interface{ Unwrap() error }:
+		return permanentExportRejection(e.Unwrap())
+	default:
+		return false
+	}
+}
+
 type exportResult struct {
 	ack     bool
 	warning bool
@@ -129,8 +173,17 @@ type validatingACKTransport struct {
 
 func (t *validatingACKTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(req)
-	if err != nil || response == nil || response.StatusCode < 200 || response.StatusCode > 299 {
+	if err != nil || response == nil {
 		return response, err
+	}
+	if permanentHTTPStatus(response.StatusCode) {
+		if response.Body != nil {
+			_ = response.Body.Close()
+		}
+		return nil, &httpExportRejection{code: response.StatusCode, signal: t.signal}
+	}
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return response, nil
 	}
 	if response.Body == nil {
 		return nil, errACKResponse

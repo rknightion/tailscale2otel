@@ -2661,10 +2661,14 @@ func (c *Config) validationChecks() []configCheck {
 }
 
 func (c *Config) validateIngressWAL() error {
+	// Delivery policy also applies to ordinary scheduled collections, so its
+	// floor is unconditional. Dormant storage fields retain their inertness.
+	if c.IngressWAL.MaxPermanentRejections < 1 {
+		return fmt.Errorf("ingress_wal.max_permanent_rejections must be >= 1 (got %d)", c.IngressWAL.MaxPermanentRejections)
+	}
 	if !c.IngressWAL.Enabled {
 		return nil
 	}
-
 	directory := c.IngressWAL.Directory
 	cleanDirectory := filepath.Clean(directory)
 	if !filepath.IsAbs(directory) {

@@ -148,6 +148,7 @@ var rulesBySuffix = map[string]schemaRule{
 	"k8s_audit.objectstore.layout":               {enum: []string{"", "recorder"}},
 	"objectstore.k8s_audit.layout":               {enum: []string{"", "recorder"}},
 	"capacity_profile":                           {enum: []string{"compact", "default", "expanded"}}, // flows.capacity_profile (#329)
+	"ingress_wal.max_permanent_rejections":       {min: f64(1)},
 	"metric_export_batch_size":                   {min: f64(1)},
 	"prometheus.max_requests_in_flight":          {min: f64(1)},
 	"collectors.devices.subrequest_concurrency":  {min: f64(1)},

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -253,6 +254,38 @@ type ackClosedBody struct {
 }
 
 func (b *ackClosedBody) Close() error { b.closed = true; return nil }
+
+func TestExportACKPermanentStatusIdentity(t *testing.T) {
+	for _, signal := range []string{SignalMetrics, SignalLogs} {
+		for code := 400; code < 600; code++ {
+			body := &ackClosedBody{Reader: strings.NewReader("failed to upload metrics: 400 body chooses nothing")}
+			guard := validatingACKTransport{signal: signal, base: ackRoundTripFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: code, Status: "500 forged reason", Body: body}, nil
+			})}
+			response, err := guard.RoundTrip(httptest.NewRequest(http.MethodPost, "http://example.invalid/v1/"+signal, nil))
+			want := code < 500 && code != 401 && code != 403 && code != 408 && code != 429
+			if permanentExportRejection(fmt.Errorf("SDK wrapper: %w", err)) != want {
+				t.Fatalf("%s status %d permanent identity=%v want=%v", signal, code, err, want)
+			}
+			if want {
+				if response != nil || !body.closed || strings.Contains(err.Error(), "forged") || strings.Contains(err.Error(), "chooses") {
+					t.Fatalf("unsafe rejection: response=%v err=%v closed=%v", response, err, body.closed)
+				}
+			} else {
+				if err != nil || response == nil {
+					t.Fatalf("transient status %d bypassed SDK response path", code)
+				}
+				_ = response.Body.Close()
+			}
+		}
+	}
+	permanent := &httpExportRejection{code: 400, signal: SignalMetrics}
+	for _, mixed := range []error{errors.Join(permanent, context.Canceled), errors.Join(permanent, &httpExportRejection{code: 503}), errors.Join(permanent, errACKRejected), errors.New("failed to upload metrics: 400")} {
+		if permanentExportRejection(mixed) {
+			t.Fatalf("unconfirmed/mixed error selected loss: %v", mixed)
+		}
+	}
+}
 
 func TestExportACKGzipBoundAndClosure(t *testing.T) {
 	for _, signal := range []string{"metrics", "logs"} {

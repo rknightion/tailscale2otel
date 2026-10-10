@@ -2802,6 +2802,16 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.ingress_wal.permanent.drops",
+      "prom_name": "tailscale2otel_ingress_wal_permanent_drops_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized",
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.log.record.truncated",
       "prom_name": "tailscale2otel_log_record_truncated_total",
       "surface": "self_obs",

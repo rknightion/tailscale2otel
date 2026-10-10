@@ -9,11 +9,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/nodemetrics"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
@@ -54,6 +56,11 @@ func telemetryOptions(cfg *config.Config, version string) telemetry.Options {
 		signals = prometheusOnlySignals(cfg.OTLP)
 	}
 	return telemetry.Options{
+		MaxPermanentRejections: cfg.IngressWAL.MaxPermanentRejections,
+		OnPermanentDrop: func(e telemetry.Emitter, signal string) {
+			doc := appcatalog.DocIngressWALPermanentDrops
+			e.Counter(doc.Name, doc.Unit, doc.Description, 1, telemetry.Attrs{semconv.AttrIngestSignal: signal})
+		},
 		ServiceName:              serviceName,
 		ServiceVersion:           version,
 		Provider:                 prov,

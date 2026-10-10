@@ -10,7 +10,7 @@ tags:
 # Why this exporter
 
 Use tailscale2otel when you want tailnet state and derived signals in the telemetry backend you
-already operate. A single static Go binary reads the Tailscale API and derives 332 metrics and 31 log-event types across 17 collectors.
+already operate. A single static Go binary reads the Tailscale API and derives 333 metrics and 31 log-event types across 17 collectors.
 
 ## Sources and alternatives
 
@@ -47,7 +47,7 @@ runs a reduced collector set: devices, users, keys, ACL and node metrics.
 
 CI checks the catalog against generated dashboards and alert rules. The [signal coverage
 ledger](signal-coverage.md) records panel, variable and rule references, including structural
-exceptions. The [metrics catalog](metrics.md) lists all 332 metrics and 31 log-event types.
+exceptions. The [metrics catalog](metrics.md) lists all 333 metrics and 31 log-event types.
 
 ## Limits
 

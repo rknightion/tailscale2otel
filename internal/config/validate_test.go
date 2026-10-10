@@ -11,6 +11,34 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
 
+func TestIngressPermanentRejectionLimit(t *testing.T) {
+	if got := config.Default().IngressWAL.MaxPermanentRejections; got != 5 {
+		t.Fatalf("default limit=%d want 5", got)
+	}
+	for _, limit := range []int{-1, 0, 1, 2, 5} {
+		cfg := config.Default()
+		cfg.IngressWAL.Enabled = true
+		cfg.IngressWAL.MaxPermanentRejections = limit
+		err := cfg.Validate()
+		if limit < 1 {
+			if err == nil || !strings.Contains(err.Error(), "ingress_wal.max_permanent_rejections") {
+				t.Fatalf("limit=%d error=%v", limit, err)
+			}
+		} else if err != nil {
+			t.Fatalf("valid limit=%d error=%v", limit, err)
+		}
+	}
+	cfg, err := config.Load(writeTemp(t, "ingress_wal:\n  max_permanent_rejections: 2\n"))
+	if err != nil || cfg.IngressWAL.MaxPermanentRejections != 2 {
+		t.Fatalf("YAML limit not loaded: cfg=%v err=%v", cfg, err)
+	}
+	t.Setenv("TS2OTEL_INGRESS_WAL__MAX_PERMANENT_REJECTIONS", "3")
+	cfg, err = config.Load("")
+	if err != nil || cfg.IngressWAL.MaxPermanentRejections != 3 {
+		t.Fatalf("env limit not loaded: cfg=%v err=%v", cfg, err)
+	}
+}
+
 // loadErr loads the YAML and returns the error (or nil) for assertion.
 func loadErr(t *testing.T, y string) error {
 	t.Helper()

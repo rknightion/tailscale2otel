@@ -912,6 +912,21 @@ def groups():
               "auto-configure) is logging errors. See the Reliability row on the Exporter Diagnostics tab.",
               domain="observability", paused=False,
               policy="optional", runbook="exporter-internal-errors", panel="Component errors/s"),
+        alert("ts2o-ingress-wal-permanent-loss", "Ingress permanently rejected data lost",
+              "sum by (tailscale_tailnet, signal) ("
+              "(increase(tailscale2otel_ingress_wal_permanent_drops_total[5m]) > 0) or "
+              "((tailscale2otel_ingress_wal_permanent_drops_total > 0) unless "
+              "tailscale2otel_ingress_wal_permanent_drops_total offset 5m))",
+              "gt", 0, "0s", "advisory",
+              "Permanently rejected {{ $labels.signal }} work was dropped for {{ $labels.tailscale_tailnet }}",
+              "A pinned metrics collection or durable log batch reached ingress_wal.max_permanent_rejections "
+              "consecutive permanent HTTP 4xx rejections (excluding 401, 403, 408 and 429). The unit was "
+              "deliberately lost and its member WAL obligations resolved so later work can proceed. "
+              "This counts collections/batches, not entries or records. Check destination timestamp and "
+              "payload acceptance constraints; this advisory never pages. A first positive observation "
+              "with no five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
+              domain="observability", paused=False, page=False,
+              policy="advisory", runbook="ingest-receivers", panel="Ingress permanently rejected units lost"),
         alert("ts2o-ingress-wal-near-capacity", "Ingress WAL near capacity",
               "max by (limit) ("
               'label_replace(tailscale2otel_ingress_wal_pending_entries_fill_ratio, "limit", "entries", "", "") or '
