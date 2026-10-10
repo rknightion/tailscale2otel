@@ -50,6 +50,10 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - Never hand-edit anything under `deploy/grafana` or `deploy/alerts`, or text between
   `<!-- BEGIN GENERATED -->` markers; run the matching `just gen-<family>`. Regenerating
   `internal/catalog/signal_dispositions.json` cannot turn a red coverage gate green.
+- `gen-check` and `helm-gen-check` fail on plain `git diff --exit-code`, which compares the
+  worktree with the index. A candidate that is applied but not staged looks red even when
+  regeneration changed nothing: `git add` the candidate's paths before the gate, or run the gate
+  on a committed detached worktree. Staging is the fix; never widen the diff scope.
 - OpenTelemetry modules (core, metric and trace SDKs, `sdk/log` at v1.x, and the 0.x log
   exporters) move together in one Renovate PR; never bump one alone or run a casual `go get` or
   `go mod tidy`.
