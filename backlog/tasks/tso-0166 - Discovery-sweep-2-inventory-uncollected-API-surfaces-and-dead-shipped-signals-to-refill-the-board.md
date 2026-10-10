@@ -3,11 +3,11 @@ id: TSO-0166
 title: >-
   Discovery sweep 2: inventory uncollected API surfaces and dead shipped signals
   to refill the board
-status: In Progress
+status: Done
 assignee:
   - '@loop20'
 created_date: '2026-10-09 22:27'
-updated_date: '2026-10-09 22:59'
+updated_date: '2026-10-10 00:23'
 labels: []
 dependencies: []
 references:
@@ -26,17 +26,17 @@ The board drained again on 2026-10-09 when loop19 closed nothing-admissible. TSO
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A ledger with a fixed schema (source, surface, consumed-by or none, evidence, proposed disposition) covers every GET operation in the vendored spec and every Border0 endpoint, with no blank rows, under the gitignored codex/ tree
-- [ ] #2 Every shipped metric and log family is checked for samples over the trailing 30 days with read-only queries; each zero-sample family carries a proposed disposition (dead signal, lab-shape gap or expected-quiet), and any change since TSO-0138's 116 absences is called out
-- [ ] #3 Each adopted candidate is filed as a To Do task labelled needs-triage, with a need statement and testable acceptance criteria; each rejected candidate is recorded on this task with its reason
-- [ ] #4 No candidate re-proposes a surface with an existing verdict in spec/changelog-reviewed.json, TSO-0138's notes or a Done task without stating new evidence
+- [x] #1 A ledger with a fixed schema (source, surface, consumed-by or none, evidence, proposed disposition) covers every GET operation in the vendored spec and every Border0 endpoint, with no blank rows, under the gitignored codex/ tree
+- [x] #2 Every shipped metric and log family is checked for samples over the trailing 30 days with read-only queries; each zero-sample family carries a proposed disposition (dead signal, lab-shape gap or expected-quiet), and any change since TSO-0138's 116 absences is called out
+- [x] #3 Each adopted candidate is filed as a To Do task labelled needs-triage, with a need statement and testable acceptance criteria; each rejected candidate is recorded on this task with its reason
+- [x] #4 No candidate re-proposes a surface with an existing verdict in spec/changelog-reviewed.json, TSO-0138's notes or a Done task without stating new evidence
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -49,4 +49,12 @@ Read-only discovery across vendored GET APIs, PAM reference, audit events, previ
 
 <!-- SECTION:NOTES:BEGIN -->
 Loop20 discovery: 699 fixed-schema rows; all 35 vendored GETs, all 49 Border0 reference paths, audit vocabularies, prior verdicts and 363 shipped families covered. Fixed 30-day actual sample queries found 273 sampled and 90 absent: 43 expected-quiet, 47 lab-shape gaps, none proven dead. Previous 116 absences: 33 now sampled, 83 remain; six previously sampled now absent and two new families. Independent reviewer verified every query selector/time/range and all source hashes, not just metadata. Adopted TSO-0168 (curate sampled Service throughput), needs-triage only, not admitted for implementation in loop20. New samples and service label-key evidence meet the prior parked boundary. Rejections: OAuth app count and organization count already consumed; log-stream destination already shipped; Border0 server delay is configuration not observed lag; token age has no new actionable semantics; per-object/DNS/socket GET proposals duplicate list data or add N+1 polling; PAM recordings/query data and denial/pruning/rate-limit proposals lack new authorized semantics evidence; historical unavailable Border0 paths remain dated reference verdicts, not fresh availability claims; blanket audit expansion lacks new values; no absent family is proven dead; file-checkpoint gaps do not prove current backend regression; dedup-overlap omission remains source-scoped. No lab identifiers or raw captures tracked. Ledger validator has a minor reusable-selector/time validation limitation, but independent all-family review checked current evidence; do not reuse validator as sole proof.
+
+loop20: 0 implementation attempts; Done after acceptance, landed code and green composed gate. Earlier superseded/cancelled CI runs are not passes.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+loop20 landed evidence 4d4b531098807b51a9ac36652c10f43b8f06468e. 699-row ledger covers required surfaces and all363 shipped families over fixed30day actual query window. 273 sampled,90 absent (43 expected-quiet,47 lab-shape,none proved dead), compared with prior116. Independent exhaustive query/source review PASS. Root filed TSO-0168 (curate sampled Service throughput) needs-triage only and recorded rejections. No tracked code; CodeRabbit skipped. Final composed just check on actual shipped SHA129945fb3230f1c5d8a1127ad3e3c7faa2c514f4 passed, unchanged tree. Exact CI e96e74e31e2df4c697435dd4b7a32315e0e02f41 run38003933710 ci-success succeeded; no production diff outside backlog from that tested code. Helm absent-not-required (no landed chart change). Just formatting passed. Generated-input DoD is not applicable or covered by gate; no generator drift or weakened test claimed.
+<!-- SECTION:FINAL_SUMMARY:END -->
