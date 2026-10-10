@@ -30,8 +30,10 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   patched release; never weaken or edit the gate to bypass the vulnerability.
 
 - `golangci-lint` and `govulncheck` install into the shared `~/go/bin`, and another repo's
-  `just setup` can overwrite them with a different pin. If `just lint` or `just vuln` fails its
-  version assertion, re-run `just setup` here and retry; never edit the pin or the assertion.
+  `just setup` can overwrite them with a different pin, so a fresh worktree does not guarantee
+  pinned tools. Run `just setup </dev/null` in the worktree before any composed or post-land
+  gate, and again if `just lint` or `just vuln` fails its version assertion; never edit the pin
+  or the assertion.
   A mise shim precedes `~/go/bin` on PATH, so run the gate as
   `PATH="$HOME/go/bin:$PATH" just check </dev/null` to use the binaries `just setup` installed.
 
