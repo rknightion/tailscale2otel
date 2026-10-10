@@ -1,11 +1,11 @@
 ---
 id: TSO-0168
 title: Curate sampled Tailscale Service throughput from node metrics
-status: In Progress
+status: Done
 assignee:
   - '@loop23'
 created_date: '2026-10-09 22:59'
-updated_date: '2026-10-10 17:26'
+updated_date: '2026-10-10 17:42'
 labels:
   - needs-triage
 dependencies: []
@@ -25,17 +25,17 @@ Raw node metrics already forward Serve inbound/outbound byte counters, but opera
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Both Serve byte counter families feed a first-class OTEL byte counter with bounded receive/transmit direction, existing node identity and Service identity derived from the observed service key; a redacted captured-shape fixture proves mapping and safe handling of absent or unsupported Service shapes
-- [ ] #2 Real node-metrics collector plus telemetry recorder tests cover successive scrapes and counter reset, share raw per-series delta accounting without double-counting or an independent baseline, and preserve raw forwarding and current passthrough filter behavior
-- [ ] #3 Service and node identity obey existing cardinality and PII contracts; hostile extra labels and folded or filtered identities cannot inject IP, URL or free-text dimensions or create duplicate curated series; fixtures contain no real identifiers
-- [ ] #4 Catalog, generated metric documentation, disposition coverage and generated dashboard include the Service-throughput signal and normalized Prometheus panel; tests connect panel to emitted metric, existing raw families remain available, just check and generator stability pass without a required live write
+- [x] #1 Both Serve byte counter families feed a first-class OTEL byte counter with bounded receive/transmit direction, existing node identity and Service identity derived from the observed service key; a redacted captured-shape fixture proves mapping and safe handling of absent or unsupported Service shapes
+- [x] #2 Real node-metrics collector plus telemetry recorder tests cover successive scrapes and counter reset, share raw per-series delta accounting without double-counting or an independent baseline, and preserve raw forwarding and current passthrough filter behavior
+- [x] #3 Service and node identity obey existing cardinality and PII contracts; hostile extra labels and folded or filtered identities cannot inject IP, URL or free-text dimensions or create duplicate curated series; fixtures contain no real identifiers
+- [x] #4 Catalog, generated metric documentation, disposition coverage and generated dashboard include the Service-throughput signal and normalized Prometheus panel; tests connect panel to emitted metric, existing raw families remain available, just check and generator stability pass without a required live write
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -54,4 +54,12 @@ loop22: 3 implementation/verification cycles consumed, third/final retry stopped
 loop23 recommission (Rob, 2026-10-10): previous failure -> loop22 third cycle stopped on a scratch verification script KeyError 'data' after successful regeneration; no candidate defect was shown. Changed premise -> the capture envelope is now known: the retained series evidence is {response: {status, data: [label sets], warnings}}, so labels are read from response.data, and the owner raised the ceiling for a bounded continuation. Discriminating check -> the retained patch (sha256 799f51ad6179c7959d886c5964893f54de00509d64abde8772ab30ac05eeafa9) applied unchanged to a fresh worktree of current main passes the nodemetrics and generator tests, the composed gate and gen stability. Remaining allowance -> one verification cycle plus at most one repair cycle if a real defect is found; park on any further failure.
 
 loop23: verification cycle 1 applied unchanged retained patch; collector race and Python tests passed. Initial gate false red was unstaged index precondition (not source defect); exact-tree staging retry passed full setup/check, gen twice and fmt. Cycle 2 (sole authorized source repair) corrected independently proven major: Service panel now scopes tailnet/provider before aggregation, with real generated-query proof failing before at 15 B/s and passing after at selected 1 B/s. Repaired 40-file tree c2736c4c284328e376497558b17b0c72ac3b1861, complete patch SHA256 68ed6d6b723633d9d78b0c22ad15248d01cc54c3f4135baad830b981a02643e5; only 4 files changed, other 36 frozen. Full gate/gen stability/fmt green, security full plus delta PASS. CodeRabbit initial all40 complete, zero major, one pre-existing minor log-count inconsistency outside metric-count-only ownership left unchanged; delta pending. No live probes/writes or publication yet; source repair allowance exhausted.
+
+loop23 done: 3 historical cycles plus 1 owner-authorized verification cycle and 1 owner-authorized source-repair cycle; staged-index precondition retry was environment verification, not extra source repair. All acceptance proof green on exact retained and landed identities; no SIGTERM. Source repair allowance exhausted, no further work admitted.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+loop23: landed sampled Service throughput at 3393e3c2d4feab34418cf8ee434f98b59d5f3679 after verifying unchanged retained collector/catalog/dashboard candidate, then using sole allowed repair cycle to scope the new panel to selected tailnet/provider. Real generated-query proof failed before at 15 B/s and passed after at selected 1 B/s. Collector race/Python tests, full setup/check, two stable generations and format validation passed on exact repaired tree c2736c4c284328e376497558b17b0c72ac3b1861. Full security review plus four-file delta PASS; CodeRabbit initial all40 and delta all4 complete, zero critical/major or unreviewed files. Pre-existing README log-count minor left outside ownership; suggested test decoupling rejected because acceptance requires actual catalog-to-panel linkage. Post-land clean detached full setup/check exit0 (362.263s) on exact landed SHA; CI38072151170 ci-success success. Helm check absent per unchanged push paths, not a pass. grafana-sync38072151079 successfully published alert links and delivered dashboard via GitSync; no direct Grafana reads/writes or live probes.
+<!-- SECTION:FINAL_SUMMARY:END -->
