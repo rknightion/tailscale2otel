@@ -5,7 +5,7 @@ status: Parked
 assignee:
   - '@loop22'
 created_date: '2026-10-09 22:59'
-updated_date: '2026-10-10 14:13'
+updated_date: '2026-10-10 16:41'
 labels:
   - needs-triage
 dependencies: []
@@ -50,4 +50,6 @@ Implement additive Service byte curation using existing raw delta accounting; in
 loop22: two worker cycles partial, no final gate yet. Root narrow ownership-gap amendments: sentinel registry has_node_service_io entry in builder.py; public metric-count summaries in README, docs/index, docs/comparison (333 to catalog-derived 334). Authentic retained local series-response evidence located after empty supplied capture directory; fixtures synthetic. Dispatch final authorized lane-worker-retry cycle for summaries, dispositions, exact-tree gate and generation stability; third failure parks under D26.
 
 loop22: 3 implementation/verification cycles consumed, third/final retry stopped on scratch capture verification KeyError data after successful regeneration. This is verification-script failure, not proof of a collector bug. Current-tree regression tests, full just check, generator stability and just format verification remain unrun; guarded security review and CodeRabbit not started. Candidate retained uncommitted in isolated feature worktree; no source landed or dashboard delivery. D26 mandates park on third failure. Resume: owner regrade ceiling, correct scratch JSON envelope inspection, then exact retained-tree validation and required reviews before any land.
+
+loop23 recommission (Rob, 2026-10-10): previous failure -> loop22 third cycle stopped on a scratch verification script KeyError 'data' after successful regeneration; no candidate defect was shown. Changed premise -> the capture envelope is now known: the retained series evidence is {response: {status, data: [label sets], warnings}}, so labels are read from response.data, and the owner raised the ceiling for a bounded continuation. Discriminating check -> the retained patch (sha256 799f51ad6179c7959d886c5964893f54de00509d64abde8772ab30ac05eeafa9) applied unchanged to a fresh worktree of current main passes the nodemetrics and generator tests, the composed gate and gen stability. Remaining allowance -> one verification cycle plus at most one repair cycle if a real defect is found; park on any further failure.
 <!-- SECTION:NOTES:END -->
