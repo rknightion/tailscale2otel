@@ -1,9 +1,11 @@
 ---
 id: TSO-0168
 title: Curate sampled Tailscale Service throughput from node metrics
-status: To Do
-assignee: []
+status: Parked
+assignee:
+  - '@loop22'
 created_date: '2026-10-09 22:59'
+updated_date: '2026-10-10 14:13'
 labels:
   - needs-triage
 dependencies: []
@@ -35,3 +37,17 @@ Raw node metrics already forward Serve inbound/outbound byte counters, but opera
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement additive Service byte curation using existing raw delta accounting; inspect captured label shape locally, redact fixtures, prove boundary mapping/reset/filter/cardinality; regenerate catalog/dashboard, run isolated gate, security review and sharded CodeRabbit; root lands only after TSO-0163 composed gate.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop22: two worker cycles partial, no final gate yet. Root narrow ownership-gap amendments: sentinel registry has_node_service_io entry in builder.py; public metric-count summaries in README, docs/index, docs/comparison (333 to catalog-derived 334). Authentic retained local series-response evidence located after empty supplied capture directory; fixtures synthetic. Dispatch final authorized lane-worker-retry cycle for summaries, dispositions, exact-tree gate and generation stability; third failure parks under D26.
+
+loop22: 3 implementation/verification cycles consumed, third/final retry stopped on scratch capture verification KeyError data after successful regeneration. This is verification-script failure, not proof of a collector bug. Current-tree regression tests, full just check, generator stability and just format verification remain unrun; guarded security review and CodeRabbit not started. Candidate retained uncommitted in isolated feature worktree; no source landed or dashboard delivery. D26 mandates park on third failure. Resume: owner regrade ceiling, correct scratch JSON envelope inspection, then exact retained-tree validation and required reviews before any land.
+<!-- SECTION:NOTES:END -->

@@ -7,7 +7,7 @@ status: Parked
 assignee:
   - '@loop21'
 created_date: '2026-10-09 22:26'
-updated_date: '2026-10-10 09:28'
+updated_date: '2026-10-10 14:06'
 labels: []
 dependencies:
   - TSO-0162
@@ -63,4 +63,6 @@ loop21: owner waived generator review gap for unchanged retained candidate; hash
 loop21: unchanged 76-file candidate landed at c30c532923029be90e23e712fafae2812e362a4f after isolated exact-patch gate exit 0 (267.72s) and owner review waiver. Post-land composed gate in primary checkout exited 1 (70.113s): formatter selected ignored machine-local codex/loop20 Go evidence, subsequent checks not reached. D20 requires park on red gate; no source repair or unchanged rerun. Still 3 implementation cycles total, none added. Resume requires owner re-grading this environment-only gate failure and authorising clean-checkout composed proof; required exact-SHA CI is being observed separately. No SIGTERM.
 
 loop21 exact landed SHA c30c532923029be90e23e712fafae2812e362a4f: CI run 38040463418 and Helm run 38040463708 completed success, ci-success/helm-success both success. grafana-sync run 38040463440 success for rule publication and GitSync dashboard delivery; no direct dashboard push. Release run 38040463900 completed success; release-only skipped jobs are not counted as passes. Remains Parked solely on primary-checkout composed fmt failure; no AC or DoD checked because required composed proof is red.
+
+loop22: one fresh detached current-main 9c8646b6c1fccedf0a3bf3ca16f218467f725ea4 composed gate exit 1 after 173.873s: installed golangci-lint 2.13.2 differs from pinned v2.14.0; formatting passed, later checks not run, no SIGTERM. D24 mandates park on red, no rerun or code repair. Still 3 historical implementation cycles, zero added. Exact c30c532923029be90e23e712fafae2812e362a4f CI 38040463418 ci-success and Helm 38040463708 helm-success reverified success. Resume: owner authorize a new clean-worktree composed gate after environment provisioning; AC/DoD remain unchecked.
 <!-- SECTION:NOTES:END -->
