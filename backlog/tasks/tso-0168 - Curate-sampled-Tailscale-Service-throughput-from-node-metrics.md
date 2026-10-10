@@ -1,11 +1,11 @@
 ---
 id: TSO-0168
 title: Curate sampled Tailscale Service throughput from node metrics
-status: Parked
+status: In Progress
 assignee:
-  - '@loop22'
+  - '@loop23'
 created_date: '2026-10-09 22:59'
-updated_date: '2026-10-10 16:41'
+updated_date: '2026-10-10 17:26'
 labels:
   - needs-triage
 dependencies: []
@@ -52,4 +52,6 @@ loop22: two worker cycles partial, no final gate yet. Root narrow ownership-gap 
 loop22: 3 implementation/verification cycles consumed, third/final retry stopped on scratch capture verification KeyError data after successful regeneration. This is verification-script failure, not proof of a collector bug. Current-tree regression tests, full just check, generator stability and just format verification remain unrun; guarded security review and CodeRabbit not started. Candidate retained uncommitted in isolated feature worktree; no source landed or dashboard delivery. D26 mandates park on third failure. Resume: owner regrade ceiling, correct scratch JSON envelope inspection, then exact retained-tree validation and required reviews before any land.
 
 loop23 recommission (Rob, 2026-10-10): previous failure -> loop22 third cycle stopped on a scratch verification script KeyError 'data' after successful regeneration; no candidate defect was shown. Changed premise -> the capture envelope is now known: the retained series evidence is {response: {status, data: [label sets], warnings}}, so labels are read from response.data, and the owner raised the ceiling for a bounded continuation. Discriminating check -> the retained patch (sha256 799f51ad6179c7959d886c5964893f54de00509d64abde8772ab30ac05eeafa9) applied unchanged to a fresh worktree of current main passes the nodemetrics and generator tests, the composed gate and gen stability. Remaining allowance -> one verification cycle plus at most one repair cycle if a real defect is found; park on any further failure.
+
+loop23: verification cycle 1 applied unchanged retained patch; collector race and Python tests passed. Initial gate false red was unstaged index precondition (not source defect); exact-tree staging retry passed full setup/check, gen twice and fmt. Cycle 2 (sole authorized source repair) corrected independently proven major: Service panel now scopes tailnet/provider before aggregation, with real generated-query proof failing before at 15 B/s and passing after at selected 1 B/s. Repaired 40-file tree c2736c4c284328e376497558b17b0c72ac3b1861, complete patch SHA256 68ed6d6b723633d9d78b0c22ad15248d01cc54c3f4135baad830b981a02643e5; only 4 files changed, other 36 frozen. Full gate/gen stability/fmt green, security full plus delta PASS. CodeRabbit initial all40 complete, zero major, one pre-existing minor log-count inconsistency outside metric-count-only ownership left unchanged; delta pending. No live probes/writes or publication yet; source repair allowance exhausted.
 <!-- SECTION:NOTES:END -->
