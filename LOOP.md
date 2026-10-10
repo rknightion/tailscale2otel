@@ -32,7 +32,8 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - `golangci-lint` and `govulncheck` install into the shared `~/go/bin`, and another repo's
   `just setup` can overwrite them with a different pin. If `just lint` or `just vuln` fails its
   version assertion, re-run `just setup` here and retry; never edit the pin or the assertion.
-  Check that `command -v golangci-lint` is the binary `just setup` installed, not a mise shim.
+  A mise shim precedes `~/go/bin` on PATH, so run the gate as
+  `PATH="$HOME/go/bin:$PATH" just check </dev/null` to use the binaries `just setup` installed.
 
 - `go test -race ./...` at the root stops at the module boundary. The four tool modules are covered
   by the `module-verify` and `lint` matrices in ci.yml, and a workflow contract test fails if one
@@ -51,8 +52,11 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
 - A whole-repo CodeRabbit review exceeds the transport limit: use `just review-sharded main .`.
   Arguments are positional (base, then dirs); `base=main` passes the literal string `base=main`.
-- `helm-success` exists only for pushes touching the chart paths in `helm.yml` (no
-  `workflow_dispatch`); a non-chart push to `main` never gets one. Record it as absent, not a pass,
+- CodeRabbit returns `No files to review` for staged Python under `deploy/grafana/gen` and
+  `deploy/alerts/gen`. That shard is unreviewed, not clean.
+- `helm-success` exists only for pushes touching `helm.yml`'s push paths (the chart,
+  `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`; no `workflow_dispatch`);
+  any other push to `main` never gets one. Record it as absent, not a pass,
   and do not make a source edit to trigger it. Pull requests always report it.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
 
