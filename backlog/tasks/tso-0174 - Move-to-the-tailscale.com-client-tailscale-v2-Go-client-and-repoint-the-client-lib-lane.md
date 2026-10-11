@@ -3,11 +3,11 @@ id: TSO-0174
 title: >-
   Move to the tailscale.com/client/tailscale/v2 Go client and repoint the
   client-lib lane
-status: Parked
+status: In Progress
 assignee:
-  - loop26
+  - loop27
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-11 13:38'
+updated_date: '2026-10-11 15:25'
 labels: []
 dependencies:
   - TSO-0173
@@ -43,6 +43,8 @@ go.mod pins github.com/tailscale/tailscale-client-go/v2 at a 2025-01-29 pseudo-v
 
 <!-- SECTION:PLAN:BEGIN -->
 Move all root/tool-module/import/workflow references to the current tagged Tailscale client in one candidate; confirm symbol shapes with go doc and tidy each of five modules without changing the OTEL lockstep set. Return staged candidate for guarded review, CodeRabbit and serialized exact full gate. Root corrects the historical task note, lands, runs fresh composed gate and exact-SHA CI, then performs one manual client-lib dispatch and records its conclusive verdict.
+
+loop27: one fresh root workflow dispatch; mapper retains both verdicts and exact run identity.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

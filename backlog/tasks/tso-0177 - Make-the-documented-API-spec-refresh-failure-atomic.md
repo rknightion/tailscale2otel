@@ -1,9 +1,11 @@
 ---
 id: TSO-0177
 title: Make the documented API spec refresh failure-atomic
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - loop27
 created_date: '2026-10-11 12:05'
+updated_date: '2026-10-11 15:25'
 labels:
   - needs-triage
 dependencies: []
@@ -32,3 +34,9 @@ CodeRabbit found that the new YAML-to-JSON refresh example redirects yq output d
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop27: isolated staged documentation candidate with local success/failure fixtures; root review, landing and exact-SHA gates.
+<!-- SECTION:PLAN:END -->

@@ -1,11 +1,11 @@
 ---
 id: TSO-0172
 title: Comprehensive audit of both Grafana dashboards against the live stack
-status: Parked
+status: In Progress
 assignee:
-  - loop26
+  - loop27
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 12:30'
+updated_date: '2026-10-11 15:25'
 labels: []
 dependencies: []
 references:
@@ -42,6 +42,8 @@ The last whole-dashboard live audit (TSO-0022) predates a long run of changes: t
 
 <!-- SECTION:PLAN:BEGIN -->
 Inventory every generated panel and catalog signal; extend selector-scope proof across all tabs with a failing mutation; use root-provided live query and render evidence to assign verdicts and identify follow-ups; return staged candidate for guarded review, serialized gate and landing.
+
+loop27: retained patch verified and applied cleanly to fresh base; finish live absence/control/render evidence, then root review, landing and exact-SHA gates.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
