@@ -74,8 +74,16 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   `workflow_dispatch`);
   any other push to `main` never gets one. Record it as absent, not a pass,
   and do not make a source edit to trigger it. Pull requests always report it.
+- The live spec endpoint now emits YAML, but `spec/tailscale-api.json` stays JSON (no `.yaml` copy):
+  re-vendor with `curl ... | yq -o=json '.'`, as `api-drift.yml` does; `spec/README.md` still says
+  JSON-only. `internal/oas.ParseSpec` keeps only GET operations.
+- The `github.com/tailscale/tailscale-client-go/v2` path is in root `go.mod`, 27 Go files and, as an
+  indirect require, three tool modules' `go.mod`; `clientlib-main.yml` hardcodes it. Move all of them
+  in one change and tidy every module.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
 
 ## Mutexes
 
 - One `grafana-sync` writes the stack at a time and is never cancelled mid-write.
+- Live Grafana queries are read-only here: `gcx metrics|logs query` needs both `--from` and `--to`;
+  an auth failure means use the stored token, not a gcx OAuth retry.
