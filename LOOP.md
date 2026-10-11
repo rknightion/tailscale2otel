@@ -65,6 +65,10 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   Arguments are positional (base, then dirs); `base=main` passes the literal string `base=main`.
 - CodeRabbit returns `No files to review` for staged Python under `deploy/grafana/gen` and
   `deploy/alerts/gen`. That shard is unreviewed, not clean.
+- ci.yml's `dashboards-drift` job runs `just test-python` before it installs promtool, so a new
+  Python test under `deploy/*/gen` or `scripts` that shells out to promtool passes locally and
+  fails in CI. Keep promtool-dependent proof out of the unittest tree (retained evidence); never
+  add a skip-when-absent guard.
 - `helm-success` exists only for pushes touching `helm.yml`'s push paths (`deploy/helm/**`,
   `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`, `helm.yml` itself; no
   `workflow_dispatch`);
