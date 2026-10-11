@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - loop26
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 12:10'
+updated_date: '2026-10-11 12:28'
 labels: []
 dependencies: []
 references:
@@ -585,4 +585,6 @@ Filed follow-ups (not admitted into loop26):
 - TSO-0187 (Make automatic rule publication explicit in dashboard-only loop authority).
 
 Root execution note: candidate-delta live queries and guarded independent review are pending. No dashboard publication or rule mutation occurred. The full task is not accepted, and provisional verdicts do not imply per-tab visual proof.
+
+Additional filed follow-up: TSO-0188 (document and prove optional single-tailnet profile selector behavior), discovered in guarded review. The checkpoint isolation finding was repaired in implementation attempt 2 with independent rendered-panel failure/pass/mutation proof (exits 1/0/1); delta security review passed repaired code but reaffirmed publication is outside frozen authority. Exact reviewed patch SHA256 5190191b0a06461892a02a9bb71a607486b2dfba4346345354f85d2f9a4d5b07 is preserved. Baseline 815 query identities and changed-candidate 520 identities executed with no remaining backend query errors; absence/control/render evidence remains partial. CodeRabbit completed all eight candidate files, zero critical/major; follow-up-list minor corrected here. Absolute tracker references retained to respect owner path conventions.
 <!-- SECTION:NOTES:END -->
