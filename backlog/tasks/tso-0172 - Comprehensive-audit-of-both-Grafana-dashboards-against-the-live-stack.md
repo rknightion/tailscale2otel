@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@loop28'
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 17:15'
+updated_date: '2026-10-11 17:25'
 labels: []
 dependencies: []
 references:
@@ -597,4 +597,6 @@ loop26: attempts 2; review-repair rounds 1. Parked for publication authority: da
 loop27: 3 cumulative implementation attempts of owner-raised 5 (2 in loop26, 1 here). Retained candidate applies cleanly but unchanged tests test_cap_panels_use_the_exported_limit_not_a_10k_literal and test_active_series_treemap_is_bounded_and_keeps_plugin_identity require unscoped exact substrings; adding required tailnet filters produces two assertion failures among 251 tests. Per-tailnet emitter evidence rules out a global-only exemption. Explicit shared-test editing fence prevents correction. Resume when owner authorizes updating only those two expectations while preserving positive-limit and bounded-plugin contracts. Candidate remains staged/uncommitted; live absence, selected-control and render acceptance evidence remains incomplete. No source land or publication.
 
 loop28 fresh non-Overview published-panel render: independent inspection found Devices by OS in-chart labels overlapping/clipped at 800x600, while the legend remained readable and no query/loading/no-data error was visible. Filed TSO-0189 (keep device OS pie-chart labels readable at snapshot dimensions); excluded from loop28 implementation. Representative published panel only, not candidate selector or whole-tab proof.
+
+loop28 read-only availability check found both exporter replicas crash-looping on release5.2.0-rc.1 because startup rejects ingress_wal.max_permanent_rejections. Filed TSO-0190 (restore exporter image/config compatibility), outside the frozen envelope; no cluster mutation made. Historical active-window build-info also identifies5.2.0-rc.1, so absence explanations must use that deployed emission contract, not current source alone.
 <!-- SECTION:NOTES:END -->
