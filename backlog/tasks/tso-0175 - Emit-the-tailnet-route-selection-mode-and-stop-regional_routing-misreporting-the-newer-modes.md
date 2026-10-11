@@ -3,9 +3,10 @@ id: TSO-0175
 title: >-
   Emit the tailnet route-selection mode and stop regional_routing misreporting
   the newer modes
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-10-11 10:40'
+updated_date: '2026-10-11 12:31'
 labels: []
 dependencies:
   - TSO-0174
@@ -36,3 +37,9 @@ Tailnet settings now carry routeSelection (active-passive-failover, regional-rou
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop26: attempts 0; undispatched, dependency park. TSO-0172 (comprehensive live dashboard audit) is parked because dashboard-only delivery would trigger forbidden rule prune/push, with additional absence/control/render evidence incomplete. The frozen shared-file chain requires that task and TSO-0174 (current tagged-client migration) complete first. No settings/metrics/dashboard change was attempted. Resume by accepting and landing the dashboard audit under explicit authority, confirming the client migration Done, then dispatching this full task against their composed-green main SHA.
+<!-- SECTION:NOTES:END -->

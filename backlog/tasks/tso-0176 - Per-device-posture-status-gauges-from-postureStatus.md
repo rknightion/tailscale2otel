@@ -1,9 +1,10 @@
 ---
 id: TSO-0176
 title: Per-device posture status gauges from postureStatus
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-10-11 10:40'
+updated_date: '2026-10-11 12:31'
 labels: []
 dependencies:
   - TSO-0175
@@ -35,3 +36,9 @@ Tailscale launched device posture monitoring and alerts (beta) on 2026-10-08. Th
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop26: attempts 0; undispatched, dependency park. TSO-0175 (route-selection mode and truthful regional_routing) is parked behind the dashboard audit. No devices-list GET, capture, posture decode, generated alert edit, dashboard change or live rule push occurred; the lab posture population/wire shape remains UNKNOWN, not empty. Resume after the prerequisite is accepted and landed with a green composed gate, then make the required fields=all and fields=id,postureStatus read-only captures before any implementation. Preserve D53: empty/absent postureStatus with no configured postures parks this task, never guess the shape.
+<!-- SECTION:NOTES:END -->
