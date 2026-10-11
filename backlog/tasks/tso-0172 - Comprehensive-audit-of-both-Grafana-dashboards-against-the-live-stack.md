@@ -1,11 +1,11 @@
 ---
 id: TSO-0172
 title: Comprehensive audit of both Grafana dashboards against the live stack
-status: In Progress
+status: Parked
 assignee:
   - '@loop28'
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 17:25'
+updated_date: '2026-10-11 17:36'
 labels: []
 dependencies: []
 references:
@@ -599,4 +599,6 @@ loop27: 3 cumulative implementation attempts of owner-raised 5 (2 in loop26, 1 h
 loop28 fresh non-Overview published-panel render: independent inspection found Devices by OS in-chart labels overlapping/clipped at 800x600, while the legend remained readable and no query/loading/no-data error was visible. Filed TSO-0189 (keep device OS pie-chart labels readable at snapshot dimensions); excluded from loop28 implementation. Representative published panel only, not candidate selector or whole-tab proof.
 
 loop28 read-only availability check found both exporter replicas crash-looping on release5.2.0-rc.1 because startup rejects ingress_wal.max_permanent_rejections. Filed TSO-0190 (restore exporter image/config compatibility), outside the frozen envelope; no cluster mutation made. Historical active-window build-info also identifies5.2.0-rc.1, so absence explanations must use that deployed emission contract, not current source alone.
+
+loop28: 1 implementation attempt in this run, 3 of the owner-raised 5 total; parked for missing historical effective-config/source/population evidence, not a code failure. Exact staged tree 1fd3279154612d88ce2e6abbf6b072029755107a on base06d158e1127668b2d534f76312cca48cd7e9a28b remains uncommitted. Full setup/check gate exit0, fresh negative selector mutation failed correctly,251Python tests passed, generated artifacts byte-idempotent, and independent guarded source review passed. Existing shared-test changes only add tailnet matcher at accuracy:53 and specialist:237. CodeRabbit ran once with No files to review/missing complete;5Python files unreviewed, not clean. All640panel and175variable query identities have HTTP200 historical-window receipts; candidate outcomes453data/187empty.188source-control requests allHTTP200. Root selected posture tailnet/provider/device/OS positive and4unmatched cases passed5/5;5representative non-Overview renders inspected, not whole-tab proof. Worker per-query report left149causal gaps; root full-range stale-user base proved every sample at/below actual30day threshold, reducing to148current gaps (131of original136historical,16downgraded explanations,1new trace-source gap). Desired-history11unchanged feature shapes and current no-override readbacks do not attest historical effective config. AC1/2semantic acceptance and remaining AC3livecontrol families are incomplete, so no landing/CI/composed gate/sync. Resume from retained staged candidate and same-window evidence; restore current exporter only with new explicit cluster authority. Follow-ups TSO-0189 (readable OS pie labels) and TSO-0190 (restore exporter image/config compatibility) not admitted.
 <!-- SECTION:NOTES:END -->

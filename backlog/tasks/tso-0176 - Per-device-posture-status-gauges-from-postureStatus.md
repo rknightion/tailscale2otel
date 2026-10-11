@@ -4,7 +4,7 @@ title: Per-device posture status gauges from postureStatus
 status: Parked
 assignee: []
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-11 15:29'
+updated_date: '2026-10-11 17:36'
 labels: []
 dependencies:
   - TSO-0175
@@ -43,4 +43,6 @@ Tailscale launched device posture monitoring and alerts (beta) on 2026-10-08. Th
 loop26: attempts 0; undispatched, dependency park. TSO-0175 (route-selection mode and truthful regional_routing) is parked behind the dashboard audit. No devices-list GET, capture, posture decode, generated alert edit, dashboard change or live rule push occurred; the lab posture population/wire shape remains UNKNOWN, not empty. Resume after the prerequisite is accepted and landed with a green composed gate, then make the required fields=all and fields=id,postureStatus read-only captures before any implementation. Preserve D53: empty/absent postureStatus with no configured postures parks this task, never guess the shape.
 
 loop27: 0 implementation attempts in this loop; held by TSO-0172 (live dashboard audit) is parked and its required landing has not occurred. Frozen goal chains cannot start; resume after that audit is accepted and landed, then preceding chain tasks settle.
+
+loop28: 0 implementation attempts; held by TSO-0172 (live dashboard audit), whose local source proof passed but historical semantic/prerequisite acceptance remains incomplete and whose candidate did not land. Resume only after the audit is accepted and landed, then preceding frozen chain tasks settle. No candidate work started.
 <!-- SECTION:NOTES:END -->
