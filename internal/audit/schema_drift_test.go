@@ -89,6 +89,27 @@ func TestProcessSchemaDriftObservesKnownValuesAndWarnsOncePerUnknown(t *testing.
 	}
 }
 
+func TestProcessNewAuditEventFiltersAreKnown(t *testing.T) {
+	for _, tc := range []struct{ targetType, property string }{
+		{"TAILNET", "ROUTE_SELECTION"},
+		{"GROUP", "USER_ROLE"},
+	} {
+		t.Run(tc.targetType+".UPDATE."+tc.property, func(t *testing.T) {
+			rec := telemetrytest.New()
+			audit.NewProcessor().Process(evWith(tc.targetType, tc.property, "UPDATE", "USER"), rec.Emitter())
+			points := rec.MetricPoints(audit.MetricAuditSchemaDrift)
+			if len(points) != 4 {
+				t.Fatalf("schema-drift points = %d, want 4", len(points))
+			}
+			for _, field := range []string{"action", "origin", "actor_type", "target_property"} {
+				if !hasSchemaDriftPoint(points, field, "known") || hasSchemaDriftPoint(points, field, "unknown") {
+					t.Errorf("field %q should emit only known schema-drift observations: %#v", field, points)
+				}
+			}
+		})
+	}
+}
+
 func TestProcessSchemaDriftWarningCap(t *testing.T) {
 	var logs bytes.Buffer
 	processor := audit.NewProcessor(audit.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))

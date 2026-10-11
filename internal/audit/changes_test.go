@@ -37,6 +37,8 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 		{"exit_node", evWith("NODE", "EXIT_NODE", "UPDATE", "USER"), "exit_node"},
 		{"tailnet_lock", evWith("TAILNET", "TKA", "DISABLE", "USER"), "tailnet_lock"},
 		{"user_role", evWith("USER", "USER_ROLE", "UPDATE", "USER"), "user_role"},
+		// GROUP.UPDATE.USER_ROLE shares the existing bounded role category.
+		{"group user_role", evWith("GROUP", "USER_ROLE", "UPDATE", "USER"), "user_role"},
 		{"posture_integration", evWith("TAILNET", "POSTURE_INTEGRATION", "UPDATE", "USER"), "posture_integration"},
 		{"collect_posture_identity", evWith("TAILNET", "COLLECT_POSTURE_IDENTITY", "ENABLE", "USER"), "collect_posture_identity"},
 		{"magic_dns", evWith("TAILNET", "MAGIC_DNS", "ENABLE", "USER"), "magic_dns"},
@@ -67,6 +69,9 @@ func TestProcessEmitsCuratedChangeCounter(t *testing.T) {
 		{"machine_name noise", evWith("NODE", "MACHINE_NAME", "UPDATE", "NODE"), ""},
 		{"posture_identity noise", evWith("NODE", "POSTURE_IDENTITY", "UPDATE", "NODE"), ""},
 		{"acl_tags noise", evWith("NODE", "ACL_TAGS", "UPDATE", "NODE"), ""},
+		// TAILNET.UPDATE.ROUTE_SELECTION is known, but deliberately excluded
+		// from curated changes until there is a dedicated routing model.
+		{"route_selection", evWith("TAILNET", "ROUTE_SELECTION", "UPDATE", "USER"), ""},
 	}
 
 	for _, tc := range cases {

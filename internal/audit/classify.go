@@ -66,6 +66,7 @@ var propertyExclusions = map[string]string{
 	"MACHINE_AUTH_NEEDED":  "node lifecycle state is not an approval action",
 	"MACHINE_NAME":         "routine node rename; existing noisy exclusion",
 	"GEOSTEERING":          "routing policy needs a dedicated semantic model",
+	"ROUTE_SELECTION":      "routing policy needs a dedicated semantic model, like GEOSTEERING",
 	"PAYMENT_INFO":         "billing detail is outside collector scope",
 	"POSTURE_IDENTITY":     "node self-report churn; existing noisy exclusion",
 	"STRIPE_CUSTOMER_ID":   "billing identity is outside collector scope",

@@ -234,6 +234,38 @@ func TestConfigurationConfiguredEmitsOnlyBoundedDestinationLabels(t *testing.T) 
 	}
 }
 
+func TestConfigurationDestinationVocabulary(t *testing.T) {
+	for _, tc := range []struct{ destination, want string }{
+		{"crowdstrike", "crowdstrike"},
+		{"azure", "unknown"}, // No confirmed wire value in the published schema.
+		{"unrecognized-destination", "unknown"},
+	} {
+		t.Run(tc.destination, func(t *testing.T) {
+			api := &fakeAPI{
+				fn: func(string) (*tsapi.LogStreamStatus, error) {
+					return nil, &tsapi.StatusError{Code: http.StatusNotFound}
+				},
+				configFn: func(logType string) (*tsapi.LogStreamConfiguration, error) {
+					return &tsapi.LogStreamConfiguration{LogType: logType, DestinationType: tc.destination}, nil
+				},
+			}
+			rec := telemetrytest.New()
+			if err := New(api, 0).Collect(context.Background(), rec.Emitter()); err != nil {
+				t.Fatalf("Collect: %v", err)
+			}
+			points := rec.MetricPoints(metricDestinationConfigured)
+			if len(points) != len(logTypes) {
+				t.Fatalf("destination points = %d, want %d", len(points), len(logTypes))
+			}
+			for _, p := range points {
+				if got := p.Attrs[attrDestinationType]; got != tc.want {
+					t.Errorf("emitted destination = %q, want %q", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
 func TestConfiguration404IsUnknownAndMakesNoDisabledAssertion(t *testing.T) {
 	api := &fakeAPI{
 		fn: func(string) (*tsapi.LogStreamStatus, error) {

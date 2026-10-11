@@ -328,7 +328,7 @@ func boundedLogType(value, fallback string) string {
 
 func boundedDestinationType(value string) string {
 	switch value {
-	case "splunk", "elastic", "panther", "cribl", "datadog", "axiom", "s3":
+	case "splunk", "elastic", "panther", "cribl", "datadog", "axiom", "s3", "crowdstrike":
 		return value
 	default:
 		return destinationUnknown
