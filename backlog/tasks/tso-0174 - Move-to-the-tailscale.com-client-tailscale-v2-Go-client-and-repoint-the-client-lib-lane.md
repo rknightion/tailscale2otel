@@ -3,11 +3,11 @@ id: TSO-0174
 title: >-
   Move to the tailscale.com/client/tailscale/v2 Go client and repoint the
   client-lib lane
-status: In Progress
+status: Done
 assignee:
   - loop27
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-11 15:35'
+updated_date: '2026-10-11 15:57'
 labels: []
 dependencies:
   - TSO-0173
@@ -28,15 +28,15 @@ go.mod pins github.com/tailscale/tailscale-client-go/v2 at a 2025-01-29 pseudo-v
 <!-- AC:BEGIN -->
 - [x] #1 go.mod requires tailscale.com/client/tailscale/v2 at a tagged release and no Go file, workflow or Renovate rule references tailscale-client-go
 - [x] #2 just check passes across all five modules
-- [ ] #3 The client-lib lane resolves the new module and a manual dispatch returns a conclusive verdict on the unchanged pin
+- [x] #3 The client-lib lane resolves the new module and a manual dispatch returns a conclusive verdict on the unchanged pin
 - [x] #4 TSO-0116 carries an appended note correcting the no-tagged-releases claim
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #1 just check passes (the full gate; it is what CI enforces)
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
@@ -57,4 +57,12 @@ loop26 post-land proof: the one authorized manual dispatch 38141530513 at 3546e5
 loop26: implementation attempts 2 (migration plus small bootstrap prerequisite); review-repair rounds 1. Module migration 3546e554534cba20d0dc4412e49ade0e4097d0c9 and missing-just prerequisite 9bb62a0d1cd66996e30c62b5555d25b2a12e5c08 landed after exact gates/guarded review; original 38-path CodeRabbit completed clean, four-line pure wiring delta skipped. Existing installer/action/version reused unchanged, no protected pin/assertion altered. Bot dependency merge 627a53798d400b13cbe9a1e09bb0d9718ed78155 preserved and verified with fresh composed G exit 0 in 571.156s, ci-success 38142864153 and helm-success 38142865358 green. Cancelled bootstrap CI 38142799445 and skipped RC 38142893241 are not passes. Single authorized manual run 38141530513 returned actual latest/main verdict=inconclusive on unchanged v2.12.0 because just was missing; both successful job statuses were NOT successful tests/verdicts. Bootstrap is now wired before those tests. Park needs=authority: one-operation grant consumed, so AC #3 stays unchecked. Resume with explicit authority for one fresh clientlib-main.yml workflow_dispatch on repaired current main; inspect both real verdict artifacts for conclusive unchanged-pin outcomes, then finalize. Historical TSO-0116 (adjudicate client-lib drift despite passing matrix legs) correction is appended and preserved.
 
 loop27 fresh live client-lib proof accepted: workflow dispatch run 38151283023 at d57fdc9405c4ee2dcf7ebcebb998b234a3baca3d completed success. latest and main verdicts both pass; each resolved unchanged baseline/candidate v2.12.0 with go get and test exit 0. Root read artifacts and exact run metadata. No new source change or implementation attempt; finalization follows composed source gate. CodeRabbit not applicable to artifact retrieval.
+
+loop27: 0 new implementation attempts; read-only proof completes prior migration. Fresh authorized dispatch38151283023 at d57fdc9405c4ee2dcf7ebcebb998b234a3baca3d has latest/main verdict pass, unchanged v2.12.0, go get/test exit0. Unchanged source pin also covered by composed setup + just check at b9544f82b1b479d96c3064703e48a3eff31c8257 and exact ci-success38152648367. No generated input changes in this loop.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Client migration completed: fresh clientlib-main run38151283023 conclusively passes both latest/main against unchanged v2.12.0. Source proof at d57fdc9405c4ee2dcf7ebcebb998b234a3baca3d; unchanged pin reverified by green composed gate and source CI38152648367 at b9544f82b1b479d96c3064703e48a3eff31c8257.
+<!-- SECTION:FINAL_SUMMARY:END -->
