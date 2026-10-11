@@ -1,9 +1,10 @@
 ---
 id: TSO-0189
 title: Keep device OS pie-chart labels readable at panel snapshot dimensions
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-10-11 17:15'
+updated_date: '2026-10-11 18:22'
 labels:
   - needs-triage
 dependencies: []
@@ -31,3 +32,9 @@ During TSO-0172 (live dashboard audit), an independently inspected published Dev
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
+<!-- SECTION:NOTES:END -->
