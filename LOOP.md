@@ -75,11 +75,14 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   any other push to `main` never gets one. Record it as absent, not a pass,
   and do not make a source edit to trigger it. Pull requests always report it.
 - The live spec endpoint now emits YAML, but `spec/tailscale-api.json` stays JSON (no `.yaml` copy):
-  re-vendor with `curl ... | yq -o=json '.'`, as `api-drift.yml` does; `spec/README.md` still says
-  JSON-only. `internal/oas.ParseSpec` keeps only GET operations.
-- The `github.com/tailscale/tailscale-client-go/v2` path is in root `go.mod`, 27 Go files and, as an
+  re-vendor with `curl ... | yq -o=json '.'`, as `api-drift.yml` and `spec/README.md` do.
+  `internal/oas.ParseSpec` keeps only GET operations.
+- The `tailscale.com/client/tailscale/v2` path is in root `go.mod`, 25 Go files and, as an
   indirect require, three tool modules' `go.mod`; `clientlib-main.yml` hardcodes it. Move all of them
   in one change and tidy every module.
+- Any push touching `deploy/grafana/**` also runs grafana-sync's unconditional `rules` job (prune,
+  then `gcx resources push`), even for a dashboard-only change. A goal granting dashboard delivery
+  grants that rule publication too.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
 
 ## Mutexes
