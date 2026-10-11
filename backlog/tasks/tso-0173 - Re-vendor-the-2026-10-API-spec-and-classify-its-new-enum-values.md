@@ -1,9 +1,11 @@
 ---
 id: TSO-0173
 title: Re-vendor the 2026-10 API spec and classify its new enum values
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - loop26
 created_date: '2026-10-11 10:40'
+updated_date: '2026-10-11 11:47'
 labels: []
 dependencies: []
 references:
@@ -33,3 +35,9 @@ The live OpenAPI spec (fetched 2026-10-11) has no new paths since the 2026-08-30
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Fetch and convert live spec; observe taxonomy failure; classify confirmed enum additions and prove emitted logstream label; return staged candidate for root review, serialized full gate and landing.
+<!-- SECTION:PLAN:END -->
