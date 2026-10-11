@@ -1,11 +1,11 @@
 ---
 id: TSO-0172
 title: Comprehensive audit of both Grafana dashboards against the live stack
-status: In Progress
+status: Parked
 assignee:
   - loop27
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 15:25'
+updated_date: '2026-10-11 15:29'
 labels: []
 dependencies: []
 references:
@@ -591,4 +591,6 @@ Root execution note: candidate-delta live queries and guarded independent review
 Additional filed follow-up: TSO-0188 (document and prove optional single-tailnet profile selector behavior), discovered in guarded review. The checkpoint isolation finding was repaired in implementation attempt 2 with independent rendered-panel failure/pass/mutation proof (exits 1/0/1); delta security review passed repaired code but reaffirmed publication is outside frozen authority. Exact reviewed patch SHA256 5190191b0a06461892a02a9bb71a607486b2dfba4346345354f85d2f9a4d5b07 is preserved. Baseline 815 query identities and changed-candidate 520 identities executed with no remaining backend query errors; absence/control/render evidence remains partial. CodeRabbit completed all eight candidate files, zero critical/major; follow-up-list minor corrected here. Absolute tracker references retained to respect owner path conventions.
 
 loop26: attempts 2; review-repair rounds 1. Parked for publication authority: dashboard-only pushes trigger unconditional Grafana rule pruning/pushing, which the frozen goal forbids outside the root-only TSO-0176 (per-device posture status and its rule push) exception. Root and independent security review agree this is missing authority, not a tool limitation; no dashboard code was committed, pushed or delivered. Exact repaired patch SHA256 5190191b0a06461892a02a9bb71a607486b2dfba4346345354f85d2f9a4d5b07 retained in /Users/rob/repos/tailscale2otel/codex/loop26/dashboard-evidence/root-repaired-candidate.patch. Fresh staged verification tree f8e425a03444d2b83c1fb57631b56c556204ecae on base 2224ad2889feb252e9a114d2e4bdb90618954b53 passed exact full G exit 0 in 369.942s; repaired code passed guarded delta review and CodeRabbit reviewed all eight paths, zero major/critical. Eleven dashboard follow-ups filed individually with criteria; AC #5 checked only. AC #1-4 remain unchecked because provisional panel verdicts, absent-series prerequisites, non-All/ad-hoc/browser coverage and optional profile contract are not complete. Resume with explicit authority covering existing automation (recommended), then complete 136 absence prerequisites and 488 non-Overview panel renders/control checks, rebase retained patch onto accepted client migration, rerun changed proof at the new identity, land and verify exact ci-success/grafana-sync and far-side dashboard source.
+
+loop27: 3 cumulative implementation attempts of owner-raised 5 (2 in loop26, 1 here). Retained candidate applies cleanly but unchanged tests test_cap_panels_use_the_exported_limit_not_a_10k_literal and test_active_series_treemap_is_bounded_and_keeps_plugin_identity require unscoped exact substrings; adding required tailnet filters produces two assertion failures among 251 tests. Per-tailnet emitter evidence rules out a global-only exemption. Explicit shared-test editing fence prevents correction. Resume when owner authorizes updating only those two expectations while preserving positive-limit and bounded-plugin contracts. Candidate remains staged/uncommitted; live absence, selected-control and render acceptance evidence remains incomplete. No source land or publication.
 <!-- SECTION:NOTES:END -->

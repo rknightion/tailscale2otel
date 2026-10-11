@@ -3,9 +3,10 @@ id: TSO-0182
 title: >-
   Count distinct metric families rather than reporter series in the family-count
   tile
-status: To Do
+status: Parked
 assignee: []
 created_date: '2026-10-11 12:09'
+updated_date: '2026-10-11 15:29'
 labels:
   - needs-triage
 dependencies: []
@@ -35,3 +36,9 @@ The description promises distinct metric families but count(tailscale2otel_serie
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop27: 0 implementation attempts in this loop; held by TSO-0172 (live dashboard audit) is parked and its required landing has not occurred. Frozen goal chains cannot start; resume after that audit is accepted and landed, then preceding chain tasks settle.
+<!-- SECTION:NOTES:END -->
