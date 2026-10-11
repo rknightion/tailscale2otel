@@ -11,11 +11,23 @@ decode-fuzz lane reads. It is also a convenient, LLM-readable reference for the 
 - **Do not hand-edit.** Refresh by re-fetching upstream:
 
   ```sh
-  upstream=$(mktemp)
-  curl --max-time 90 -fsSL "https://api.tailscale.com/api/v2?outputOpenapiSchema=true" -o "$upstream" &&
-    yq -o=json '.' "$upstream" > spec/tailscale-api.json
-  rm -f "$upstream"
+  (
+    set -eu
+    upstream=
+    converted=
+    trap 'rm -f "$upstream" "$converted"' 0
+    trap 'exit 1' HUP INT TERM
+    upstream=$(mktemp)
+    converted=$(mktemp spec/.tailscale-api.json.XXXXXX)
+    curl --max-time 90 -fsSL "https://api.tailscale.com/api/v2?outputOpenapiSchema=true" -o "$upstream"
+    yq -o=json '.' "$upstream" > "$converted"
+    mv -f "$converted" spec/tailscale-api.json
+  )
   ```
+
+  Run from the repository root with Mike Farah's `yq`. The subshell stops on download or
+  conversion failure and cleans up both temporary files, leaving the baseline untouched. The
+  converted JSON is created beside the baseline so the final rename replaces it atomically.
 
   Refreshing is how you acknowledge a detected drift — re-vendor, then update any decoders/manifest
   the change affects.
