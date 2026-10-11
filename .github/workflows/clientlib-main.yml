@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 # No pull-requests:write and the Anthropic key is deliberately NOT provided to this
-# lane: it builds/tests against tailscale-client-go@main — i.e. it executes UNTRUSTED
+# lane: it builds/tests against tailscale.com/client/tailscale/v2@main — i.e. it executes UNTRUSTED
 # upstream code. Withholding the secret means it never shares an environment with that
 # code (no exfil), and Claude enrichment is skipped here (no automated PR from an
 # attacker-influenced build log). The tracking issue is still filed.
@@ -55,7 +55,7 @@ jobs:
           REF: ${{ matrix.ref }}
         run: |
           set +e
-          baseline=$(go list -m -f '{{.Version}}' github.com/tailscale/tailscale-client-go/v2 2>/dev/null)
+          baseline=$(go list -m -f '{{.Version}}' tailscale.com/client/tailscale/v2 2>/dev/null)
           baseline_code=$?
           if [ "$baseline_code" -ne 0 ]; then
             baseline=unresolved
@@ -63,7 +63,7 @@ jobs:
 
           # A non-resolving @main/@latest ref must surface as a failure, not silently
           # fall through to a build against the unchanged pinned version.
-          go get "github.com/tailscale/tailscale-client-go/v2@${REF}" > /tmp/cl.log 2>&1
+          go get "tailscale.com/client/tailscale/v2@${REF}" > /tmp/cl.log 2>&1
           get_code=$?
           code=$get_code
           {
@@ -85,7 +85,7 @@ jobs:
             fi
           } >> /tmp/cl.log 2>&1
 
-          candidate=$(go list -m -f '{{.Version}}' github.com/tailscale/tailscale-client-go/v2 2>/dev/null)
+          candidate=$(go list -m -f '{{.Version}}' tailscale.com/client/tailscale/v2 2>/dev/null)
           candidate_code=$?
           if [ "$candidate_code" -ne 0 ]; then
             candidate=unresolved
@@ -106,7 +106,10 @@ jobs:
           set -uo pipefail
           mkdir -p /tmp/verdict
           {
-            if [ "${CODE}" = "0" ]; then
+            if [ "${BASELINE}" = "unresolved" ] || [ "${CANDIDATE}" = "unresolved" ]; then
+              echo "verdict=inconclusive"
+            elif [ "${CODE}" = "0" ]; then
+              # Successful tests are conclusive even when @latest equals the pin.
               echo "verdict=pass"
             elif [ "${GET_CODE}" = "0" ] && [ "${BASELINE}" = "${CANDIDATE}" ]; then
               # The requested ref resolved to what this checkout already pins.
@@ -204,7 +207,7 @@ jobs:
         uses: ./.github/actions/report-drift
         with:
           lane-label: clientlib-drift
-          title: "tailscale-client-go/v2 breaks our build"
+          title: "tailscale.com/client/tailscale/v2 breaks our build"
           report-path: /tmp/cl.md
 
       # Only close when EVERY leg is green, which is now a property of this job's

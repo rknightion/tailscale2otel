@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	tsclient "tailscale.com/client/tailscale/v2"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/acl"

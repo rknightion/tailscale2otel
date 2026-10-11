@@ -84,7 +84,7 @@ if [ "${#failures[@]}" -eq 0 ]; then
 fi
 
 {
-  echo "## tailscale-client-go/v2 breaks our build"
+  echo "## tailscale.com/client/tailscale/v2 breaks our build"
   echo
   echo "${#failures[@]} of 2 matrix legs failed in [this run](${run_url})."
   echo

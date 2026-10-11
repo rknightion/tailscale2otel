@@ -14,8 +14,8 @@ import (
 	"net/url"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
 	"go.opentelemetry.io/otel/trace"
+	tsclient "tailscale.com/client/tailscale/v2"
 )
 
 const defaultBaseURL = "https://api.tailscale.com"

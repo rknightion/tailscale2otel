@@ -9,7 +9,7 @@ package contract
 //
 // The dispositions live in an out-of-band JSON baseline rather than in struct
 // tags for two reasons: four consumed response types are declared in the
-// upstream tailscale-client-go library and cannot be annotated in this repo at
+// upstream tailscale.com/client/tailscale/v2 library and cannot be annotated here at
 // all, and keeping every disposition in one file makes the contract reviewable
 // as a single diff.
 //

@@ -15,7 +15,7 @@ inputs:
     default: ""
     description: >
       Anthropic API key. Passed explicitly (not via job env) so lanes that execute
-      UNTRUSTED upstream code (e.g. clientlib-main, which builds tailscale-client-go@main)
+      UNTRUSTED upstream code (e.g. clientlib-main, which builds tailscale.com/client/tailscale/v2@main)
       can withhold it — the secret then never shares an environment with that code, and
       Claude enrichment is skipped there. Empty ⇒ use the OAuth token, or skip if both empty.
   claude-code-oauth-token:

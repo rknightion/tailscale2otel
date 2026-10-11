@@ -96,7 +96,7 @@ func TestDevices_DecodesViaTSClient(t *testing.T) {
 // the raw getJSON/putJSON doer (logs, keys, settings, ...) and the vendored
 // tsclient-backed doer (devices, users, webhooks, contacts, policy file) —
 // without a value, requests go out identifying only as the bare Go HTTP client
-// or tsclient's own "tailscale-client-go" default, which is what #66 reported.
+// or tsclient's own default User-Agent, which is what #66 reported.
 func TestUserAgent_SentOnRawAndTSClientRequests(t *testing.T) {
 	t.Run("raw doer (getJSON)", func(t *testing.T) {
 		var gotUA string

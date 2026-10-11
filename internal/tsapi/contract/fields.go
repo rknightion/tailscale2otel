@@ -26,7 +26,7 @@ import (
 	"sort"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	tsclient "tailscale.com/client/tailscale/v2"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/audit"
 	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
@@ -50,7 +50,7 @@ type ResponseTypeSpec struct {
 	// fields. Mutually exclusive with Type.
 	Opaque string
 	// External marks a type declared outside this repository (the upstream
-	// tailscale-client-go library). Such types cannot be annotated in-repo, which
+	// tailscale.com/client/tailscale/v2 library). Such types cannot be annotated in-repo, which
 	// is precisely why dispositions live in an out-of-band baseline file rather
 	// than in struct tags. Informational — it changes nothing about the walk.
 	External bool

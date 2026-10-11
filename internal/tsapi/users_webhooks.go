@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"path"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	tsclient "tailscale.com/client/tailscale/v2"
 )
 
 // usersResponse is the listUsers envelope. Unknown sibling keys are ignored.

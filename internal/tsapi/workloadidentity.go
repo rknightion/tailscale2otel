@@ -26,9 +26,8 @@ const (
 // parameter — the exchanged token's scopes are fixed by the federated
 // identity's configuration in the Tailscale admin console, not requested
 // here). This mirrors the exchange tailscale/tailscale's own
-// feature/identityfederation package performs internally; tailscale-client-go
-// v2 (the client this package otherwise wraps) has no workload-identity
-// support to call into.
+// feature/identityfederation package performs internally. This package
+// performs the token exchange directly before configuring the API client.
 //
 // The ID token is re-read from idTokenFile on every Token() call — Kubernetes
 // projected service-account tokens rotate in place, and caching the first

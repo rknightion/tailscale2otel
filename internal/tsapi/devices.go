@@ -6,7 +6,7 @@ import (
 	"path"
 	"time"
 
-	tsclient "github.com/tailscale/tailscale-client-go/v2"
+	tsclient "tailscale.com/client/tailscale/v2"
 )
 
 // RichDevice is the full device record returned by GET
