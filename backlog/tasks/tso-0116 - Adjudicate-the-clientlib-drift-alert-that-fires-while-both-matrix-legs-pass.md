@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@codex'
 created_date: '2026-09-02 15:48'
-updated_date: '2026-09-03 13:57'
+updated_date: '2026-10-11 12:16'
 labels: []
 dependencies: []
 priority: low
@@ -51,6 +51,8 @@ Wave 8 Lane C: establish the exact verdict artifact contract from run 3340202928
 
 <!-- SECTION:NOTES:BEGIN -->
 Verdict contract after commit 37c941b: a completed zero-exit leg writes verdict=pass; a nonzero leg writes verdict=fail only when the requested dependency changed or failed to resolve; a nonzero leg against the unchanged pinned dependency writes verdict=inconclusive. Missing, malformed, or explicit inconclusive verdicts, or a matrix needs result other than success, make the report inconclusive and fail it without opening or closing a drift issue. Two passes produce green and resolve the issue; one or more explicit failures produce one combined report. Run 33402029286 was a false positive: latest resolved to the already-pinned pseudo-version and the failure was the timeout guard later repaired by TSO-0112. The clean, explicit-failure, missing, and unchanged-dependency cases passed; deliberately removing missing-verdict classification failed with FAIL: missing verdict was accepted as green. Issue 599 was closed with this evidence. CodeRabbit completed with zero findings. Final integration at 1c088cea1dbdd9fbcd0d59086953bada2a9ff69f: just check passed; just gen left no diff; just --fmt --check passed; exact-head CI 33762639276 succeeded on attempt 1.
+
+2026-10-11 correction during TSO-0174 (move to the current tagged Tailscale v2 Go client and repoint client-lib CI): the no-tagged-releases claim is obsolete. The github.com/tailscale/tailscale-client-go/v2 path is frozen at its 2025 pseudo-version, but upstream now publishes tagged tailscale.com/client/tailscale/v2 releases, including v2.12.0 on 2026-10-09. Migration and the new client-lib dispatch proof belong to that task; this appended correction preserves the historical adjudication and does not reopen it.
 <!-- SECTION:NOTES:END -->
 
 ## Final Summary
