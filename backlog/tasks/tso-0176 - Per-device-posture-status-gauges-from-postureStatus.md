@@ -1,11 +1,11 @@
 ---
 id: TSO-0176
 title: Per-device posture status gauges from postureStatus
-status: In Progress
+status: Parked
 assignee:
   - '@loop30'
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-12 21:15'
+updated_date: '2026-10-12 21:18'
 labels: []
 dependencies:
   - TSO-0175
@@ -54,4 +54,6 @@ loop27: 0 implementation attempts in this loop; held by TSO-0172 (live dashboard
 loop28: 0 implementation attempts; held by TSO-0172 (live dashboard audit), whose local source proof passed but historical semantic/prerequisite acceptance remains incomplete and whose candidate did not land. Resume only after the audit is accepted and landed, then preceding frozen chain tasks settle. No candidate work started.
 
 loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
+
+loop30: 0 implementation attempts; authorized fields=all and fields=id,postureStatus GET captures succeeded but both returned only empty postureStatus objects, so no populated shape/fixture can be proven. D68 park, fleet successor released. Captures/receipt remain ignored in /Users/rob/repos/tailscale2otel/codex/loop30/worktrees/tso0176/.capture/tso0176/. No tracked changes, gate, rules publication or tailnet mutation. Resume on authorized populated real captures or a concrete owner-approved wire/proof source; configured posture definitions were not independently observed.
 <!-- SECTION:NOTES:END -->
