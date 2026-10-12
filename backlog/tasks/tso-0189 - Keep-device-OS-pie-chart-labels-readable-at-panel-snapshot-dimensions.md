@@ -1,10 +1,11 @@
 ---
 id: TSO-0189
 title: Keep device OS pie-chart labels readable at panel snapshot dimensions
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 17:15'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 21:56'
 labels:
   - needs-triage
 dependencies: []
@@ -32,6 +33,12 @@ During TSO-0172 (live dashboard audit), an independently inspected published Dev
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Use long-label multi-category small-slice synthetic fixture to capture baseline real Grafana pie at 800x600 and normal width; adjust native legend/labels to readable explicit percentage-vs-count semantics preserving query/coverage; capture after renders, regenerate/stage, serialized G, guarded review/CodeRabbit then root composed/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
