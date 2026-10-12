@@ -1,11 +1,11 @@
 ---
 id: TSO-0189
 title: Keep device OS pie-chart labels readable at panel snapshot dimensions
-status: In Progress
+status: Parked
 assignee:
   - '@loop30'
 created_date: '2026-10-11 17:15'
-updated_date: '2026-10-12 21:56'
+updated_date: '2026-10-12 22:24'
 labels:
   - needs-triage
 dependencies: []
@@ -44,4 +44,6 @@ Use long-label multi-category small-slice synthetic fixture to capture baseline 
 
 <!-- SECTION:NOTES:BEGIN -->
 loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
+
+loop30: 2 implementation attempts, no rescues or reviews; candidate uncommitted/unlanded. Native bottom Value/Percent legend, no in-slice labels, height adjustment and real query-backed 800x600/native-grid closed-navigation render proof succeed, but full G exits1 on test_specialist_panels.FleetAndRelationshipPanelContracts.test_fleet_composition_panels_are_native_pies exact default pie options and test_unit_consistency.DecimalsAndLegendConventionTest.test_no_panel_sets_an_explicit_decimals_override. Frozen shared-test edit fence blocks intended OS-specific contract changes; no test/helper bypass or half-land. Park needs owner approval of narrowly revised OS option/precision contracts, then width/reflow proof with expanded navigation, full gate and fresh reviews. Two attempts remain under current ceiling. Full G output tail only retained; complete narrow failure log and candidate/archive/final-03 render receipts remain /Users/rob/repos/tailscale2otel/codex/loop30/tso0189-retry/. No live mutation. Main remains green; parked candidate G red is not main red.
 <!-- SECTION:NOTES:END -->
