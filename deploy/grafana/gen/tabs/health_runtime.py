@@ -25,18 +25,28 @@ _FLOWSTORE_EMPTY = ("No persistent flow-store series. Requires flows.store.direc
                     "self-observability to be enabled.")
 
 
+_RUNTIME_EMPTY = "No process telemetry in range"
+
+
+def runtime_tile(title, targets, **kwargs):
+    """Keep missing process samples distinct from numeric runtime measurements."""
+    return panel(title, "stat", targets, novalue=_RUNTIME_EMPTY,
+                 mappings=[{"type": "special", "options": {"match": "null", "result": {
+                     "text": _RUNTIME_EMPTY, "color": "gray"}}}], **kwargs)
+
+
 def tab_health_runtime(scope):
     del scope  # no sentinel declared by this tab (see module docstring)
 
     goruntime = [
-        (panel("Goroutines", "stat", [prom_t("max(tailscale2otel_runtime_goroutines_ratio)")],
+        (runtime_tile("Goroutines", [prom_t("max(tailscale2otel_runtime_goroutines_ratio)")],
                unit="short", options=stat_opts(graph="area"),
                desc="Number of live goroutines (a count, despite the _ratio suffix)."), 6, 5),
-        (panel("GOMAXPROCS", "stat", [prom_t("max(tailscale2otel_runtime_gomaxprocs_ratio)")],
+        (runtime_tile("GOMAXPROCS", [prom_t("max(tailscale2otel_runtime_gomaxprocs_ratio)")],
                unit="short", options=stat_opts(),
                desc="Current GOMAXPROCS, the max OS threads executing Go code (a count, "
                     "despite the _ratio suffix)."), 6, 5),
-        (panel("Process uptime", "stat", [prom_t("max(process_uptime_seconds)")],
+        (runtime_tile("Process uptime", [prom_t("max(process_uptime_seconds)")],
                unit="s", options=stat_opts(),
                desc="Seconds since the process started (wall-clock uptime)."), 6, 5),
         (panel("Process CPU (user/system)", "timeseries",

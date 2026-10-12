@@ -11758,7 +11758,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No process telemetry in range",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No process telemetry in range"
                 },
                 "overrides": []
               }
@@ -11824,7 +11837,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No process telemetry in range",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No process telemetry in range"
                 },
                 "overrides": []
               }
@@ -11890,7 +11916,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s"
+                  "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No process telemetry in range",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No process telemetry in range"
                 },
                 "overrides": []
               }
