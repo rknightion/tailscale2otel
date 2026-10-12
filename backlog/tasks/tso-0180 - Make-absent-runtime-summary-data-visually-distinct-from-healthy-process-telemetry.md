@@ -3,10 +3,11 @@ id: TSO-0180
 title: >-
   Make absent runtime summary data visually distinct from healthy process
   telemetry
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 21:06'
 labels:
   - needs-triage
 dependencies: []
@@ -36,6 +37,12 @@ Exporter Health Overview renders No data in green for both process gauges in the
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Freeze runtime summary tile inventory; implement neutral missing-source semantics preserving numeric units; prove actual Grafana fixture renders for absent/numeric data using prior ignored local harness; regenerate and stage candidate, serialized G, guarded review then CodeRabbit and root composed/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
