@@ -1,10 +1,11 @@
 ---
 id: TSO-0176
 title: Per-device posture status gauges from postureStatus
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 21:15'
 labels: []
 dependencies:
   - TSO-0175
@@ -36,6 +37,12 @@ Tailscale launched device posture monitoring and alerts (beta) on 2026-10-08. Th
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+First capture read-only devices lists fields=all and fields=id,postureStatus into ignored capture paths, inspect actual posture population/shape; D68 parks on zero postures and releases fleet successor. If observed, implement bounded posture gauges/rollups/change logs plus generated alert/panel and recorder fixtures; stage candidate, serialized G, guarded review/CodeRabbit, root composed/CI/delivery and rule-set readback.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
