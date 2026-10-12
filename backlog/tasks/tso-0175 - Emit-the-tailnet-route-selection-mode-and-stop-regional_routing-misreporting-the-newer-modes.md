@@ -3,10 +3,11 @@ id: TSO-0175
 title: >-
   Emit the tailnet route-selection mode and stop regional_routing misreporting
   the newer modes
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 10:40'
-updated_date: '2026-10-12 19:03'
+updated_date: '2026-10-12 20:20'
 labels: []
 dependencies:
   - TSO-0174
@@ -37,6 +38,12 @@ Tailnet settings now carry routeSelection (active-passive-failover, regional-rou
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Implement bounded route-selection signal and nullable legacy derivation with recorder fixtures; add panel/coverage and regenerate; stage owned candidate, run G, fresh security review then CodeRabbit; root lands and verifies composed gate/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 

@@ -1,10 +1,11 @@
 ---
 id: TSO-0179
 title: Separate absent exporter telemetry from zero health counters in summary tiles
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-12 19:03'
+updated_date: '2026-10-12 20:20'
 labels:
   - needs-triage
 dependencies:
@@ -35,6 +36,12 @@ Both current-window Overview screenshots display green zeros despite absent expo
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Identify summary tiles, preserve selected scope and distinguish source absence from no events; execute real local query fixtures and render summary row; regenerate and stage candidate, run serialized G, fresh security review then CodeRabbit; root lands and verifies composed gate/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
