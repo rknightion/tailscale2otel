@@ -3,10 +3,11 @@ id: TSO-0182
 title: >-
   Count distinct metric families rather than reporter series in the family-count
   tile
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 21:48'
 labels:
   - needs-triage
 dependencies: []
@@ -36,6 +37,12 @@ The description promises distinct metric families but count(tailscale2otel_serie
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Correct family count to distinct metric_name across reporters, preserve separate series-cost sum and selected scope; actual local PromQL fixture proves one/two families and wrong-tailnet exclusion with baseline red; regenerate/stage, serialized G, guarded review/CodeRabbit then root composed/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
