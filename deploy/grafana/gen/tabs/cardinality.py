@@ -57,10 +57,13 @@ def tab_cardinality(scope):
                unit="short", options=stat_opts(graph="area", color="value"),
                desc="Sum of active series across all tailscale2otel metrics (a proxy for ingest cost)."), 6, 5),
         (panel("Metric families tracked", "stat",
-               [prom_t("count(tailscale2otel_series_active)", instant=True)],
+               [prom_t("count(count by (metric_name) (tailscale2otel_series_active))", instant=True)],
                unit="short", options=stat_opts(),
-               desc="Distinct tailscale2otel metric families currently reporting an active-"
-                    "series count."), 6, 5),
+               desc="Distinct metric_name values in the active-series reports, deduplicated across "
+                    "reporters and runtimes. Scoped to the selected tailnets, not per runtime. "
+                    "All includes all tailnet runtimes and process reporters without a tailnet label. "
+                    "Counts reports visible to this instant query, not a latest-state inventory; "
+                    "Total active series separately sums reporter series counts as a cost proxy."), 6, 5),
         (panel("Overflowing families", "table",
                [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
                novalue="No metrics over cap — all series fully resolved.",

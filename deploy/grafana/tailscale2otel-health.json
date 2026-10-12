@@ -14140,7 +14140,7 @@
         "spec": {
           "id": 158,
           "title": "Metric families tracked",
-          "description": "Distinct tailscale2otel metric families currently reporting an active-series count.",
+          "description": "Distinct metric_name values in the active-series reports, deduplicated across reporters and runtimes. Scoped to the selected tailnets, not per runtime. All includes all tailnet runtimes and process reporters without a tailnet label. Counts reports visible to this instant query, not a latest-state inventory; Total active series separately sums reporter series counts as a cost proxy.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14159,7 +14159,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"})",
+                        "expr": "count(count by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
