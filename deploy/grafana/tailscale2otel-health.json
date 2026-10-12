@@ -476,6 +476,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -490,7 +500,8 @@
                         "color": "green"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -503,7 +514,7 @@
         "spec": {
           "id": 2,
           "title": "Collectors OK",
-          "description": "Count of enabled collectors whose last scrape succeeded.",
+          "description": "Count of enabled collectors whose last scrape succeeded. Zero requires scrape samples in the selected scope; no samples means missing telemetry.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -522,7 +533,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale2otel_scrape_success_ratio{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"}[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale2otel_scrape_success_ratio{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"}[10m]) == 1) or (0 * count(last_over_time(tailscale2otel_scrape_success_ratio{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -557,6 +568,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -565,7 +588,8 @@
                         "color": "green"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -631,7 +655,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -697,7 +734,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -1368,6 +1418,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -1382,7 +1442,8 @@
                         "color": "green"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -1414,7 +1475,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_config_warnings_ratio) or vector(0)",
+                        "expr": "max(tailscale2otel_config_warnings_ratio)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1449,6 +1510,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1461,7 +1534,8 @@
                         "color": "yellow"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -1527,7 +1601,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s"
+                  "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No exporter telemetry",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No exporter telemetry"
                 },
                 "overrides": []
               }
@@ -2052,7 +2139,7 @@
         "spec": {
           "id": 22,
           "title": "API 429 / retries (summary)",
-          "description": "Rate-limit responses and the retries they trigger, fleet-wide.",
+          "description": "Rate-limit responses and the retries they trigger in the selected scope. Zero requires API request rate samples; no request samples means missing telemetry, not evidence of no throttling.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -2071,7 +2158,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=\"429\", tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale2otel_api_requests_total{http_response_status_code=\"429\", tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])) or (0 * sum(rate(tailscale2otel_api_requests_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "429/s",
@@ -2093,7 +2180,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_api_retries_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale2otel_api_retries_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])) or (0 * sum(rate(tailscale2otel_api_requests_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "retries/s",
@@ -2127,7 +2214,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
-                  "noValue": "0",
+                  "noValue": "No exporter telemetry",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -15808,23 +15895,6 @@
                               }
                             ]
                           }
-                        },
-                        "conditionalRendering": {
-                          "kind": "ConditionalRenderingGroup",
-                          "spec": {
-                            "visibility": "show",
-                            "condition": "and",
-                            "items": [
-                              {
-                                "kind": "ConditionalRenderingVariable",
-                                "spec": {
-                                  "variable": "has_selfobs",
-                                  "operator": "matches",
-                                  "value": ".+"
-                                }
-                              }
-                            ]
-                          }
                         }
                       }
                     },
@@ -15922,23 +15992,6 @@
                               }
                             ]
                           }
-                        },
-                        "conditionalRendering": {
-                          "kind": "ConditionalRenderingGroup",
-                          "spec": {
-                            "visibility": "show",
-                            "condition": "and",
-                            "items": [
-                              {
-                                "kind": "ConditionalRenderingVariable",
-                                "spec": {
-                                  "variable": "has_api_retry",
-                                  "operator": "matches",
-                                  "value": ".+"
-                                }
-                              }
-                            ]
-                          }
                         }
                       }
                     },
@@ -15976,38 +16029,6 @@
                 {
                   "kind": "QueryVariable",
                   "spec": {
-                    "name": "has_api_retry",
-                    "label": "has_api_retry",
-                    "hide": "hideVariable",
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "query": "label_values(tailscale2otel_api_retries_total{tailscale_tailnet=~\"$tailnet\"}, __name__)",
-                        "refId": "has_api_retry"
-                      }
-                    },
-                    "current": {
-                      "text": "",
-                      "value": ""
-                    },
-                    "options": [],
-                    "multi": false,
-                    "includeAll": false,
-                    "allowCustomValue": false,
-                    "refresh": "onDashboardLoad",
-                    "regex": "",
-                    "skipUrlSync": true,
-                    "sort": "disabled"
-                  }
-                },
-                {
-                  "kind": "QueryVariable",
-                  "spec": {
                     "name": "has_scrape_err",
                     "label": "has_scrape_err",
                     "hide": "hideVariable",
@@ -16021,38 +16042,6 @@
                       "spec": {
                         "query": "label_values(tailscale2otel_scrape_errors_total{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"}, __name__)",
                         "refId": "has_scrape_err"
-                      }
-                    },
-                    "current": {
-                      "text": "",
-                      "value": ""
-                    },
-                    "options": [],
-                    "multi": false,
-                    "includeAll": false,
-                    "allowCustomValue": false,
-                    "refresh": "onDashboardLoad",
-                    "regex": "",
-                    "skipUrlSync": true,
-                    "sort": "disabled"
-                  }
-                },
-                {
-                  "kind": "QueryVariable",
-                  "spec": {
-                    "name": "has_selfobs",
-                    "label": "has_selfobs",
-                    "hide": "hideVariable",
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "query": "label_values(tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}, __name__)",
-                        "refId": "has_selfobs"
                       }
                     },
                     "current": {

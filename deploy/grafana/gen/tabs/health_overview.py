@@ -29,32 +29,46 @@ from maps import BOOL_HEALTHY_ON, UP_MAP
 # tabs answer "which stage broke?"), so the titles have to differ.
 
 
+MISSING_TELEMETRY = "No exporter telemetry"
+
+
+def summary_tile(title, targets, **kwargs):
+    """No source is unknown, never a healthy-coloured zero or boolean."""
+    kwargs["novalue"] = MISSING_TELEMETRY
+    kwargs["mappings"] = list(kwargs.get("mappings") or []) + [
+        {"type": "special", "options": {"match": "null", "result": {
+            "text": MISSING_TELEMETRY, "color": "gray"}}},
+    ]
+    return panel(title, "stat", targets, **kwargs)
+
+
 def tab_health_overview(scope):
     # Presence sentinels this tab declares — all tab-scoped (#526): each name below
     # is already in builder._SENTINEL_ORDER from tabs/diagnostics.py's prior use, so
     # no new name is being invented here, only re-declared at this tab's own scope
     # (registration is keyed by (scope, name), so a tab-scoped declaration here does
     # not collide with a same-named declaration any sibling tab makes at ITS scope).
-    sentinel("has_selfobs", "tailscale2otel_series_active", scope)
     sentinel("has_export_hist", "tailscale2otel_export_duration_seconds_count", scope)
     sentinel("has_scrape_err", "tailscale2otel_scrape_errors_total", scope)
-    sentinel("has_api_retry", "tailscale2otel_api_retries_total", scope)
 
     # --- "is it up?" ---------------------------------------------------------
     golden = [
-        (panel("Exporter up", "stat", [prom_t("max(%s)" % lot("tailscale2otel_up_ratio"))],
+        (summary_tile("Exporter up", [prom_t("max(%s)" % lot("tailscale2otel_up_ratio"))],
                mappings=UP_MAP, thresholds=thr([(None, "red"), (1, "green")]),
                options=stat_opts(color="background"),
                desc="Whether the process itself is reporting alive (tailscale2otel.up)."), 4, 5),
-        (panel("Collectors OK", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale2otel_scrape_success_ratio"))],
+        (summary_tile("Collectors OK",
+               [prom_t("count(%s == 1) or (0 * count(%s))" %
+                       (lot("tailscale2otel_scrape_success_ratio"),
+                        lot("tailscale2otel_scrape_success_ratio")))],
                unit="short", thresholds=thr([(None, "green")]), options=stat_opts(color="value"),
-               desc="Count of enabled collectors whose last scrape succeeded."), 4, 5),
-        (panel("Goroutines (summary)", "stat", [prom_t("max(%s)" % lot("tailscale2otel_runtime_goroutines_ratio"))],
+               desc="Count of enabled collectors whose last scrape succeeded. Zero requires "
+                    "scrape samples in the selected scope; no samples means missing telemetry."), 4, 5),
+        (summary_tile("Goroutines (summary)", [prom_t("max(%s)" % lot("tailscale2otel_runtime_goroutines_ratio"))],
                unit="short", options=stat_opts(graph="area"),
                desc="Current goroutine count — a runaway climb usually means a stuck collector "
                     "or a leaking retry loop."), 4, 5),
-        (panel("GOMAXPROCS (summary)", "stat", [prom_t("max(%s)" % lot("tailscale2otel_runtime_gomaxprocs_ratio"))],
+        (summary_tile("GOMAXPROCS (summary)", [prom_t("max(%s)" % lot("tailscale2otel_runtime_gomaxprocs_ratio"))],
                unit="short", options=stat_opts(),
                desc="Go scheduler's configured max OS threads — mostly a deployment sanity check."), 4, 5),
         (panel("Build info", "table",
@@ -119,18 +133,18 @@ def tab_health_overview(scope):
                    "self_observability.enabled — absent otherwise."),
     ]
 
-    # --- application health (present="has_selfobs") ---------------------------
+    # --- application health (always visible, including source absence) --------
     apphealth = [
-        (panel("Config valid", "stat", [prom_t("max(tailscale2otel_config_valid_ratio)")],
+        (summary_tile("Config valid", [prom_t("max(tailscale2otel_config_valid_ratio)")],
                mappings=BOOL_HEALTHY_ON, thresholds=thr([(None, "red"), (1, "green")]),
                options=stat_opts(color="background"),
                desc="Whether the running config passed validation at startup."), 4, 5),
-        (panel("Config warnings", "stat", [prom_t("max(tailscale2otel_config_warnings_ratio) or vector(0)")],
+        (summary_tile("Config warnings", [prom_t("max(tailscale2otel_config_warnings_ratio)")],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
                options=stat_opts(color="value"),
                desc="Active configuration advisories from startup (a count, despite the "
                     "_ratio suffix)."), 4, 5),
-        (panel("Uptime", "stat", [prom_t("max(process_uptime_seconds)")],
+        (summary_tile("Uptime", [prom_t("max(process_uptime_seconds)")],
                unit="s", options=stat_opts(),
                desc="Time since the process started."), 4, 5),
         # No zero-fill: emitCheckpointStats() deliberately emits nothing when the file is
@@ -178,13 +192,18 @@ def tab_health_overview(scope):
               desc="Admin-endpoint requests rejected by auth, by reason."),
     ]
 
-    # --- API-throttling degradation (present="has_api_retry") ------------------
+    # --- API-throttling degradation (request-aware event zeros) ---------------
     api_degraded = [
         (panel("API 429 / retries (summary)", "timeseries",
-               [prom_t('sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[%s]))' % RI, legend="429/s"),
-                prom_t("sum(rate(tailscale2otel_api_retries_total[%s]))" % RI, legend="retries/s", refid="B")],
-               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(),
-               desc="Rate-limit responses and the retries they trigger, fleet-wide."), 12, 7),
+               [prom_t(('sum(rate(tailscale2otel_api_requests_total{http_response_status_code="429"}[%s])) '
+                        'or (0 * sum(rate(tailscale2otel_api_requests_total[%s])))') % (RI, RI), legend="429/s"),
+                prom_t(("sum(rate(tailscale2otel_api_retries_total[%s])) "
+                        "or (0 * sum(rate(tailscale2otel_api_requests_total[%s])))") % (RI, RI),
+                       legend="retries/s", refid="B")],
+               unit="cps", novalue=MISSING_TELEMETRY, custom=ts_custom(), options=ts_opts(),
+               desc="Rate-limit responses and the retries they trigger in the selected scope. "
+                    "Zero requires API request rate samples; no request samples means missing "
+                    "telemetry, not evidence of no throttling."), 12, 7),
     ]
 
     # Keep this row last so the established Overview panel IDs stay stable.
@@ -204,8 +223,10 @@ def tab_health_overview(scope):
         row("Golden signals", golden),
         autogrid_row("Collecting", collecting),
         autogrid_row("Delivering", delivering, present="has_export_hist"),
-        row("Application health", apphealth, present="has_selfobs"),
+        # Summary tiles must remain visible when the source disappears. Optional
+        # checkpoint panels retain their own file-backed-store absence contract.
+        row("Application health", apphealth),
         autogrid_row("Degradation summary", degraded, present="has_scrape_err"),
-        row("API throttling", api_degraded, present="has_api_retry"),
+        row("API throttling", api_degraded),
         row("Coordination churn", coordination_churn),
     ]
