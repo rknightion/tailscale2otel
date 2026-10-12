@@ -5,9 +5,10 @@ status: Parked
 assignee:
   - '@loop28'
 created_date: '2026-10-11 10:33'
-updated_date: '2026-10-11 18:21'
+updated_date: '2026-10-12 19:03'
 labels: []
-dependencies: []
+dependencies:
+  - TSO-0191
 references:
   - deploy/grafana/gen
   - reference/grafana-delivery.md
@@ -26,9 +27,8 @@ The last whole-dashboard live audit (TSO-0022) predates a long run of changes: t
 <!-- AC:BEGIN -->
 - [ ] #1 Every panel on every tab of both generated dashboards is inventoried with a verdict (correct, misleading, broken, redundant or missing-signal) and a one-line reason, recorded in the task notes without lab identifiers
 - [ ] #2 Every metric, log and trace query is executed against the live stack over a stated window; each one either returns data or has its absence explained (feature disabled, prerequisite absent, or genuinely zero), and no panel shows a query error
-- [ ] #3 Every query honours every dashboard variable that applies to it (tailnet, provider and any tab-local selector); a generated-dashboard test enforces this across all tabs, not only Policy and Config, and is seen failing on a deliberately unscoped query before it passes
-- [ ] #4 Each signal the exporter emits (per internal/catalog) reaches a panel or has a documented disposition, and each panel or row whose question no operator would act on is flagged for removal or merge
-- [x] #5 Every finding not fixed in this task is filed as its own Backlog task with observable acceptance criteria, and this task lists the IDs it filed
+- [ ] #3 Each signal the exporter emits (per internal/catalog) reaches a panel or has a documented disposition, and each panel or row whose question no operator would act on is flagged for removal or merge
+- [x] #4 Every finding not fixed in this task is filed as its own Backlog task with observable acceptance criteria, and this task lists the IDs it filed
 <!-- AC:END -->
 
 ## Definition of Done
@@ -603,4 +603,6 @@ loop28 read-only availability check found both exporter replicas crash-looping o
 loop28: 1 implementation attempt in this run, 3 of the owner-raised 5 total; parked for missing historical effective-config/source/population evidence, not a code failure. Exact staged tree 1fd3279154612d88ce2e6abbf6b072029755107a on base06d158e1127668b2d534f76312cca48cd7e9a28b remains uncommitted. Full setup/check gate exit0, fresh negative selector mutation failed correctly,251Python tests passed, generated artifacts byte-idempotent, and independent guarded source review passed. Existing shared-test changes only add tailnet matcher at accuracy:53 and specialist:237. CodeRabbit ran once with No files to review/missing complete;5Python files unreviewed, not clean. All640panel and175variable query identities have HTTP200 historical-window receipts; candidate outcomes453data/187empty.188source-control requests allHTTP200. Root selected posture tailnet/provider/device/OS positive and4unmatched cases passed5/5;5representative non-Overview renders inspected, not whole-tab proof. Worker per-query report left149causal gaps; root full-range stale-user base proved every sample at/below actual30day threshold, reducing to148current gaps (131of original136historical,16downgraded explanations,1new trace-source gap). Desired-history11unchanged feature shapes and current no-override readbacks do not attest historical effective config. AC1/2semantic acceptance and remaining AC3livecontrol families are incomplete, so no landing/CI/composed gate/sync. Resume from retained staged candidate and same-window evidence; restore current exporter only with new explicit cluster authority. Follow-ups TSO-0189 (readable OS pie labels) and TSO-0190 (restore exporter image/config compatibility) not admitted.
 
 loop29: 0 new implementation attempts, 3 cumulative of owner-raised 5. D70 minimum 3h fresh audit window is not yet available; earliest eligible lane start 2026-10-11T21:05:15Z. Parked for time, not authority or implementation failure. Retained candidate patch hash, base and staged tree verified unchanged; no source change, query, gate, review, landing or publication. AC #1-4 remain unchecked, AC #5 untouched. Resume attempt 4 on lane-worker-retry after that time using the original launch, D71 same-image effective configuration proof and freshly re-executed window queries. Goal needs=time is encoded as evidence-later because the event schema rejects time; this is not acceptance or Done.
+
+2026-10-12 re-scope (Rob, after loop28 and loop29 both landed nothing): AC #3 (selector-scope test across all tabs) moved to TSO-0191 (land the dashboard selector-scope guard from the retained audit candidate), which carries the retained loop28 candidate. This task keeps the live evidence: panel verdicts, live query execution with absences explained, and catalog-signal dispositions. It runs after TSO-0191 and the two dashboard-fix chains land, so it audits the fixed dashboards rather than panels about to change. Attempt count carried: 3 of 5 used.
 <!-- SECTION:NOTES:END -->

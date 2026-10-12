@@ -4,10 +4,11 @@ title: Separate absent exporter telemetry from zero health counters in summary t
 status: Parked
 assignee: []
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 19:03'
 labels:
   - needs-triage
-dependencies: []
+dependencies:
+  - TSO-0191
 references:
   - /Users/rob/repos/tailscale2otel/deploy/grafana/gen
 priority: high
@@ -43,4 +44,6 @@ loop27: 0 implementation attempts in this loop; held by TSO-0172 (live dashboard
 loop28: 0 implementation attempts; held by TSO-0172 (live dashboard audit), whose local source proof passed but historical semantic/prerequisite acceptance remains incomplete and whose candidate did not land. Resume only after the audit is accepted and landed, then preceding frozen chain tasks settle. No candidate work started.
 
 loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
+
+2026-10-12 re-scope: health chain head waits on TSO-0191 (selector-scope guard landing), which regenerates the same health dashboard JSON; no longer waits on TSO-0172 (live dashboard audit).
 <!-- SECTION:NOTES:END -->
