@@ -51,7 +51,7 @@ scope rather than merely that the name exists somewhere.
 """
 
 from builder import (acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
-                     row, sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_SLOW)
+                     row, sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
 
@@ -69,6 +69,38 @@ TNP = 'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider"'
 
 def sel(metric, extra=""):
     return "%s{%s%s}" % (metric, TNP, (", " + extra) if extra else "")
+
+# Frozen fleet/user/key tile set: Devices online / total / offline, Users,
+# Device keys ≤7d. Do not use process liveness as inventory evidence.
+FLEET_MISSING = "No fleet source — needs device inventory"
+USER_MISSING = "No user source — needs users collector"
+KEY_MISSING = "No device key source — needs per-device inventory"
+
+
+def missing_map(text):
+    return [{"type": "special", "options": {"match": "null", "result":
+             {"text": text, "color": "gray"}}}]
+
+
+def listing_zero(collector, operation, window):
+    # Observe emits every state (including supported=0 on a failed listing).
+    # Only an actually successful list is evidence of an empty population.
+    source = sel("tailscale2otel_api_availability_ratio",
+                 'tailscale_collector="%s", tailscale_api_operation="%s", '
+                 'tailscale_api_state="supported"' % (collector, operation))
+    return "0 * count(%s == 1)" % lot(source, window)
+
+
+def device_zero(window):
+    # Both grouped device counts and per-device gauges vanish for an empty list.
+    # A NONempty rollup without online gauges instead means per_entity is off:
+    # it cannot prove an online/key count of zero. Online presence can anchor a
+    # zero for an empty predicate (all offline, no expiring keys, etc.).
+    return "(0 * count(%s)) or (%s unless count(%s))" % (
+        lot(sel("tailscale_device_online_ratio"), window),
+        listing_zero("devices", "listTailnetDevices", window),
+        lot(sel("tailscale_devices_count_ratio"), window))
+
 
 # Resource/infra columns stripped from the per-tailnet tables. Deliberately NOT
 # builder.TBL_NOISE: these tables key on `tailscale_tailnet` / `tailscale2otel_provider`
@@ -138,13 +170,14 @@ def tab_tailnet_overview(scope):
     # trend panel in Activity is the honest version of that question.
     health = [
         (panel("Devices online / total / offline", "stat",
-               [prom_t("count(%s == 1) or vector(0)" % lot("tailscale_device_online_ratio"),
+               [prom_t("count(%s == 1) or %s" % (lot(sel("tailscale_device_online_ratio")), device_zero(WIN_FAST)),
                        legend="online"),
-                prom_t("count(%s) or vector(0)" % lot("tailscale_device_online_ratio"),
+                prom_t("count(%s) or %s" % (lot(sel("tailscale_device_online_ratio")), device_zero(WIN_FAST)),
                        legend="total"),
-                prom_t("count(%s == 0) or vector(0)" % lot("tailscale_device_online_ratio"),
+                prom_t("count(%s == 0) or %s" % (lot(sel("tailscale_device_online_ratio")), device_zero(WIN_FAST)),
                        legend="offline")],
                unit="short", options=stat_opts(color="value"),
+               novalue=FLEET_MISSING, mappings=missing_map(FLEET_MISSING),
                desc="Devices currently reporting online, the total the exporter can see, and "
                     "the remainder offline (normal for laptops and phones)."), 6, 5),
         # No zero-fill: update availability is suppressed entirely when the control plane
@@ -158,17 +191,22 @@ def tab_tailnet_overview(scope):
                        "that reports update availability.",
                desc="Devices with a Tailscale client update waiting."), 4, 5),
         (panel("Users", "stat",
-               [prom_t("sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)) or vector(0)"
-                       % lot("tailscale_users_count_ratio", WIN_SLOW))],
+               [prom_t("sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)) or (%s)"
+                       % (lot(sel("tailscale_users_count_ratio"), WIN_SLOW),
+                          listing_zero("users", "listUsers", WIN_SLOW)))],
                unit="short", options=stat_opts(),
+               novalue=USER_MISSING, mappings=missing_map(USER_MISSING),
                desc="Users known to the tailnet, across every role, status and type."), 4, 5),
         (panel("Device keys ≤7d", "stat",
-               [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or vector(0)"
-                       % (lot("tailscale_device_key_expiry_seconds", WIN_SLOW),
-                          lot("tailscale_device_key_expiry_seconds", WIN_SLOW)))],
+               [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or %s"
+                       % (lot(sel("tailscale_device_key_expiry_seconds"), WIN_SLOW),
+                          lot(sel("tailscale_device_key_expiry_seconds"), WIN_SLOW),
+                          device_zero(WIN_SLOW)))],
                unit="short", thresholds=thr([(None, "green"), (1, "yellow"), (3, "red")]),
                options=stat_opts(color="background"),
-               desc="Device node keys expiring within 7 days."), 4, 5),
+               novalue=KEY_MISSING, mappings=missing_map(KEY_MISSING),
+               desc="Device node keys expiring within 7 days. Zero requires device source "
+                    "evidence; missing per-device data in a nonempty fleet is not zero."), 4, 5),
         (panel("ACL change evidence age (summary)", "stat",
                [prom_t(acl_change_evidence(sel("tailscale_acl_last_audit_change_seconds"),
                                            sel("tailscale_acl_last_changed_seconds")),

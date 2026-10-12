@@ -540,7 +540,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "online",
@@ -562,7 +562,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "total",
@@ -584,7 +584,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 0) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "offline",
@@ -618,7 +618,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No fleet source \u2014 needs device inventory",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No fleet source \u2014 needs device inventory"
                 },
                 "overrides": []
               }
@@ -730,7 +743,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) or vector(0)",
+                        "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -764,7 +777,20 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No user source \u2014 needs users collector",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
+                  "noValue": "No user source \u2014 needs users collector"
                 },
                 "overrides": []
               }
@@ -777,7 +803,7 @@
         "spec": {
           "id": 4,
           "title": "Device keys \u22647d",
-          "description": "Device node keys expiring within 7 days.",
+          "description": "Device node keys expiring within 7 days. Zero requires device source evidence; missing per-device data in a nonempty fleet is not zero.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -796,7 +822,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -831,6 +857,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device key source \u2014 needs per-device inventory",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -847,7 +885,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "No device key source \u2014 needs per-device inventory"
                 },
                 "overrides": []
               }
