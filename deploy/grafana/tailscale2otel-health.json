@@ -14443,7 +14443,7 @@
         "spec": {
           "id": 162,
           "title": "Flow series: raw vs bounded rollup",
-          "description": "Raw flow families saturate the 10k cap; the bounded rollup stays small. When raw is at cap, trust the ROLLUP talker panels on the Network tab.",
+          "description": "Reported active-series counts for raw and bounded-rollup flow families. Compare raw counts with the configured limit exported as tailscale2otel_series_limit; cardinality.metric_limit <= 0 means unlimited, with no limit gauge emitted. When raw families overflow a positive cap, use the ROLLUP talker panels on the Network tab.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14888,7 +14888,7 @@
         "spec": {
           "id": 167,
           "title": "Series limit",
-          "description": "Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited.",
+          "description": "Configured positive per-metric series limit (cardinality.metric_limit), exported as tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the limit gauge is not emitted; absence can also mean self-observability is unavailable.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14955,7 +14955,7 @@
         "spec": {
           "id": 168,
           "title": "Overflowing now",
-          "description": "Number of metric families currently overflowing their series cap. >0 means detail loss.",
+          "description": "Sum of reported per-family overflow indicators across process/runtime reporters. Replicas can report the same family; this is not a distinct-family inventory. >0 means reported detail loss under a configured positive series cap.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15110,7 +15110,7 @@
         "spec": {
           "id": 170,
           "title": "Active series by group",
-          "description": "Active series aggregated by metric_group \u2014 the primary cost-driver view. 18 groups live; each group maps to a logical collector domain.",
+          "description": "Reported active-series counts summed by metric_group across process/runtime reporters over the lookback window \u2014 a cost-driver view, not a live backend inventory. Groups reflect logical metric domains and vary with enabled collectors and reporting replicas.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15191,7 +15191,7 @@
         "spec": {
           "id": 171,
           "title": "Metrics overflowing now",
-          "description": "Metric families where overflowing_ratio == 1 (capped). 147+ series tracked; 0 overflowing is the normal live state \u2014 that is correct.",
+          "description": "Metric families whose last observed sample within the lookback window indicates overflow (overflowing_ratio == 1) for at least one process/runtime reporter. Reported families vary with enabled collectors and reporters; this is not a live backend inventory. Overflow indicates detail loss under a configured positive series cap.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

@@ -95,8 +95,10 @@ def tab_cardinality(scope):
                 prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.packets\"})", legend="packets raw"),
                 prom_t("max(tailscale2otel_series_active{metric_name=\"tailscale.network.packets.rollup\"})", legend="packets rollup")],
                unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
-               desc="Raw flow families saturate the 10k cap; the bounded rollup stays small. When raw is "
-                    "at cap, trust the ROLLUP talker panels on the Network tab."), 12, 7),
+               desc="Reported active-series counts for raw and bounded-rollup flow families. Compare raw "
+                    "counts with the configured limit exported as tailscale2otel_series_limit; "
+                    "cardinality.metric_limit <= 0 means unlimited, with no limit gauge emitted. "
+                    "When raw families overflow a positive cap, use the ROLLUP talker panels on the Network tab."), 12, 7),
         (panel("__other__ rollup share", "stat",
                [prom_t("(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_dst_node=\"__other__\"}[%s])) or vector(0)) / "
                        "clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total[%s])), 1)" % (RI, RI), instant=True)],
@@ -129,12 +131,16 @@ def tab_cardinality(scope):
                unit="short", options=stat_opts(),
                novalue="No per-metric series cap reported — needs cardinality.metric_limit set "
                        "(unset means unlimited) and exporter self-observability.",
-               desc="Configured per-metric series limit (cardinality.metric_limit). 0 means unlimited."), 6, 5),
+               desc="Configured positive per-metric series limit (cardinality.metric_limit), exported as "
+                    "tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the "
+                    "limit gauge is not emitted; absence can also mean self-observability is unavailable."), 6, 5),
         (panel("Overflowing now", "stat",
                [prom_t("sum(tailscale2otel_series_overflowing_ratio) or vector(0)", instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
-               desc="Number of metric families currently overflowing their series cap. >0 means detail loss."), 6, 5),
+               desc="Sum of reported per-family overflow indicators across process/runtime reporters. "
+                    "Replicas can report the same family; this is not a distinct-family inventory. "
+                    ">0 means reported detail loss under a configured positive series cap."), 6, 5),
         (panel("Per-metric utilization (top-N)", "table",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
                        instant=True, fmt="table")],
@@ -153,8 +159,9 @@ def tab_cardinality(scope):
                        legend="{{metric_group}}", instant=True, fmt="table")],
                unit="short", options=barchart_opts(),
                transformations=[organize(exclude=["Time"])],
-               desc="Active series aggregated by metric_group — the primary cost-driver view. "
-                    "18 groups live; each group maps to a logical collector domain."), 24, 8),
+               desc="Reported active-series counts summed by metric_group across process/runtime reporters "
+                    "over the lookback window — a cost-driver view, not a live backend inventory. "
+                    "Groups reflect logical metric domains and vary with enabled collectors and reporting replicas."), 24, 8),
         (panel("Metrics overflowing now", "table",
                [prom_t("max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio[%s])) == 1" % WIN_FAST,
                        instant=True, fmt="table")],
@@ -162,8 +169,10 @@ def tab_cardinality(scope):
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace", "Value"],
                    rename={"metric_name": "Metric"})],
-               desc="Metric families where overflowing_ratio == 1 (capped). 147+ series tracked; "
-                    "0 overflowing is the normal live state — that is correct."), 24, 6),
+               desc="Metric families whose last observed sample within the lookback window indicates overflow "
+                    "(overflowing_ratio == 1) for at least one process/runtime reporter. Reported families vary with "
+                    "enabled collectors and reporters; this is not a live backend inventory. "
+                    "Overflow indicates detail loss under a configured positive series cap."), 24, 6),
         (panel("Active series by metric family", "marcusolsson-treemap-panel",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                        instant=True, fmt="table")],
