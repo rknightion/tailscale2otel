@@ -3,10 +3,11 @@ id: TSO-0183
 title: >-
   Remove fixed historical cap and live-population claims from cardinality panel
   descriptions
-status: Parked
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 22:10'
 labels:
   - needs-triage
 dependencies: []
@@ -36,6 +37,12 @@ Descriptions assert a 10k cap, a fixed group population and a historical series 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Replace fixed-cap/history-as-contract cardinality descriptions with configured-limit/unlimited and portable reporter/collector semantics; validate exact generated descriptions and unchanged query/signal inventory without incidental prose tests; regenerate/stage, serialized G, guarded review and goal CodeRabbit disposition then root composed/CI/delivery.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
