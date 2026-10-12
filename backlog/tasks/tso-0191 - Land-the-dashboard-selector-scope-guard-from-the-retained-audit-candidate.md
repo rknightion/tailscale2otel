@@ -1,9 +1,11 @@
 ---
 id: TSO-0191
 title: Land the dashboard selector-scope guard from the retained audit candidate
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop30'
 created_date: '2026-10-12 19:03'
+updated_date: '2026-10-12 19:30'
 labels: []
 dependencies: []
 references:
@@ -34,3 +36,9 @@ Split out of TSO-0172 (comprehensive dashboard audit) after loop28 and loop29 la
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Rebase the retained selector-scope candidate in an isolated worktree; regenerate, reproduce the unscoped-query failure, run G, obtain fresh security review then sharded CodeRabbit; root lands and verifies composed gate, exact-SHA CI and dashboard delivery.
+<!-- SECTION:PLAN:END -->
