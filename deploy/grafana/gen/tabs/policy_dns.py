@@ -111,7 +111,9 @@ def tab_policy_dns(scope):
                mappings=BOOL_NEUTRAL,
                transformations=[organize(exclude=_INFRA_TBL,
                                          rename={"tailscale_setting_name": "Setting", "Value": "Enabled"})],
-               desc="Per-setting enabled (1) / disabled (0)."), 8, 7),
+               desc="Per-setting enabled (1) / disabled (0). Regional routing includes in-region "
+                    "failover, but not MagicRoute. Unknown route-selection modes or null legacy "
+                    "values leave regional_routing absent rather than manufacturing a zero."), 8, 7),
         (panel("Device key duration", "stat",
                [prom_t("max(%s)" % lot(sel("tailscale_setting_devices_key_duration_days"), WIN_SLOW))],
                unit="d", options=stat_opts(),
@@ -132,6 +134,17 @@ def tab_policy_dns(scope):
                                          rename={"tailscale_setting_role": "Role"})],
                desc="Role granted to users joining from external tailnets. "
                     "Values: none / member / admin. This is configuration, not a health verdict."), 6, 5),
+        (panel("Route-selection mode", "table",
+               [prom_t(lot(sel("tailscale_setting_route_selection_ratio"), WIN_SLOW),
+                       instant=True, fmt="table")],
+               transformations=[organize(exclude=_INFRA_TBL + ["Value"],
+                                         rename={"tailscale_setting_route_selection": "Mode"})],
+               novalue="No route-selection mode — needs the settings collector, "
+                       "feature_settings:read scope, and a provider exposing routeSelection.",
+               desc="Tailnet routing algorithm: active-passive-failover, regional-routing, "
+                    "regional-routing-failover, or magicroute. Future values appear as unknown. "
+                    "MagicRoute is distinct from DERP-region routing. This is configuration, "
+                    "not a health verdict; absent mode is not inferred from the legacy boolean."), 6, 5),
         # Task 1H.8 — Webhook endpoints
         # No zero-fill: the collector emits an explicit 0 when the tailnet exposes no
         # webhook surface, but emits NOTHING when the credential is rejected or

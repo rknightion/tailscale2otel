@@ -2030,6 +2030,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.setting.route_selection",
+      "prom_name": "tailscale_setting_route_selection_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.setting.users_external_tailnets_role",
       "prom_name": "tailscale_setting_users_external_tailnets_role_ratio",
       "surface": "operational",

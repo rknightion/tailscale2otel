@@ -481,7 +481,8 @@ health, and the API does not expose grant-layer denials as session rows.
 | `tailscale.dns.search_paths.count` | `1` | gauge | `tailscale_dns_search_paths_count_ratio` | — | Number of DNS search paths (a **count**). |
 | `tailscale.dns.split_zones.count` | `1` | gauge | `tailscale_dns_split_zones_count_ratio` | — | Number of split-DNS zones configured (a **count**). |
 | `tailscale.setting.devices_key_duration` | `d` | gauge | `tailscale_setting_devices_key_duration_days` | — | Configured device key expiry duration, in days. |
-| `tailscale.setting.enabled` | `1` | gauge | `tailscale_setting_enabled_ratio` | `tailscale_setting_name` | `1` if the named tailnet setting is enabled, else `0`. |
+| `tailscale.setting.enabled` | `1` | gauge | `tailscale_setting_enabled_ratio` | `tailscale_setting_name` | `1` if the named tailnet setting is enabled, else `0`. `regional_routing` is derived from `routeSelection` when present: regional-routing and regional-routing-failover are enabled; active-passive-failover and magicroute are disabled. Unknown modes, or an absent/null legacy boolean with no mode, emit no regional-routing point. |
+| `tailscale.setting.route_selection` | `1` | gauge | `tailscale_setting_route_selection_ratio` | `tailscale_setting_route_selection` | Info gauge (constant `1`); tailnet route-selection mode carried as `tailscale.setting.route_selection`: active-passive-failover, regional-routing, regional-routing-failover, magicroute, or unknown. Future values fold to unknown; absent/null mode emits no point. |
 | `tailscale.setting.users_external_tailnets_role` | `1` | gauge | `tailscale_setting_users_external_tailnets_role_ratio` | `tailscale_setting_role` | Info gauge (constant `1`); the user role allowed to join external tailnets, carried as the `tailscale.setting.role` label. |
 <!-- END GENERATED -->
 

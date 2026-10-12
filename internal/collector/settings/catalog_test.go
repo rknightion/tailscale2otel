@@ -35,7 +35,7 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 		DevicesAutoUpdatesOn:        false,
 		UsersApprovalOn:             true,
 		NetworkFlowLoggingOn:        false,
-		RegionalRoutingOn:           true,
+		RouteSelection:              new("regional-routing"),
 		PostureIdentityCollectionOn: false,
 		DevicesKeyDurationDays:      90,
 	}}, 0, settings.WithAPIState(tr), settings.WithSnapshot(true))

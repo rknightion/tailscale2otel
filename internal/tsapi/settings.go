@@ -7,7 +7,7 @@ import (
 
 // TailnetSettings is the full tailnet feature-settings record from GET
 // /api/v2/tailnet/{tailnet}/settings. It is decoded directly (not via the
-// official tsclient type, which omits httpsEnabled and aclsExternallyManagedOn).
+// official tsclient type, which cannot preserve nullable settings).
 type TailnetSettings struct {
 	DevicesApprovalOn      bool `json:"devicesApprovalOn"`
 	DevicesAutoUpdatesOn   bool `json:"devicesAutoUpdatesOn"`
@@ -18,12 +18,17 @@ type TailnetSettings struct {
 	// "member", "admin").
 	UsersRoleAllowedToJoinExternalTailnets string `json:"usersRoleAllowedToJoinExternalTailnets"`
 
-	NetworkFlowLoggingOn        bool `json:"networkFlowLoggingOn"`
-	RegionalRoutingOn           bool `json:"regionalRoutingOn"`
-	PostureIdentityCollectionOn bool `json:"postureIdentityCollectionOn"`
+	NetworkFlowLoggingOn bool `json:"networkFlowLoggingOn"`
+	// RegionalRoutingOn is the nullable, read-only legacy setting. RouteSelection
+	// supersedes it; nil means unavailable, not disabled.
+	RegionalRoutingOn *bool `json:"regionalRoutingOn"`
+	// RouteSelection is optional for older providers. A present unknown value
+	// must not fall back to the legacy boolean.
+	RouteSelection              *string `json:"routeSelection"`
+	PostureIdentityCollectionOn bool    `json:"postureIdentityCollectionOn"`
 
-	// HTTPSEnabled and ACLsExternallyManagedOn are present on the wire but absent
-	// from tsclient.TailnetSettings, which is why this raw decode exists.
+	// Keep the complete wire record, including settings not supported by every
+	// provider or version.
 	HTTPSEnabled            bool `json:"httpsEnabled"`
 	ACLsExternallyManagedOn bool `json:"aclsExternallyManagedOn"`
 

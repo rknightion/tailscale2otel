@@ -48,7 +48,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 261 | 260 | 59 | 11 | 46 |
+| operational | 262 | 261 | 59 | 11 | 46 |
 | self_obs | 104 | 104 | 40 | 9 | 10 |
 
 ## Operational signals
@@ -264,6 +264,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.services.count` | metric | `tailscale_services_count_ratio` | visualized, drives_a_variable |  |
 | `tailscale.setting.devices_key_duration` | metric | `tailscale_setting_devices_key_duration_days` | visualized |  |
 | `tailscale.setting.enabled` | metric | `tailscale_setting_enabled_ratio` | visualized, alertable |  |
+| `tailscale.setting.route_selection` | metric | `tailscale_setting_route_selection_ratio` | visualized |  |
 | `tailscale.setting.users_external_tailnets_role` | metric | `tailscale_setting_users_external_tailnets_role_ratio` | visualized |  |
 | `tailscale.stream.decode_errors` | metric | `tailscale_stream_decode_errors_total` | visualized |  |
 | `tailscale.stream.inflight` | metric | `tailscale_stream_inflight` | visualized |  |

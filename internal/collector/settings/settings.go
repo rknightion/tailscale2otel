@@ -26,9 +26,10 @@ const (
 
 // Metric names emitted by this collector.
 const (
-	metricEnabled     = "tailscale.setting.enabled"
-	metricKeyDuration = "tailscale.setting.devices_key_duration"
-	metricSettingRole = "tailscale.setting.users_external_tailnets_role"
+	metricEnabled        = "tailscale.setting.enabled"
+	metricKeyDuration    = "tailscale.setting.devices_key_duration"
+	metricSettingRole    = "tailscale.setting.users_external_tailnets_role"
+	metricRouteSelection = "tailscale.setting.route_selection"
 )
 
 // attrSettingName labels a setting.enabled point with its stable feature name.
@@ -36,6 +37,8 @@ const attrSettingName = "tailscale.setting.name"
 
 // attrSettingRole carries the external-tailnets role enum on the role info gauge.
 const attrSettingRole = "tailscale.setting.role"
+
+const attrRouteSelection = "tailscale.setting.route_selection"
 
 // opGetTailnetSettings is the upstream operationId of the settings fetch call.
 const opGetTailnetSettings = "getTailnetSettings"
@@ -57,6 +60,8 @@ type api interface {
 type Collector struct {
 	api      api
 	interval time.Duration
+	// gauges replaces changing labels and clears nullable settings each poll.
+	gauges *telemetry.GaugeSnapshotBuilder
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -112,6 +117,7 @@ func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
 		api:               a,
+		gauges:            telemetry.NewGaugeSnapshotBuilder(),
 		interval:          interval,
 		now:               time.Now,
 		snapshotHeartbeat: defaultSnapshotHeartbeat,
@@ -153,14 +159,29 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		{"devices_auto_updates", s.DevicesAutoUpdatesOn},
 		{"users_approval", s.UsersApprovalOn},
 		{"network_flow_logging", s.NetworkFlowLoggingOn},
-		{"regional_routing", s.RegionalRoutingOn},
 		{"posture_identity_collection", s.PostureIdentityCollectionOn},
 		{"https_enabled", s.HTTPSEnabled},
 		{"acls_externally_managed", s.ACLsExternallyManagedOn},
 	}
 	for _, b := range bools {
-		e.Gauge(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
+		c.gauges.Add(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
 			boolValue(b.on), telemetry.Attrs{attrSettingName: b.name})
+	}
+
+	// The current mode takes precedence over the legacy boolean. Unknown modes
+	// have no defensible regional-routing truth value, so omit that point.
+	if s.RouteSelection != nil {
+		mode := boundedRouteSelection(*s.RouteSelection)
+		c.gauges.Add(docRouteSelection.Name, docRouteSelection.Unit, docRouteSelection.Description,
+			1, telemetry.Attrs{attrRouteSelection: mode})
+		if mode != "unknown" {
+			c.gauges.Add(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
+				boolValue(mode == "regional-routing" || mode == "regional-routing-failover"),
+				telemetry.Attrs{attrSettingName: "regional_routing"})
+		}
+	} else if s.RegionalRoutingOn != nil {
+		c.gauges.Add(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
+			boolValue(*s.RegionalRoutingOn), telemetry.Attrs{attrSettingName: "regional_routing"})
 	}
 
 	// aclsExternalLink is gated behind the policy_file:read scope, separately
@@ -172,7 +193,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// ever emitted; the URI value itself (which can leak an internal repo path)
 	// never is.
 	if s.ACLsExternalLink != nil {
-		e.Gauge(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
+		c.gauges.Add(docSettingEnabled.Name, docSettingEnabled.Unit, docSettingEnabled.Description,
 			boolValue(*s.ACLsExternalLink != ""), telemetry.Attrs{attrSettingName: "acls_external_link_set"})
 	}
 
@@ -180,8 +201,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		float64(s.DevicesKeyDurationDays), nil)
 
 	// Info gauge (constant 1) carrying the external-tailnets role enum as a label.
-	e.Gauge(docSettingRole.Name, docSettingRole.Unit, docSettingRole.Description,
+	c.gauges.Add(docSettingRole.Name, docSettingRole.Unit, docSettingRole.Description,
 		1, telemetry.Attrs{attrSettingRole: s.UsersRoleAllowedToJoinExternalTailnets})
+	c.gauges.Flush(e)
 
 	if c.snapshotEnabled {
 		body, err := marshalSnapshot(s)
@@ -201,17 +223,18 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 // boolean keeps the API's absent, present-but-empty, and present-and-set states
 // distinguishable without exporting the URI itself.
 type snapshotSettings struct {
-	DevicesApprovalOn                      bool   `json:"devicesApprovalOn"`
-	DevicesAutoUpdatesOn                   bool   `json:"devicesAutoUpdatesOn"`
-	DevicesKeyDurationDays                 int    `json:"devicesKeyDurationDays"`
-	UsersApprovalOn                        bool   `json:"usersApprovalOn"`
-	UsersRoleAllowedToJoinExternalTailnets string `json:"usersRoleAllowedToJoinExternalTailnets"`
-	NetworkFlowLoggingOn                   bool   `json:"networkFlowLoggingOn"`
-	RegionalRoutingOn                      bool   `json:"regionalRoutingOn"`
-	PostureIdentityCollectionOn            bool   `json:"postureIdentityCollectionOn"`
-	HTTPSEnabled                           bool   `json:"httpsEnabled"`
-	ACLsExternallyManagedOn                bool   `json:"aclsExternallyManagedOn"`
-	ACLsExternalLinkSet                    *bool  `json:"aclsExternalLinkSet,omitempty"`
+	DevicesApprovalOn                      bool    `json:"devicesApprovalOn"`
+	DevicesAutoUpdatesOn                   bool    `json:"devicesAutoUpdatesOn"`
+	DevicesKeyDurationDays                 int     `json:"devicesKeyDurationDays"`
+	UsersApprovalOn                        bool    `json:"usersApprovalOn"`
+	UsersRoleAllowedToJoinExternalTailnets string  `json:"usersRoleAllowedToJoinExternalTailnets"`
+	NetworkFlowLoggingOn                   bool    `json:"networkFlowLoggingOn"`
+	RegionalRoutingOn                      *bool   `json:"regionalRoutingOn"`
+	RouteSelection                         *string `json:"routeSelection,omitempty"`
+	PostureIdentityCollectionOn            bool    `json:"postureIdentityCollectionOn"`
+	HTTPSEnabled                           bool    `json:"httpsEnabled"`
+	ACLsExternallyManagedOn                bool    `json:"aclsExternallyManagedOn"`
+	ACLsExternalLinkSet                    *bool   `json:"aclsExternalLinkSet,omitempty"`
 }
 
 func marshalSnapshot(settings *tsapi.TailnetSettings) (string, error) {
@@ -228,6 +251,7 @@ func marshalSnapshot(settings *tsapi.TailnetSettings) (string, error) {
 		UsersRoleAllowedToJoinExternalTailnets: settings.UsersRoleAllowedToJoinExternalTailnets,
 		NetworkFlowLoggingOn:                   settings.NetworkFlowLoggingOn,
 		RegionalRoutingOn:                      settings.RegionalRoutingOn,
+		RouteSelection:                         snapshotRouteSelection(settings.RouteSelection),
 		PostureIdentityCollectionOn:            settings.PostureIdentityCollectionOn,
 		HTTPSEnabled:                           settings.HTTPSEnabled,
 		ACLsExternallyManagedOn:                settings.ACLsExternallyManagedOn,
@@ -255,6 +279,24 @@ func (c *Collector) emitSnapshot(e telemetry.Emitter, body string) error {
 	}
 	c.snapshotEmitter.Observe(c.now(), "", body, nil)
 	return nil
+}
+
+// boundedRouteSelection never exports an arbitrary future wire enum as a label.
+func boundedRouteSelection(mode string) string {
+	switch mode {
+	case "active-passive-failover", "regional-routing", "regional-routing-failover", "magicroute":
+		return mode
+	default:
+		return "unknown"
+	}
+}
+
+func snapshotRouteSelection(mode *string) *string {
+	if mode == nil {
+		return nil
+	}
+	value := boundedRouteSelection(*mode)
+	return &value
 }
 
 func boolValue(b bool) float64 {

@@ -18,7 +18,7 @@ var (
 		Name:        metricEnabled,
 		Unit:        semconv.UnitDimensionless,
 		Instrument:  metricdoc.Gauge,
-		Description: "`1` if the named tailnet setting is enabled, else `0`.",
+		Description: "`1` if the named tailnet setting is enabled, else `0`. `regional_routing` is derived from `routeSelection` when present: regional-routing and regional-routing-failover are enabled; active-passive-failover and magicroute are disabled. Unknown modes, or an absent/null legacy boolean with no mode, emit no regional-routing point.",
 		Attributes:  []string{attrSettingName},
 		Group:       groupSettings,
 	}
@@ -35,6 +35,14 @@ var (
 		Instrument:  metricdoc.Gauge,
 		Description: "Info gauge (constant `1`); the user role allowed to join external tailnets, carried as the `tailscale.setting.role` label.",
 		Attributes:  []string{attrSettingRole},
+		Group:       groupSettings,
+	}
+	docRouteSelection = metricdoc.Metric{
+		Name:        metricRouteSelection,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Gauge,
+		Description: "Info gauge (constant `1`); tailnet route-selection mode carried as `tailscale.setting.route_selection`: active-passive-failover, regional-routing, regional-routing-failover, magicroute, or unknown. Future values fold to unknown; absent/null mode emits no point.",
+		Attributes:  []string{attrRouteSelection},
 		Group:       groupSettings,
 	}
 	docSettingsSnapshot = metricdoc.LogEvent{
@@ -57,7 +65,7 @@ var (
 
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docSettingEnabled, docSettingKeyDuration, docSettingRole}
+	return []metricdoc.Metric{docSettingEnabled, docSettingKeyDuration, docSettingRole, docRouteSelection}
 }
 
 // LogCatalog returns the log events this package emits.

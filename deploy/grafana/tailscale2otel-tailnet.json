@@ -22706,7 +22706,7 @@
         "spec": {
           "id": 278,
           "title": "Tailnet settings",
-          "description": "Per-setting enabled (1) / disabled (0).",
+          "description": "Per-setting enabled (1) / disabled (0). Regional routing includes in-region failover, but not MagicRoute. Unknown route-selection modes or null legacy values leave regional_routing absent rather than manufacturing a zero.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -23041,6 +23041,86 @@
         "kind": "Panel",
         "spec": {
           "id": 282,
+          "title": "Route-selection mode",
+          "description": "Tailnet routing algorithm: active-passive-failover, regional-routing, regional-routing-failover, or magicroute. Future values appear as unknown. MagicRoute is distinct from DERP-region routing. This is configuration, not a health verdict; absent mode is not inferred from the legacy boolean.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "last_over_time(tailscale_setting_route_selection_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true,
+                        "deployment_environment_name": true,
+                        "otel_scope_name": true,
+                        "otel_scope_version": true,
+                        "Value": true
+                      },
+                      "renameByName": {
+                        "tailscale_setting_route_selection": "Mode"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "No route-selection mode \u2014 needs the settings collector, feature_settings:read scope, and a provider exposing routeSelection."
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-283": {
+        "kind": "Panel",
+        "spec": {
+          "id": 283,
           "title": "Webhook endpoints",
           "description": "Configured webhook endpoints on the tailnet. The Integrations sub-tab breaks the same population down by subscribed event category and by endpoint.",
           "links": [],
@@ -23104,10 +23184,10 @@
           }
         }
       },
-      "panel-283": {
+      "panel-284": {
         "kind": "Panel",
         "spec": {
-          "id": 283,
+          "id": 284,
           "title": "DNS configuration snapshots",
           "description": "Opt-in DNS configuration snapshots. Group chunks by the shared tailscale_snapshot_emission_id, require one matching tailscale_snapshot_revision, then sort tailscale_snapshot_seq before reassembly. The snapshot includes resolver addresses and search domains, so it is disabled unless collectors.dns.snapshot_enabled is explicitly set.",
           "links": [],
@@ -23163,10 +23243,10 @@
           }
         }
       },
-      "panel-284": {
+      "panel-285": {
         "kind": "Panel",
         "spec": {
-          "id": 284,
+          "id": 285,
           "title": "Tailnet settings snapshots",
           "description": "Opt-in tailnet-settings snapshots with the same canonical snapshot attributes and chunk-reassembly contract as DNS. The ACL external-link value is reduced to a presence boolean; it is never emitted. Enable with collectors.settings.snapshot_enabled.",
           "links": [],
@@ -23222,10 +23302,10 @@
           }
         }
       },
-      "panel-285": {
+      "panel-286": {
         "kind": "Panel",
         "spec": {
-          "id": 285,
+          "id": 286,
           "title": "Stale users (>30d)",
           "description": "Users not seen in over 30 days (last-seen staleness). Empty, not zero, when per-user metrics are unavailable; see the Per-user detail row.",
           "links": [],
@@ -23302,10 +23382,10 @@
           }
         }
       },
-      "panel-286": {
+      "panel-287": {
         "kind": "Panel",
         "spec": {
-          "id": 286,
+          "id": 287,
           "title": "User invites",
           "description": "Outstanding open user invites, by role and delivery method.",
           "links": [],
@@ -23368,10 +23448,10 @@
           }
         }
       },
-      "panel-287": {
+      "panel-288": {
         "kind": "Panel",
         "spec": {
-          "id": 287,
+          "id": 288,
           "title": "Users by role",
           "description": "Tailnet users by assigned role (owner / admin / member / ...). An aggregate of the bounded users.count gauge, so it stays populated with per-user series switched off.",
           "links": [],
@@ -23449,10 +23529,10 @@
           }
         }
       },
-      "panel-288": {
+      "panel-289": {
         "kind": "Panel",
         "spec": {
-          "id": 288,
+          "id": 289,
           "title": "Users by status",
           "description": "Tailnet users by account status (active / idle / suspended / needs-approval). Suspended and needs-approval accounts still hold a tailnet identity.",
           "links": [],
@@ -23530,10 +23610,10 @@
           }
         }
       },
-      "panel-289": {
+      "panel-290": {
         "kind": "Panel",
         "spec": {
-          "id": 289,
+          "id": 290,
           "title": "Users by type",
           "description": "Tailnet users by type \u2014 a member of the tailnet versus a shared-in user from another tailnet.",
           "links": [],
@@ -23611,10 +23691,10 @@
           }
         }
       },
-      "panel-290": {
+      "panel-291": {
         "kind": "Panel",
         "spec": {
-          "id": 290,
+          "id": 291,
           "title": "Per-user detail",
           "description": "Per-user connected / device count / time since last seen.",
           "links": [],
@@ -23756,10 +23836,10 @@
           }
         }
       },
-      "panel-291": {
+      "panel-292": {
         "kind": "Panel",
         "spec": {
-          "id": 291,
+          "id": 292,
           "title": "Keys by type",
           "description": "API and auth keys the tailnet holds, split by key type and by auth kind (user-owned versus OAuth-minted). An aggregate, so it survives cardinality.per_entity.key being switched off.",
           "links": [],
@@ -23821,10 +23901,10 @@
           }
         }
       },
-      "panel-292": {
+      "panel-293": {
         "kind": "Panel",
         "spec": {
-          "id": 292,
+          "id": 293,
           "title": "Credential scopes (top-N)",
           "description": "Top-N keys by how many scopes they carry \u2014 the configuration view of scope sprawl. Excludes the raw key ID; whether a given breadth is too much for its purpose is a Security & Audit question.",
           "links": [],
@@ -23903,10 +23983,10 @@
           }
         }
       },
-      "panel-293": {
+      "panel-294": {
         "kind": "Panel",
         "spec": {
-          "id": 293,
+          "id": 294,
           "title": "Key scope inventory (logs)",
           "description": "Credential scope values observed in key.scopes log events over the dashboard time range. Counts observations, not keys: one key re-logged each collection tick contributes many.",
           "links": [],
@@ -23973,10 +24053,10 @@
           }
         }
       },
-      "panel-294": {
+      "panel-295": {
         "kind": "Panel",
         "spec": {
-          "id": 294,
+          "id": 295,
           "title": "Key expiry (time until)",
           "description": "Time until each API/auth key expires.",
           "links": [],
@@ -24055,10 +24135,10 @@
           }
         }
       },
-      "panel-295": {
+      "panel-296": {
         "kind": "Panel",
         "spec": {
-          "id": 295,
+          "id": 296,
           "title": "Preauthorized auth keys",
           "description": "Count of auth keys marked preauthorized (auto-approved, no manual login).",
           "links": [],
@@ -24122,10 +24202,10 @@
           }
         }
       },
-      "panel-296": {
+      "panel-297": {
         "kind": "Panel",
         "spec": {
-          "id": 296,
+          "id": 297,
           "title": "OAuth applications",
           "description": "Registered OAuth applications on the tailnet. Configuration reference: [collectors.oauth_apps](https://m7kni.io/tailscale2otel/configuration/).",
           "links": [],
@@ -24189,10 +24269,10 @@
           }
         }
       },
-      "panel-297": {
+      "panel-298": {
         "kind": "Panel",
         "spec": {
-          "id": 297,
+          "id": 298,
           "title": "OAuth apps by privilege class",
           "description": "Applications per privilege class, ranked by internal/tsscope: none < read < all_read < write < all. The gauge is zero-seeded across every class, so this counts only the class each app currently holds.",
           "links": [],
@@ -24254,10 +24334,10 @@
           }
         }
       },
-      "panel-298": {
+      "panel-299": {
         "kind": "Panel",
         "spec": {
-          "id": 298,
+          "id": 299,
           "title": "OAuth app age (p50 / p90)",
           "description": "Fleet age distribution of OAuth applications since their created timestamp. A single bounded histogram, not a per-app series \u2014 apps with no created timestamp are omitted rather than recorded as age 0.",
           "links": [],
@@ -24350,10 +24430,10 @@
           }
         }
       },
-      "panel-299": {
+      "panel-300": {
         "kind": "Panel",
         "spec": {
-          "id": 299,
+          "id": 300,
           "title": "OAuth app scope & attribute counts",
           "description": "Scope sprawl per application: granted scopes, custom node attributes it may set, and how many redirect targets it has configured. All three are counts \u2014 the exporter emits no redirect target values and no client credential, so none can be shown here.",
           "links": [],
@@ -24482,10 +24562,10 @@
           }
         }
       },
-      "panel-300": {
+      "panel-301": {
         "kind": "Panel",
         "spec": {
-          "id": 300,
+          "id": 301,
           "title": "OAuth application inventory (logs)",
           "description": "Granted scope sets observed on the oauth_app.info inventory log, over the dashboard time range. Counts observations, not applications: one app re-logged each collection tick contributes many.",
           "links": [],
@@ -24552,10 +24632,10 @@
           }
         }
       },
-      "panel-301": {
+      "panel-302": {
         "kind": "Panel",
         "spec": {
-          "id": 301,
+          "id": 302,
           "title": "Services (VIP)",
           "description": "Tailscale Services (VIP services) advertised in the tailnet.",
           "links": [],
@@ -24618,10 +24698,10 @@
           }
         }
       },
-      "panel-302": {
+      "panel-303": {
         "kind": "Panel",
         "spec": {
-          "id": 302,
+          "id": 303,
           "title": "Backing hosts by service",
           "description": "Backing-host count per Service, bucketed by approval + configured state. Gated by collect_hosts + cardinality.per_entity.service.",
           "links": [],
@@ -24701,10 +24781,10 @@
           }
         }
       },
-      "panel-303": {
+      "panel-304": {
         "kind": "Panel",
         "spec": {
-          "id": 303,
+          "id": 304,
           "title": "Service tags (rollup)",
           "description": "Number of VIP services carrying each ACL tag. The busiest tags remain distinct up to collectors.services.tag_rollup_limit; the rest fold into tailscale.tag=__other__.",
           "links": [],
@@ -24767,10 +24847,10 @@
           }
         }
       },
-      "panel-304": {
+      "panel-305": {
         "kind": "Panel",
         "spec": {
-          "id": 304,
+          "id": 305,
           "title": "Port rules per service",
           "description": "Port rules exposed by each Service. Gated by cardinality.per_entity.service.",
           "links": [],
@@ -24832,10 +24912,10 @@
           }
         }
       },
-      "panel-305": {
+      "panel-306": {
         "kind": "Panel",
         "spec": {
-          "id": 305,
+          "id": 306,
           "title": "VIP service health",
           "description": "Merged view: hosts + port-rule count per VIP service. Services with 1 host have no HA. Requires collect_hosts + per_entity.service.",
           "links": [],
@@ -24943,10 +25023,10 @@
           }
         }
       },
-      "panel-306": {
+      "panel-307": {
         "kind": "Panel",
         "spec": {
-          "id": 306,
+          "id": 307,
           "title": "Backing host identity",
           "description": "One info point per device backing a VIP service. The stable node ID is the join key to the devices inventory; host identity fields are present only when the devices cache has refreshed that node. Hidden when host and node identity redaction is active.",
           "links": [],
@@ -25033,10 +25113,10 @@
           }
         }
       },
-      "panel-307": {
+      "panel-308": {
         "kind": "Panel",
         "spec": {
-          "id": 307,
+          "id": 308,
           "title": "VIP service topology",
           "description": "Top-$topn VIP service to backing-host relationships. This optional panel needs `netsage-sankey-panel` 1.1.4; install it from https://grafana.com/grafana/plugins/netsage-sankey-panel/. The native backing-host table remains available when the plugin is absent.",
           "links": [],
@@ -25129,10 +25209,10 @@
           }
         }
       },
-      "panel-308": {
+      "panel-309": {
         "kind": "Panel",
         "spec": {
-          "id": 308,
+          "id": 309,
           "title": "Desired-event coverage",
           "description": "1 when a category listed in collectors.webhooks.desired_events has at least one subscribed endpoint. Emitted only for recognised desired categories \u2014 a misspelled entry is counted by Unrecognized desired events instead of reading as permanently uncovered.",
           "links": [],
@@ -25239,10 +25319,10 @@
           }
         }
       },
-      "panel-309": {
+      "panel-310": {
         "kind": "Panel",
         "spec": {
-          "id": 309,
+          "id": 310,
           "title": "Unrecognized desired events",
           "description": "Entries in collectors.webhooks.desired_events that are not documented subscription categories \u2014 almost always a typo. The offending strings ride the webhook_endpoints.event_mismatch log event, never a metric label, so the count is what a panel can show.",
           "links": [],
@@ -25318,10 +25398,10 @@
           }
         }
       },
-      "panel-310": {
+      "panel-311": {
         "kind": "Panel",
         "spec": {
-          "id": 310,
+          "id": 311,
           "title": "Subscribers per event category",
           "description": "Endpoints subscribed to each documented category. The full 18-value vocabulary is zero-seeded every tick (plus `other`), so a category nobody listens for reads as an explicit 0 rather than a missing bar.",
           "links": [],
@@ -25383,10 +25463,10 @@
           }
         }
       },
-      "panel-311": {
+      "panel-312": {
         "kind": "Panel",
         "spec": {
-          "id": 311,
+          "id": 312,
           "title": "Per-endpoint subscriptions",
           "description": "How many categories each endpoint subscribes to, by endpoint id and provider. The destination address, its signing credential and its creator are never emitted, so this identifies an endpoint only by its id.",
           "links": [],
@@ -25464,10 +25544,10 @@
           }
         }
       },
-      "panel-312": {
+      "panel-313": {
         "kind": "Panel",
         "spec": {
-          "id": 312,
+          "id": 313,
           "title": "Webhook endpoint age (p50 / p90)",
           "description": "Age distribution of configured endpoints. Fleet-level with no per-endpoint attributes; an endpoint with no creation timestamp is omitted rather than recorded as age 0, and nothing is emitted when none reports one.",
           "links": [],
@@ -25560,10 +25640,10 @@
           }
         }
       },
-      "panel-313": {
+      "panel-314": {
         "kind": "Panel",
         "spec": {
-          "id": 313,
+          "id": 314,
           "title": "Desired-event mismatches (logs)",
           "description": "One WARN per desired category that is uncovered or unrecognized. The body names which of the two; the category label is bounded, reading `other` for an unrecognized entry.",
           "links": [],
@@ -25630,10 +25710,10 @@
           }
         }
       },
-      "panel-314": {
+      "panel-315": {
         "kind": "Panel",
         "spec": {
-          "id": 314,
+          "id": 315,
           "title": "GeoIP database age since build",
           "description": "How old the LOADED database's build is, per database (country / asn). This is MaxMind's build date, not when the file was fetched, which is exactly why it is the right staleness signal: an updater that has silently stopped still leaves a recent file mtime, but the build date keeps aging. Charted as age rather than the raw epoch so it matches the alert, `time() - tailscale_geoip_database_build_time_seconds > 14 * 86400` \u2014 the red band here IS that threshold. A database that is not loaded is absent, not stale.",
           "links": [],
@@ -25713,10 +25793,10 @@
           }
         }
       },
-      "panel-315": {
+      "panel-316": {
         "kind": "Panel",
         "spec": {
-          "id": 315,
+          "id": 316,
           "title": "GeoIP database downloads",
           "description": "MaxMind downloads by edition and result. A panel that is almost entirely `unmodified` is the GOOD state, not a stalled one: each check is conditional and a 304 means the local build is already current, which is what keeps a daily updater inside MaxMind's download quota. `updated` means a newer build was fetched, SHA-256 verified and installed; `failure` means neither happened and the previous database keeps serving.",
           "links": [],
@@ -25792,10 +25872,10 @@
           }
         }
       },
-      "panel-316": {
+      "panel-317": {
         "kind": "Panel",
         "spec": {
-          "id": 316,
+          "id": 317,
           "title": "GeoIP lookups by database and result",
           "description": "Enrichment lookups by database (country / asn / skipped) and result. A high `skipped` share is NORMAL on a tailnet and is not a fault: those are addresses that never reached a database at all, having been rejected as not globally routable \u2014 loopback, RFC 1918, link-local, and in particular the Tailscale CGNAT range and ULA, which are never geolocated. `hit` found a record; `miss` means the loaded database has none for that address.",
           "links": [],
@@ -25871,10 +25951,10 @@
           }
         }
       },
-      "panel-317": {
+      "panel-318": {
         "kind": "Panel",
         "spec": {
-          "id": 317,
+          "id": 318,
           "title": "GeoIP database reloads",
           "description": "Hot-swaps of a database file that changed on disk, by database and result. `success` means the new file was read and swapped in atomically. A `failure` is degraded-but-working rather than an outage: the previously loaded database keeps serving lookups, so pair it with the age panel to see whether enrichment is quietly running on a frozen copy. An unchanged file is not counted at all, so a flat zero line is the steady state.",
           "links": [],
@@ -25946,10 +26026,10 @@
           }
         }
       },
-      "panel-318": {
+      "panel-319": {
         "kind": "Panel",
         "spec": {
-          "id": 318,
+          "id": 319,
           "title": "Posture integration last-sync errors",
           "description": "1 when an MDM/EDR posture integration's last sync reported an error, per provider and integration. This is the ONLY failure signal these integrations have: `lastSync` advances on every ATTEMPT, successful or not, so the age column beside it goes stale only when syncing stops entirely and stays perfectly fresh through an integration that fails every single run. The raw error text is deliberately never emitted as a label, so read the provider's own console for what actually broke. Age is repeated here from the Security & Audit staleness view so both halves of the pair are on one row.",
           "links": [],
@@ -26100,10 +26180,10 @@
           }
         }
       },
-      "panel-319": {
+      "panel-320": {
         "kind": "Panel",
         "spec": {
-          "id": 319,
+          "id": 320,
           "title": "Webhook configuration snapshots",
           "description": "Opt-in webhook endpoint inventory snapshots. Group chunks by the shared tailscale_snapshot_emission_id, require one matching tailscale_snapshot_revision, then sort tailscale_snapshot_seq before reassembly; do not join separate heartbeat emissions even when their revision is unchanged. Endpoint URLs, secrets, and creator login names are never included. Enable with collectors.webhooks.snapshot_enabled.",
           "links": [],
@@ -26159,10 +26239,10 @@
           }
         }
       },
-      "panel-320": {
+      "panel-321": {
         "kind": "Panel",
         "spec": {
-          "id": 320,
+          "id": 321,
           "title": "Posture-integration configuration snapshots",
           "description": "Opt-in device-posture integration inventory snapshots. Group chunks by the shared tailscale_snapshot_emission_id, require one matching tailscale_snapshot_revision, then sort tailscale_snapshot_seq before reassembly; do not join separate heartbeat emissions even when their revision is unchanged. Provider credentials and raw sync-error text are never included. Enable with collectors.posture_integrations.snapshot_enabled.",
           "links": [],
@@ -26218,10 +26298,10 @@
           }
         }
       },
-      "panel-321": {
+      "panel-322": {
         "kind": "Panel",
         "spec": {
-          "id": 321,
+          "id": 322,
           "title": "Connectors",
           "description": "Configured Border0 PAM connectors.",
           "links": [],
@@ -26284,10 +26364,10 @@
           }
         }
       },
-      "panel-322": {
+      "panel-323": {
         "kind": "Panel",
         "spec": {
-          "id": 322,
+          "id": 323,
           "title": "Services by type",
           "description": "Border0 PAM services grouped by socket type. This does not restate Tailscale Service VIP or port inventory.",
           "links": [],
@@ -26349,10 +26429,10 @@
           }
         }
       },
-      "panel-323": {
+      "panel-324": {
         "kind": "Panel",
         "spec": {
-          "id": 323,
+          "id": 324,
           "title": "Policies",
           "description": "Configured Border0 PAM policies.",
           "links": [],
@@ -26415,10 +26495,10 @@
           }
         }
       },
-      "panel-324": {
+      "panel-325": {
         "kind": "Panel",
         "spec": {
-          "id": 324,
+          "id": 325,
           "title": "Identities by kind and role",
           "description": "PAM identities split by kind and role. The role split keeps tag-mirrored client accounts distinct from real service accounts.",
           "links": [],
@@ -26480,10 +26560,10 @@
           }
         }
       },
-      "panel-325": {
+      "panel-326": {
         "kind": "Panel",
         "spec": {
-          "id": 325,
+          "id": 326,
           "title": "Connector health",
           "description": "Border0 connector connectivity, freshness and attached-object counts. Connector names are operator supplied and bounded by the per-tailnet metric limit.",
           "links": [],
@@ -26670,10 +26750,10 @@
           }
         }
       },
-      "panel-326": {
+      "panel-327": {
         "kind": "Panel",
         "spec": {
-          "id": 326,
+          "id": 327,
           "title": "Connector builds",
           "description": "Connector version and build metadata.",
           "links": [],
@@ -26750,10 +26830,10 @@
           }
         }
       },
-      "panel-327": {
+      "panel-328": {
         "kind": "Panel",
         "spec": {
-          "id": 327,
+          "id": 328,
           "title": "Service health",
           "description": "Border0 service liveness. This is PAM-specific state, not duplicated Tailscale Service inventory.",
           "links": [],
@@ -26829,10 +26909,10 @@
           }
         }
       },
-      "panel-328": {
+      "panel-329": {
         "kind": "Panel",
         "spec": {
-          "id": 328,
+          "id": 329,
           "title": "Service settings",
           "description": "One 0/1 series per stable PAM service setting.",
           "links": [],
@@ -26909,10 +26989,10 @@
           }
         }
       },
-      "panel-329": {
+      "panel-330": {
         "kind": "Panel",
         "spec": {
-          "id": 329,
+          "id": 330,
           "title": "Policy settings",
           "description": "One 0/1 series per stable PAM policy setting.",
           "links": [],
@@ -26989,10 +27069,10 @@
           }
         }
       },
-      "panel-330": {
+      "panel-331": {
         "kind": "Panel",
         "spec": {
-          "id": 330,
+          "id": 331,
           "title": "Organization settings",
           "description": "Boolean Border0 organization configuration.",
           "links": [],
@@ -27067,10 +27147,10 @@
           }
         }
       },
-      "panel-331": {
+      "panel-332": {
         "kind": "Panel",
         "spec": {
-          "id": 331,
+          "id": 332,
           "title": "Plan",
           "description": "Current bounded Border0 plan slug.",
           "links": [],
@@ -27145,10 +27225,10 @@
           }
         }
       },
-      "panel-332": {
+      "panel-333": {
         "kind": "Panel",
         "spec": {
-          "id": 332,
+          "id": 333,
           "title": "Subscription limits",
           "description": "Configured subscription ceilings by stable limit name.",
           "links": [],
@@ -27210,10 +27290,10 @@
           }
         }
       },
-      "panel-333": {
+      "panel-334": {
         "kind": "Panel",
         "spec": {
-          "id": 333,
+          "id": 334,
           "title": "Authorized sessions",
           "description": "Sessions that reached the connector and were authorized. This is not an access-attempt or connection-health signal.",
           "links": [],
@@ -27288,10 +27368,10 @@
           }
         }
       },
-      "panel-334": {
+      "panel-335": {
         "kind": "Panel",
         "spec": {
-          "id": 334,
+          "id": 335,
           "title": "Active sessions",
           "description": "Active PAM sessions visible in the bounded newest-first polling prefix, derived from an absent end time. The API offers no active-session filter.",
           "links": [],
@@ -27353,10 +27433,10 @@
           }
         }
       },
-      "panel-335": {
+      "panel-336": {
         "kind": "Panel",
         "spec": {
-          "id": 335,
+          "id": 336,
           "title": "Killed sessions",
           "description": "Sessions marked killed by Border0.",
           "links": [],
@@ -27427,10 +27507,10 @@
           }
         }
       },
-      "panel-336": {
+      "panel-337": {
         "kind": "Panel",
         "spec": {
-          "id": 336,
+          "id": 337,
           "title": "Session duration (p50 / p90 / p99)",
           "description": "Duration of completed PAM sessions by session type.",
           "links": [],
@@ -27545,10 +27625,10 @@
           }
         }
       },
-      "panel-337": {
+      "panel-338": {
         "kind": "Panel",
         "spec": {
-          "id": 337,
+          "id": 338,
           "title": "Session events",
           "description": "Bounded PAM session-event types and statuses. Command text and other event metadata never become metric labels.",
           "links": [],
@@ -27623,10 +27703,10 @@
           }
         }
       },
-      "panel-338": {
+      "panel-339": {
         "kind": "Panel",
         "spec": {
-          "id": 338,
+          "id": 339,
           "title": "PAM configuration snapshots",
           "description": "Opt-in PAM inventory and configuration-shape snapshots. Group chunks by tailscale_snapshot_emission_id, require one matching tailscale_snapshot_revision, then sort tailscale_snapshot_seq before reassembly. Authentication objects, credentials and identity details are removed before serialization. Enable with collectors.pam.snapshot_enabled.",
           "links": [],
@@ -27682,10 +27762,10 @@
           }
         }
       },
-      "panel-339": {
+      "panel-340": {
         "kind": "Panel",
         "spec": {
-          "id": 339,
+          "id": 340,
           "title": "PAM authorized session records",
           "description": "Opt-in records for newly observed PAM sessions. Authorization result does not prove connection health; grant-layer denials produce no record. Enable collectors.pam.session_log_enabled. Identity, address, device-name and command fields follow pii_filter: false removes that category.",
           "links": [],
@@ -36040,6 +36120,19 @@
                                               "name": "panel-282"
                                             }
                                           }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 12,
+                                            "y": 7,
+                                            "width": 6,
+                                            "height": 5,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-283"
+                                            }
+                                          }
                                         }
                                       ]
                                     }
@@ -36064,7 +36157,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-283"
+                                              "name": "panel-284"
                                             }
                                           }
                                         },
@@ -36077,7 +36170,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-284"
+                                              "name": "panel-285"
                                             }
                                           }
                                         }
@@ -36117,7 +36210,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-285"
+                                              "name": "panel-286"
                                             }
                                           }
                                         },
@@ -36130,7 +36223,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-286"
+                                              "name": "panel-287"
                                             }
                                           }
                                         },
@@ -36143,7 +36236,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-287"
+                                              "name": "panel-288"
                                             }
                                           }
                                         },
@@ -36156,7 +36249,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-288"
+                                              "name": "panel-289"
                                             }
                                           }
                                         },
@@ -36169,7 +36262,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-289"
+                                              "name": "panel-290"
                                             }
                                           }
                                         }
@@ -36196,7 +36289,7 @@
                                             "height": 8,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-290"
+                                              "name": "panel-291"
                                             }
                                           }
                                         }
@@ -36248,7 +36341,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-291"
+                                              "name": "panel-292"
                                             }
                                           }
                                         },
@@ -36261,7 +36354,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-292"
+                                              "name": "panel-293"
                                             }
                                           }
                                         },
@@ -36274,7 +36367,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-293"
+                                              "name": "panel-294"
                                             }
                                           }
                                         }
@@ -36301,7 +36394,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-294"
+                                              "name": "panel-295"
                                             }
                                           }
                                         },
@@ -36314,7 +36407,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-295"
+                                              "name": "panel-296"
                                             }
                                           }
                                         }
@@ -36358,7 +36451,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-296"
+                                              "name": "panel-297"
                                             }
                                           }
                                         },
@@ -36371,7 +36464,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-297"
+                                              "name": "panel-298"
                                             }
                                           }
                                         },
@@ -36384,7 +36477,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-298"
+                                              "name": "panel-299"
                                             }
                                           }
                                         },
@@ -36397,7 +36490,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-299"
+                                              "name": "panel-300"
                                             }
                                           }
                                         },
@@ -36410,7 +36503,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-300"
+                                              "name": "panel-301"
                                             }
                                           }
                                         }
@@ -36548,7 +36641,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-301"
+                                              "name": "panel-302"
                                             }
                                           }
                                         },
@@ -36561,7 +36654,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-302"
+                                              "name": "panel-303"
                                             }
                                           }
                                         },
@@ -36574,7 +36667,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-303"
+                                              "name": "panel-304"
                                             }
                                           }
                                         }
@@ -36618,7 +36711,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-304"
+                                              "name": "panel-305"
                                             }
                                           }
                                         },
@@ -36631,7 +36724,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-305"
+                                              "name": "panel-306"
                                             }
                                           }
                                         }
@@ -36675,7 +36768,7 @@
                                             "height": 8,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-306"
+                                              "name": "panel-307"
                                             }
                                           }
                                         }
@@ -36727,7 +36820,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-307"
+                                              "name": "panel-308"
                                             }
                                           }
                                         }
@@ -36779,7 +36872,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-308"
+                                              "name": "panel-309"
                                             }
                                           }
                                         },
@@ -36792,7 +36885,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-309"
+                                              "name": "panel-310"
                                             }
                                           }
                                         },
@@ -36805,7 +36898,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-310"
+                                              "name": "panel-311"
                                             }
                                           }
                                         },
@@ -36818,7 +36911,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-311"
+                                              "name": "panel-312"
                                             }
                                           }
                                         },
@@ -36831,7 +36924,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-312"
+                                              "name": "panel-313"
                                             }
                                           }
                                         },
@@ -36844,7 +36937,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-313"
+                                              "name": "panel-314"
                                             }
                                           }
                                         }
@@ -36862,15 +36955,6 @@
                                     "kind": "AutoGridLayout",
                                     "spec": {
                                       "items": [
-                                        {
-                                          "kind": "AutoGridLayoutItem",
-                                          "spec": {
-                                            "element": {
-                                              "kind": "ElementReference",
-                                              "name": "panel-314"
-                                            }
-                                          }
-                                        },
                                         {
                                           "kind": "AutoGridLayoutItem",
                                           "spec": {
@@ -36895,6 +36979,15 @@
                                             "element": {
                                               "kind": "ElementReference",
                                               "name": "panel-317"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "AutoGridLayoutItem",
+                                          "spec": {
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-318"
                                             }
                                           }
                                         }
@@ -36925,7 +37018,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-318"
+                                              "name": "panel-319"
                                             }
                                           }
                                         }
@@ -36952,7 +37045,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-319"
+                                              "name": "panel-320"
                                             }
                                           }
                                         },
@@ -36965,7 +37058,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-320"
+                                              "name": "panel-321"
                                             }
                                           }
                                         }
@@ -37103,7 +37196,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-321"
+                                              "name": "panel-322"
                                             }
                                           }
                                         },
@@ -37116,7 +37209,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-322"
+                                              "name": "panel-323"
                                             }
                                           }
                                         },
@@ -37129,7 +37222,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-323"
+                                              "name": "panel-324"
                                             }
                                           }
                                         },
@@ -37142,7 +37235,7 @@
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-324"
+                                              "name": "panel-325"
                                             }
                                           }
                                         }
@@ -37169,7 +37262,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-325"
+                                              "name": "panel-326"
                                             }
                                           }
                                         },
@@ -37182,7 +37275,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-326"
+                                              "name": "panel-327"
                                             }
                                           }
                                         }
@@ -37209,7 +37302,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-327"
+                                              "name": "panel-328"
                                             }
                                           }
                                         },
@@ -37222,7 +37315,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-328"
+                                              "name": "panel-329"
                                             }
                                           }
                                         },
@@ -37235,7 +37328,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-329"
+                                              "name": "panel-330"
                                             }
                                           }
                                         }
@@ -37262,7 +37355,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-330"
+                                              "name": "panel-331"
                                             }
                                           }
                                         },
@@ -37275,7 +37368,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-331"
+                                              "name": "panel-332"
                                             }
                                           }
                                         },
@@ -37288,7 +37381,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-332"
+                                              "name": "panel-333"
                                             }
                                           }
                                         }
@@ -37315,19 +37408,6 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-333"
-                                            }
-                                          }
-                                        },
-                                        {
-                                          "kind": "GridLayoutItem",
-                                          "spec": {
-                                            "x": 12,
-                                            "y": 0,
-                                            "width": 6,
-                                            "height": 7,
-                                            "element": {
-                                              "kind": "ElementReference",
                                               "name": "panel-334"
                                             }
                                           }
@@ -37335,7 +37415,7 @@
                                         {
                                           "kind": "GridLayoutItem",
                                           "spec": {
-                                            "x": 18,
+                                            "x": 12,
                                             "y": 0,
                                             "width": 6,
                                             "height": 7,
@@ -37348,13 +37428,26 @@
                                         {
                                           "kind": "GridLayoutItem",
                                           "spec": {
+                                            "x": 18,
+                                            "y": 0,
+                                            "width": 6,
+                                            "height": 7,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-336"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
                                             "x": 0,
                                             "y": 7,
                                             "width": 12,
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-336"
+                                              "name": "panel-337"
                                             }
                                           }
                                         },
@@ -37367,7 +37460,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-337"
+                                              "name": "panel-338"
                                             }
                                           }
                                         }
@@ -37394,7 +37487,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-339"
+                                              "name": "panel-340"
                                             }
                                           }
                                         }
@@ -37421,7 +37514,7 @@
                                             "height": 10,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-338"
+                                              "name": "panel-339"
                                             }
                                           }
                                         }

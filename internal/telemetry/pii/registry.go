@@ -190,7 +190,10 @@ var nonIdentifier = map[string]bool{
 	"tailscale.webhook.key.expiration": true, "tailscale.webhook.old_roles": true, "tailscale.webhook.new_roles": true,
 	"tailscale.contact.type": true, "tailscale.posture.provider": true, "tailscale.setting.name": true,
 	"tailscale.setting.role": true, "tailscale.webhook_endpoint.provider": true,
-	"tailscale.dns.resolver.kind": true, "tailscale.dns.resolver.use_with_exit_node": true,
+	// Settings normalizes route modes to four literals or "unknown" before
+	// emission; this dimension cannot carry arbitrary upstream text.
+	"tailscale.setting.route_selection": true,
+	"tailscale.dns.resolver.kind":       true, "tailscale.dns.resolver.use_with_exit_node": true,
 	"tailscale.acl.section": true, "tailscale.acl.position": true, "tailscale.acl.autoapprover_kind": true,
 	"tailscale.acl.etag": true, "tailscale.acl.risk_class": true,
 	"tailscale.key.type": true, "tailscale.key.auth_kind": true, "tailscale.key.revoked": true,

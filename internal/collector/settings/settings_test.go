@@ -50,7 +50,7 @@ func TestCollectEmitsEnabledPerBool(t *testing.T) {
 		DevicesAutoUpdatesOn:        false,
 		UsersApprovalOn:             true,
 		NetworkFlowLoggingOn:        false,
-		RegionalRoutingOn:           true,
+		RegionalRoutingOn:           routeBool(true),
 		PostureIdentityCollectionOn: false,
 		HTTPSEnabled:                true,
 		ACLsExternallyManagedOn:     false,
@@ -314,6 +314,8 @@ func TestAvailabilityTracker(t *testing.T) {
 		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
 	}
 }
+
+func routeBool(v bool) *bool { return &v }
 
 func keys(m map[string]float64) []string {
 	out := make([]string, 0, len(m))

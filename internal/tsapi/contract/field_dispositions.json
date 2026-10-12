@@ -303,6 +303,12 @@
     },
     {
       "op": "getTailnetSettings",
+      "path": "RouteSelection",
+      "type": "tsapi.TailnetSettings",
+      "disposition": "emitted"
+    },
+    {
+      "op": "getTailnetSettings",
       "path": "UsersApprovalOn",
       "type": "tsapi.TailnetSettings",
       "disposition": "emitted"
