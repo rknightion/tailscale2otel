@@ -41,6 +41,7 @@ import dashboards
 from builder import tab, tab_group
 from dashboards import DomainDef, TabDef
 from variables import build_variables, tab_controls
+from selector_scope import scope_queries, scope_promql
 
 
 # ---------------------------------------------------------------------------
@@ -104,10 +105,32 @@ def annotation_layers():
     ]
 
 
-def _build_leaf(node, flat_rows=None):
+def _build_leaf(node, flat_rows=None, controls=()):
     """Build one leaf TabDef into a TabsLayoutTab (or, for a flat preview, append
     its rows to flat_rows with the tab title prefixed onto each row title)."""
     rows = node.build(builder.tab_scope(node.title))
+    scoped = tab_controls(node.title) + builder.registered_sentinels(builder.tab_scope(node.title))
+    visible = list(controls) + scoped
+    refs = []
+    def collect(n):
+        if isinstance(n, dict):
+            if n.get("kind") == "ElementReference":
+                refs.append(n["name"])
+            for value in n.values():
+                collect(value)
+        elif isinstance(n, list):
+            for value in n:
+                collect(value)
+    collect(rows)
+    scope_queries([builder.ELEMENTS[ref] for ref in refs], visible)
+    names = {v["spec"]["name"] for v in visible}
+    for v in scoped:
+        q = v["spec"].get("query")
+        if isinstance(q, dict):
+            # Dropdown option queries keep their explicit one-way dependencies
+            # (host -> OS); adding all sibling filters creates a variable cycle.
+            scope_names = names if v["spec"]["name"].startswith(("has_", "pii_")) else {c["spec"]["name"] for c in controls}
+            q["spec"]["query"] = scope_promql(q["spec"]["query"], scope_names - {v["spec"]["name"]})
     if flat_rows is not None:
         for r in rows:
             r2 = json.loads(json.dumps(r))
@@ -117,11 +140,10 @@ def _build_leaf(node, flat_rows=None):
     # Two sources, one list: the base controls this leaf is the only reader of
     # (variables.TAB_CONTROLS, a static table) and the presence sentinels its own
     # module registered while building the rows above (the scoped registry).
-    scoped = tab_controls(node.title) + builder.registered_sentinels(builder.tab_scope(node.title))
     return tab(node.title, rows, node.present, variables=scoped)
 
 
-def _build_node(node, flat_rows=None, only=None):
+def _build_node(node, flat_rows=None, only=None, controls=()):
     """Build one layout node — a leaf or operational domain — recursively.
 
     Returns a TabsLayoutTab dict, or None when building flat or when `only`
@@ -130,9 +152,9 @@ def _build_node(node, flat_rows=None, only=None):
     if isinstance(node, TabDef):
         if only is not None and node.title != only:
             return None
-        return _build_leaf(node, flat_rows)
+        return _build_leaf(node, flat_rows, controls)
     children_defs = node.children
-    built = [_build_node(c, flat_rows, only) for c in children_defs]
+    built = [_build_node(c, flat_rows, only, controls) for c in children_defs]
     built = [b for b in built if b is not None]
     if flat_rows is not None or not built:
         return None
@@ -160,7 +182,8 @@ def build(spec, flat=False, only=None, folder=None):
         flat = True
 
     flat_rows = [] if flat else None
-    tabs = [_build_node(node, flat_rows, only) for node in spec.layout]
+    controls = build_variables(spec)
+    tabs = [_build_node(node, flat_rows, only, controls) for node in spec.layout]
     tabs = [t for t in tabs if t is not None]
 
     if flat:
@@ -184,6 +207,15 @@ def build(spec, flat=False, only=None, folder=None):
         "links": [builder.dashboard_link(spec.sibling_title, spec.sibling, spec.link_vars)],
         "variables": variables, "elements": builder.ELEMENTS, "layout": layout,
     }
+    # Global presence queries also intersect the selected dashboard controls.
+    names = {v["spec"]["name"] for v in variables}
+    for v in variables:
+        q = v["spec"].get("query")
+        if isinstance(q, dict):
+            # Tailnet/provider enumerate the selectable universe independently;
+            # mutually scoping their options would introduce a dependency cycle.
+            scope_names = names - {"tailnet", "provider"} if v["spec"]["name"] in {"tailnet", "provider"} else names - {v["spec"]["name"]}
+            q["spec"]["query"] = scope_promql(q["spec"]["query"], scope_names)
     meta = {"name": spec.uid}
     if folder:
         meta["annotations"] = {"grafana.app/folder": folder}

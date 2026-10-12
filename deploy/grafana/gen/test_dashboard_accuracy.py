@@ -50,7 +50,7 @@ class CardinalityAccuracyTest(unittest.TestCase):
             p = panel(self.doc, title)
             expr = " ".join(queries(p))
             self.assertIn("tailscale2otel_series_limit", expr)
-            self.assertIn("tailscale2otel_series_limit) > 0", expr)
+            self.assertIn('tailscale2otel_series_limit{tailscale_tailnet=~"$tailnet"}) > 0', expr)
             defaults = p["vizConfig"]["spec"]["fieldConfig"]["defaults"]
             self.assertIn("unlimited", defaults["noValue"].lower())
 

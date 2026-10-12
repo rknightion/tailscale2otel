@@ -432,7 +432,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "label_values(tailscale_node_up_ratio, __name__)",
+              "query": "label_values(tailscale_node_up_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
               "refId": "has_nodemetrics"
             }
           },
@@ -464,7 +464,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "label_values(tailscale_k8s_api_requests_total, __name__)",
+              "query": "label_values(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
               "refId": "has_k8s_audit"
             }
           },
@@ -496,7 +496,7 @@
               "name": "${ds_prometheus}"
             },
             "spec": {
-              "query": "label_values(tailscale_pam_connectors_ratio, __name__)",
+              "query": "label_values(tailscale_pam_connectors_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
               "refId": "has_pam"
             }
           },
@@ -540,7 +540,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "online",
@@ -562,7 +562,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio[10m])) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "total",
@@ -584,7 +584,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_online_ratio[10m]) == 0) or vector(0)",
+                        "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 0) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "offline",
@@ -650,7 +650,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -730,7 +730,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio[2h]))) or vector(0)",
+                        "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -796,7 +796,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -945,7 +945,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_feature_enabled_ratio{tailscale_feature=\"network_flow_logging\"}[2h]))",
+                        "expr": "max(last_over_time(tailscale_feature_enabled_ratio{tailscale_feature=\"network_flow_logging\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1040,7 +1040,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale2otel_up_ratio[10m]))",
+                        "expr": "max(last_over_time(tailscale2otel_up_ratio{tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1135,7 +1135,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale2otel_scrape_success_ratio[10m]) == 1) or vector(0)",
+                        "expr": "count(last_over_time(tailscale2otel_scrape_success_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1210,7 +1210,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_scrape_errors_total[$__rate_interval])) or vector(0)",
+                        "expr": "sum(rate(tailscale2otel_scrape_errors_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1289,7 +1289,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale2otel_export_failures_total[$__rate_interval])) or vector(0)",
+                        "expr": "sum(rate(tailscale2otel_export_failures_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -1368,7 +1368,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_network_io_rollup_bytes_total[$__rate_interval])) or sum(rate(tailscale_network_io_bytes_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or sum(rate(tailscale_network_io_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "throughput",
@@ -1442,7 +1442,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_config_audit_events_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale_config_audit_events_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "audit/s",
@@ -1464,7 +1464,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_network_flows_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "flows/s",
@@ -1538,7 +1538,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(tailscale_device_online_ratio == 1)",
+                        "expr": "count(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "online",
@@ -1560,7 +1560,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(tailscale_device_online_ratio)",
+                        "expr": "count(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "total",
@@ -1634,7 +1634,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action) (rate(tailscale_config_audit_events_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_audit_action) (rate(tailscale_config_audit_events_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_audit_action}}",
@@ -1712,7 +1712,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_origin) (rate(tailscale_config_audit_events_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_audit_origin) (rate(tailscale_config_audit_events_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_audit_origin}}",
@@ -1790,7 +1790,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_feature) (tailscale_feature_enabled_ratio)",
+                        "expr": "max by (tailscale_feature) (tailscale_feature_enabled_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_feature}}",
@@ -1866,7 +1866,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_setting_name) (tailscale_setting_enabled_ratio)",
+                        "expr": "max by (tailscale_setting_name) (tailscale_setting_enabled_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_setting_name}}",
@@ -1942,7 +1942,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_collector) (rate(tailscale2otel_scrape_errors_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_collector}}",
@@ -2016,7 +2016,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale2otel_scrape_last_timestamp_seconds[10m])",
+                        "expr": "time() - last_over_time(tailscale2otel_scrape_last_timestamp_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2093,7 +2093,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (component) (rate(tailscale2otel_component_errors_total[$__rate_interval]))",
+                        "expr": "sum by (component) (rate(tailscale2otel_component_errors_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{component}}",
@@ -2167,7 +2167,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"}))",
+                        "expr": "count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -2233,7 +2233,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (tailscale2otel_provider) ({__name__=~\"tailscale.+\", tailscale2otel_provider=~\"$provider\", tailscale2otel_provider!=\"\"})",
+                        "expr": "count by (tailscale2otel_provider) ({__name__=~\"tailscale.+\", tailscale2otel_provider=~\"$provider\", tailscale2otel_provider!=\"\", tailscale_tailnet=~\"$tailnet\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2308,7 +2308,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"} == 1)",
+                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2330,7 +2330,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})",
+                        "expr": "max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2352,7 +2352,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"}[$__rate_interval]))",
+                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2449,7 +2449,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"} == 1)",
+                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_tailnet}}",
@@ -2523,7 +2523,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2602,7 +2602,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind=\"exit_node\"}[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_acl_autoapprover_kind=\"exit_node\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2685,7 +2685,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_subnet_routes_unapproved[2h]))",
+                        "expr": "max(last_over_time(tailscale_subnet_routes_unapproved{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2765,7 +2765,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_untagged_ratio[10m]))",
+                        "expr": "max(last_over_time(tailscale_devices_untagged_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2849,7 +2849,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_accepted=\"false\",tailscale_device_invite_allow_exit_node=\"true\"}[2h]))",
+                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_accepted=\"false\",tailscale_device_invite_allow_exit_node=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2929,7 +2929,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_acl_ssh_wildcard_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_acl_ssh_wildcard_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -3316,7 +3316,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_user_connected_ratio[2h]) == 1)",
+                        "expr": "count(last_over_time(tailscale_user_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) == 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3383,7 +3383,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "tailscale_organization_tailnets_count_ratio",
+                        "expr": "tailscale_organization_tailnets_count_ratio{tailscale2otel_provider=~\"$provider\"}",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3450,7 +3450,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (os_type, tailscale_authorized, tailscale_external) (last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
+                        "expr": "sum by (os_type, tailscale_authorized, tailscale_external) (last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{os_type}} \u00b7 authorized={{tailscale_authorized}} \u00b7 external={{tailscale_external}}",
@@ -3610,7 +3610,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (os_type, tailscale_authorized, tailscale_external) (tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
+                        "expr": "sum by (os_type, tailscale_authorized, tailscale_external) (tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{os_type}} \u00b7 authorized={{tailscale_authorized}} \u00b7 external={{tailscale_external}}",
@@ -3688,7 +3688,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"true\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"true\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3755,7 +3755,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"false\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"false\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3839,7 +3839,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_external=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_external=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[2h])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -3906,7 +3906,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"true\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"true\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "authorized (internal)",
@@ -3928,7 +3928,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"false\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_authorized=\"false\", tailscale_external=\"false\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "unauthorized (internal)",
@@ -3950,7 +3950,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_external=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
+                        "expr": "sum(last_over_time(tailscale_devices_count_ratio{tailscale_external=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])) or (0 * sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "external (shared-in)",
@@ -4028,7 +4028,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device_invite` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | host_name=~\"$host_name\" | event_name=`tailscale.device_invite` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -4087,7 +4087,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.change` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | host_name=~\"$host_name\" | os_type=~\"$os_type\" | event_name=`tailscale.device.change` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 300,
                         "legendFormat": ""
@@ -4146,7 +4146,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((time() - last_over_time(tailscale_device_last_seen_seconds[2h])) > 30*86400) or vector(0)",
+                        "expr": "count((time() - last_over_time(tailscale_device_last_seen_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) > 30*86400) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -4225,7 +4225,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_untagged_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_devices_untagged_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -4308,7 +4308,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_ephemeral_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_devices_ephemeral_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -4374,7 +4374,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_outdated_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale_devices_outdated_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -4454,7 +4454,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale2otel_update_available_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale2otel_update_available_ratio{tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -4550,7 +4550,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_fleet_latest_version_ratio[2h])",
+                        "expr": "last_over_time(tailscale_fleet_latest_version_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4626,7 +4626,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_client_version) (max by (tailscale_client_version) (last_over_time(tailscale_devices_by_version_ratio[2h])))",
+                        "expr": "sum by (tailscale_client_version) (max by (tailscale_client_version) (last_over_time(tailscale_devices_by_version_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4705,7 +4705,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio[2h])))",
+                        "expr": "sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4784,7 +4784,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_devices_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_devices_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -4806,7 +4806,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_devices_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_devices_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p90",
@@ -4880,7 +4880,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_distro_name, tailscale_distro_codename) (last_over_time(tailscale_devices_by_distro_ratio[2h]))",
+                        "expr": "sum by (tailscale_distro_name, tailscale_distro_codename) (last_over_time(tailscale_devices_by_distro_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_distro_name}} {{tailscale_distro_codename}}",
@@ -5742,7 +5742,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, last_over_time(tailscale_device_version_skew_ratio{host_name=~\"$host_name\"}[10m]))",
+                        "expr": "topk($topn, last_over_time(tailscale_device_version_skew_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5904,7 +5904,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_ssh_enabled_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale_devices_ssh_enabled_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5971,7 +5971,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_devices_key_expiry_disabled_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale_devices_key_expiry_disabled_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6425,7 +6425,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_device_attributes_dropped_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale_device_attributes_dropped_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6504,7 +6504,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds[2h]) - time()) <= 0) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h]) - time()) <= 0) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6583,7 +6583,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_devices_key_expiry_days_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_devices_key_expiry_days_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -6657,7 +6657,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) <= 0), \"band\", \"expired\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) > 0 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 7*86400), \"band\", \"<=7d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 7*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 30*86400), \"band\", \"7-30d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 30*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 90*86400), \"band\", \"30-90d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 90*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 180*86400), \"band\", \"90-180d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 180*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) < 365*86400), \"band\", \"180-365d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds[2h])) - time()) >= 365*86400), \"band\", \">365d\", \"\", \"\")",
+                        "expr": "label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) <= 0), \"band\", \"expired\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) > 0 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) < 7*86400), \"band\", \"<=7d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) >= 7*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) < 30*86400), \"band\", \"7-30d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) >= 30*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) < 90*86400), \"band\", \"30-90d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) >= 90*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) < 180*86400), \"band\", \"90-180d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) >= 180*86400 and (max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) < 365*86400), \"band\", \"180-365d\", \"\", \"\") or label_replace(count((max by (host_id) (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}[2h])) - time()) >= 365*86400), \"band\", \">365d\", \"\", \"\")",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -6736,7 +6736,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_posture_ratio{host_name=~\"$host_name\"}[2h])",
+                        "expr": "last_over_time(tailscale_device_posture_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os=~\"$os_type\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -6810,7 +6810,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (ts_version) (max by (ts_version, host_name) (last_over_time(tailscale_device_posture_ratio[2h])))",
+                        "expr": "count by (ts_version) (max by (ts_version, host_name) (last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os=~\"$os_type\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{ts_version}}",
@@ -6891,7 +6891,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (check) (last_over_time(tailscale_devices_posture_compliance_failed_ratio[2h]))",
+                        "expr": "max by (check) (last_over_time(tailscale_devices_posture_compliance_failed_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{check}}",
@@ -6973,7 +6973,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_devices_direct_capable_ratio[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio[10m]))",
+                        "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7056,7 +7056,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_devices_hard_nat_ratio[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio[10m]))",
+                        "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7139,7 +7139,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_connectivity_capability) (max by (tailscale_connectivity_capability) (last_over_time(tailscale_devices_client_supports_ratio[2h])))",
+                        "expr": "sum by (tailscale_connectivity_capability) (max by (tailscale_connectivity_capability) (last_over_time(tailscale_devices_client_supports_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7218,7 +7218,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_connectivity_direct_capable_ratio[10m]) == 1) / clamp_min(count(last_over_time(tailscale_device_connectivity_direct_capable_ratio[10m])), 1)",
+                        "expr": "count(last_over_time(tailscale_device_connectivity_direct_capable_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m]) == 1) / clamp_min(count(last_over_time(tailscale_device_connectivity_direct_capable_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m])), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7304,7 +7304,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_connectivity_ipv6_ratio[10m]) == 1) / clamp_min(count(last_over_time(tailscale_device_connectivity_ipv6_ratio[10m])), 1)",
+                        "expr": "count(last_over_time(tailscale_device_connectivity_ipv6_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m]) == 1) / clamp_min(count(last_over_time(tailscale_device_connectivity_ipv6_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m])), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7390,7 +7390,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_connectivity_udp_ratio[10m]) == 0) or (0 * count(last_over_time(tailscale_device_connectivity_udp_ratio[10m])))",
+                        "expr": "count(last_over_time(tailscale_device_connectivity_udp_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_connectivity_udp_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7474,7 +7474,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "quantile(0.5, last_over_time(tailscale_device_connectivity_endpoints_ratio[10m]))",
+                        "expr": "quantile(0.5, last_over_time(tailscale_device_connectivity_endpoints_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -7496,7 +7496,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_device_connectivity_endpoints_ratio[10m]))",
+                        "expr": "max(last_over_time(tailscale_device_connectivity_endpoints_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "max",
@@ -7571,7 +7571,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
+                        "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "hard-NAT fraction",
@@ -7721,7 +7721,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_direct_capable_ratio{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_connectivity_direct_capable_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7743,7 +7743,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_udp_ratio{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_connectivity_udp_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7765,7 +7765,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_ipv6_ratio{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_connectivity_ipv6_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7787,7 +7787,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_endpoints_ratio{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_connectivity_endpoints_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -7978,7 +7978,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_hard_nat_ratio{host_name=~\"$host_name\"}[10m]) == 1",
+                        "expr": "last_over_time(tailscale_device_connectivity_hard_nat_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8054,7 +8054,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_exit_nodes_count_ratio{tailscale_exit_node_state=\"advertised\"}[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_exit_nodes_count_ratio{tailscale_exit_node_state=\"advertised\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -8120,7 +8120,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_exit_nodes_count_ratio{tailscale_exit_node_state=\"enabled\"}[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_exit_nodes_count_ratio{tailscale_exit_node_state=\"enabled\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -8186,7 +8186,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_subnet_routes_unapproved[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_subnet_routes_unapproved{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -8265,7 +8265,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_subnet_routes_enabled[2h]))",
+                        "expr": "max(last_over_time(tailscale_subnet_routes_enabled{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -8332,7 +8332,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_subnet_routes_advertised[2h]))",
+                        "expr": "max(last_over_time(tailscale_subnet_routes_advertised{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -8399,7 +8399,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_exit_node_ratio{host_name=~\"$host_name\"}[10m]) == 1",
+                        "expr": "last_over_time(tailscale_device_exit_node_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8476,7 +8476,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8498,7 +8498,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8603,7 +8603,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_route_cidr) (last_over_time(tailscale_subnet_routes_routers_ratio[2h]))",
+                        "expr": "max by (tailscale_route_cidr) (last_over_time(tailscale_subnet_routes_routers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8682,7 +8682,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_derp_latency_seconds{host_name=~\"$host_name\"}[10m])",
+                        "expr": "last_over_time(tailscale_device_derp_latency_seconds{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8781,7 +8781,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (tailscale_derp_region) (max by (tailscale_derp_region, host_name) (last_over_time(tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\"}[10m])))",
+                        "expr": "count by (tailscale_derp_region) (max by (tailscale_derp_region, host_name) (last_over_time(tailscale_device_derp_latency_seconds{tailscale_derp_preferred=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_derp_region}}",
@@ -8978,7 +8978,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -9408,7 +9408,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_traffic_type, field_class) (rate(tailscale_network_field_observations_total{state=\"missing\"}[$__rate_interval])) / clamp_min(sum by (tailscale_traffic_type, field_class) (rate(tailscale_network_field_observations_total[$__rate_interval])), 0.000000001)",
+                        "expr": "sum by (tailscale_traffic_type, field_class) (rate(tailscale_network_field_observations_total{state=\"missing\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) / clamp_min(sum by (tailscale_traffic_type, field_class) (rate(tailscale_network_field_observations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), 0.000000001)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_traffic_type}} / {{field_class}}",
@@ -9484,7 +9484,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
+                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{source}} / {{reason}}",
@@ -9575,7 +9575,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
+                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{scope}} / {{tailscale_traffic_type}}",
@@ -9649,7 +9649,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
+                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{reason}}",
@@ -9870,7 +9870,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(sum_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range]))",
+                        "expr": "sum(sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range]))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": "tx"
@@ -9891,7 +9891,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(sum_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_rx_bytes [$__range]))",
+                        "expr": "sum(sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_rx_bytes [$__range]))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": "rx"
@@ -9956,7 +9956,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range])))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -10262,7 +10262,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_dst_node=\"__other__\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])), 1)",
+                        "expr": "(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_dst_node=\"__other__\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -10345,7 +10345,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_path) (rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path!=\"\"}[$__rate_interval]))",
+                        "expr": "sum by (tailscale_path) (rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path!=\"\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_path}}",
@@ -10423,7 +10423,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_derp_region_id) (rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_derp_region_id!=\"\"}[$__rate_interval]))",
+                        "expr": "sum by (tailscale_derp_region_id) (rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_derp_region_id!=\"\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "region {{tailscale_derp_region_id}}",
@@ -10501,7 +10501,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path=\"derp\"}[$__rate_interval])) / clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path!=\"\"}[$__rate_interval])), 1)",
+                        "expr": "sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path=\"derp\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) / clamp_min(sum(rate(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_path!=\"\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -11716,7 +11716,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | event_name=`tailscale.network.flow` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 300,
                         "legendFormat": ""
@@ -14349,7 +14349,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_change, tailscale_audit_action) (rate(tailscale_config_audit_changes_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_audit_change, tailscale_audit_action) (rate(tailscale_config_audit_changes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_audit_change}}/{{tailscale_audit_action}}",
@@ -14423,7 +14423,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action) (rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"device\"}[$__rate_interval]))",
+                        "expr": "sum by (tailscale_audit_action) (rate(tailscale_config_audit_changes_total{tailscale_audit_change=\"device\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_audit_action}}",
@@ -14497,7 +14497,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_actor_type) (increase(tailscale_config_audit_changes_total[$__range]))",
+                        "expr": "sum by (tailscale_actor_type) (increase(tailscale_config_audit_changes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_actor_type}}",
@@ -14578,7 +14578,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}"
@@ -14655,7 +14655,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` [$__range]))",
+                        "expr": "sum(count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__range]))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -14721,7 +14721,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | severity_text=`WARN` [$__range]))",
+                        "expr": "sum(count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | severity_text=`WARN` [$__range]))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -14800,7 +14800,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
+                        "expr": "sum by (tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_type}}"
@@ -14877,7 +14877,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}/{{tailscale_target_type}}"
@@ -14955,7 +14955,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (user_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (user_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{user_name}}"
@@ -15028,7 +15028,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_target_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (tailscale_target_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_name}}"
@@ -15101,7 +15101,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_change, tailscale_audit_action) (rate(tailscale_config_audit_changes_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_audit_change, tailscale_audit_action) (rate(tailscale_config_audit_changes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "metric {{tailscale_audit_change}}/{{tailscale_audit_action}}",
@@ -15123,7 +15123,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(rate({service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` [$__rate_interval]))",
+                        "expr": "sum(rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__rate_interval]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "log events"
@@ -15197,7 +15197,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.config.audit` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -15256,7 +15256,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=~`$log_event` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 300,
                         "legendFormat": ""
@@ -15315,7 +15315,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name != `` [$__auto]))",
+                        "expr": "sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{event_name}}"
@@ -15392,7 +15392,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_section, tailscale_acl_position) (last_over_time(tailscale_acl_wildcard_rules_ratio[2h]))",
+                        "expr": "sum by (tailscale_acl_section, tailscale_acl_position) (last_over_time(tailscale_acl_wildcard_rules_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_acl_section}}/{{tailscale_acl_position}}",
@@ -15457,7 +15457,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section=\"grants\"}[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section=\"grants\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15536,7 +15536,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section=\"acls\"}[2h])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_acl_unrestricted_rules_ratio{tailscale_acl_section=\"acls\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15615,7 +15615,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_acl_ssh_wildcard_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_acl_ssh_wildcard_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15711,7 +15711,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes[2h])))",
+                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_acl_autoapprover_kind}}",
@@ -15792,7 +15792,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_section) (last_over_time(tailscale_acl_posture_gated_rules_ratio[2h]))",
+                        "expr": "sum by (tailscale_acl_section) (last_over_time(tailscale_acl_posture_gated_rules_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_acl_section}}",
@@ -15857,7 +15857,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.acl.risky_rule` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.acl.risky_rule` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -15916,7 +15916,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_tailnet_lock_errors_ratio[10m])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_tailnet_lock_errors_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -15995,7 +15995,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.tailnet_lock_error` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.device.tailnet_lock_error` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
@@ -16054,7 +16054,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_posture_integrations_count_ratio[2h])) or vector(0)",
+                        "expr": "max(last_over_time(tailscale_posture_integrations_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16120,7 +16120,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration) (last_over_time(tailscale_posture_integration_matched_ratio[2h]))",
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration) (last_over_time(tailscale_posture_integration_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_posture_provider}} / {{tailscale_posture_integration}}",
@@ -16185,7 +16185,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(time() - last_over_time(tailscale_posture_integration_last_sync_seconds[2h]))",
+                        "expr": "max(time() - last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16269,7 +16269,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_matched_ratio[2h]) / clamp_min(last_over_time(tailscale_posture_integration_possible_matched_ratio[2h]), 1)",
+                        "expr": "last_over_time(tailscale_posture_integration_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) / clamp_min(last_over_time(tailscale_posture_integration_possible_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]), 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16352,7 +16352,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_matched_ratio[2h])",
+                        "expr": "last_over_time(tailscale_posture_integration_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16374,7 +16374,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_possible_matched_ratio[2h])",
+                        "expr": "last_over_time(tailscale_posture_integration_possible_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16396,7 +16396,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_provider_hosts_ratio[2h])",
+                        "expr": "last_over_time(tailscale_posture_integration_provider_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16418,7 +16418,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_posture_integration_last_sync_seconds[2h])",
+                        "expr": "time() - last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16520,7 +16520,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\"}[10m])))",
+                        "expr": "count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16542,7 +16542,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\"}[10m]))",
+                        "expr": "count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16564,7 +16564,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "clamp_min(sum(last_over_time(tailscale_devices_count_ratio[10m])) - count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\"}[10m])), 0)",
+                        "expr": "clamp_min(sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) - count(last_over_time(tailscale_device_attribute_ratio{attribute=\"intune:isEncrypted\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])), 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16650,7 +16650,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (attribute, value) (last_over_time(tailscale_device_attribute_info_ratio[10m]))",
+                        "expr": "count by (attribute, value) (last_over_time(tailscale_device_attribute_info_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{attribute}} = {{value}}",
@@ -16728,7 +16728,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_attribute_ratio[10m])",
+                        "expr": "last_over_time(tailscale_device_attribute_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16807,7 +16807,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_attribute_expiry_seconds[2h]) - time()",
+                        "expr": "last_over_time(tailscale_device_attribute_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time()",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16907,7 +16907,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.attribute.expiring` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.device.attribute.expiring` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -16966,7 +16966,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_ratio{auto_update=\"true\"}[10m])) or (0 * count(last_over_time(tailscale_device_posture_ratio[10m])))",
+                        "expr": "count(last_over_time(tailscale_device_posture_ratio{auto_update=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * count(last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16988,7 +16988,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_ratio{encrypted=\"true\"}[10m])) or (0 * count(last_over_time(tailscale_device_posture_ratio[10m])))",
+                        "expr": "count(last_over_time(tailscale_device_posture_ratio{encrypted=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or (0 * count(last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17010,7 +17010,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_ratio[10m]))",
+                        "expr": "count(last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17032,7 +17032,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "clamp_min(sum(last_over_time(tailscale_devices_count_ratio[10m])) - count(last_over_time(tailscale_device_posture_ratio[10m])), 0)",
+                        "expr": "clamp_min(sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) - count(last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])), 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17119,7 +17119,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_update_available_ratio[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_update_available_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17199,7 +17199,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (track) (max by (track, host_id) (last_over_time(tailscale_device_posture_ratio[10m])))",
+                        "expr": "count by (track) (max by (track, host_id) (last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{track}}",
@@ -17280,7 +17280,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count by (ts_version) (max by (ts_version, host_id) (last_over_time(tailscale_device_posture_ratio[10m])))",
+                        "expr": "count by (ts_version) (max by (ts_version, host_id) (last_over_time(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{ts_version}}",
@@ -17361,7 +17361,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.posture` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.device.posture` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -17420,7 +17420,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17503,7 +17503,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() < 30*86400) and (last_over_time(tailscale_device_key_expiry_seconds[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 30*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17569,7 +17569,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_key_expiry_seconds[2h]) - time() < 7*86400) and (last_over_time(tailscale_key_expiry_seconds[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17648,7 +17648,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count((last_over_time(tailscale_key_expiry_seconds[2h]) - time() < 30*86400) and (last_over_time(tailscale_key_expiry_seconds[2h]) - time() > 0)) or vector(0)",
+                        "expr": "count((last_over_time(tailscale_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() < 30*86400) and (last_over_time(tailscale_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) - time() > 0)) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -17714,7 +17714,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.device.key_expiring` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.device.key_expiring` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -17773,7 +17773,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.key.expiring` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.key.expiring` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -17832,7 +17832,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=~`(?:tailscale.key.created|tailscale.key.revoked|tailscale.key.expiring|tailscale.user_invite.observed|tailscale.user_invite.no_longer_open)` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`(?:tailscale.key.created|tailscale.key.revoked|tailscale.key.expiring|tailscale.user_invite.observed|tailscale.user_invite.no_longer_open)` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 300,
                         "legendFormat": ""
@@ -17891,7 +17891,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_keys_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_keys_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -17913,7 +17913,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_keys_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_keys_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p90",
@@ -17988,7 +17988,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_key_owner, tailscale_key_type) (last_over_time(tailscale_keys_by_owner_ratio[2h]))",
+                        "expr": "sum by (tailscale_key_owner, tailscale_key_type) (last_over_time(tailscale_keys_by_owner_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_key_owner}} / {{tailscale_key_type}}",
@@ -18054,7 +18054,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_key_allowed_tags_ratio[2h]) == 0)",
+                        "expr": "count(last_over_time(tailscale_key_allowed_tags_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) == 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18134,7 +18134,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_key_allowed_tags_ratio[2h])",
+                        "expr": "last_over_time(tailscale_key_allowed_tags_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18214,7 +18214,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_key_scope_class_ratio[2h]) == 1",
+                        "expr": "last_over_time(tailscale_key_scope_class_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18295,7 +18295,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_key_tag_scope_ratio[2h]) == 1",
+                        "expr": "last_over_time(tailscale_key_tag_scope_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]) == 1",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18376,7 +18376,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_users_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_users_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -18398,7 +18398,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_users_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_users_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p90",
@@ -18473,7 +18473,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -18495,7 +18495,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_user_invites_pending_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p90",
@@ -18570,7 +18570,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_device_invites_pending_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.5, sum by (le) (rate(tailscale_device_invites_pending_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p50",
@@ -18592,7 +18592,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_device_invites_pending_age_seconds_bucket[$__rate_interval])))",
+                        "expr": "histogram_quantile(0.9, sum by (le) (rate(tailscale_device_invites_pending_age_seconds_bucket{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "p90",
@@ -18667,7 +18667,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(last_over_time(tailscale_contact_needs_verification_ratio[2h]))",
+                        "expr": "max(last_over_time(tailscale_contact_needs_verification_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18747,7 +18747,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_device_invite_accepted) (last_over_time(tailscale_device_invites_count_ratio[10m]))",
+                        "expr": "sum by (tailscale_device_invite_accepted) (last_over_time(tailscale_device_invites_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "accepted={{tailscale_device_invite_accepted}}",
@@ -18821,7 +18821,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node=\"true\"}[10m])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_allow_exit_node=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18900,7 +18900,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_multi_use=\"true\"}[10m])) or vector(0)",
+                        "expr": "sum(last_over_time(tailscale_device_invites_count_ratio{tailscale_device_invite_multi_use=\"true\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -18979,7 +18979,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(rate(tailscale_k8s_api_requests_total[$__rate_interval]))",
+                        "expr": "sum(rate(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -19053,7 +19053,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_verb) (rate(tailscale_k8s_api_requests_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_verb) (rate(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_verb}}",
@@ -19131,7 +19131,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_requests_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -19196,7 +19196,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_resource) (increase(tailscale_k8s_api_requests_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_resource) (increase(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_resource}}",
@@ -19277,7 +19277,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user_agent) (increase(tailscale_k8s_api_requests_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user_agent) (increase(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user_agent}}",
@@ -19358,7 +19358,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user, tailscale_k8s_verb, tailscale_k8s_resource) (increase(tailscale_k8s_api_requests_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user, tailscale_k8s_verb, tailscale_k8s_resource) (increase(tailscale_k8s_api_requests_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -19453,7 +19453,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_resource) (rate(tailscale_k8s_api_sensitive_reads_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_resource) (rate(tailscale_k8s_api_sensitive_reads_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_resource}}",
@@ -19531,7 +19531,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_sensitive_reads_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_sensitive_reads_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -19596,7 +19596,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user_agent) (increase(tailscale_k8s_api_sensitive_reads_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user_agent) (increase(tailscale_k8s_api_sensitive_reads_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user_agent}}",
@@ -19677,7 +19677,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_sensitive_reads_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_sensitive_reads_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user}}",
@@ -19758,7 +19758,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_command_class) (rate(tailscale_k8s_api_exec_sessions_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_command_class) (rate(tailscale_k8s_api_exec_sessions_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_command_class}}",
@@ -19836,7 +19836,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_exec_sessions_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_exec_sessions_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -19901,7 +19901,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_session_type) (increase(tailscale_k8s_api_exec_sessions_total[$__range]))",
+                        "expr": "sum by (tailscale_k8s_session_type) (increase(tailscale_k8s_api_exec_sessions_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_session_type}}",
@@ -19982,7 +19982,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_exec_sessions_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_exec_sessions_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user}}",
@@ -20063,7 +20063,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_verb) (rate(tailscale_k8s_api_mutations_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_verb) (rate(tailscale_k8s_api_mutations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_verb}}",
@@ -20141,7 +20141,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_resource) (increase(tailscale_k8s_api_mutations_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_resource) (increase(tailscale_k8s_api_mutations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_resource}}",
@@ -20222,7 +20222,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_mutations_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_mutations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -20287,7 +20287,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_mutations_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_mutations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user}}",
@@ -20368,7 +20368,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_resource) (rate(tailscale_k8s_api_rbac_probes_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_resource) (rate(tailscale_k8s_api_rbac_probes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_resource}}",
@@ -20446,7 +20446,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_rbac_probes_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_api_rbac_probes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -20511,7 +20511,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_rbac_probes_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_api_rbac_probes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user}}",
@@ -20592,7 +20592,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_session_type) (rate(tailscale_k8s_session_started_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_session_type) (rate(tailscale_k8s_session_started_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_session_type}}",
@@ -20670,7 +20670,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_session_started_total[$__rate_interval]))",
+                        "expr": "sum by (tailscale_k8s_namespace) (rate(tailscale_k8s_session_started_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_k8s_namespace}}",
@@ -20735,7 +20735,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_k8s_command_class) (increase(tailscale_k8s_session_started_total[$__range]))",
+                        "expr": "sum by (tailscale_k8s_command_class) (increase(tailscale_k8s_session_started_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_command_class}}",
@@ -20816,7 +20816,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_session_started_total[$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_k8s_user) (increase(tailscale_k8s_session_started_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_k8s_user}}",
@@ -20897,7 +20897,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (field, status) (rate(tailscale_k8s_schema_drift_total[$__rate_interval]))",
+                        "expr": "sum by (field, status) (rate(tailscale_k8s_schema_drift_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{field}}/{{status}}",
@@ -20971,7 +20971,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(increase(tailscale_k8s_schema_drift_total[$__range])) or vector(0)",
+                        "expr": "sum(increase(tailscale_k8s_schema_drift_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])) or vector(0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -21051,7 +21051,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api_request` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -21110,7 +21110,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.session` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.session` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -21169,7 +21169,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api_request` | tailscale_k8s_resource=`secrets`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_resource=`secrets` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
@@ -21228,7 +21228,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api_request` | tailscale_k8s_resource=~`selfsubject.*`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_resource=~`selfsubject.*` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
@@ -21287,7 +21287,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api_request` | tailscale_k8s_subresource=`log` | tailscale_k8s_namespace=`tailscale`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_subresource=`log` | tailscale_k8s_namespace=`tailscale` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
@@ -21346,7 +21346,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | event_name=`tailscale.k8s.api_request` | tailscale_k8s_subresource=~`exec|attach|portforward`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_subresource=~`exec|attach|portforward` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
@@ -25654,7 +25654,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - max by (geoip_database) (last_over_time(tailscale_geoip_database_build_time_seconds[2h]))",
+                        "expr": "time() - max by (geoip_database) (last_over_time(tailscale_geoip_database_build_time_seconds{tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{geoip_database}}",
@@ -25737,7 +25737,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (geoip_edition, result) (rate(tailscale_geoip_downloads_total[$__rate_interval]))",
+                        "expr": "sum by (geoip_edition, result) (rate(tailscale_geoip_downloads_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{geoip_edition}} / {{result}}",
@@ -25816,7 +25816,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (geoip_database, result) (rate(tailscale_geoip_lookups_total[$__rate_interval]))",
+                        "expr": "sum by (geoip_database, result) (rate(tailscale_geoip_lookups_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{geoip_database}} / {{result}}",
@@ -25895,7 +25895,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (geoip_database, result) (rate(tailscale_geoip_reloads_total[$__rate_interval]))",
+                        "expr": "sum by (geoip_database, result) (rate(tailscale_geoip_reloads_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{geoip_database}} / {{result}}",
@@ -28284,7 +28284,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "query": "query_result((count(tailscale2otel_scrape_success_ratio == 0) or vector(0)) + (sum(increase(tailscale2otel_export_failures_total[1h])) or vector(0)) > 0)",
+                        "query": "query_result((count(tailscale2otel_scrape_success_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 0) or vector(0)) + (sum(increase(tailscale2otel_export_failures_total{tailscale2otel_provider=~\"$provider\"}[1h])) or vector(0)) > 0)",
                         "refId": "is_degraded"
                       }
                     },
@@ -28316,7 +28316,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "query": "label_values(tailscale_acl_unrestricted_rules_ratio, __name__)",
+                        "query": "label_values(tailscale_acl_unrestricted_rules_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                         "refId": "has_acl_risk"
                       }
                     },
@@ -28348,7 +28348,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "query": "query_result(count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\"})) > 1)",
+                        "query": "query_result(count(count by (tailscale_tailnet) ({__name__=~\"tailscale_.+\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})) > 1)",
                         "refId": "has_multitailnet"
                       }
                     },
@@ -28976,7 +28976,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio, os_type)",
+                                  "query": "label_values(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, os_type)",
                                   "refId": "os_type"
                                 }
                               },
@@ -29009,7 +29009,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)",
+                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, host_name)",
                                   "refId": "host_name"
                                 }
                               },
@@ -29066,7 +29066,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -29367,7 +29367,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio, os_type)",
+                                  "query": "label_values(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, os_type)",
                                   "refId": "os_type"
                                 }
                               },
@@ -29400,7 +29400,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)",
+                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, host_name)",
                                   "refId": "host_name"
                                 }
                               },
@@ -29457,7 +29457,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_posture_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os=~\"$os_type\"}, __name__)",
                                   "refId": "has_posture"
                                 }
                               },
@@ -29489,7 +29489,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_devices_key_expiry_days_count, __name__)",
+                                  "query": "label_values(tailscale_devices_key_expiry_days_count{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_key_expiry_hist"
                                 }
                               },
@@ -29521,7 +29521,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_blocks_incoming_connections_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_blocks_incoming_connections_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\", os_type=~\"$os_type\"}, __name__)",
                                   "refId": "has_device_flags"
                                 }
                               },
@@ -29553,7 +29553,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -30077,7 +30077,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio, os_type)",
+                                  "query": "label_values(tailscale_device_online_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, os_type)",
                                   "refId": "os_type"
                                 }
                               },
@@ -30110,7 +30110,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\"}, host_name)",
+                                  "query": "label_values(tailscale_device_online_ratio{os_type=~\"$os_type\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, host_name)",
                                   "refId": "host_name"
                                 }
                               },
@@ -30167,7 +30167,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_routes_advertised, __name__)",
+                                  "query": "label_values(tailscale_device_routes_advertised{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}, __name__)",
                                   "refId": "has_routes"
                                 }
                               },
@@ -30199,7 +30199,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_derp_latency_seconds, __name__)",
+                                  "query": "label_values(tailscale_device_derp_latency_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}, __name__)",
                                   "refId": "has_derp"
                                 }
                               },
@@ -30231,7 +30231,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_connectivity_hard_nat_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_connectivity_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}, __name__)",
                                   "refId": "has_connectivity"
                                 }
                               },
@@ -30263,7 +30263,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_exit_node_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_exit_node_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", host_name=~\"$host_name\"}, __name__)",
                                   "refId": "has_exit"
                                 }
                               },
@@ -30295,7 +30295,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -30327,7 +30327,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"network_topology\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"network_topology\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_topology"
                                 }
                               },
@@ -31428,7 +31428,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_flows_total, network_transport)",
+                                  "query": "label_values(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, network_transport)",
                                   "refId": "net_transport"
                                 }
                               },
@@ -31461,7 +31461,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_flows_total, tailscale_traffic_type)",
+                                  "query": "label_values(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, tailscale_traffic_type)",
                                   "refId": "traffic_type"
                                 }
                               },
@@ -31494,7 +31494,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_flows_total, __name__)",
+                                  "query": "label_values(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}, __name__)",
                                   "refId": "has_flows"
                                 }
                               },
@@ -31526,7 +31526,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_io_bytes_total, __name__)",
+                                  "query": "label_values(tailscale_network_io_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}, __name__)",
                                   "refId": "has_raw_flow"
                                 }
                               },
@@ -31558,7 +31558,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_io_rollup_bytes_total, __name__)",
+                                  "query": "label_values(tailscale_network_io_rollup_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}, __name__)",
                                   "refId": "has_rollup_flow"
                                 }
                               },
@@ -31590,7 +31590,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_network_unique_dst_peers, __name__)",
+                                  "query": "label_values(tailscale_network_unique_dst_peers{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_unique"
                                 }
                               },
@@ -31622,7 +31622,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_exit_node_io_bytes_total, __name__)",
+                                  "query": "label_values(tailscale_exit_node_io_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_exit_io"
                                 }
                               },
@@ -31654,7 +31654,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_node"
                                 }
                               },
@@ -31686,7 +31686,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"network_topology\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"network_topology\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_topology"
                                 }
                               },
@@ -32407,7 +32407,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscaled_inbound_bytes_total, __name__)",
+                                  "query": "label_values(tailscaled_inbound_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_path"
                                 }
                               },
@@ -32439,7 +32439,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_derp_region_devices_ratio, __name__)",
+                                  "query": "label_values(tailscale_derp_region_devices_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_derp_rollup"
                                 }
                               },
@@ -32471,7 +32471,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscaled_outbound_dropped_packets_total, __name__)",
+                                  "query": "label_values(tailscaled_outbound_dropped_packets_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_dropped"
                                 }
                               },
@@ -32503,7 +32503,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_node_io_bytes_total, __name__)",
+                                  "query": "label_values(tailscale_node_io_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_node_curated"
                                 }
                               },
@@ -32535,7 +32535,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_node_service_io_bytes_total, __name__)",
+                                  "query": "label_values(tailscale_node_service_io_bytes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_node_service_io"
                                 }
                               },
@@ -32941,7 +32941,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_config_audit_events_total, __name__)",
+                                  "query": "label_values(tailscale_config_audit_events_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_audit"
                                 }
                               },
@@ -32973,7 +32973,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_config_audit_changes_total, __name__)",
+                                  "query": "label_values(tailscale_config_audit_changes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_audit_changes"
                                 }
                               },
@@ -33005,7 +33005,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"emails\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"emails\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_actor"
                                 }
                               },
@@ -33239,7 +33239,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_tailnet_lock_errors_ratio, __name__)",
+                                  "query": "label_values(tailscale_tailnet_lock_errors_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_tailnet_lock"
                                 }
                               },
@@ -33271,7 +33271,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_acl_unrestricted_rules_ratio, __name__)",
+                                  "query": "label_values(tailscale_acl_unrestricted_rules_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_acl_risk"
                                 }
                               },
@@ -33303,7 +33303,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -33716,7 +33716,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_posture_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_posture_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_posture"
                                 }
                               },
@@ -33748,7 +33748,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_posture_integrations_count_ratio, __name__)",
+                                  "query": "label_values(tailscale_posture_integrations_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_posture_integration"
                                 }
                               },
@@ -33780,7 +33780,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_attribute_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_attribute_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_device_attr"
                                 }
                               },
@@ -33812,7 +33812,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -34258,7 +34258,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_device_invites_count_ratio, __name__)",
+                                  "query": "label_values(tailscale_device_invites_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_invites_dev"
                                 }
                               },
@@ -34290,7 +34290,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_key_scopes_ratio, __name__)",
+                                  "query": "label_values(tailscale_key_scopes_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_key_scopes"
                                 }
                               },
@@ -34322,7 +34322,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },
@@ -34354,7 +34354,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"emails\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"emails\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_actor"
                                 }
                               },
@@ -35398,7 +35398,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"emails\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"emails\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_emails"
                                 }
                               },
@@ -35430,7 +35430,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_api_sensitive_reads_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_api_sensitive_reads_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_sensitive_reads"
                                 }
                               },
@@ -35462,7 +35462,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_api_exec_sessions_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_api_exec_sessions_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_exec_sessions"
                                 }
                               },
@@ -35494,7 +35494,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_api_mutations_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_api_mutations_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_mutations"
                                 }
                               },
@@ -35526,7 +35526,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_api_rbac_probes_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_api_rbac_probes_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_rbac_probes"
                                 }
                               },
@@ -35558,7 +35558,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_session_started_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_session_started_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_sessions"
                                 }
                               },
@@ -35590,7 +35590,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_k8s_schema_drift_total, __name__)",
+                                  "query": "label_values(tailscale_k8s_schema_drift_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_k8s_schema_drift"
                                 }
                               },
@@ -35622,7 +35622,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"command_text\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"command_text\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_command_text"
                                 }
                               },
@@ -36437,7 +36437,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_key_expiry_seconds, __name__)",
+                                  "query": "label_values(tailscale_key_expiry_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_keys"
                                 }
                               },
@@ -36469,7 +36469,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_user_connected_ratio, __name__)",
+                                  "query": "label_values(tailscale_user_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_users_pe"
                                 }
                               },
@@ -36501,7 +36501,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\"} == 0)",
+                                  "query": "query_result(tailscale2otel_pii_filter_category_ratio{category=\"user_display_names\", tailscale2otel_provider=~\"$provider\"} == 0)",
                                   "refId": "pii_usernames"
                                 }
                               },
@@ -36992,7 +36992,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_services_count_ratio, __name__)",
+                                  "query": "label_values(tailscale_services_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_services"
                                 }
                               },
@@ -37024,7 +37024,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "label_values(tailscale_service_ports, __name__)",
+                                  "query": "label_values(tailscale_service_ports{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}, __name__)",
                                   "refId": "has_svc"
                                 }
                               },
@@ -37056,7 +37056,7 @@
                                   "name": "${ds_prometheus}"
                                 },
                                 "spec": {
-                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\"} == 0))",
+                                  "query": "query_result((tailscale2otel_pii_filter_category_ratio{category=\"hostnames\", tailscale2otel_provider=~\"$provider\"} == 0) and ignoring(category) (tailscale2otel_pii_filter_category_ratio{category=\"node_ids\", tailscale2otel_provider=~\"$provider\"} == 0))",
                                   "refId": "pii_perdevice"
                                 }
                               },

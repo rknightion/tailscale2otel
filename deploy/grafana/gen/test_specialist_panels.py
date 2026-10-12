@@ -234,7 +234,7 @@ class HealthAndCostPanelContracts(unittest.TestCase):
                       spec["description"])
         query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
         self.assertIn("topk($topn,", query)
-        self.assertIn("max by (metric_name) (tailscale2otel_series_active)", query)
+        self.assertIn('max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~"$tailnet"})', query)
         order = spec["data"]["spec"]["transformations"][0]["spec"]["options"]["indexByName"]
         self.assertEqual(order, {"metric_name": 0, "Value": 1})
         excluded = spec["data"]["spec"]["transformations"][0]["spec"]["options"]["excludeByName"]
