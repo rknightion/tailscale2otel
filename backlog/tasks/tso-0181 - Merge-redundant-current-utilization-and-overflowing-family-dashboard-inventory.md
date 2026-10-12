@@ -4,7 +4,7 @@ title: Merge redundant current-utilization and overflowing-family dashboard inve
 status: Parked
 assignee: []
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-11 18:22'
+updated_date: '2026-10-12 22:48'
 labels:
   - needs-triage
 dependencies: []
@@ -44,4 +44,6 @@ loop27: 0 implementation attempts in this loop; held by TSO-0172 (live dashboard
 loop28: 0 implementation attempts; held by TSO-0172 (live dashboard audit), whose local source proof passed but historical semantic/prerequisite acceptance remains incomplete and whose candidate did not land. Resume only after the audit is accepted and landed, then preceding frozen chain tasks settle. No candidate work started.
 
 loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
+
+loop30: 0 implementation attempts; read-only preflight and root inspection establish a frozen-contract blocker before mutation. Shared test_dashboard_accuracy.CardinalityAccuracyTest.test_cap_panels_use_the_exported_limit_not_a_10k_literal requires both Active series vs cap (top $topn) and Per-metric utilization (top-N) panels and queries, contradicting the required one genuine current-utilization presentation. Protected test edits cannot be ownership-amended away; no hidden/orphan duplicate, test weakening or half-land. Resume after owner permits intended consolidated panel/test contract and scope for regenerated affected alert links; predecessor must remain green. Before aggregate counts: family515 panels/631 queries, health175/242, cardinality21/27. No reduction/after count, G, review or source candidate claimed. Evidence /Users/rob/repos/tailscale2otel/codex/loop30/tso0181-preflight.md.
 <!-- SECTION:NOTES:END -->
