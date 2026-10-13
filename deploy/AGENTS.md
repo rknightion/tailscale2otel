@@ -104,5 +104,5 @@ commit. The follow-on jobs run on the default `GITHUB_TOKEN`.
 
 ## Deeper references
 
-- `reference/dashboard-generator.md` - read before editing anything under `grafana/gen/` or
+- `deploy/reference/dashboard-generator.md` at the repo root - read before editing anything under `grafana/gen/` or
   `alerts/gen/`, renaming a panel, or adding an alert `panel=` link.
