@@ -1,11 +1,11 @@
 ---
 id: TSO-0189
 title: Keep device OS pie-chart labels readable at panel snapshot dimensions
-status: In Progress
+status: Done
 assignee:
   - '@loop31'
 created_date: '2026-10-11 17:15'
-updated_date: '2026-10-13 09:19'
+updated_date: '2026-10-13 10:52'
 labels:
   - needs-triage
 dependencies: []
@@ -22,15 +22,15 @@ During TSO-0172 (live dashboard audit), an independently inspected published Dev
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A synthetic multi-category fixture with long OS labels and small slices keeps every category readable at 800x600 and normal dashboard width.
-- [ ] #2 The visualization makes the percentage-versus-count interpretation explicit without clipped or overlapping annotations.
-- [ ] #3 Retain the existing query and signal coverage and capture before/after rendered fixture evidence.
+- [x] #1 A synthetic multi-category fixture with long OS labels and small slices keeps every category readable at 800x600 and normal dashboard width.
+- [x] #2 The visualization makes the percentage-versus-count interpretation explicit without clipped or overlapping annotations.
+- [x] #3 Retain the existing query and signal coverage and capture before/after rendered fixture evidence.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
@@ -52,4 +52,12 @@ loop30: 2 implementation attempts, no rescues or reviews; candidate uncommitted/
 loop31 preparation, Rob 2026-10-13: recommission approved. Previous blocker was the frozen OS pie options/precision test fence. Changed premise: OS-only explicit bottom Value/Percent legend, no slice annotations and precision=1 expectations are now authorized; Compliance distribution and all other precision guards remain unchanged. Discriminating check: retained query-backed fixture at 800x600 and actual native grid with navigation expanded and closed, followed by full gate and fresh review. Lifetime implementation attempts remain 2 of 4; remaining ladder is rescue-astra-medium then rescue-astra, no reset or ceiling increase. Task remains Parked until launch admission.
 
 loop31: rescue attempt3 reaches exact query-backed expanded-navigation width failure, despite green candidate gate. Native grid OS width falls 624px to504px, legend339px cannot fit374-454px text; all seven labels clip. Closed grid and800x600 solo pass. Actual Prometheus/Grafana response receipts distinguish scope/state categories. Final rescue attempt4 dispatched for evidence-based width/reflow, no test weakening; solo has no visible application nav, native-grid must prove both nav states.
+
+loop31: lifetime4 implementation attempts, final rescue succeeds. Actual executed scoped Prometheus query and real Grafana responses prove long-label small-slice before/after renders,800x600 nav-free solo and native grid visibly expanded/closed navigation; full-width native pie bottom Value/Percent legend, no annotations, precision1. Query and non-OS contracts unchanged. Full-hunk security review PASS; sharded CodeRabbit Python defect explicitly unreviewed, not clean. Final published batch9927d3962b49aef5d13f3196c76f05cf722872b8 contains source963635cd9bed31e888c229db44a797f373348742; exact fresh composed gate and CI38383777876 ci-success green, sync38383777852 success; exact far-side tailnet blob48ae2e76faadff3dafdc3cada0c2f4f17e0695fa matches. Helm absent by paths. Full gate stdout unavailable beyond tail; bounded fixture/viewport proof, not arbitrary labels/cardinality. Original retained candidate untouched.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Readable OS count/percent presentation passes actual query/render proof with navigation expanded and closed; non-OS defaults and every scoped query retained. Attempt4 of4; integrated/published and independently reviewed.
+<!-- SECTION:FINAL_SUMMARY:END -->

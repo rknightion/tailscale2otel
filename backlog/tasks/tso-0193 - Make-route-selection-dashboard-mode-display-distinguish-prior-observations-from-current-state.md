@@ -3,9 +3,11 @@ id: TSO-0193
 title: >-
   Make route-selection dashboard mode display distinguish prior observations
   from current state
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop31'
 created_date: '2026-10-12 20:40'
+updated_date: '2026-10-13 10:53'
 labels:
   - needs-triage
 dependencies: []
@@ -32,3 +34,9 @@ The route-selection info gauge clears obsolete SDK series after a successful pol
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop31: retain scoped two-hour query/history/title, label observed route modes explicitly historical; reproduce actual mode-change/absent-current fixtures, portable tests and named gate, then root guarded review/integration/CI/delivery.
+<!-- SECTION:PLAN:END -->

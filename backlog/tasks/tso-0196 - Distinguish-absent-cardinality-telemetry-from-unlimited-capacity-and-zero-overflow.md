@@ -3,9 +3,11 @@ id: TSO-0196
 title: >-
   Distinguish absent cardinality telemetry from unlimited capacity and zero
   overflow
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop31'
 created_date: '2026-10-12 22:17'
+updated_date: '2026-10-13 10:53'
 labels:
   - needs-triage
 dependencies: []
@@ -33,3 +35,9 @@ Guarded description review found existing cardinality empty-state copy still ass
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop31: inspect shipped producer presence/limit/overflow evidence, encode honest missing/observed state without new producer signal; actual-query/render cases for missing, mixed reporters, finite,zero overflow, indistinguishable unlimited and selected scope; named gate, root guarded review/integration/CI/delivery.
+<!-- SECTION:PLAN:END -->

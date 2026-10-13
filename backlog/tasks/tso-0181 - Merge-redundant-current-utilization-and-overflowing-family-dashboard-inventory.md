@@ -1,11 +1,11 @@
 ---
 id: TSO-0181
 title: Merge redundant current-utilization and overflowing-family dashboard inventory
-status: In Progress
+status: Done
 assignee:
   - '@loop31'
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-13 08:54'
+updated_date: '2026-10-13 10:52'
 labels:
   - needs-triage
 dependencies: []
@@ -24,16 +24,16 @@ The current utilization table and bargauge execute the same expression; overflow
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 One current-utilization presentation gives affected metric family and configured-limit fraction, alongside the retained history view.
-- [ ] #2 One diagnostic row reconciles self-reported overflow flags with overflow-label series and identifies affected families.
-- [ ] #3 Every currently covered catalog signal retains panel coverage after consolidation; record query/panel count reduction.
-- [ ] #4 Keep native fallback navigation if an optional visualization plugin is missing.
+- [x] #1 One current-utilization presentation gives affected metric family and configured-limit fraction, alongside the retained history view.
+- [x] #2 One diagnostic row reconciles self-reported overflow flags with overflow-label series and identifies affected families.
+- [x] #3 Every currently covered catalog signal retains panel coverage after consolidation; record query/panel count reduction.
+- [x] #4 Keep native fallback navigation if an optional visualization plugin is missing.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
@@ -55,4 +55,12 @@ loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (compr
 loop30: 0 implementation attempts; read-only preflight and root inspection establish a frozen-contract blocker before mutation. Shared test_dashboard_accuracy.CardinalityAccuracyTest.test_cap_panels_use_the_exported_limit_not_a_10k_literal requires both Active series vs cap (top $topn) and Per-metric utilization (top-N) panels and queries, contradicting the required one genuine current-utilization presentation. Protected test edits cannot be ownership-amended away; no hidden/orphan duplicate, test weakening or half-land. Resume after owner permits intended consolidated panel/test contract and scope for regenerated affected alert links; predecessor must remain green. Before aggregate counts: family515 panels/631 queries, health175/242, cardinality21/27. No reduction/after count, G, review or source candidate claimed. Evidence /Users/rob/repos/tailscale2otel/codex/loop30/tso0181-preflight.md.
 
 loop31 preparation, Rob 2026-10-13: recommission approved. Previous blocker was a protected test requiring duplicate current-utilization panels. Changed premise: retain Per-metric utilization (top-N), retire Active series vs cap (top $topn), update only the retired-title contract, preserve history, signal coverage and native fallback; generated affected alert-link ownership is included. Discriminating check: one current presentation, lower measured panel/query counts, both distinct overflow evidence sources and valid regenerated links. Lifetime implementation attempts 0 of 4; worker, retry, rescue-astra-medium, rescue-astra remain. Task remains Parked until launch admission.
+
+loop31: 1 implementation attempt, single current native utilization table, preserved range history/native fallback/treemap/coverage and paired distinct overflow evidence. Family panels/queries515/631 to514/630, health175/242 to174/241, cardinality21/27 to20/26. Five generated alert destinations resolve unchanged titles. Local real query fixtures and green gate; full-hunk guarded review PASS. Sharded Python CodeRabbit No files defect explicitly unreviewed, not clean. Component8ce801cd049f8a0c5ef531917050e4be0d60d738 published in exact tested batch9927d3962b49aef5d13f3196c76f05cf722872b8; fresh composed gate, CI38383777876 ci-success and sync38383777852 success. Exact far-side health blob4d1d98624f64a05f8fddbd1c4655d97577649f6e matches. Helm absent by paths. Native plugin-independent fallback validated structurally, not absent-plugin runtime/browser proof.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Removed redundant current-utilization panel/query without removing signal coverage/history; paired discrepant overflow evidence and refreshed five generated alert links. Counts reduced, real queries and exact composed/CI/delivery verified. Attempts1; complete.
+<!-- SECTION:FINAL_SUMMARY:END -->
