@@ -1,5 +1,46 @@
 # Changelog
 
+## [5.2.0](https://github.com/rknightion/tailscale2otel/compare/v5.1.0...v5.2.0) (2026-10-13)
+
+
+### Features
+
+* **config:** acknowledge the flow store at rest; skip perm advisory on kubelet RO mounts ([45d541f](https://github.com/rknightion/tailscale2otel/commit/45d541f597f8ff41659ca3cbec97c2b5aeb07628))
+* **nodemetrics:** curate sampled Service throughput with scoped dashboard ([3393e3c](https://github.com/rknightion/tailscale2otel/commit/3393e3c2d4feab34418cf8ee434f98b59d5f3679))
+* **probe:** inspect OTLP HTTP acknowledgements safely ([d5f023f](https://github.com/rknightion/tailscale2otel/commit/d5f023fadc688a486d8ea9f9d9b33bfd23d92e81))
+* **settings:** emit bounded route-selection modes and preserve absent values ([84ab7ca](https://github.com/rknightion/tailscale2otel/commit/84ab7ca064a4f96e125cabbff1789631530109f0))
+
+
+### Bug Fixes
+
+* **alerts:** exempt devices that cannot self-update from auto-update coverage ([a7123cf](https://github.com/rknightion/tailscale2otel/commit/a7123cf4a2d8a31f0c487270d3953e35c8c18105))
+* **alerts:** scope auto-update posture rule; surface config advisories in Loki ([98d4f39](https://github.com/rknightion/tailscale2otel/commit/98d4f39fc177ffdcbcd4fee7ed712c561c24a8a6))
+* **ci:** provision existing just tool for client-library tests ([9bb62a0](https://github.com/rknightion/tailscale2otel/commit/9bb62a0d1cd66996e30c62b5555d25b2a12e5c08))
+* **deps:** update module github.com/klauspost/compress to v1.20.3 ([#708](https://github.com/rknightion/tailscale2otel/issues/708)) ([a4c9e68](https://github.com/rknightion/tailscale2otel/commit/a4c9e68d1e553a08f041c220d16e68e90eefdd78))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.8.0 ([#707](https://github.com/rknightion/tailscale2otel/issues/707)) ([453e9c8](https://github.com/rknightion/tailscale2otel/commit/453e9c808bed8434b90927a08793411189f8edec))
+* **deps:** update module github.com/prometheus/common to v0.72.1 ([#706](https://github.com/rknightion/tailscale2otel/issues/706)) ([627a537](https://github.com/rknightion/tailscale2otel/commit/627a53798d400b13cbe9a1e09bb0d9718ed78155))
+* **deps:** update module golang.org/x/sys to v0.49.0 ([#699](https://github.com/rknightion/tailscale2otel/issues/699)) ([c854778](https://github.com/rknightion/tailscale2otel/commit/c85477861c2f7923a34aae496442e53fda4df520))
+* **docs:** gate README overview capability counts ([c071d91](https://github.com/rknightion/tailscale2otel/commit/c071d9110b02d6236d2718d3907627d7ce47f40b))
+* **grafana:** anchor empty fleet summaries to observed inventory sources ([373608d](https://github.com/rknightion/tailscale2otel/commit/373608d6e03bf960a5463c0851f29dc8125c4d50))
+* **grafana:** consolidate current cardinality and overflow views ([8ce801c](https://github.com/rknightion/tailscale2otel/commit/8ce801cd049f8a0c5ef531917050e4be0d60d738))
+* **grafana:** count distinct metric families across reporters ([01f65be](https://github.com/rknightion/tailscale2otel/commit/01f65be9b59adc44c49f556e0f37c07989046308))
+* **grafana:** distinguish missing cardinality reports from healthy zeros ([0ee91ed](https://github.com/rknightion/tailscale2otel/commit/0ee91ed681dfaa07ca92bec6f9f9cbb6322e13d0))
+* **grafana:** distinguish missing exporter telemetry from healthy zeros ([2cd8d44](https://github.com/rknightion/tailscale2otel/commit/2cd8d44e55622a2a6e35c857ccdd163870e05956))
+* **grafana:** enforce applicable selectors across dashboard queries ([00a9936](https://github.com/rknightion/tailscale2otel/commit/00a9936814845d5f46c4beacc410b65ed8536e0d))
+* **grafana:** label route mode as historical observations ([2480a1f](https://github.com/rknightion/tailscale2otel/commit/2480a1f298ac86044d87362566bc035aae6caf4f))
+* **grafana:** make OS pie legend readable with expanded navigation ([963635c](https://github.com/rknightion/tailscale2otel/commit/963635cd9bed31e888c229db44a797f373348742))
+* **grafana:** scope node metrics by tailnet and provider ([67c5bf0](https://github.com/rknightion/tailscale2otel/commit/67c5bf07f3e7290236830f30c2933c37649336bc))
+* **grafana:** show neutral missing process telemetry on runtime stats ([6f1797b](https://github.com/rknightion/tailscale2otel/commit/6f1797baf6a58b68e75194192f74d18e704e4797))
+* **ingress:** bound permanent rejection retries and count data loss ([c30c532](https://github.com/rknightion/tailscale2otel/commit/c30c532923029be90e23e712fafae2812e362a4f))
+* **review:** require complete finding totals to match events ([50cb41a](https://github.com/rknightion/tailscale2otel/commit/50cb41a27f72e973b362dfee460b00514bf91bba))
+* **scripts:** report CodeRabbit finding counts in sharded review summary ([02f11c2](https://github.com/rknightion/tailscale2otel/commit/02f11c27c9223d86599895215d9d5305d2ab1b80))
+* **telemetry:** attribute runtime traces and correct dashboard ownership ([760fda5](https://github.com/rknightion/tailscale2otel/commit/760fda5e7c725ae2e1f6499a77bf681bfcd49585))
+* **telemetry:** bind delivery-health diagnostics in every provider ([7977987](https://github.com/rknightion/tailscale2otel/commit/79779879038c7e3ea4bd40ef6894a29350953037))
+* **telemetry:** decouple ingress WAL completion from metric collection ([3f2b465](https://github.com/rknightion/tailscale2otel/commit/3f2b4658ff777cd21174fddf6be2c9d99182d884))
+* **telemetry:** distrust malformed HTTP response classification ([07acc0e](https://github.com/rknightion/tailscale2otel/commit/07acc0e93b2d7dee6dca290da2da21f7fe9726da))
+* **telemetry:** log only bounded classes in export failure diagnostics ([303616b](https://github.com/rknightion/tailscale2otel/commit/303616b9f79cb34262de853a748e75d959e4df79))
+* **telemetry:** report hung ingress exports as retrying ([df6cd72](https://github.com/rknightion/tailscale2otel/commit/df6cd7225e175c9e739e3d9fdce2879c18f67939))
+
 ## [5.1.0](https://github.com/rknightion/tailscale2otel/compare/v5.0.4...v5.1.0) (2026-10-08)
 
 
