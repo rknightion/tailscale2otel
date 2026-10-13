@@ -165,13 +165,21 @@ def tab_devices_inventory(scope):
         # #392: the old expression grouped by os/authorized/external and then summed
         # the state labels straight back out, so an unauthorized macOS laptop was
         # indistinguishable from an authorized one. Keep the state in the legend.
+        # Give this pie its own full-width line: expanded navigation squeezed the
+        # former nine-column tile's bottom legend even with ample panel height.
         (panel("Devices by OS", "piechart",
                [prom_t("sum by (os_type, tailscale_authorized, tailscale_external) (%s)"
                        % lot("tailscale_devices_count_ratio{%s}" % TP, WIN_SLOW),
                        legend="{{os_type}} · authorized={{tailscale_authorized}} · external={{tailscale_external}}")],
-               unit="short", options=pie_opts(),
+               unit="short", decimals=1, options={
+                   "displayLabels": [],
+                   "legend": {"displayMode": "table", "placement": "bottom",
+                              "showLegend": True, "values": ["value", "percent"]}},
                desc="Device count per OS, kept split by authorization and shared-in state — "
-                    "an OS total that sums those away hides the devices an admin still has to act on."), 9, 5),
+                    "an OS total that sums those away hides the devices an admin still has to act on. "
+                    "Legend Value entries are absolute device counts; Percent entries are percentages "
+                    "of the displayed device total. Slice annotations are omitted to keep small "
+                    "slices and long category names readable."), 24, 15),
     ]
 
     overtime = [

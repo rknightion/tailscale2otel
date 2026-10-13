@@ -387,19 +387,27 @@ class NegativeTestFiresTest(unittest.TestCase):
 
 
 class DecimalsAndLegendConventionTest(unittest.TestCase):
-    """#396 requirement 2 also asks for decimals/legend consistency. The dominant (in fact
-    universal, as of this writing) convention in the generator is: no panel overrides Grafana's
-    default decimals, and no timeseries legend requests summary calcs. Both are asserted as
-    real, negative-testable regression gates rather than restated as prose."""
+    """Precision stays at Grafana's default except for the OS pie's one-decimal
+    count/percentage legend. Timeseries legends never request summary calcs.
+    Both conventions are asserted as regression gates rather than restated as prose."""
 
     def setUp(self):
         self.doc = dashboard.build_family()
 
-    def test_no_panel_sets_an_explicit_decimals_override(self):
-        offenders = [d for d in all_defaults(self.doc) if d.get("decimals") is not None]
-        self.assertEqual(len(offenders), 0,
-                         "a panel sets fieldConfig.defaults.decimals, breaking the dashboard-wide "
-                         "convention of leaving decimal precision at the Grafana default")
+    def test_only_os_pie_sets_exactly_one_decimal(self):
+        os_panels = 0
+        for element in self.doc["spec"]["elements"].values():
+            spec = element["spec"]
+            defaults = spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]
+            with self.subTest(panel=spec["title"]):
+                if spec["title"] == "Devices by OS":
+                    os_panels += 1
+                    self.assertEqual(spec["vizConfig"]["group"], "piechart")
+                    self.assertEqual(defaults.get("decimals"), 1)
+                else:
+                    self.assertIsNone(defaults.get("decimals"),
+                                      "non-OS panels must retain Grafana's default precision")
+        self.assertEqual(os_panels, 1)
 
     def test_no_timeseries_legend_requests_summary_calcs(self):
         offenders = [(t, c) for (t, c) in all_timeseries_legend_calcs(self.doc) if c]

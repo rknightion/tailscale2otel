@@ -3470,7 +3470,7 @@
         "spec": {
           "id": 37,
           "title": "Devices by OS",
-          "description": "Device count per OS, kept split by authorization and shared-in state \u2014 an OS total that sums those away hides the devices an admin still has to act on.",
+          "description": "Device count per OS, kept split by authorization and shared-in state \u2014 an OS total that sums those away hides the devices an admin still has to act on. Legend Value entries are absolute device counts; Percent entries are percentages of the displayed device total. Slice annotations are omitted to keep small slices and long category names readable.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3509,19 +3509,21 @@
             "version": "12.1.0",
             "spec": {
               "options": {
-                "displayLabels": [
-                  "name",
-                  "percent"
-                ],
+                "displayLabels": [],
                 "legend": {
                   "displayMode": "table",
-                  "placement": "right",
-                  "showLegend": true
+                  "placement": "bottom",
+                  "showLegend": true,
+                  "values": [
+                    "value",
+                    "percent"
+                  ]
                 }
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short"
+                  "unit": "short",
+                  "decimals": 1
                 },
                 "overrides": []
               }
@@ -28596,8 +28598,8 @@
                                           "spec": {
                                             "x": 0,
                                             "y": 5,
-                                            "width": 9,
-                                            "height": 5,
+                                            "width": 24,
+                                            "height": 15,
                                             "element": {
                                               "kind": "ElementReference",
                                               "name": "panel-37"

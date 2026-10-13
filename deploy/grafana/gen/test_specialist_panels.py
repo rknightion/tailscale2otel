@@ -149,7 +149,15 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
         for title, metric in cases.items():
             spec = panel_spec(self.doc, title)
             self.assertEqual(spec["vizConfig"]["group"], "piechart")
-            self.assertEqual(spec["vizConfig"]["spec"]["options"], builder.pie_opts())
+            if title == "Devices by OS":
+                self.assertEqual(spec["vizConfig"]["spec"]["options"], {
+                    "displayLabels": [],
+                    "legend": {"displayMode": "table", "placement": "bottom",
+                               "showLegend": True, "values": ["value", "percent"]},
+                })
+                self.assertEqual(spec["vizConfig"]["spec"]["fieldConfig"]["defaults"]["decimals"], 1)
+            else:
+                self.assertEqual(spec["vizConfig"]["spec"]["options"], builder.pie_opts())
             self.assertIn(metric,
                           spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"])
 
