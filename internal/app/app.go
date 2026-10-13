@@ -49,7 +49,7 @@ type App struct {
 	cfg       *config.Config
 	version   string       // injected build version, for the status page
 	startTime time.Time    // process start, for uptime on the status page
-	tracer    trace.Tracer // no-op when tracing.enabled=false; threads into scheduler+receivers
+	tracer    trace.Tracer // process-global tracer; each runtime uses its own provider tracer
 
 	// runtimes is the per-tailnet collection machinery (one element per tailnet,
 	// always >=1). Each owns its emitter (stamps tailscale.tailnet on every signal),
@@ -467,7 +467,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 				a.batchQueues = append(a.batchQueues, batchQueueReport{emitter: emitter, tracker: q})
 			}
 			apiStats := NewAPIStats()
-			cp, err := buildTailscaleProvider(rt, version, logger, a.tracer, emitter, apiStats, cfg.SelfObservability.Enabled)
+			cp, err := buildTailscaleProvider(rt, version, logger, tp.Tracer(), emitter, apiStats, cfg.SelfObservability.Enabled)
 			if err != nil {
 				// Attribute the failure to the offending tailnet so an MSP with many
 				// entries knows which one to fix (e.g. a mis-mounted secret) instead of
@@ -731,11 +731,15 @@ func (a *App) addRuntimeConfigured(
 		configuredName: configuredName,
 		name:           name,
 		emitter:        emitter,
+		tracer:         a.tracer, // injected local seam or the shared Headscale process provider
 		card:           card,
 		exportStats:    exportStats,
 		delivery:       delivery,
 		cp:             cp,
 		apiStats:       NewAPIStats(),
+	}
+	if delivery != nil {
+		rt.tracer = delivery.Tracer()
 	}
 	// Retain the concrete Tailscale client for the Tailscale-only paths
 	// (flowFeatureCheck, autoConfigureStreaming). It is nil under provider:
@@ -751,7 +755,6 @@ func (a *App) addRuntimeConfigured(
 	newRuntime(rt, runtimeDeps{
 		cfg:           a.cfg,
 		logger:        a.logger,
-		tracer:        a.tracer,
 		store:         a.store,
 		evidenceStore: a.evidenceStore,
 		evidencePath:  a.evidencePath,

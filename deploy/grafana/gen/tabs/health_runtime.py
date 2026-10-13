@@ -17,6 +17,14 @@ subrequest families (#399/#386).
 from builder import (hq, logs_opts, loki_t, panel, prom_t, pyroscope_t, RI, row, stat_opts, ts_custom,
                      ts_opts, WIN_FAST)
 
+_PROFILE_OWNERSHIP = (" These service-scoped panels show the whole process and do not apply the "
+                      "dashboard tailnet selector. Profiling ownership is off by default and "
+                      "always process-global in multi-tailnet mode. In single-tailnet mode, "
+                      "profiling.pyroscope.tailnet_label=name emits tailscale_tailnet with the "
+                      "configured name; hashed emits its SHA-256 prefix. These optional labels "
+                      "do not partition a process profile. Explore can filter the emitted label; "
+                      "a raw-name selector would erase default, hashed and multi-tailnet profiles.")
+
 _PROFILING_EMPTY = ("No profile-upload series. Requires profiling.pyroscope.server_address "
                     "to be set (the opt-in Pyroscope push agent).")
 _TLS_EMPTY = ("No TLS certificate series. Requires TLS to be configured on at least one "
@@ -148,23 +156,23 @@ def tab_health_runtime(scope):
                novalue="No CPU profiles in this range. The profiler may be disabled, idle, or "
                        "pointing at another Profiles backend; use the upload-health row above "
                        "to distinguish those states.",
-               desc="CPU nanoseconds attributed per step by the continuous Pyroscope profile."), 12, 7),
+               desc="CPU nanoseconds attributed per step by the continuous Pyroscope profile." + _PROFILE_OWNERSHIP), 12, 7),
         (panel("In-use heap profile activity", "timeseries",
                [pyroscope_t("memory:inuse_space:bytes:space:bytes")],
                unit="bytes", custom=ts_custom(fill=20), options=ts_opts(),
                novalue="No in-use heap profiles in this range. Check upload health above.",
-               desc="Live heap represented by the in-use-space profile."), 12, 7),
+               desc="Live heap represented by the in-use-space profile." + _PROFILE_OWNERSHIP), 12, 7),
         (panel("CPU flame graph", "flamegraph",
                [pyroscope_t("process_cpu:cpu:nanoseconds:cpu:nanoseconds",
                             query_type="profile", max_nodes=8192)],
                novalue="No CPU profile samples in this range.",
                desc="Bounded merged CPU flame graph for tailscale2otel over the selected range. "
-                    "Widen the range when the process is idle."), 12, 9),
+                    "Widen the range when the process is idle." + _PROFILE_OWNERSHIP), 12, 9),
         (panel("In-use heap flame graph", "flamegraph",
                [pyroscope_t("memory:inuse_space:bytes:space:bytes",
                             query_type="profile", max_nodes=8192)],
                novalue="No in-use heap profile samples in this range.",
-               desc="Bounded flame graph of call stacks retaining live heap."), 12, 9),
+               desc="Bounded flame graph of call stacks retaining live heap." + _PROFILE_OWNERSHIP), 12, 9),
     ]
     # --- TLS certificate reload (admin/metrics/stream listeners, opt-in). No presence
     # sentinel exists for this feature either. tailscale2otel.tls.cert.not_after and

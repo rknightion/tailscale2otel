@@ -3,9 +3,10 @@ id: TSO-0185
 title: >-
   Bind the anti-forensics log-read investigation to recorder identity, not a
   fixed namespace
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-11 12:09'
+updated_date: '2026-10-13 21:25'
 labels:
   - needs-triage
 dependencies: []
@@ -35,3 +36,9 @@ The current query selects any log subresource read in a fixed namespace and neve
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner commissioned ordinary work on main on 2026-10-13. Root owns integration, delivery and final proof; bounded workers own disjoint source/evidence paths. Replay remains blocked.
+<!-- SECTION:NOTES:END -->

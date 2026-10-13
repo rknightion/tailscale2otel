@@ -342,11 +342,11 @@ def tab_k8saudit(scope):
 
     # -------------------------------------------------------------------------------------
     # Row 9: curated investigative queries from docs/kubernetes-audit.md's "Investigating"
-    # section, including the anti-forensics query (reads of the recorder's own logs).
+    # section, including generic pod-log read attempts across namespaces.
     # -------------------------------------------------------------------------------------
     # Only the exec panel below can surface raw command text, so it is the ONLY one
     # gated on pii_command_text. Gating the whole row on it (as this tab first did)
-    # meant an operator who redacted command text also lost the anti-forensics and
+    # meant an operator who redacted command text also lost the pod-log read and
     # enumeration panels, which carry no command at all — the most valuable panels
     # here, hidden for a reason that does not apply to them.
     investigations = [
@@ -361,12 +361,16 @@ def tab_k8saudit(scope):
                desc="Detail behind the RBAC-probe metrics. A burst from an unexpected "
                     "user agent is the signal; normal for UI clients. Hidden under email "
                     "redaction."), 12, 8),
-        (panel("Reads of the recorder's own logs (anti-forensics)", "logs",
-               [loki_t("%s | tailscale_k8s_subresource=`log` | tailscale_k8s_namespace=`tailscale`"
+        (panel("Pod log read attempts", "logs",
+               [loki_t("%s | tailscale_k8s_resource=`pods` | tailscale_k8s_subresource=`log` "
+                       "| tailscale_k8s_verb=`get`"
                        % K8S_REQ_LOG, maxlines=100)],
                options=logs_opts(),
-               desc="Requests to read the tsrecorder's own log objects — a client "
-                    "reaching for the audit trail itself is an anti-forensics indicator. "
+               desc="Attempts to read pod logs in any namespace, including recorder and "
+                    "application pods. This view does not identify recorder pods or infer "
+                    "intent; inspect the namespace and object name in each record. "
+                    "Use Tailnet, Provider and Log filter to narrow the results. Attempts "
+                    "only; the feed cannot show whether logs were returned. "
                     "Hidden under email redaction."), 12, 8),
     ]
 

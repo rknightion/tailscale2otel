@@ -1,9 +1,10 @@
 ---
 id: TSO-0188
 title: Document and prove optional single-tailnet profile selector behavior
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-10-11 12:14'
+updated_date: '2026-10-13 21:25'
 labels:
   - needs-triage
 dependencies: []
@@ -33,3 +34,9 @@ Guarded dashboard review found that profiles are process-global by default and i
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner commissioned ordinary work on main on 2026-10-13. Root owns integration, delivery and final proof; bounded workers own disjoint source/evidence paths. Replay remains blocked.
+<!-- SECTION:NOTES:END -->

@@ -141,8 +141,8 @@ def scope_loki(expr, variables, raw_stream=False):
 
 
 def scope_tempo(expr):
-    # The app passes its PROCESS tracer to schedulers, clients and receivers:
-    # there is no tailnet attribute. Only scheduler `scrape <collector>` spans
+    # Tailnet ownership is already scoped by tempo_t. Only scheduler
+    # `scrape <collector>` spans
     # declare tailscale.collector. Keep the original name predicate, and exempt
     # non-scheduler names from the collector condition (including mixed regexes).
     # A broad scrape-name scan also covers `scrape .+` and nodemetrics.scrape;

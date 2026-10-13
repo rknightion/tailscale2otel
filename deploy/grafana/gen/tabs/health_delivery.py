@@ -25,7 +25,9 @@ from builder import (hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, ro
                      WIN_FAST, WIN_SLOW)
 from maps import bool_map
 
-_TRACE_DESC = "Trace panels are empty if tracing.enabled=false."
+_TRACE_DESC = ("Trace panels are empty if tracing.enabled=false. All includes process-global "
+               "spans such as release checks. Selecting a tailnet shows only that runtime's "
+               "spans; process-global and PII-redacted ownership spans are excluded.")
 
 
 # Grafana annotations are entirely opt-in (grafana_annotations.url), and unlike
@@ -210,7 +212,7 @@ def tab_health_delivery(scope):
                     "scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP "
                     "scrapes, stream and webhook receivers, and release checks. An absent class "
                     "means that path was idle, disabled, unsupported, or unsampled; it is not "
-                    "fabricated as zero."), 24, 7),
+                    "fabricated as zero. " + _TRACE_DESC), 24, 7),
         (panel("API p95 by endpoint (traces)", "timeseries",
                [tempo_t('{span.tailscale.endpoint != "" && resource.service.name = "tailscale2otel"} '
                    '| quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)')],

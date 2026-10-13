@@ -138,6 +138,15 @@ def tempo_t(query, refid="A", query_type="traceql", table_type="traces"):
     """Tempo query (PanelQuery-wrapped, same shape as prom_t/loki_t so panel() can
     consume it). query_type 'traceql' (trace list/table) or 'traceqlSearch'; for
     TraceQL-metrics timeseries set query like '{...} | rate() by (...)'."""
+    # Keep All in its own span-set branch: older Tempo fetch planners can
+    # require an optional ownership attribute even behind a true Boolean OR.
+    # The branches are mutually exclusive, so metrics cannot double-count spans.
+    # Raw strings preserve Grafana's regex escapes for dotted tailnet names.
+    selector, closing, pipeline = query.partition("}")
+    body = selector.removeprefix("{")
+    query = ('({' + body + ' && `${tailnet:regex}` = `.*`} || {' + body +
+             ' && `${tailnet:regex}` != `.*` && '
+             'span.tailscale.tailnet =~ `${tailnet:regex}`})' + pipeline)
     return {"kind": "PanelQuery", "spec": {"refId": refid, "hidden": False,
             "query": {"kind": "DataQuery", "version": "v0", "group": "",
                       "datasource": {"name": "${ds_tempo}"},

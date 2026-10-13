@@ -65,18 +65,27 @@ LOCAL = {'collector': 'tailscale_collector', 'os_type': 'os_type',
          'traffic_type': 'tailscale_traffic_type'}
 
 
-def trace_accepts(expr, name, collector=None, selected='devices'):
+def trace_accepts(expr, name, collector=None, selected='devices', tailnet=None, selected_tailnet='.*'):
     """Evaluate the emitted span predicate, NOT the production rewrite trigger.
 
     This bounded evaluator covers the string comparisons/Boolean operators used
     by these dashboards. It deliberately fails on unsupported syntax rather than
     silently treating an unparsed query as scoped. No Tempo execution is claimed.
     """
-    selector = re.match(r'\{((?:"(?:\\.|[^"\\])*"|[^"}])*)\}', expr)
+    # Mutually exclusive All/selected span sets are joined at the span-set
+    # level, rather than requiring a missing attribute in a Boolean filter.
+    selectors = list(re.finditer(r'\{((?:"(?:\\.|[^"\\])*"|`[^`]*`|[^"`}])*)\}', expr))
+    if len(selectors) > 1:
+        if len(selectors) != 2 or expr[selectors[0].end():selectors[1].start()].strip() != '||':
+            raise AssertionError('Unsupported TraceQL span-set combination: ' + expr)
+        return any(trace_accepts('{' + stage.group(1) + '}', name, collector,
+                                 selected, tailnet, selected_tailnet)
+                   for stage in selectors)
+    selector = re.match(r'\{((?:"(?:\\.|[^"\\])*"|`[^`]*`|[^"`}])*)\}', expr)
     if not selector:
         raise AssertionError('Unsupported TraceQL selector: ' + expr)
     text = selector.group(1)
-    token_pattern = re.compile(r'\s*("(?:\\.|[^"\\])*"|&&|\|\||=~|!~|!=|=|\(|\)|[\w.]+)')
+    token_pattern = re.compile(r'\s*("(?:\\.|[^"\\])*"|`[^`]*`|&&|\|\||=~|!~|!=|=|\(|\)|[\w.]+)')
     tokens = []
     pos = 0
     while text[pos:].strip():
@@ -87,6 +96,7 @@ def trace_accepts(expr, name, collector=None, selected='devices'):
         pos = match.end()
     values = {'name': name, 'resource.service.name': 'tailscale2otel',
               'span.tailscale.collector': collector or '',
+              'span.tailscale.tailnet': tailnet,
               'span.tailscale.endpoint': '/devices' if name.startswith(('tailscale.api ', 'headscale.api ')) else ''}
     index = 0
 
@@ -101,12 +111,16 @@ def trace_accepts(expr, name, collector=None, selected='devices'):
             return result
         field, op, literal = tokens[index:index + 3]
         index += 3
-        if field not in values or not literal.startswith('"'):
-            raise AssertionError('Unsupported TraceQL comparison: ' + expr)
-        expected = json.loads(literal).replace('${collector:regex}', selected)
-        value = values[field]
+        def resolve(token):
+            if token.startswith(('"', '`')):
+                value = token[1:-1] if token.startswith('`') else json.loads(token)
+                return value.replace('${collector:regex}', selected).replace('${tailnet:regex}', selected_tailnet)
+            if token not in values:
+                raise AssertionError('Unsupported TraceQL comparison: ' + expr)
+            return values[token]
+        value, expected = resolve(field), resolve(literal)
         if op in ('=~', '!~'):
-            matches = re.fullmatch(expected, value) is not None
+            matches = value is not None and re.fullmatch(expected, value) is not None
             return matches if op == '=~' else not matches
         if op in ('=', '!='):
             return (value == expected) if op == '=' else (value != expected)
@@ -187,10 +201,10 @@ def violations(doc):
                     if panel['title'] == 'Log volume by event' and '$log_event' not in expr:
                         offenders.append((identity, ds, 'log_event', expr))
                 elif ds == '${ds_tempo}':
-                    # All trace classes currently use app's process tracer; a
-                    # tailnet matcher would invent a dimension and hide them.
-                    if 'span.tailscale.tailnet' in expr:
-                        offenders.append((identity, ds, 'unsupported-tailnet-dimension', expr))
+                    # Runtime spans carry ownership; All must still retain
+                    # process spans without manufacturing a tailnet dimension.
+                    if 'span.tailscale.tailnet' not in expr or '${tailnet:regex}' not in expr:
+                        offenders.append((identity, ds, 'tailnet', expr))
                     if 'collector' in names:
                         # Probe actual scheduler span acceptance, including mixed
                         # class selectors. A variable elsewhere in the expression
@@ -235,14 +249,30 @@ class SelectorScopeTest(unittest.TestCase):
                     other = 'users' if collector == 'devices' else 'devices'
                     self.assertFalse(trace_accepts(expr, 'scrape ' + collector, collector, other), expr)
                     self.assertTrue(trace_accepts(expr, 'scrape ' + collector, collector, '.*'), expr)
-                # These process-tracer classes have NO collector attribute.
+                # These span classes have NO collector attribute.
                 for name in ('tailscale.api GET /devices', 'headscale.api GET /node',
                              'nodemetrics.scrape', 'stream.receive', 'webhook.receive',
                              'release.check latest'):
                     for selected in ('devices', 'users', '.*'):
                         self.assertTrue(trace_accepts(expr, name, selected=selected), (name, selected, expr))
                 self.assertFalse(trace_accepts(expr, 'unrelated.span'), expr)
-                self.assertNotIn('span.tailscale.tailnet', expr)
+                self.assertIn('span.tailscale.tailnet', expr)
+
+    def test_trace_ownership_keeps_all_and_isolates_selected_runtime(self):
+        for surface, doc in self.checkpoint_documents():
+            with self.subTest(surface=surface):
+                expr = self.mixed_trace_query(doc)['query']
+                for name in ('scrape devices', 'tailscale.api GET /devices',
+                             'nodemetrics.scrape', 'stream.receive', 'webhook.receive'):
+                    for owner in ('alpha.example', 'beta.example'):
+                        collector = 'devices' if name.startswith('scrape ') else None
+                        self.assertTrue(trace_accepts(expr, name, collector, '.*', owner, '.*'))
+                        self.assertTrue(trace_accepts(expr, name, collector, '.*', owner, owner))
+                        other = 'beta.example' if owner == 'alpha.example' else 'alpha.example'
+                        self.assertFalse(trace_accepts(expr, name, collector, '.*', owner, other))
+                self.assertTrue(trace_accepts(expr, 'release.check latest', selected='.*'))
+                self.assertFalse(trace_accepts(expr, 'release.check latest', selected='.*', selected_tailnet='alpha.example'))
+                self.assertFalse(trace_accepts(expr, 'stream.receive', selected='.*', selected_tailnet='alpha.example'))
 
     def test_guard_rejects_unscoped_mixed_scheduler_on_both_surfaces(self):
         for surface, doc in self.checkpoint_documents():
@@ -253,7 +283,7 @@ class SelectorScopeTest(unittest.TestCase):
                 query['query'], changed = re.subn(
                     r'span\.tailscale\.collector =~ "\$\{collector:regex\}"',
                     'name =~ ".*"', query['query'])
-                self.assertEqual(changed, 1, query['query'])
+                self.assertEqual(changed, 2, query['query'])
                 found = violations(doc)
                 self.assertTrue(any(x[0][2] == 'Span class activity' and
                                     x[2] == 'collector' for x in found), found)
@@ -265,14 +295,14 @@ class SelectorScopeTest(unittest.TestCase):
                 # A blanket collector condition would erase collector-less API
                 # spans. Prove the behavioral check distinguishes that repair.
                 blanket, changed = re.subn(r'name !~ "scrape \.\+" \|\| ', '', expr)
-                self.assertEqual(changed, 1, expr)
+                self.assertEqual(changed, 2, expr)
                 self.assertFalse(trace_accepts(blanket, 'tailscale.api GET /devices'))
                 # Merely retaining the variable reference is insufficient: an
                 # inverted exemption lets every scheduler through despite it.
                 query = self.mixed_trace_query(doc)
                 query['query'], changed = re.subn(r'name !~ "scrape \.\+"',
                                                  'name =~ "scrape .+"', expr)
-                self.assertEqual(changed, 1, expr)
+                self.assertEqual(changed, 2, expr)
                 self.assertIn('${collector:regex}', query['query'])
                 self.assertTrue(any(x[0][2] == 'Span class activity' and
                                     x[2] == 'collector' for x in violations(doc)))

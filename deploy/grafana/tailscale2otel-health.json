@@ -11350,7 +11350,7 @@
         "spec": {
           "id": 122,
           "title": "Scrape \u2192 API trace waterfall",
-          "description": "Trace panels are empty if tracing.enabled=false.",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11369,7 +11369,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{ resource.service.name = \"tailscale2otel\" && (name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) }",
+                        "query": "({ resource.service.name = \"tailscale2otel\" && (name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\"))  && `${tailnet:regex}` = `.*`} || { resource.service.name = \"tailscale2otel\" && (name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\"))  && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`})",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -11400,7 +11400,7 @@
         "spec": {
           "id": 123,
           "title": "Span class activity",
-          "description": "Bounded discovery rate for every span class emitted by the exporter: scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP scrapes, stream and webhook receivers, and release checks. An absent class means that path was idle, disabled, unsupported, or unsampled; it is not fabricated as zero.",
+          "description": "Bounded discovery rate for every span class emitted by the exporter: scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP scrapes, stream and webhook receivers, and release checks. An absent class means that path was idle, disabled, unsupported, or unsampled; it is not fabricated as zero. Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11419,7 +11419,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{resource.service.name = \"tailscale2otel\" && (name =~ \"scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|stream.receive|webhook.receive|release.check .+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\"))} | rate() by (name)",
+                        "query": "({resource.service.name = \"tailscale2otel\" && (name =~ \"scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|stream.receive|webhook.receive|release.check .+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) && `${tailnet:regex}` = `.*`} || {resource.service.name = \"tailscale2otel\" && (name =~ \"scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|stream.receive|webhook.receive|release.check .+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`}) | rate() by (name)",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -11471,7 +11471,7 @@
         "spec": {
           "id": 124,
           "title": "API p95 by endpoint (traces)",
-          "description": "Trace panels are empty if tracing.enabled=false.",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11490,7 +11490,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{span.tailscale.endpoint != \"\" && resource.service.name = \"tailscale2otel\"} | quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)",
+                        "query": "({span.tailscale.endpoint != \"\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` = `.*`} || {span.tailscale.endpoint != \"\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`}) | quantile_over_time(duration, 0.95) by (span.tailscale.endpoint)",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -11543,7 +11543,7 @@
         "spec": {
           "id": 125,
           "title": "Scrape cadence by collector (traces)",
-          "description": "Trace panels are empty if tracing.enabled=false.",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11562,7 +11562,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{(name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) && resource.service.name = \"tailscale2otel\"} | rate() by (name)",
+                        "query": "({(name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` = `.*`} || {(name =~ \"scrape.+\" && (name !~ \"scrape .+\" || span.tailscale.collector =~ \"${collector:regex}\")) && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`}) | rate() by (name)",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -11614,7 +11614,7 @@
         "spec": {
           "id": 126,
           "title": "stream.receive batch size (traces)",
-          "description": "Trace panels are empty if tracing.enabled=false.",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11633,7 +11633,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{name = \"stream.receive\" && resource.service.name = \"tailscale2otel\"} | avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)",
+                        "query": "({name = \"stream.receive\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` = `.*`} || {name = \"stream.receive\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`}) | avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -11653,7 +11653,7 @@
                         "name": "${ds_tempo}"
                       },
                       "spec": {
-                        "query": "{name = \"stream.receive\" && resource.service.name = \"tailscale2otel\"} | avg_over_time(span.http.request.body.size) by (resource.service.instance.id)",
+                        "query": "({name = \"stream.receive\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` = `.*`} || {name = \"stream.receive\" && resource.service.name = \"tailscale2otel\" && `${tailnet:regex}` != `.*` && span.tailscale.tailnet =~ `${tailnet:regex}`}) | avg_over_time(span.http.request.body.size) by (resource.service.instance.id)",
                         "queryType": "traceql",
                         "tableType": "traces"
                       }
@@ -13142,7 +13142,7 @@
         "spec": {
           "id": 144,
           "title": "CPU profile activity",
-          "description": "CPU nanoseconds attributed per step by the continuous Pyroscope profile.",
+          "description": "CPU nanoseconds attributed per step by the continuous Pyroscope profile. These service-scoped panels show the whole process and do not apply the dashboard tailnet selector. Profiling ownership is off by default and always process-global in multi-tailnet mode. In single-tailnet mode, profiling.pyroscope.tailnet_label=name emits tailscale_tailnet with the configured name; hashed emits its SHA-256 prefix. These optional labels do not partition a process profile. Explore can filter the emitted label; a raw-name selector would erase default, hashed and multi-tailnet profiles.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13216,7 +13216,7 @@
         "spec": {
           "id": 145,
           "title": "In-use heap profile activity",
-          "description": "Live heap represented by the in-use-space profile.",
+          "description": "Live heap represented by the in-use-space profile. These service-scoped panels show the whole process and do not apply the dashboard tailnet selector. Profiling ownership is off by default and always process-global in multi-tailnet mode. In single-tailnet mode, profiling.pyroscope.tailnet_label=name emits tailscale_tailnet with the configured name; hashed emits its SHA-256 prefix. These optional labels do not partition a process profile. Explore can filter the emitted label; a raw-name selector would erase default, hashed and multi-tailnet profiles.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13290,7 +13290,7 @@
         "spec": {
           "id": 146,
           "title": "CPU flame graph",
-          "description": "Bounded merged CPU flame graph for tailscale2otel over the selected range. Widen the range when the process is idle.",
+          "description": "Bounded merged CPU flame graph for tailscale2otel over the selected range. Widen the range when the process is idle. These service-scoped panels show the whole process and do not apply the dashboard tailnet selector. Profiling ownership is off by default and always process-global in multi-tailnet mode. In single-tailnet mode, profiling.pyroscope.tailnet_label=name emits tailscale_tailnet with the configured name; hashed emits its SHA-256 prefix. These optional labels do not partition a process profile. Explore can filter the emitted label; a raw-name selector would erase default, hashed and multi-tailnet profiles.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -13344,7 +13344,7 @@
         "spec": {
           "id": 147,
           "title": "In-use heap flame graph",
-          "description": "Bounded flame graph of call stacks retaining live heap.",
+          "description": "Bounded flame graph of call stacks retaining live heap. These service-scoped panels show the whole process and do not apply the dashboard tailnet selector. Profiling ownership is off by default and always process-global in multi-tailnet mode. In single-tailnet mode, profiling.pyroscope.tailnet_label=name emits tailscale_tailnet with the configured name; hashed emits its SHA-256 prefix. These optional labels do not partition a process profile. Explore can filter the emitted label; a raw-name selector would erase default, hashed and multi-tailnet profiles.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

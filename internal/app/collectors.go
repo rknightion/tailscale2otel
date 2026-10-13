@@ -323,7 +323,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			// Keep a typed reference so the status page can surface discovered nodes.
 			// Discovery uses the provider client's DevicesRich, so it works for both
 			// backends (Headscale nodes also run tailscaled on :5252).
-			nmOpts := nodeMetricsOptions(nm, cp.Client, rt.cache, d.addrSet, withComponent(logger, compNodeMetrics), d.tracer)
+			nmOpts := nodeMetricsOptions(nm, cp.Client, rt.cache, d.addrSet, withComponent(logger, compNodeMetrics), rt.tracer)
 			// Set here rather than inside nodeMetricsOptions: that function maps
 			// CONFIG onto Options and is tested as a pure config mapping, while the
 			// tracker is a per-runtime object it has no business knowing about.
@@ -418,7 +418,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		acceptDurably bool,
 	) *stream.Server {
 		options := []stream.Option{
-			stream.WithTracer(a.tracer),
+			stream.WithTracer(routeRT.tracer),
 			stream.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
 			stream.WithDurableObservers(ingestObserverFor(a.cfg.SelfObservability.Enabled), acceptedEventObserverFor(a.cfg.SelfObservability.Enabled)),
 		}
@@ -470,7 +470,7 @@ func (a *App) buildReceivers() []ingressWALRoute {
 		acceptDurably bool,
 	) *webhook.Server {
 		options := []webhook.Option{
-			webhook.WithTracer(a.tracer),
+			webhook.WithTracer(routeRT.tracer),
 			webhook.WithRemoteParentPolicy(a.cfg.Tracing.RemoteParent),
 			webhook.WithDurableObservers(ingestObserverFor(a.cfg.SelfObservability.Enabled), acceptedEventObserverFor(a.cfg.SelfObservability.Enabled)),
 		}

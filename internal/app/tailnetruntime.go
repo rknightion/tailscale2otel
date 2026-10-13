@@ -35,6 +35,7 @@ type tailnetRuntime struct {
 	configuredName string
 	name           string
 	emitter        telemetry.Emitter
+	tracer         trace.Tracer // same ownership as emitter; Headscale/local seam may share the process tracer
 	card           *telemetry.CardinalityTracker
 	exportStats    func() telemetry.ExportStats
 	delivery       *telemetry.Provider
@@ -116,7 +117,6 @@ func (a *App) runtimeConfiguredName(rt *tailnetRuntime) string {
 type runtimeDeps struct {
 	cfg           *config.Config
 	logger        *slog.Logger
-	tracer        trace.Tracer
 	store         collector.CheckpointStore
 	evidenceStore collector.CheckpointStore
 	evidencePath  string
@@ -153,7 +153,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 		collector.WithLogger(withComponent(d.logger, compCollector)),
 		collector.WithSelfObs(selfObs),
 		collector.WithStatusTracker(rt.status),
-		collector.WithTracer(d.tracer),
+		collector.WithTracer(rt.tracer),
 		collector.WithStaggerWindow(cfg.Scheduler.InitialStaggerWindow.D()),
 	}
 	if d.multi {

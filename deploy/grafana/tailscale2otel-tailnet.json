@@ -21308,8 +21308,8 @@
         "kind": "Panel",
         "spec": {
           "id": 258,
-          "title": "Reads of the recorder's own logs (anti-forensics)",
-          "description": "Requests to read the tsrecorder's own log objects \u2014 a client reaching for the audit trail itself is an anti-forensics indicator. Hidden under email redaction.",
+          "title": "Pod log read attempts",
+          "description": "Attempts to read pod logs in any namespace, including recorder and application pods. This view does not identify recorder pods or infer intent; inspect the namespace and object name in each record. Use Tailnet, Provider and Log filter to narrow the results. Attempts only; the feed cannot show whether logs were returned. Hidden under email redaction.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -21328,7 +21328,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_subresource=`log` | tailscale_k8s_namespace=`tailscale` |~ `$log_filter`",
+                        "expr": "{service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.k8s.api_request` | tailscale_k8s_resource=`pods` | tailscale_k8s_subresource=`log` | tailscale_k8s_verb=`get` |~ `$log_filter`",
                         "queryType": "range",
                         "maxLines": 100,
                         "legendFormat": ""
