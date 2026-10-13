@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@loop31'
 created_date: '2026-10-11 17:15'
-updated_date: '2026-10-13 08:54'
+updated_date: '2026-10-13 09:19'
 labels:
   - needs-triage
 dependencies: []
@@ -50,4 +50,6 @@ loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (compr
 loop30: 2 implementation attempts, no rescues or reviews; candidate uncommitted/unlanded. Native bottom Value/Percent legend, no in-slice labels, height adjustment and real query-backed 800x600/native-grid closed-navigation render proof succeed, but full G exits1 on test_specialist_panels.FleetAndRelationshipPanelContracts.test_fleet_composition_panels_are_native_pies exact default pie options and test_unit_consistency.DecimalsAndLegendConventionTest.test_no_panel_sets_an_explicit_decimals_override. Frozen shared-test edit fence blocks intended OS-specific contract changes; no test/helper bypass or half-land. Park needs owner approval of narrowly revised OS option/precision contracts, then width/reflow proof with expanded navigation, full gate and fresh reviews. Two attempts remain under current ceiling. Full G output tail only retained; complete narrow failure log and candidate/archive/final-03 render receipts remain /Users/rob/repos/tailscale2otel/codex/loop30/tso0189-retry/. No live mutation. Main remains green; parked candidate G red is not main red.
 
 loop31 preparation, Rob 2026-10-13: recommission approved. Previous blocker was the frozen OS pie options/precision test fence. Changed premise: OS-only explicit bottom Value/Percent legend, no slice annotations and precision=1 expectations are now authorized; Compliance distribution and all other precision guards remain unchanged. Discriminating check: retained query-backed fixture at 800x600 and actual native grid with navigation expanded and closed, followed by full gate and fresh review. Lifetime implementation attempts remain 2 of 4; remaining ladder is rescue-astra-medium then rescue-astra, no reset or ceiling increase. Task remains Parked until launch admission.
+
+loop31: rescue attempt3 reaches exact query-backed expanded-navigation width failure, despite green candidate gate. Native grid OS width falls 624px to504px, legend339px cannot fit374-454px text; all seven labels clip. Closed grid and800x600 solo pass. Actual Prometheus/Grafana response receipts distinguish scope/state categories. Final rescue attempt4 dispatched for evidence-based width/reflow, no test weakening; solo has no visible application nav, native-grid must prove both nav states.
 <!-- SECTION:NOTES:END -->
