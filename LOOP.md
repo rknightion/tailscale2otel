@@ -87,6 +87,7 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 
 ## Mutexes
 
+- gate: check | just setup </dev/null && PATH="$HOME/go/bin:$PATH" just check </dev/null
 - One `grafana-sync` writes the stack at a time and is never cancelled mid-write.
 - Live Grafana queries are read-only here: `gcx metrics|logs query` needs both `--from` and `--to`;
   an auth failure means use the stored token, not a gcx OAuth retry.
