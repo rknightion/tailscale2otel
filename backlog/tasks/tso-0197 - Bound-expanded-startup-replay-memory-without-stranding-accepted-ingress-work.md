@@ -4,7 +4,7 @@ title: Bound expanded startup replay memory without stranding accepted ingress w
 status: To Do
 assignee: []
 created_date: '2026-10-13 09:57'
-updated_date: '2026-10-13 17:30'
+updated_date: '2026-10-13 20:07'
 labels:
   - needs-triage
 dependencies: []
@@ -43,4 +43,6 @@ Follow-up to TSO-0192 (diagnose OOM restarts and propose a fix). Independent rea
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner approved design first on 2026-10-13. TSO-0197.01 (freeze the bounded replay-memory design and implementation proof packet) is the separately commissioned prerequisite. Implementation and all four parent acceptance criteria remain open; no new production capture or cleanup is commissioned. Retained evidence cannot establish a safe measured process budget. The design must identify missing workload inputs and preserve future implementation attempt lineage.
+
+loop32 completed TSO-0197.01 (freeze bounded replay-memory design and proof packets) under the approved design-only exception. Canonical independent PASS: /Users/rob/repos/tailscale2otel/codex/loop32/design-review.md. Two design corrections, zero implementation attempts. All four parent criteria remain unchecked, no remediation or numerical safe cap proven. Resume only after protected original-shape/representative ordinary-envelope prerequisites and separately commissioned implementation; retain one serial owner across frozen storage/preparation/delivery seams. TSO-0197.02 (preserve required delta first-cover effects across failed scheduled collection) records a source-grounded inferred failure-path finding; negative reproduction and repair remain uncommissioned.
 <!-- SECTION:NOTES:END -->
