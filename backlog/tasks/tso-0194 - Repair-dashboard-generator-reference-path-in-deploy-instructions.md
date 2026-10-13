@@ -1,9 +1,11 @@
 ---
 id: TSO-0194
 title: Repair dashboard-generator reference path in deploy instructions
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop31'
 created_date: '2026-10-12 20:54'
+updated_date: '2026-10-13 09:17'
 labels:
   - needs-triage
 dependencies: []
@@ -30,3 +32,9 @@ Several dashboard lanes and reviewers found the deploy instructions point to a r
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop31: correct only deploy instruction generator-reference path, run targeted link resolution and named gate; root guarded documentation review and integration. No generator/gate/workflow changes.
+<!-- SECTION:PLAN:END -->

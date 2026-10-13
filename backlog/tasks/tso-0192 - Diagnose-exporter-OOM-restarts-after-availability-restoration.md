@@ -1,11 +1,11 @@
 ---
 id: TSO-0192
 title: Diagnose exporter OOM restarts after availability restoration
-status: In Progress
+status: Done
 assignee:
   - '@loop31'
 created_date: '2026-10-12 19:34'
-updated_date: '2026-10-13 08:54'
+updated_date: '2026-10-13 09:17'
 labels:
   - needs-triage
 dependencies: []
@@ -22,8 +22,8 @@ Read-only post-restoration verification found one currently Ready exporter repli
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Identify the memory-pressure cause from bounded process and workload evidence without conflating it with the resolved configuration mismatch.
-- [ ] #2 Propose or implement an authorized fix preserving ingress durability, with a workload proof and explicit residual risks.
+- [x] #1 Identify the memory-pressure cause from bounded process and workload evidence without conflating it with the resolved configuration mismatch.
+- [x] #2 Propose or implement an authorized fix preserving ingress durability, with a workload proof and explicit residual risks.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -38,3 +38,15 @@ Read-only post-restoration verification found one currently Ready exporter repli
 <!-- SECTION:PLAN:BEGIN -->
 loop31: implement only the frozen owner-approved seam in isolated ownership; retain exact candidate and behavior evidence, named gate where applicable; independent guarded review then root integration/CI/delivery. Read-only diagnosis has no remediation or code gate.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+loop31: 0 implementation attempts, read-only diagnosis/proposal accepted after independent causal/security review. Existing individual pre-termination and crash-cohort profiles corroborate startup replay amplification into retained metric tapes and cloned logs; real observed backlog/workload supports separate replay-memory credits, bounded groups and compact tapes. Preserve accepted durability and progress for oversized originals; no remediation implemented. Scheduled collection can seal groups during an application pass and delivered log chunks may release independently. Final cgroup accounting, envelope shape distribution and candidate sizing/effectiveness remain separately scoped follow-up. Code/composed/CI gates not applicable under read-only goal exception; no implementation land.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Diagnosed dominant replay-memory pressure using exact running identity, bounded workload evidence and individual heap-stack attribution; independently reviewed proposal only. No cluster/configuration/source change and no fixed-OOM claim. Residual sizing and oversized-workload proof needs recorded.
+<!-- SECTION:FINAL_SUMMARY:END -->
