@@ -23083,7 +23083,7 @@
         "spec": {
           "id": 282,
           "title": "Route-selection mode",
-          "description": "Tailnet routing algorithm: active-passive-failover, regional-routing, regional-routing-failover, or magicroute. Future values appear as unknown. MagicRoute is distinct from DERP-region routing. This is configuration, not a health verdict; absent mode is not inferred from the legacy boolean.",
+          "description": "Historical observations from the last two hours, not a current-state inventory. A mode change can show prior and current modes together; loss of current mode support can show only a prior mode. The mode gauge clears obsolete runtime series, but stored history retains earlier observations. Tailnet routing algorithm: active-passive-failover, regional-routing, regional-routing-failover, or magicroute. Future values appear as unknown. MagicRoute is distinct from DERP-region routing. This is configuration, not a health verdict; absent mode is not inferred from the legacy boolean.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -23150,7 +23150,7 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "noValue": "No route-selection mode \u2014 needs the settings collector, feature_settings:read scope, and a provider exposing routeSelection."
+                  "noValue": "No route-selection observations in the last two hours \u2014 needs the settings collector, feature_settings:read scope, and a provider exposing routeSelection."
                 },
                 "overrides": []
               }

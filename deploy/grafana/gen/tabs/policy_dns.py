@@ -139,9 +139,14 @@ def tab_policy_dns(scope):
                        instant=True, fmt="table")],
                transformations=[organize(exclude=_INFRA_TBL + ["Value"],
                                          rename={"tailscale_setting_route_selection": "Mode"})],
-               novalue="No route-selection mode — needs the settings collector, "
-                       "feature_settings:read scope, and a provider exposing routeSelection.",
-               desc="Tailnet routing algorithm: active-passive-failover, regional-routing, "
+               novalue="No route-selection observations in the last two hours — needs the "
+                       "settings collector, feature_settings:read scope, and a provider "
+                       "exposing routeSelection.",
+               desc="Historical observations from the last two hours, not a current-state inventory. "
+                    "A mode change can show prior and current modes together; loss of current "
+                    "mode support can show only a prior mode. The mode gauge clears obsolete "
+                    "runtime series, but stored history retains earlier observations. "
+                    "Tailnet routing algorithm: active-passive-failover, regional-routing, "
                     "regional-routing-failover, or magicroute. Future values appear as unknown. "
                     "MagicRoute is distinct from DERP-region routing. This is configuration, "
                     "not a health verdict; absent mode is not inferred from the legacy boolean."), 6, 5),
