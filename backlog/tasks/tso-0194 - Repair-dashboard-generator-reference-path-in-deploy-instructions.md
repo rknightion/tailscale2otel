@@ -5,7 +5,7 @@ status: Done
 assignee:
   - '@loop31'
 created_date: '2026-10-12 20:54'
-updated_date: '2026-10-13 10:52'
+updated_date: '2026-10-13 13:01'
 labels:
   - needs-triage
 dependencies: []
@@ -30,7 +30,7 @@ Several dashboard lanes and reviewers found the deploy instructions point to a r
 <!-- DOD:BEGIN -->
 - [x] #1 just check passes (the full gate; it is what CI enforces)
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan

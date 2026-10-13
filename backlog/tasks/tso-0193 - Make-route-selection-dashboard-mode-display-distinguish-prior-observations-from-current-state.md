@@ -7,7 +7,7 @@ status: Done
 assignee:
   - '@loop31'
 created_date: '2026-10-12 20:40'
-updated_date: '2026-10-13 12:21'
+updated_date: '2026-10-13 13:01'
 labels:
   - needs-triage
 dependencies: []
@@ -32,7 +32,7 @@ The route-selection info gauge clears obsolete SDK series after a successful pol
 <!-- DOD:BEGIN -->
 - [x] #1 just check passes (the full gate; it is what CI enforces)
 - [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
 
 ## Implementation Plan
