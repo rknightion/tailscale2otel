@@ -4,6 +4,7 @@ title: Bound expanded startup replay memory without stranding accepted ingress w
 status: To Do
 assignee: []
 created_date: '2026-10-13 09:57'
+updated_date: '2026-10-13 17:30'
 labels:
   - needs-triage
 dependencies: []
@@ -37,3 +38,9 @@ Follow-up to TSO-0192 (diagnose OOM restarts and propose a fix). Independent rea
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Owner approved design first on 2026-10-13. TSO-0197.01 (freeze the bounded replay-memory design and implementation proof packet) is the separately commissioned prerequisite. Implementation and all four parent acceptance criteria remain open; no new production capture or cleanup is commissioned. Retained evidence cannot establish a safe measured process budget. The design must identify missing workload inputs and preserve future implementation attempt lineage.
+<!-- SECTION:NOTES:END -->
