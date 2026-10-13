@@ -1,11 +1,11 @@
 ---
 id: TSO-0189
 title: Keep device OS pie-chart labels readable at panel snapshot dimensions
-status: Parked
+status: In Progress
 assignee:
-  - '@loop30'
+  - '@loop31'
 created_date: '2026-10-11 17:15'
-updated_date: '2026-10-13 08:41'
+updated_date: '2026-10-13 08:54'
 labels:
   - needs-triage
 dependencies: []
@@ -38,6 +38,8 @@ During TSO-0172 (live dashboard audit), an independently inspected published Dev
 
 <!-- SECTION:PLAN:BEGIN -->
 Use long-label multi-category small-slice synthetic fixture to capture baseline real Grafana pie at 800x600 and normal width; adjust native legend/labels to readable explicit percentage-vs-count semantics preserving query/coverage; capture after renders, regenerate/stage, serialized G, guarded review/CodeRabbit then root composed/CI/delivery.
+
+loop31: implement only the frozen owner-approved seam in isolated ownership; retain exact candidate and behavior evidence, named gate where applicable; independent guarded review then root integration/CI/delivery. Read-only diagnosis has no remediation or code gate.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes

@@ -1,9 +1,11 @@
 ---
 id: TSO-0195
 title: Harden fleet-summary listing prerequisite regression guard
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop31'
 created_date: '2026-10-12 21:33'
+updated_date: '2026-10-13 08:54'
 labels:
   - needs-triage
 dependencies: []
@@ -30,3 +32,9 @@ Fresh review found the current fleet-summary query is correct and real failed-li
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+loop31: implement only the frozen owner-approved seam in isolated ownership; retain exact candidate and behavior evidence, named gate where applicable; independent guarded review then root integration/CI/delivery. Read-only diagnosis has no remediation or code gate.
+<!-- SECTION:PLAN:END -->
