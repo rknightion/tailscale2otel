@@ -2,6 +2,7 @@
 
 Portable generator contracts deliberately require no promtool or browser install.
 """
+import re
 import unittest
 
 import build
@@ -59,7 +60,21 @@ class FleetSummaryPresenceTest(unittest.TestCase):
                 operation = "listUsers" if title == "Users" else "listTailnetDevices"
                 self.assertIn('tailscale_api_operation="%s"' % operation, expr)
                 self.assertIn('tailscale_api_state="supported"', expr)
-                self.assertIn("== 1", expr)  # availability zero-seeds unsupported states
+                collector = "users" if title == "Users" else "devices"
+                # Bind the predicate to the actual listing operand, not the
+                # online-device predicate elsewhere in this same expression.
+                source = (
+                    'tailscale2otel_api_availability_ratio{'
+                    'tailscale_tailnet=~"$tailnet", tailscale2otel_provider=~"$provider", '
+                    'tailscale_collector="%s", tailscale_api_operation="%s", '
+                    'tailscale_api_state="supported"}' % (collector, operation))
+                window = "2h" if title in ("Users", "Device keys ≤7d") else "10m"
+                success = "0 * count(last_over_time(%s[%s]) == 1)" % (source, window)
+                with self.subTest(title=title, expr=expr):
+                    self.assertRegex(
+                        expr, re.escape(success),
+                        "listing-specific supported-state success filter is required; "
+                        "supported=0 must not manufacture an empty-population zero")
                 if title != "Users":
                     self.assertIn("unless count(last_over_time(tailscale_devices_count_ratio", expr)
                     # Nonempty fleet with per-device metrics off must NOT become zero.

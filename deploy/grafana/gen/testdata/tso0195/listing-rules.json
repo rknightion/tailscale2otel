@@ -1,0 +1,562 @@
+{
+  "rule_files": [],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "missing",
+      "interval": "1m",
+      "input_series": [],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "heartbeat-only",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_up_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "1+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "failed-listing",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "0+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "0+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "populated",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "3+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"one\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"two\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"three\"}",
+          "values": "0+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\",instance=\"replica\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"one\"}",
+          "values": "86400+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"two\"}",
+          "values": "900000+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"three\"}",
+          "values": "300+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 2
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 3
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 4
+            }
+          ]
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "other-tailnet",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "3+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"one\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"two\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"three\"}",
+          "values": "0+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\",instance=\"replica\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"one\"}",
+          "values": "86400+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"two\"}",
+          "values": "900000+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",host_id=\"three\"}",
+          "values": "300+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "other-provider",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",os_type=\"linux\"}",
+          "values": "3+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"one\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"two\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"three\"}",
+          "values": "0+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_users_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",tailscale_user_role=\"member\",tailscale_user_status=\"active\",tailscale_user_type=\"human\",instance=\"replica\"}",
+          "values": "4+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"one\"}",
+          "values": "86400+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"two\"}",
+          "values": "900000+0x10"
+        },
+        {
+          "series": "tailscale_device_key_expiry_seconds{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",host_id=\"three\"}",
+          "values": "300+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "per-entity-off",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "3+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": []
+        }
+      ]
+    },
+    {
+      "name": "no-matching-predicate",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"devices\",tailscale_api_operation=\"listTailnetDevices\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale2otel_api_availability_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",tailscale_collector=\"users\",tailscale_api_operation=\"listUsers\",tailscale_api_state=\"supported\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "1+0x10"
+        },
+        {
+          "series": "tailscale_device_online_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",host_id=\"one\"}",
+          "values": "0+0x10"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) == 0) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[10m]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "expr": "sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (last_over_time(tailscale_users_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"users\", tailscale_api_operation=\"listUsers\", tailscale_api_state=\"supported\"}[2h]) == 1))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "expr": "count((last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() < 7*86400) and (last_over_time(tailscale_device_key_expiry_seconds{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]) - time() > 0)) or (0 * count(last_over_time(tailscale_device_online_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h]))) or (0 * count(last_over_time(tailscale2otel_api_availability_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\", tailscale_collector=\"devices\", tailscale_api_operation=\"listTailnetDevices\", tailscale_api_state=\"supported\"}[2h]) == 1) unless count(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[2h])))",
+          "eval_time": "10m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
