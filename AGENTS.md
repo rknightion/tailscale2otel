@@ -122,6 +122,11 @@ tool module can never affect the main module's build.
 - The Pyroscope push agent needs `profiling.pyroscope.server_address`, and a `grafana.net` target
   also needs `basic_auth_password` (an access-policy token carrying `profiles:write`), which
   `Warnings()` flags.
+- Runtime API, scheduler, node-discovery and routed receiver spans use their owning provider's
+  tracer; release-check spans stay process-global. TraceQL panels need an explicit All branch:
+  a wildcard attribute matcher alone drops process spans with no tailnet. Use mutually exclusive
+  All and selected span-set branches so optional ownership does not become a fetch precondition.
+  Profiles remain service-scoped; optional single-tailnet name/hash tags describe the whole process.
 - `internal/app` is the composition root: start at `app.New` to see how everything connects. Its
   admin status page renders from an embedded template with no CDN or other external asset, so it
   works on an air-gapped tailnet. Keep it self-contained.

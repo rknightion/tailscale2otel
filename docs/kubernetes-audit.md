@@ -184,9 +184,10 @@ detail. Some starting points:
 {service_name="tailscale2otel"} | event_name="tailscale.k8s.api_request"
   | tailscale_k8s_resource=~"selfsubject.*"
 
-# Reads of the recorder's own logs — an anti-forensics indicator
+# Pod log read attempts across namespaces; this does not identify recorder pods
 {service_name="tailscale2otel"} | event_name="tailscale.k8s.api_request"
-  | tailscale_k8s_subresource="log" | tailscale_k8s_namespace="tailscale"
+  | tailscale_k8s_resource="pods" | tailscale_k8s_subresource="log"
+  | tailscale_k8s_verb="get"
 ```
 
 ### The dashboard

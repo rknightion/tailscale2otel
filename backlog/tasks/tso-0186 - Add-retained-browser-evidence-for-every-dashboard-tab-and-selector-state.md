@@ -1,10 +1,10 @@
 ---
 id: TSO-0186
 title: Add retained browser evidence for every dashboard tab and selector state
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-10-11 12:09'
-updated_date: '2026-10-13 21:25'
+updated_date: '2026-10-13 22:59'
 labels:
   - needs-triage
 dependencies: []
@@ -23,21 +23,35 @@ Both whole-dashboard snapshots succeeded but selected Overview only; 488 panels 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Drive each of the 22 leaf tabs and capture panel identities, rendered errors, empty states and feature-gate outcomes under a bounded fixture window.
-- [ ] #2 Exercise dashboard, tab-local and ad-hoc selectors with non-All values and assert isolation where the signal carries the dimension.
-- [ ] #3 Retain screenshots/structured receipts outside tracked source and distinguish dense-render limitations from panel failures.
-- [ ] #4 Use a local/fake backend fixture by default; live reads only when explicitly authorized.
+- [x] #1 Drive each of the 22 leaf tabs and capture panel identities, rendered errors, empty states and feature-gate outcomes under a bounded fixture window.
+- [x] #2 Exercise dashboard, tab-local and ad-hoc selectors with non-All values and assert isolation where the signal carries the dimension.
+- [x] #3 Retain screenshots/structured receipts outside tracked source and distinguish dense-render limitations from panel failures.
+- [x] #4 Use a local/fake backend fixture by default; live reads only when explicitly authorized.
 <!-- AC:END -->
 
 ## Definition of Done
 <!-- DOD:BEGIN -->
-- [ ] #1 just check passes (the full gate; it is what CI enforces)
-- [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
-- [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
+- [x] #1 just check passes (the full gate; it is what CI enforces)
+- [x] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
+- [x] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Exercise all tabs and supported controls in native local Grafana with real backend software and synthetic fixtures; retain receipts and screenshots. Re-render changed trace panels and bind unchanged panel specs.
+<!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 Owner commissioned ordinary work on main on 2026-10-13. Root owns integration, delivery and final proof; bounded workers own disjoint source/evidence paths. Replay remains blocked.
+
+22 leaf tabs, 88 logical selector states, 514 panel identities, 637 contract-qualified isolation checks with zero leaks, and 58 control receipts. Final source equivalence binds 509 unchanged panels and five separately re-rendered trace panels. Failed attempts and resource limits retained. Evidence: /Users/rob/repos/tailscale2otel/codex/dashboard-closeout/browser/final-source-equivalence.json and /Users/rob/repos/tailscale2otel/codex/dashboard-closeout/browser/assessment-health-native-url-05/summary.json. Live reads were authorized for separate runtime trace acceptance. Full just check passed on final source; generation clean; justfile formatting gate passed, no new recipes. Source commit 760fda5e7c725ae2e1f6499a77bf681bfcd49585; exact-source CI and GitSync succeeded. CodeRabbit Go shard completed with zero findings; Python shard failed No files to review and is not claimed clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Retained complete tab/panel/control browser evidence using local synthetic fixtures and actual backend services.
+<!-- SECTION:FINAL_SUMMARY:END -->

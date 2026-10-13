@@ -150,3 +150,18 @@ See [Metrics](metrics.md) for the full naming rules and the complete metric cata
     Config gauges (ACL, DNS, settings, keys, users) are read through
     `last_over_time(<metric>[<window>])` so panels show the latest known value even when the
     most recent sample is older than Prometheus' 5-minute staleness window.
+
+### Trace and profile ownership
+
+Delivery trace panels apply the Tailnet selector to emitted `tailscale.tailnet` span attributes.
+All preserves process-global release checks as well as runtime spans. A selected tailnet includes
+only that runtime; process-global spans and spans whose ownership is removed by the PII policy
+are excluded. API, scheduler, node-discovery and routed receiver spans use their runtime provider.
+
+Runtime profile panels remain service-scoped and show the whole process. They do not apply the
+dashboard Tailnet selector. Profiling ownership is off by default and omitted in multi-tailnet
+mode. In single-tailnet mode, `profiling.pyroscope.tailnet_label=name` emits the configured name
+as `tailscale_tailnet`; `hashed` emits its 12-hex SHA-256 prefix. These optional labels describe
+process ownership, not per-tailnet attribution of samples. Explore may filter the emitted label;
+a raw-name matcher would erase default, hashed and multi-tailnet profiles. The profile label is
+separately opt-in from `pii_filter`; see the configuration key reference.
