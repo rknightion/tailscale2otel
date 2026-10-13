@@ -52,7 +52,8 @@ class CardinalityAccuracyTest(unittest.TestCase):
             self.assertIn("tailscale2otel_series_limit", expr)
             self.assertIn('tailscale2otel_series_limit{tailscale_tailnet=~"$tailnet"}) > 0', expr)
             defaults = p["vizConfig"]["spec"]["fieldConfig"]["defaults"]
-            self.assertIn("unlimited", defaults["noValue"].lower())
+            self.assertIn("uncertain", defaults["noValue"].lower())
+            self.assertIn("cannot establish unlimited", defaults["noValue"].lower())
 
     def test_utilization_is_not_labelled_as_headroom(self):
         p = panel(self.doc, "Per-metric utilization (top-N)")

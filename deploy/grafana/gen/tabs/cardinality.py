@@ -19,7 +19,16 @@ from builder import (barchart_opts, organize, panel, prom_t, RI, row,
                      sentinel, stat_opts, TBL_NOISE, thr, treemap_opts, ts_custom, ts_opts,
                      WIN_FAST)
 
-_NO_CAP = "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+_NO_CAP = ("Capacity uncertain — missing limit or reporter telemetry; "
+           "absence cannot establish unlimited capacity.")
+
+# Report emits active/overflow with metric_name and limit without it; all other
+# provider/resource labels are shared. Reject an aggregate capacity calculation
+# when a visible reporter has no positive limit. Entirely unseen reporters cannot
+# be detected: even a finite result describes only observed reports, not coverage.
+_UNMATCHED = ("count((tailscale2otel_series_active or tailscale2otel_series_overflowing_ratio) "
+              "unless ignoring(metric_name) (tailscale2otel_series_limit > 0)) > 0")
+_CAPACITY_GUARD = " unless on() (" + _UNMATCHED + ")"
 
 
 def tab_cardinality(scope):
@@ -38,20 +47,22 @@ def tab_cardinality(scope):
     OVF = "{otel_metric_overflow=\"true\", __name__=~\"tailscale.*\"}"
     overflow = [
         (panel("Metrics over cardinality cap", "stat",
-               [prom_t("count(count by (__name__) (%s)) or vector(0)" % OVF, instant=True)],
+               [prom_t("count(count by (__name__) (%s))" % OVF, instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
+               novalue="Overflow unknown — no overflow-labelled series observed; absence is not proof of zero overflow.",
                desc="Metric families that exceeded the configured per-metric series cap and are "
                     "now collapsing excess series into one otel_metric_overflow "
                     "series — SILENT per-series detail loss. >0 means raise metric_limit or lower flow "
                     "cardinality (ephemeral source_port is the biggest driver)."), 6, 5),
         (panel("Busiest metric — % of cap", "stat",
                [prom_t("max(tailscale2otel_series_active) / on() group_left() "
-                       "(max(tailscale2otel_series_limit) > 0)", instant=True)],
+                       "(max(tailscale2otel_series_limit) > 0)" + _CAPACITY_GUARD, instant=True)],
                unit="percentunit", min_=0, max_=1, thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
                options=stat_opts(color="background"), novalue=_NO_CAP,
                desc="Highest per-metric active-series count as a fraction of the configured "
-                    "tailscale2otel_series_limit."), 6, 5),
+                    "tailscale2otel_series_limit, for observed reporters only. Capacity is uncertain when a "
+                    "visible reporter lacks a positive limit; completely missing reporters cannot be detected."), 6, 5),
         (panel("Total active series", "stat",
                [prom_t("sum(tailscale2otel_series_active)", instant=True)],
                unit="short", options=stat_opts(graph="area", color="value"),
@@ -68,11 +79,12 @@ def tab_cardinality(scope):
     budget = [
         (panel("Active series over time (top $topn)", "timeseries",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
-                       "/ on() group_left() (max(tailscale2otel_series_limit) > 0))", legend="{{metric_name}}")],
+                       "/ on() group_left() (max(tailscale2otel_series_limit) > 0))" + _CAPACITY_GUARD, legend="{{metric_name}}")],
                unit="percentunit", min_=0, max_=1, custom=ts_custom(),
                options=ts_opts(placement="right"), novalue=_NO_CAP,
                desc="Per-metric utilization of the configured series cap over time, top-N. "
-                    "Watch the flow families."), 24, 8),
+                    "Watch the flow families. Observed reporters only; a visible reporter without a positive "
+                    "limit makes capacity uncertain, and completely missing reporters cannot be detected."), 24, 8),
     ]
     flow = [
         (panel("Flow series: raw vs bounded rollup", "timeseries",
@@ -109,33 +121,38 @@ def tab_cardinality(scope):
 
     # C5: additional headroom panels added to the overflow row (Task 1.8 Step 1)
     overflow += [
-        # No zero-fill: the gauge is emitted only when a positive limit is configured, and
-        # 0 is a MEANINGFUL value here (unlimited) — so filling it in asserts the opposite
-        # of what an absent series implies (#385).
+        # No zero-fill: the gauge is emitted only for a positive limit. Missing
+        # limits cannot distinguish unlimited configuration from telemetry loss.
         (panel("Series limit", "stat",
-               [prom_t("max(tailscale2otel_series_limit)", instant=True)],
+               [prom_t("max(tailscale2otel_series_limit)" + _CAPACITY_GUARD, instant=True)],
                unit="short", options=stat_opts(),
-               novalue="No per-metric series cap reported — needs cardinality.metric_limit set "
-                       "(unset means unlimited) and exporter self-observability.",
+               novalue=_NO_CAP,
                desc="Configured positive per-metric series limit (cardinality.metric_limit), exported as "
                     "tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the "
-                    "limit gauge is not emitted; absence can also mean self-observability is unavailable."), 6, 5),
+                    "limit gauge is not emitted; absence can also mean self-observability is unavailable. "
+                    "Maximum observed positive limit, not proof of full reporter coverage. A visible reporter "
+                    "without a positive limit suppresses this aggregate as uncertain."), 6, 5),
         (panel("Overflowing now", "stat",
-               [prom_t("sum(tailscale2otel_series_overflowing_ratio) or vector(0)", instant=True)],
+               [prom_t("sum(tailscale2otel_series_overflowing_ratio)", instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"),
+               novalue="Overflow unknown — no reporter telemetry observed.",
                desc="Sum of reported per-family overflow indicators across process/runtime reporters. "
+                    "Zero means observed reporters reported zero, not that missing reporters are healthy. "
+                    "Coverage of partial or entirely missing reporters remains unknown. "
                     "Replicas can report the same family; this is not a distinct-family inventory. "
                     ">0 means reported detail loss under a configured positive series cap."), 6, 5),
         (panel("Per-metric utilization (top-N)", "table",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))",
+               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) / on() group_left() (max(tailscale2otel_series_limit) > 0))" + _CAPACITY_GUARD,
                        instant=True, fmt="table")],
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],
                    rename={"metric_name": "Metric", "Value": "Utilization"})],
                novalue=_NO_CAP,
                desc="Per-metric active-series count divided by the series limit — utilization as a fraction. "
-                    "1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series."), 12, 5),
+                    "1.0 = at cap relative to the maximum observed positive limit. Uses / on() group_left() "
+                    "for the aggregate limit. Observed reporters only: a visible reporter without a positive "
+                    "limit makes capacity uncertain; completely missing reporters cannot be detected."), 12, 5),
     ]
 
     # Keep the two overflow evidence sources side by side, without joining or hiding
@@ -143,7 +160,7 @@ def tab_cardinality(scope):
     diagnostics = [
         (panel("Overflowing families", "table",
                [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
-               novalue="No metrics over cap — all series fully resolved.",
+               novalue="No overflow-labelled families observed — overflow unknown, not proof all series are resolved.",
                transformations=[organize(exclude=["Time", "Value", "job", "instance",
                                                    "service_instance_id", "service_name", "service_namespace"],
                                           rename={"__name__": "Metric"})],
@@ -154,7 +171,7 @@ def tab_cardinality(scope):
         (panel("Metrics overflowing now", "table",
                [prom_t("max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio[%s])) == 1" % WIN_FAST,
                        instant=True, fmt="table")],
-               novalue="No metrics overflowing.",
+               novalue="No overflowing families observed — missing reporter coverage remains unknown; see Overflowing now for observed zero.",
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace", "Value"],
                    rename={"metric_name": "Metric"})],

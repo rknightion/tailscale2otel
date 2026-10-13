@@ -13928,7 +13928,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(count by (__name__) ({otel_metric_overflow=\"true\", __name__=~\"tailscale.*\", tailscale_tailnet=~\"$tailnet\"})) or vector(0)",
+                        "expr": "count(count by (__name__) ({otel_metric_overflow=\"true\", __name__=~\"tailscale.*\", tailscale_tailnet=~\"$tailnet\"}))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -13975,7 +13975,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "Overflow unknown \u2014 no overflow-labelled series observed; absence is not proof of zero overflow."
                 },
                 "overrides": []
               }
@@ -13988,7 +13989,7 @@
         "spec": {
           "id": 156,
           "title": "Busiest metric \u2014 % of cap",
-          "description": "Highest per-metric active-series count as a fraction of the configured tailscale2otel_series_limit.",
+          "description": "Highest per-metric active-series count as a fraction of the configured tailscale2otel_series_limit, for observed reporters only. Capacity is uncertain when a visible reporter lacks a positive limit; completely missing reporters cannot be detected.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14007,7 +14008,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0)",
+                        "expr": "max(tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0) unless on() (count((tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"} or tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}) unless ignoring(metric_name) (tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"} > 0)) > 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -14061,7 +14062,7 @@
                       }
                     ]
                   },
-                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+                  "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity."
                 },
                 "overrides": []
               }
@@ -14206,7 +14207,7 @@
         "spec": {
           "id": 159,
           "title": "Active series over time (top $topn)",
-          "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families.",
+          "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families. Observed reporters only; a visible reporter without a positive limit makes capacity uncertain, and completely missing reporters cannot be detected.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14225,7 +14226,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0))",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0)) unless on() (count((tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"} or tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}) unless ignoring(metric_name) (tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"} > 0)) > 0)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{metric_name}}",
@@ -14261,7 +14262,7 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
-                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited).",
+                  "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -14728,7 +14729,7 @@
         "spec": {
           "id": 165,
           "title": "Series limit",
-          "description": "Configured positive per-metric series limit (cardinality.metric_limit), exported as tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the limit gauge is not emitted; absence can also mean self-observability is unavailable.",
+          "description": "Configured positive per-metric series limit (cardinality.metric_limit), exported as tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the limit gauge is not emitted; absence can also mean self-observability is unavailable. Maximum observed positive limit, not proof of full reporter coverage. A visible reporter without a positive limit suppresses this aggregate as uncertain.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14747,7 +14748,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"})",
+                        "expr": "max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) unless on() (count((tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"} or tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}) unless ignoring(metric_name) (tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"} > 0)) > 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -14782,7 +14783,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "No per-metric series cap reported \u2014 needs cardinality.metric_limit set (unset means unlimited) and exporter self-observability."
+                  "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity."
                 },
                 "overrides": []
               }
@@ -14795,7 +14796,7 @@
         "spec": {
           "id": 166,
           "title": "Overflowing now",
-          "description": "Sum of reported per-family overflow indicators across process/runtime reporters. Replicas can report the same family; this is not a distinct-family inventory. >0 means reported detail loss under a configured positive series cap.",
+          "description": "Sum of reported per-family overflow indicators across process/runtime reporters. Zero means observed reporters reported zero, not that missing reporters are healthy. Coverage of partial or entirely missing reporters remains unknown. Replicas can report the same family; this is not a distinct-family inventory. >0 means reported detail loss under a configured positive series cap.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14814,7 +14815,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}) or vector(0)",
+                        "expr": "sum(tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"})",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -14861,7 +14862,8 @@
                         "color": "red"
                       }
                     ]
-                  }
+                  },
+                  "noValue": "Overflow unknown \u2014 no reporter telemetry observed."
                 },
                 "overrides": []
               }
@@ -14874,7 +14876,7 @@
         "spec": {
           "id": 167,
           "title": "Per-metric utilization (top-N)",
-          "description": "Per-metric active-series count divided by the series limit \u2014 utilization as a fraction. 1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series.",
+          "description": "Per-metric active-series count divided by the series limit \u2014 utilization as a fraction. 1.0 = at cap relative to the maximum observed positive limit. Uses / on() group_left() for the aggregate limit. Observed reporters only: a visible reporter without a positive limit makes capacity uncertain; completely missing reporters cannot be detected.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -14893,7 +14895,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0))",
+                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0)) unless on() (count((tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"} or tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}) unless ignoring(metric_name) (tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"} > 0)) > 0)",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -14937,7 +14939,7 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+                  "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity."
                 },
                 "overrides": []
               }
@@ -15013,7 +15015,7 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "noValue": "No metrics over cap \u2014 all series fully resolved."
+                  "noValue": "No overflow-labelled families observed \u2014 overflow unknown, not proof all series are resolved."
                 },
                 "overrides": []
               }
@@ -15089,7 +15091,7 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "noValue": "No metrics overflowing."
+                  "noValue": "No overflowing families observed \u2014 missing reporter coverage remains unknown; see Overflowing now for observed zero."
                 },
                 "overrides": []
               }
