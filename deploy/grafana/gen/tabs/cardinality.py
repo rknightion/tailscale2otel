@@ -15,7 +15,7 @@ duplicates of panels already on this tab, so nothing was added:
     consolidation since it's the panel now doing double duty.
 """
 
-from builder import (barchart_opts, bargauge_opts, organize, panel, prom_t, RI, row,
+from builder import (barchart_opts, organize, panel, prom_t, RI, row,
                      sentinel, stat_opts, TBL_NOISE, thr, treemap_opts, ts_custom, ts_opts,
                      WIN_FAST)
 
@@ -64,29 +64,15 @@ def tab_cardinality(scope):
                     "All includes all tailnet runtimes and process reporters without a tailnet label. "
                     "Counts reports visible to this instant query, not a latest-state inventory; "
                     "Total active series separately sums reporter series counts as a cost proxy."), 6, 5),
-        (panel("Overflowing families", "table",
-               [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
-               novalue="No metrics over cap — all series fully resolved.",
-               transformations=[organize(exclude=["Time", "Value", "job", "instance",
-                                                   "service_instance_id", "service_name", "service_namespace"],
-                                          rename={"__name__": "Metric"})],
-               desc="Metric families currently over the per-metric cap (otel_metric_overflow=true)."), 24, 6),
     ]
     budget = [
-        (panel("Active series vs cap (top $topn)", "bargauge",
-               [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
-                       "/ on() group_left() (max(tailscale2otel_series_limit) > 0))", legend="{{metric_name}}")],
-               unit="percentunit", max_=1,
-               thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
-               options=bargauge_opts(), novalue=_NO_CAP,
-               desc="Per-metric utilization of the configured series cap. Watch the flow families."), 12, 8),
         (panel("Active series over time (top $topn)", "timeseries",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
                        "/ on() group_left() (max(tailscale2otel_series_limit) > 0))", legend="{{metric_name}}")],
                unit="percentunit", min_=0, max_=1, custom=ts_custom(),
                options=ts_opts(placement="right"), novalue=_NO_CAP,
                desc="Per-metric utilization of the configured series cap over time, top-N. "
-                    "Watch the flow families."), 12, 8),
+                    "Watch the flow families."), 24, 8),
     ]
     flow = [
         (panel("Flow series: raw vs bounded rollup", "timeseries",
@@ -152,16 +138,19 @@ def tab_cardinality(scope):
                     "1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series."), 12, 5),
     ]
 
-    # New row: active series by group + overflowing metrics table (Task 1.8 Step 2 + 1H.3)
-    bygroup = [
-        (panel("Active series by group", "barchart",
-               [prom_t("sum by (metric_group) (last_over_time(tailscale2otel_series_by_group[%s]))" % WIN_FAST,
-                       legend="{{metric_group}}", instant=True, fmt="table")],
-               unit="short", options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])],
-               desc="Reported active-series counts summed by metric_group across process/runtime reporters "
-                    "over the lookback window — a cost-driver view, not a live backend inventory. "
-                    "Groups reflect logical metric domains and vary with enabled collectors and reporting replicas."), 24, 8),
+    # Keep the two overflow evidence sources side by side, without joining or hiding
+    # disagreements: self-reports use a lookback; overflow labels are an instant view.
+    diagnostics = [
+        (panel("Overflowing families", "table",
+               [prom_t("count by (__name__) (%s)" % OVF, instant=True, fmt="table")],
+               novalue="No metrics over cap — all series fully resolved.",
+               transformations=[organize(exclude=["Time", "Value", "job", "instance",
+                                                   "service_instance_id", "service_name", "service_namespace"],
+                                          rename={"__name__": "Metric"})],
+               desc="Metric families with otel_metric_overflow=true series visible to the instant query. "
+                    "Compare with Metrics overflowing now: backend Prometheus names differ from "
+                    "self-reported metric_name values, and the sources can disagree because of "
+                    "lookback, ingestion delay, or reporter scope. Neither inventory replaces the other."), 12, 6),
         (panel("Metrics overflowing now", "table",
                [prom_t("max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio[%s])) == 1" % WIN_FAST,
                        instant=True, fmt="table")],
@@ -172,7 +161,22 @@ def tab_cardinality(scope):
                desc="Metric families whose last observed sample within the lookback window indicates overflow "
                     "(overflowing_ratio == 1) for at least one process/runtime reporter. Reported families vary with "
                     "enabled collectors and reporters; this is not a live backend inventory. "
-                    "Overflow indicates detail loss under a configured positive series cap."), 24, 6),
+                    "Overflow indicates detail loss under a configured positive series cap. "
+                    "Compare with Overflowing families: self-reported metric_name values differ from "
+                    "backend Prometheus names, and the sources can disagree because of lookback, "
+                    "ingestion delay, or reporter scope. Neither inventory replaces the other."), 12, 6),
+    ]
+
+    # Active-series cost drivers and optional treemap; native fallbacks remain.
+    bygroup = [
+        (panel("Active series by group", "barchart",
+               [prom_t("sum by (metric_group) (last_over_time(tailscale2otel_series_by_group[%s]))" % WIN_FAST,
+                       legend="{{metric_group}}", instant=True, fmt="table")],
+               unit="short", options=barchart_opts(),
+               transformations=[organize(exclude=["Time"])],
+               desc="Reported active-series counts summed by metric_group across process/runtime reporters "
+                    "over the lookback window — a cost-driver view, not a live backend inventory. "
+                    "Groups reflect logical metric domains and vary with enabled collectors and reporting replicas."), 24, 8),
         (panel("Active series by metric family", "marcusolsson-treemap-panel",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                        instant=True, fmt="table")],
@@ -239,6 +243,7 @@ def tab_cardinality(scope):
 
     return [
         row("Cardinality cap & overflow", overflow),
+        row("Overflow diagnostics — self-report vs backend labels", diagnostics),
         row("Active series by group", bygroup),
         row("Series budget", budget),
         row("Ingest vs export cost", cost, present="has_selfobs"),

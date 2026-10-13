@@ -14205,166 +14205,6 @@
         "kind": "Panel",
         "spec": {
           "id": 159,
-          "title": "Overflowing families",
-          "description": "Metric families currently over the per-metric cap (otel_metric_overflow=true).",
-          "links": [],
-          "data": {
-            "kind": "QueryGroup",
-            "spec": {
-              "queries": [
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "A",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "count by (__name__) ({otel_metric_overflow=\"true\", __name__=~\"tailscale.*\", tailscale_tailnet=~\"$tailnet\"})",
-                        "instant": true,
-                        "range": false,
-                        "legendFormat": "",
-                        "format": "table"
-                      }
-                    }
-                  }
-                }
-              ],
-              "queryOptions": {},
-              "transformations": [
-                {
-                  "kind": "Transformation",
-                  "group": "organize",
-                  "spec": {
-                    "options": {
-                      "excludeByName": {
-                        "Time": true,
-                        "Value": true,
-                        "job": true,
-                        "instance": true,
-                        "service_instance_id": true,
-                        "service_name": true,
-                        "service_namespace": true
-                      },
-                      "renameByName": {
-                        "__name__": "Metric"
-                      },
-                      "indexByName": {}
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "vizConfig": {
-            "kind": "VizConfig",
-            "group": "table",
-            "version": "12.1.0",
-            "spec": {
-              "options": {},
-              "fieldConfig": {
-                "defaults": {
-                  "noValue": "No metrics over cap \u2014 all series fully resolved."
-                },
-                "overrides": []
-              }
-            }
-          }
-        }
-      },
-      "panel-160": {
-        "kind": "Panel",
-        "spec": {
-          "id": 160,
-          "title": "Active series vs cap (top $topn)",
-          "description": "Per-metric utilization of the configured series cap. Watch the flow families.",
-          "links": [],
-          "data": {
-            "kind": "QueryGroup",
-            "spec": {
-              "queries": [
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "A",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "topk($topn, max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~\"$tailnet\"}) / on() group_left() (max(tailscale2otel_series_limit{tailscale_tailnet=~\"$tailnet\"}) > 0))",
-                        "instant": false,
-                        "range": true,
-                        "legendFormat": "{{metric_name}}",
-                        "format": "time_series"
-                      }
-                    }
-                  }
-                }
-              ],
-              "queryOptions": {},
-              "transformations": []
-            }
-          },
-          "vizConfig": {
-            "kind": "VizConfig",
-            "group": "bargauge",
-            "version": "12.1.0",
-            "spec": {
-              "options": {
-                "reduceOptions": {
-                  "calcs": [
-                    "lastNotNull"
-                  ],
-                  "fields": "",
-                  "values": false
-                },
-                "orientation": "horizontal",
-                "displayMode": "gradient",
-                "showUnfilled": true
-              },
-              "fieldConfig": {
-                "defaults": {
-                  "unit": "percentunit",
-                  "max": 1,
-                  "thresholds": {
-                    "mode": "absolute",
-                    "steps": [
-                      {
-                        "value": null,
-                        "color": "green"
-                      },
-                      {
-                        "value": 0.8,
-                        "color": "yellow"
-                      },
-                      {
-                        "value": 1,
-                        "color": "red"
-                      }
-                    ]
-                  },
-                  "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
-                },
-                "overrides": []
-              }
-            }
-          }
-        }
-      },
-      "panel-161": {
-        "kind": "Panel",
-        "spec": {
-          "id": 161,
           "title": "Active series over time (top $topn)",
           "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families.",
           "links": [],
@@ -14438,10 +14278,10 @@
           }
         }
       },
-      "panel-162": {
+      "panel-160": {
         "kind": "Panel",
         "spec": {
-          "id": 162,
+          "id": 160,
           "title": "Flow series: raw vs bounded rollup",
           "description": "Reported active-series counts for raw and bounded-rollup flow families. Compare raw counts with the configured limit exported as tailscale2otel_series_limit; cardinality.metric_limit <= 0 means unlimited, with no limit gauge emitted. When raw families overflow a positive cap, use the ROLLUP talker panels on the Network tab.",
           "links": [],
@@ -14578,10 +14418,10 @@
           }
         }
       },
-      "panel-163": {
+      "panel-161": {
         "kind": "Panel",
         "spec": {
-          "id": 163,
+          "id": 161,
           "title": "__other__ rollup share",
           "description": "Fraction of rollup bytes folded into the bounded __other__ bucket. High = many small talkers.",
           "links": [],
@@ -14661,10 +14501,10 @@
           }
         }
       },
-      "panel-164": {
+      "panel-162": {
         "kind": "Panel",
         "spec": {
-          "id": 164,
+          "id": 162,
           "title": "Flow log records dropped/s",
           "description": "Flow LOG records suppressed by the per-window volume guard (collectors.flowlogs.max_log_records_per_window). Metrics are never dropped, only logs.",
           "links": [],
@@ -14735,10 +14575,10 @@
           }
         }
       },
-      "panel-165": {
+      "panel-163": {
         "kind": "Panel",
         "spec": {
-          "id": 165,
+          "id": 163,
           "title": "Dedup set size",
           "description": "Keys held in each cross-source de-duplication set (a count).",
           "links": [],
@@ -14809,10 +14649,10 @@
           }
         }
       },
-      "panel-166": {
+      "panel-164": {
         "kind": "Panel",
         "spec": {
-          "id": 166,
+          "id": 164,
           "title": "Dedup evictions/s",
           "description": "Steady-state evictions are normal: dedup keys are effectively unique, so a full set evicts one key per insert forever even when healthy. Only evictions approaching a set's capacity within one poll interval indicate real overlap loss (boundary double-counting).",
           "links": [],
@@ -14883,10 +14723,10 @@
           }
         }
       },
-      "panel-167": {
+      "panel-165": {
         "kind": "Panel",
         "spec": {
-          "id": 167,
+          "id": 165,
           "title": "Series limit",
           "description": "Configured positive per-metric series limit (cardinality.metric_limit), exported as tailscale2otel_series_limit. A value <= 0 configures unlimited mode and the limit gauge is not emitted; absence can also mean self-observability is unavailable.",
           "links": [],
@@ -14950,10 +14790,10 @@
           }
         }
       },
-      "panel-168": {
+      "panel-166": {
         "kind": "Panel",
         "spec": {
-          "id": 168,
+          "id": 166,
           "title": "Overflowing now",
           "description": "Sum of reported per-family overflow indicators across process/runtime reporters. Replicas can report the same family; this is not a distinct-family inventory. >0 means reported detail loss under a configured positive series cap.",
           "links": [],
@@ -15029,10 +14869,10 @@
           }
         }
       },
-      "panel-169": {
+      "panel-167": {
         "kind": "Panel",
         "spec": {
-          "id": 169,
+          "id": 167,
           "title": "Per-metric utilization (top-N)",
           "description": "Per-metric active-series count divided by the series limit \u2014 utilization as a fraction. 1.0 = at cap. Uses / on() group_left() because the limit is a single unlabelled series.",
           "links": [],
@@ -15098,6 +14938,158 @@
               "fieldConfig": {
                 "defaults": {
                   "noValue": "No per-metric series cap is configured (cardinality.metric_limit is unlimited)."
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-168": {
+        "kind": "Panel",
+        "spec": {
+          "id": 168,
+          "title": "Overflowing families",
+          "description": "Metric families with otel_metric_overflow=true series visible to the instant query. Compare with Metrics overflowing now: backend Prometheus names differ from self-reported metric_name values, and the sources can disagree because of lookback, ingestion delay, or reporter scope. Neither inventory replaces the other.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "count by (__name__) ({otel_metric_overflow=\"true\", __name__=~\"tailscale.*\", tailscale_tailnet=~\"$tailnet\"})",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "Value": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true
+                      },
+                      "renameByName": {
+                        "__name__": "Metric"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "No metrics over cap \u2014 all series fully resolved."
+                },
+                "overrides": []
+              }
+            }
+          }
+        }
+      },
+      "panel-169": {
+        "kind": "Panel",
+        "spec": {
+          "id": 169,
+          "title": "Metrics overflowing now",
+          "description": "Metric families whose last observed sample within the lookback window indicates overflow (overflowing_ratio == 1) for at least one process/runtime reporter. Reported families vary with enabled collectors and reporters; this is not a live backend inventory. Overflow indicates detail loss under a configured positive series cap. Compare with Overflowing families: self-reported metric_name values differ from backend Prometheus names, and the sources can disagree because of lookback, ingestion delay, or reporter scope. Neither inventory replaces the other.",
+          "links": [],
+          "data": {
+            "kind": "QueryGroup",
+            "spec": {
+              "queries": [
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "A",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}[10m])) == 1",
+                        "instant": true,
+                        "range": false,
+                        "legendFormat": "",
+                        "format": "table"
+                      }
+                    }
+                  }
+                }
+              ],
+              "queryOptions": {},
+              "transformations": [
+                {
+                  "kind": "Transformation",
+                  "group": "organize",
+                  "spec": {
+                    "options": {
+                      "excludeByName": {
+                        "Time": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true,
+                        "Value": true
+                      },
+                      "renameByName": {
+                        "metric_name": "Metric"
+                      },
+                      "indexByName": {}
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "vizConfig": {
+            "kind": "VizConfig",
+            "group": "table",
+            "version": "12.1.0",
+            "spec": {
+              "options": {},
+              "fieldConfig": {
+                "defaults": {
+                  "noValue": "No metrics overflowing."
                 },
                 "overrides": []
               }
@@ -15190,82 +15182,6 @@
         "kind": "Panel",
         "spec": {
           "id": 171,
-          "title": "Metrics overflowing now",
-          "description": "Metric families whose last observed sample within the lookback window indicates overflow (overflowing_ratio == 1) for at least one process/runtime reporter. Reported families vary with enabled collectors and reporters; this is not a live backend inventory. Overflow indicates detail loss under a configured positive series cap.",
-          "links": [],
-          "data": {
-            "kind": "QueryGroup",
-            "spec": {
-              "queries": [
-                {
-                  "kind": "PanelQuery",
-                  "spec": {
-                    "refId": "A",
-                    "hidden": false,
-                    "query": {
-                      "kind": "DataQuery",
-                      "version": "v0",
-                      "group": "",
-                      "datasource": {
-                        "name": "${ds_prometheus}"
-                      },
-                      "spec": {
-                        "expr": "max by (metric_name) (last_over_time(tailscale2otel_series_overflowing_ratio{tailscale_tailnet=~\"$tailnet\"}[10m])) == 1",
-                        "instant": true,
-                        "range": false,
-                        "legendFormat": "",
-                        "format": "table"
-                      }
-                    }
-                  }
-                }
-              ],
-              "queryOptions": {},
-              "transformations": [
-                {
-                  "kind": "Transformation",
-                  "group": "organize",
-                  "spec": {
-                    "options": {
-                      "excludeByName": {
-                        "Time": true,
-                        "job": true,
-                        "instance": true,
-                        "service_instance_id": true,
-                        "service_name": true,
-                        "service_namespace": true,
-                        "Value": true
-                      },
-                      "renameByName": {
-                        "metric_name": "Metric"
-                      },
-                      "indexByName": {}
-                    }
-                  }
-                }
-              ]
-            }
-          },
-          "vizConfig": {
-            "kind": "VizConfig",
-            "group": "table",
-            "version": "12.1.0",
-            "spec": {
-              "options": {},
-              "fieldConfig": {
-                "defaults": {
-                  "noValue": "No metrics overflowing."
-                },
-                "overrides": []
-              }
-            }
-          }
-        }
-      },
-      "panel-172": {
-        "kind": "Panel",
-        "spec": {
-          "id": 172,
           "title": "Active series by metric family",
           "description": "Top-$topn metric families by active-series count. This optional panel needs `marcusolsson-treemap-panel` 2.1.1; install it from https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/. The native table and time series remain available when the plugin is absent.",
           "links": [],
@@ -15349,10 +15265,10 @@
           }
         }
       },
-      "panel-173": {
+      "panel-172": {
         "kind": "Panel",
         "spec": {
-          "id": 173,
+          "id": 172,
           "title": "Ingest vs export cost (per minute)",
           "description": "Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
           "links": [],
@@ -15467,10 +15383,10 @@
           }
         }
       },
-      "panel-174": {
+      "panel-173": {
         "kind": "Panel",
         "spec": {
-          "id": 174,
+          "id": 173,
           "title": "Forwarded metric-name drops/s by reason",
           "description": "Samples dropped because their metric NAME had not been seen before and the distinct-name budget (node_metrics.max_distinct_metrics, default 2000) was already exhausted. Targets choose their own names and each new one creates a permanent instrument, so the budget is a hard bound on a node-controlled input. Read the drop rate against the active uncataloged series count on the right axis: that is the population the budget governs. Sustained drops mean raising max_distinct_metrics or tightening metric_allow/metric_deny.",
           "links": [],
@@ -15564,10 +15480,10 @@
           }
         }
       },
-      "panel-175": {
+      "panel-174": {
         "kind": "Panel",
         "spec": {
-          "id": 175,
+          "id": 174,
           "title": "Metric names dropped over the window",
           "description": "Total forwarded samples lost to the distinct-name budget over the dashboard's time range. Any non-zero value means a scrape target is presenting more distinct metric names than the budget allows.",
           "links": [],
@@ -19392,24 +19308,11 @@
                                           "spec": {
                                             "x": 0,
                                             "y": 5,
-                                            "width": 24,
-                                            "height": 6,
-                                            "element": {
-                                              "kind": "ElementReference",
-                                              "name": "panel-159"
-                                            }
-                                          }
-                                        },
-                                        {
-                                          "kind": "GridLayoutItem",
-                                          "spec": {
-                                            "x": 0,
-                                            "y": 11,
                                             "width": 6,
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-167"
+                                              "name": "panel-165"
                                             }
                                           }
                                         },
@@ -19417,9 +19320,49 @@
                                           "kind": "GridLayoutItem",
                                           "spec": {
                                             "x": 6,
-                                            "y": 11,
+                                            "y": 5,
                                             "width": 6,
                                             "height": 5,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-166"
+                                            }
+                                          }
+                                        },
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 12,
+                                            "y": 5,
+                                            "width": 12,
+                                            "height": 5,
+                                            "element": {
+                                              "kind": "ElementReference",
+                                              "name": "panel-167"
+                                            }
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  }
+                                }
+                              },
+                              {
+                                "kind": "RowsLayoutRow",
+                                "spec": {
+                                  "title": "Overflow diagnostics \u2014 self-report vs backend labels",
+                                  "collapse": false,
+                                  "layout": {
+                                    "kind": "GridLayout",
+                                    "spec": {
+                                      "items": [
+                                        {
+                                          "kind": "GridLayoutItem",
+                                          "spec": {
+                                            "x": 0,
+                                            "y": 0,
+                                            "width": 12,
+                                            "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
                                               "name": "panel-168"
@@ -19430,9 +19373,9 @@
                                           "kind": "GridLayoutItem",
                                           "spec": {
                                             "x": 12,
-                                            "y": 11,
+                                            "y": 0,
                                             "width": 12,
-                                            "height": 5,
+                                            "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
                                               "name": "panel-169"
@@ -19472,23 +19415,10 @@
                                             "x": 0,
                                             "y": 8,
                                             "width": 24,
-                                            "height": 6,
-                                            "element": {
-                                              "kind": "ElementReference",
-                                              "name": "panel-171"
-                                            }
-                                          }
-                                        },
-                                        {
-                                          "kind": "GridLayoutItem",
-                                          "spec": {
-                                            "x": 0,
-                                            "y": 14,
-                                            "width": 24,
                                             "height": 9,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-172"
+                                              "name": "panel-171"
                                             }
                                           }
                                         }
@@ -19511,24 +19441,11 @@
                                           "spec": {
                                             "x": 0,
                                             "y": 0,
-                                            "width": 12,
+                                            "width": 24,
                                             "height": 8,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-160"
-                                            }
-                                          }
-                                        },
-                                        {
-                                          "kind": "GridLayoutItem",
-                                          "spec": {
-                                            "x": 12,
-                                            "y": 0,
-                                            "width": 12,
-                                            "height": 8,
-                                            "element": {
-                                              "kind": "ElementReference",
-                                              "name": "panel-161"
+                                              "name": "panel-159"
                                             }
                                           }
                                         }
@@ -19555,7 +19472,7 @@
                                             "height": 8,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-173"
+                                              "name": "panel-172"
                                             }
                                           }
                                         }
@@ -19599,7 +19516,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-174"
+                                              "name": "panel-173"
                                             }
                                           }
                                         },
@@ -19612,7 +19529,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-175"
+                                              "name": "panel-174"
                                             }
                                           }
                                         }
@@ -19639,7 +19556,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-162"
+                                              "name": "panel-160"
                                             }
                                           }
                                         },
@@ -19652,7 +19569,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-163"
+                                              "name": "panel-161"
                                             }
                                           }
                                         },
@@ -19665,7 +19582,7 @@
                                             "height": 7,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-164"
+                                              "name": "panel-162"
                                             }
                                           }
                                         }
@@ -19692,7 +19609,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-165"
+                                              "name": "panel-163"
                                             }
                                           }
                                         },
@@ -19705,7 +19622,7 @@
                                             "height": 6,
                                             "element": {
                                               "kind": "ElementReference",
-                                              "name": "panel-166"
+                                              "name": "panel-164"
                                             }
                                           }
                                         }

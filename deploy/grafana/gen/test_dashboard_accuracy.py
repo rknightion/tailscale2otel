@@ -40,7 +40,7 @@ class CardinalityAccuracyTest(unittest.TestCase):
         self.doc = dashboard.build_family()
 
     def test_cap_panels_use_the_exported_limit_not_a_10k_literal(self):
-        titles = ["Busiest metric — % of cap", "Active series vs cap (top $topn)",
+        titles = ["Busiest metric — % of cap",
                   "Active series over time (top $topn)",
                   "Per-metric utilization (top-N)"]
         rendered = json.dumps([panel(self.doc, title) for title in titles]).lower()
