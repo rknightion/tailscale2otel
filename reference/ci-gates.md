@@ -33,3 +33,16 @@ refreshing the vendored OpenAPI spec.
   clean locally on two actionlint versions and still fail the lane. The version gap runs the reverse
   of the usual way, so "my tool is up to date" is not reassurance. In a workflow `run:` block, prefer
   a plain `if` over `A && B || C`.
+- A CI test with a wall-clock margin flakes on a loaded runner: remove the timing dependency
+  (`testing/synctest`, or a fake-driver context probe asserting which context an operation
+  inherited), never widen the margin, and never rerun until green or merge past a flake. `gh run
+  rerun` replays the merge commit GitHub froze when the run was created; check its parents, and use
+  `gh pr update-branch <n>` for a run that contains current `main`.
+- auto-rc cuts a full publish on every green CI on `main`, after CI has reported done: a closing check
+  covers the workflows that fire off CI, and an auto-rc red is infrastructure (proxy ingestion lag,
+  agent timeouts, registry not-found, cosign guard) until proven otherwise.
+- The owner merges the release PR by hand: no run merges it, tags, or touches release-please config;
+  runs validate from the rc images. The bang goes after the scope, `feat(config)!:`; `feat!(config):`
+  is silently dropped by release-please, so repair it additively with a second commit.
+- RBAC proofs (`auth can-i --as`) go through the direct cluster endpoint: the tailnet API proxy answers
+  as the operator and returns a false `yes`.

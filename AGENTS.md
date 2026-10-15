@@ -143,7 +143,7 @@ tool module can never affect the main module's build.
   Grafana stack, or editing an artifact under `deploy/grafana` or `deploy/alerts`.
 - `reference/ci-gates.md` - read before editing a workflow or diagnosing a red check that
   `just check` does not reproduce.
-- `reference/backlog-workflow.md` - read before writing to the board or running a fan-out wave.
+- `reference/backlog-workflow.md` - read before writing to the board.
 - `deploy/` carries its own instructions - read them before touching the Helm chart, the
   Dockerfiles, Compose or the release packaging.
 - `internal/collector/` - read before adding or changing a collector.

@@ -63,3 +63,7 @@ gate green will not work.
   artifacts to the catalog, so a renamed metric leaves a panel silently empty - it still loads, it
   just shows "No data". It has to subtract the catalog's LABEL and log-attribute names too: labels
   share the `tailscale_` prefix, so a text scan cannot tell a metric from a label by shape.
+- A map or list config shape touches `internal/config/` and `config.example.yaml`, and also
+  `config.schema.json`, the Helm `values.yaml` and `values.schema.json`, and the `TS2OTEL_*` env
+  loader, which must reject a child-key encoding it cannot express. Assign those seams to the lane or
+  state that the root owns them.

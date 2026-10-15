@@ -1,6 +1,6 @@
 # Backlog board conventions
 
-Read before writing to the board: creating or finalizing a task, running a fan-out wave, or
+Read before writing to the board: creating or finalizing a task, or
 resolving a `#NNN` citation.
 
 Open work is `backlog/`, driven only through the `backlog` CLI. GitHub Issues was retired here and
@@ -31,5 +31,4 @@ board, not the issue, is where it is worked.
   no edit, view or update, no supersede mechanism, no validation - so durable reference goes in
   **docs** and tasks stay the unit. MCP is frozen upstream and costs 10-50k tokens of permanent
   context against 1-2k for the CLI.
-- Read the *Wave operating model* doc before designing a fan-out wave here; the loop protocol is
-  ~/repos/agent-docs/sources/loop/contract.md and planner.md. Docs load on demand via `backlog doc view <id> --plain`.
+- Loops: the protocol lives in `~/repos/agent-docs/sources/loop/` (this board's "Loop protocol pointer" doc points there); this repository's loop facts are in `LOOP.md`. Docs load on demand via `backlog doc view <id> --plain`.
