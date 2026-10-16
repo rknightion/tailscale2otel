@@ -1,0 +1,7 @@
+# Remote gate runner contract (m7kni/gate-runner): see that repo's README.
+env:
+  # The gate host has a Docker daemon: make the hygiene leg fail rather than skip its docker half.
+  HYGIENE_REQUIRE_DOCKER: "1"
+tools:
+  # CI installs the latest Helm (setup-helm default), now 4; the chart NOTES tests depend on it.
+  helm: "4"

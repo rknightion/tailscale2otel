@@ -11,6 +11,8 @@ instance. Aggregate counts, timings and structural findings are fine.
 
 `just check` is the gate. `just ci` adds the goreleaser cross-compile and the container image +
 smoke legs. `just --list` is the authoritative recipe list; `just --show <recipe>` is what one runs.
+Off the Mac, when the remote gate runner is installed (`which gaterun`): `gaterun -- bash -c 'just setup
+>/dev/null && just check'` (or `just ci`); `.gaterunner.yaml` selects Helm 4 and requires Docker for hygiene.
 
 - `just setup` once per clone: pinned `golangci-lint`, `govulncheck`, the two Helm generators, and
   `core.hooksPath` at `.githooks`. Git cannot run anything on clone, so nothing installs it for you.
