@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GO_LICENSES=go-licenses OUT=/src/THIRD_PARTY_NOTICES.md bash scripts/notices.sh
 
 # ---- runtime ----
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
 # License compliance travels with the image (OCI /licenses convention): the repo's Apache-2.0
 # text + the generated third-party notices for the linked modules.
