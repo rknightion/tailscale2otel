@@ -1,6 +1,6 @@
 module github.com/rknightion/tailscale2otel/v5/tools/promqlcheck
 
-go 1.27.2
+go 1.27.3
 
 require github.com/prometheus/prometheus v0.315.0
 
