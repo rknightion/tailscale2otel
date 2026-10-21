@@ -1,5 +1,15 @@
 # Changelog
 
+## [5.2.1](https://github.com/rknightion/tailscale2otel/compare/v5.2.0...v5.2.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **deps:** enforce Go 1.27.3 and distrusted CA bundles ([862bd1e](https://github.com/rknightion/tailscale2otel/commit/862bd1ef6f563e248416d9c8e1d7e9dfaec46e5f))
+* **deps:** update module github.com/knadh/koanf/v2 to v2.4.0 ([#719](https://github.com/rknightion/tailscale2otel/issues/719)) ([7160cfe](https://github.com/rknightion/tailscale2otel/commit/7160cfe7dce1c343970aca87182280f53ab135aa))
+* **deps:** update module github.com/prometheus/prometheus to v0.315.1 ([#730](https://github.com/rknightion/tailscale2otel/issues/730)) ([e2dabdf](https://github.com/rknightion/tailscale2otel/commit/e2dabdfb3567c74a54b6b0609acb8f91329e8678))
+* **deps:** update module modernc.org/sqlite to v1.61.0 ([#729](https://github.com/rknightion/tailscale2otel/issues/729)) ([d8c7975](https://github.com/rknightion/tailscale2otel/commit/d8c79751a2055048807e14ae0a3d7fad3fac1a31))
+
 ## [5.2.0](https://github.com/rknightion/tailscale2otel/compare/v5.1.0...v5.2.0) (2026-10-13)
 
 
