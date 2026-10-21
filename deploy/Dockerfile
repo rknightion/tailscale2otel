@@ -2,6 +2,9 @@
 
 # ---- build ----
 FROM golang:1.27.3-alpine@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS build
+# Refresh trust before downloading modules: the upstream Go image predates the
+# eMudhra intermediate distrust in Alpine's 20261020-r0 CA bundle.
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -37,7 +40,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     GO_LICENSES=go-licenses OUT=/src/THIRD_PARTY_NOTICES.md bash scripts/notices.sh
 
 # ---- runtime ----
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:d62067879de890a1def9da0e7766b7d20810a5e5555cef8506b752437d7a3e88
 COPY --from=build /out/tailscale2otel /usr/local/bin/tailscale2otel
 # License compliance travels with the image (OCI /licenses convention): the repo's Apache-2.0
 # text + the generated third-party notices for the linked modules.
