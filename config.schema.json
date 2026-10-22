@@ -2274,12 +2274,12 @@
         },
         "max_bytes": {
           "default": 268435456,
-          "description": "encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no TTL/eviction",
+          "description": "encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no capacity eviction",
           "type": "integer"
         },
         "max_entries": {
           "default": 10000,
-          "description": "encoded entry ceiling; full WAL fails new requests closed; no TTL/eviction",
+          "description": "encoded entry ceiling; full WAL fails new requests closed; no capacity eviction",
           "type": "integer"
         },
         "max_permanent_rejections": {
@@ -2287,6 +2287,15 @@
           "description": "\u003e=1 even when WAL disabled; drop a pinned metric collection/log batch after N consecutive permanent HTTP 4xx (except 401/403/408/429), count explicit loss and retire member WAL entries",
           "minimum": 1,
           "type": "integer"
+        },
+        "max_replay_age": {
+          "default": "6h",
+          "description": "on startup/promotion, retire WITHOUT replay entries accepted longer ago than this (counted in tailscale2otel.ingress_wal.expired.entries); the WAL buffers work ahead of delivery, not history; 0 disables",
+          "examples": [
+            "6h"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
         }
       },
       "type": "object"

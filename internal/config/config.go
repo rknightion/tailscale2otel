@@ -1629,7 +1629,11 @@ type IngressWALConfig struct {
 	Directory              string `yaml:"directory" reload:"restart"`
 	MaxBytes               int64  `yaml:"max_bytes" reload:"restart"`
 	MaxEntries             int    `yaml:"max_entries" reload:"restart"`
-	Corruption             string `yaml:"corruption" reload:"restart"`
+	// MaxReplayAge retires, without replay, entries accepted longer ago than
+	// this when the WAL drains on startup or promotion. The WAL buffers work
+	// ahead of delivery; it is not a historical store. 0 disables expiry.
+	MaxReplayAge Duration `yaml:"max_replay_age" reload:"restart"`
+	Corruption   string   `yaml:"corruption" reload:"restart"`
 }
 
 // StreamingConfig configures the HEC-style streaming receiver.

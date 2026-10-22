@@ -1770,10 +1770,15 @@ config: # @schema additionalProperties:false
     enabled: false
     # -- Absolute, clean, non-root WAL directory. Must live on the state volume for persistence.
     directory: "/var/lib/tailscale2otel/ingress-wal"
-    # -- Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no TTL or eviction.
+    # -- Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no capacity eviction.
     max_bytes: 268435456
-    # -- Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no TTL or eviction.
+    # -- Encoded WAL entry ceiling. Full WALs fail receiver requests closed; no capacity eviction.
     max_entries: 10000
+    # -- On startup and every promotion, retire without replay any entry accepted longer ago than
+    # this (counted in tailscale2otel.ingress_wal.expired.entries). The WAL buffers work ahead of
+    # delivery, not history: a former leader's backlog stranded for days would otherwise replay
+    # records that backends reject as too old. 0 disables expiry.
+    max_replay_age: 6h
     # -- Drop a pinned metric collection/log batch after this many consecutive permanent HTTP
     # 4xx rejections (except 401/403/408/429). Minimum 1 even when WAL disabled; explicit loss
     # is counted and member WAL entries retire. This is not capacity eviction.

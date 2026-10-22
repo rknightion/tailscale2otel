@@ -213,7 +213,12 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		rt.registry.Register(users.New(cp.Client, c.Users.Interval.D(), userOpts...), c.Users.Interval.D())
 	}
 	if c.Keys.Enabled && cp.Supports("keys") {
+		keysStore := d.evidenceStore
+		if d.multi && keysStore != nil {
+			keysStore = collector.Namespaced(keysStore, rt.name)
+		}
 		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
+			keys.WithEvidenceStore(keysStore),
 			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key),
 			keys.WithExpiryLogMode(c.Keys.ExpiryLogMode),
 			keys.WithAPIState(rt.apiState)), c.Keys.Interval.D())

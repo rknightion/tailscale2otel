@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/keys"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
@@ -1140,4 +1141,82 @@ func TestCollect_TypeAndAuthKind(t *testing.T) {
 	findPoint(t, counts, map[string]string{"tailscale.key.type": "client", "tailscale.key.auth_kind": "none"})
 	findPoint(t, counts, map[string]string{"tailscale.key.type": "api", "tailscale.key.auth_kind": "none"})
 	findPoint(t, counts, map[string]string{"tailscale.key.type": "auth", "tailscale.key.auth_kind": "ephemeral"})
+}
+
+// TestCollect_KeyLifecycleSurvivesRestart pins that a restarted collector
+// sharing the same durable evidence store does not re-announce keys it already
+// announced. Re-emitting tailscale.key.created on every restart sent records
+// stamped with each key's original creation time, which backends with a
+// bounded acceptance window (Loki rejects >7d) refuse, tripping the ingress
+// permanent-rejection loss advisory on every rollout.
+func TestCollect_KeyLifecycleSurvivesRestart(t *testing.T) {
+	now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return now }
+	api := &fakeLister{keys: []tsapi.Key{{
+		ID: "k-old", Type: "auth", Created: now.Add(-48 * time.Hour), Revoked: now.Add(-24 * time.Hour),
+	}}}
+	store := collector.NewMemoryStore()
+
+	collect := func(c *keys.Collector) *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatalf("Collect: %v", err)
+		}
+		return rec
+	}
+
+	first := collect(keys.New(api, 0, time.Hour, clock, keys.WithEvidenceStore(store)))
+	if got := len(logsNamed(first, keys.EventKeyCreated)); got != 1 {
+		t.Fatalf("first process created logs = %d, want 1", got)
+	}
+	if got := len(logsNamed(first, keys.EventKeyRevoked)); got != 1 {
+		t.Fatalf("first process revoked logs = %d, want 1", got)
+	}
+
+	now = now.Add(5 * time.Minute)
+	restarted := keys.New(api, 0, time.Hour, clock, keys.WithEvidenceStore(store))
+	second := collect(restarted)
+	if got := len(logsNamed(second, keys.EventKeyCreated)); got != 0 {
+		t.Errorf("restarted process re-emitted created logs = %d, want 0", got)
+	}
+	if got := len(logsNamed(second, keys.EventKeyRevoked)); got != 0 {
+		t.Errorf("restarted process re-emitted revoked logs = %d, want 0", got)
+	}
+
+	// A key created after the persisted evidence is still news.
+	api.keys = append(api.keys, tsapi.Key{ID: "k-new", Type: "auth", Created: now.Add(-time.Minute)})
+	third := collect(restarted)
+	created := logsNamed(third, keys.EventKeyCreated)
+	if len(created) != 1 || created[0].Attrs["tailscale.key.id"] != "k-new" {
+		t.Fatalf("new key created logs = %+v, want exactly k-new", created)
+	}
+}
+
+// TestCollect_KeyLifecycleOlderThanHorizonIsBaseline pins that a cold start
+// (no evidence) records long-past transitions as baseline instead of emitting
+// log records timestamped beyond what log backends accept.
+func TestCollect_KeyLifecycleOlderThanHorizonIsBaseline(t *testing.T) {
+	now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	api := &fakeLister{keys: []tsapi.Key{
+		{ID: "k-ancient", Type: "auth", Created: now.Add(-400 * 24 * time.Hour), Revoked: now.Add(-30 * 24 * time.Hour)},
+		{ID: "k-recent", Type: "auth", Created: now.Add(-2 * 24 * time.Hour)},
+	}}
+	c := keys.New(api, 0, time.Hour, func() time.Time { return now })
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	created := logsNamed(rec, keys.EventKeyCreated)
+	if len(created) != 1 || created[0].Attrs["tailscale.key.id"] != "k-recent" {
+		t.Fatalf("created logs = %+v, want only k-recent", created)
+	}
+	if got := len(logsNamed(rec, keys.EventKeyRevoked)); got != 0 {
+		t.Fatalf("revoked logs for a 30-day-old revocation = %d, want 0", got)
+	}
+	for _, lr := range rec.LogRecords() {
+		if now.Sub(lr.Timestamp) > 6*24*time.Hour {
+			t.Errorf("log %s timestamp %v is beyond the acceptance horizon", lr.EventName, lr.Timestamp)
+		}
+	}
 }

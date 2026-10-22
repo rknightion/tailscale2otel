@@ -51,6 +51,8 @@ func TestCatalogMatchesEmitted(t *testing.T) {
 
 	// admin.auth.rejected: emit one so its descriptor is validated too.
 	emitAdminAuthRejected(rec.Emitter(), reasonBadCredentials)
+	// ingress_wal.expired.entries: emit one so its descriptor is validated too.
+	emitIngressWALExpired(rec.Emitter(), ingressWALSourceStream, ingressWALSignalHEC)
 
 	// dedup.size + dedup.evictions + dedup.hits: a cap-1 set with one eviction and
 	// one duplicate add emits all three.

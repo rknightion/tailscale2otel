@@ -347,6 +347,7 @@ func Default() *Config {
 			Directory:              "/var/lib/tailscale2otel/ingress-wal",
 			MaxBytes:               268435456,
 			MaxEntries:             10000,
+			MaxReplayAge:           Duration(6 * time.Hour),
 			Corruption:             "fail",
 		},
 		Streaming: StreamingConfig{

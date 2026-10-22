@@ -183,6 +183,7 @@ const (
 	MetricIngressWALOrphanSize         = "tailscale2otel.ingress_wal.orphan.size"
 	MetricIngressWALCompletionMarkers  = "tailscale2otel.ingress_wal.completion.markers"
 	MetricIngressWALPermanentDrops     = "tailscale2otel.ingress_wal.permanent.drops"
+	MetricIngressWALExpiredEntries     = "tailscale2otel.ingress_wal.expired.entries"
 )
 
 // Ingestion-volume self-observability metric names. Emitted (via an app-built
@@ -392,6 +393,14 @@ var (
 		Instrument:  metricdoc.Counter,
 		Description: "Pinned metrics collections or durable log batches deliberately dropped after ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections (excluding 401, 403, 408 and 429). One per dropped unit, not per WAL entry or record. Member WAL entries retire once both signals resolve; this is explicit data loss, not successful backend delivery.",
 		Attributes:  []string{semconv.AttrIngestSignal},
+		Group:       GroupSelfObs,
+	}
+	DocIngressWALExpiredEntries = metricdoc.Metric{
+		Name:        MetricIngressWALExpiredEntries,
+		Unit:        semconv.UnitDimensionless,
+		Instrument:  metricdoc.Counter,
+		Description: "Ingress WAL entries retired without replay because they were accepted longer ago than ingress_wal.max_replay_age when the WAL drained on startup or promotion (typically a former leader's backlog stranded while it was a standby). One per entry, by receiver source and signal. This is explicit data loss, not delivery.",
+		Attributes:  []string{semconv.AttrIngestSource, semconv.AttrIngestSignal},
 		Group:       GroupSelfObs,
 	}
 	DocIngressWALPendingEntries = metricdoc.Metric{
@@ -840,7 +849,7 @@ func Catalog() []metricdoc.Metric {
 		DocReceiverMisconfigured,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
-		DocIngressWALPermanentDrops, DocIngressWALPendingEntries, DocIngressWALPendingSize,
+		DocIngressWALPermanentDrops, DocIngressWALExpiredEntries, DocIngressWALPendingEntries, DocIngressWALPendingSize,
 		DocIngressWALPendingEntriesFill, DocIngressWALPendingSizeFill,
 		DocIngressWALOrphanStages, DocIngressWALOrphanSize, DocIngressWALCompletionMarkers,
 		DocIngestRecords, DocIngestBytes, DocIngestEventAge, DocIngestCaptureDelay,

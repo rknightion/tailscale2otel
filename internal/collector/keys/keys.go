@@ -120,6 +120,20 @@ type lifecycleState struct {
 	revokedEmitted bool
 }
 
+// Evidence keys for the lifecycle watermarks: the newest source created and
+// revoked timestamps already announced. A transition at or before its
+// watermark was announced by this or an earlier process and is not news.
+const (
+	lifecycleCreatedWatermarkKey = "keys/lifecycle/created"
+	lifecycleRevokedWatermarkKey = "keys/lifecycle/revoked"
+)
+
+// lifecycleEventHorizon bounds how far in the past a lifecycle transition may
+// be and still be emitted. Older transitions are history, not news, and log
+// backends refuse records that old (Grafana Cloud Loki rejects anything older
+// than seven days), so a cold start records them as baseline instead.
+const lifecycleEventHorizon = 6 * 24 * time.Hour
+
 // opListTailnetKeys is the upstream operationId of the list call.
 const opListTailnetKeys = "listTailnetKeys"
 
@@ -139,6 +153,8 @@ type Collector struct {
 	expiryLogMode  string // "daily" (default) | "always" | "off"
 	expiryState    map[string]expiryState
 	lifecycleState map[string]lifecycleState
+	// evidence holds the lifecycle watermarks across restarts.
+	evidence collector.CheckpointStore
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
@@ -226,6 +242,7 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 		expiryLogMode:  expiryLogModeDaily,
 		expiryState:    make(map[string]expiryState),
 		lifecycleState: make(map[string]lifecycleState),
+		evidence:       collector.NewMemoryStore(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -298,6 +315,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	currentExpiring := make(map[string]struct{})
 	currentKeys := make(map[string]struct{}, len(ks))
 
+	createdMark, _ := c.evidence.Get(lifecycleCreatedWatermarkKey)
+	revokedMark, _ := c.evidence.Get(lifecycleRevokedWatermarkKey)
+	horizon := now.Add(-lifecycleEventHorizon)
+	newCreatedMark, newRevokedMark := createdMark, revokedMark
+
 	for i := range ks {
 		k := ks[i]
 		typ, authKind := classify(k)
@@ -312,13 +334,26 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if k.ID != "" {
 			currentKeys[k.ID] = struct{}{}
 			state := c.lifecycleState[k.ID]
+			// A transition at or before its persisted watermark was announced by
+			// an earlier process; one older than the horizon is baseline. Either
+			// way it is marked handled without a record.
 			if !state.createdEmitted && !k.Created.IsZero() {
-				emitKeyLifecycle(e, EventKeyCreated, lifecycleCreated, k, typ, authKind, k.Created, now)
+				if lifecycleIsNews(k.Created, createdMark, horizon) {
+					emitKeyLifecycle(e, EventKeyCreated, lifecycleCreated, k, typ, authKind, k.Created, now)
+				}
 				state.createdEmitted = true
+				if k.Created.After(newCreatedMark) {
+					newCreatedMark = k.Created
+				}
 			}
 			if !state.revokedEmitted && !k.Revoked.IsZero() {
-				emitKeyLifecycle(e, EventKeyRevoked, lifecycleRevoked, k, typ, authKind, k.Revoked, now)
+				if lifecycleIsNews(k.Revoked, revokedMark, horizon) {
+					emitKeyLifecycle(e, EventKeyRevoked, lifecycleRevoked, k, typ, authKind, k.Revoked, now)
+				}
 				state.revokedEmitted = true
+				if k.Revoked.After(newRevokedMark) {
+					newRevokedMark = k.Revoked
+				}
 			}
 			c.lifecycleState[k.ID] = state
 		}
@@ -489,6 +524,32 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
+	return c.persistLifecycleMarks(createdMark, revokedMark, newCreatedMark, newRevokedMark)
+}
+
+// lifecycleIsNews reports whether a source transition time is newer than both
+// the announced watermark and the acceptance horizon.
+func lifecycleIsNews(at, mark, horizon time.Time) bool {
+	return at.After(mark) && !at.Before(horizon)
+}
+
+// persistLifecycleMarks writes only the watermarks that advanced, in one batch.
+// The in-memory state already suppresses repeats in this process, so a failed
+// write costs at most one repeated announcement after a restart.
+func (c *Collector) persistLifecycleMarks(oldCreated, oldRevoked, newCreated, newRevoked time.Time) error {
+	updates := make(map[string]time.Time, 2)
+	if newCreated.After(oldCreated) {
+		updates[lifecycleCreatedWatermarkKey] = newCreated
+	}
+	if newRevoked.After(oldRevoked) {
+		updates[lifecycleRevokedWatermarkKey] = newRevoked
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	if err := collector.UpdateCheckpointBatch(c.evidence, updates, nil); err != nil {
+		return fmt.Errorf("keys: persist lifecycle evidence: %w", err)
+	}
 	return nil
 }
 
@@ -617,4 +678,15 @@ func keyLabel(k tsapi.Key) string {
 		return k.Description
 	}
 	return k.ID
+}
+
+// WithEvidenceStore persists the key lifecycle watermarks in a durable semantic
+// evidence store, so a restarted process does not re-announce keys an earlier
+// process already announced. A nil store keeps the process-local default.
+func WithEvidenceStore(store collector.CheckpointStore) Option {
+	return func(c *Collector) {
+		if store != nil {
+			c.evidence = store
+		}
+	}
 }

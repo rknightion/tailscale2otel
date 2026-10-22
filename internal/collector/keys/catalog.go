@@ -44,14 +44,14 @@ var (
 	docKeyCreated = metricdoc.LogEvent{
 		Name:        EventKeyCreated,
 		Severity:    "INFO",
-		Description: "Emitted once for each key with a non-zero source `created` timestamp. The log timestamp is the source creation time and the observed timestamp is when the successful inventory snapshot was collected.",
+		Description: "Emitted once for each key with a non-zero source `created` timestamp. The log timestamp is the source creation time and the observed timestamp is when the successful inventory snapshot was collected. The newest announced creation time is kept in the semantic evidence store, so a restart does not re-announce keys; a creation more than six days old when first seen is recorded as baseline without a record, because log backends reject records that old.",
 		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrLifecycleTransition, attrOwner, attrTags},
 		Group:       groupKeys,
 	}
 	docKeyRevoked = metricdoc.LogEvent{
 		Name:        EventKeyRevoked,
 		Severity:    "INFO",
-		Description: "Emitted once when a key has a non-zero source `revoked` timestamp. The log timestamp is the source revocation time and the observed timestamp is when the successful inventory snapshot was collected; key disappearance or invalid state is not treated as revocation.",
+		Description: "Emitted once when a key has a non-zero source `revoked` timestamp. The log timestamp is the source revocation time and the observed timestamp is when the successful inventory snapshot was collected; key disappearance or invalid state is not treated as revocation. Like `tailscale.key.created`, the newest announced revocation time survives restarts in the semantic evidence store, and a revocation more than six days old when first seen is recorded as baseline without a record.",
 		Attributes:  []string{attrID, attrType, attrAuthKind, attrDescription, attrLifecycleTransition, attrOwner, attrTags},
 		Group:       groupKeys,
 	}

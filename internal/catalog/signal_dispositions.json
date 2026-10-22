@@ -2765,6 +2765,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.ingress_wal.expired.entries",
+      "prom_name": "tailscale2otel_ingress_wal_expired_entries_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.ingress_wal.orphan.size",
       "prom_name": "tailscale2otel_ingress_wal_orphan_size_bytes",
       "surface": "self_obs",

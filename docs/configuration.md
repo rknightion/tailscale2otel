@@ -1462,9 +1462,21 @@ Replay is at-least-once. A crash after applying an envelope and before the local
 can replay the whole body on restart, so exported data and the metrics and log records derived from
 it can be emitted twice. The in-memory apply progress and cross-source deduplication sets are rebuilt
 empty at startup and do not suppress this; the WAL deliberately does not persist an applied marker.
-There is no TTL, age-based cleanup, or eviction. An exhausted byte or entry limit refuses new receiver
+There is no capacity eviction: an exhausted byte or entry limit refuses new receiver
 requests, and a file/directory fsync failure or corrupt state fails closed rather than acknowledging
 data whose durability is uncertain.
+
+The WAL is a short-horizon buffer for work ahead of delivery, not a historical store. Before each
+drain (on startup and on every promotion), entries accepted more than `ingress_wal.max_replay_age`
+ago (default **6h**) are retired without replay, oldest first, through the same durable completion
+path as a delivered entry, so they never replay again. The usual case is a former leader whose pod
+sat as a standby for days: a standby never replays and the new leader cannot read its volume, so its
+backlog would otherwise replay on the next promotion as records backends reject as too old (Grafana
+Cloud Loki refuses anything older than seven days), tripping the permanent-rejection loss advisory.
+This is deliberate, counted data loss: `tailscale2otel.ingress_wal.expired.entries` counts one per
+retired entry, labelled `source` and `signal` on the entry's tailnet provider, and one WARN line
+reports the entries and bytes retired. An entry whose route is no longer configured is left alone
+and keeps its fail-closed replay behavior. `0` disables expiry.
 
 On startup - and, in `coordination.mode: kubernetes`, on every promotion to leader - the accepted
 backlog is drained before the streaming and webhook listeners bind, so buffered ingress is replayed
@@ -1579,6 +1591,7 @@ long after startup, if the live drain worker reaches that state with the listene
 | `ingress_wal.directory` | `/var/lib/tailscale2otel/ingress-wal` | WAL directory. When enabled, it must be an absolute, filepath-clean path and must not be the filesystem root. The existing parent must be writable; the WAL creates and secures the final directory. |
 | `ingress_wal.max_bytes` | `268435456` (256 MiB) | Encoded byte ceiling. Must be `> 0` and `< 9223372036854775807`. Counts pending entries and staging/recovery state; full means new receiver requests fail closed. |
 | `ingress_wal.max_entries` | `10000` | Encoded entry ceiling. Must be `> 0`; full means new receiver requests fail closed. |
+| `ingress_wal.max_replay_age` | `6h` | On startup and every promotion, retire without replay any entry accepted longer ago than this, counted in `tailscale2otel.ingress_wal.expired.entries`. Must be `>= 0`; `0` disables expiry. |
 | `ingress_wal.max_permanent_rejections` | `5` | Consecutive permanent HTTP rejections before a pinned metric collection or durable log batch is deliberately dropped with explicit loss accounting. Must be `>= 1` even when the WAL is disabled. This delivery threshold also applies to scheduled best-effort metric collections. |
 | `ingress_wal.corruption` | `fail` | Corruption policy. `fail` is the only supported value: malformed, truncated, checksum-invalid, or incompatible state blocks startup/drain instead of being discarded. |
 

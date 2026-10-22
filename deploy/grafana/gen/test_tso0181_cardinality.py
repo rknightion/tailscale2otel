@@ -59,7 +59,7 @@ class ConsolidatedCardinalityTest(unittest.TestCase):
     def test_reduction_and_no_orphan_or_hidden_duplicate(self):
         tabs, totals = measure(self.doc)
         self.assertEqual(next(t for t in tabs if t[0] == "Cost & Cardinality")[1:], (20, 26))
-        self.assertEqual((totals["panels"], totals["queries"]), (174, 241))
+        self.assertEqual((totals["panels"], totals["queries"]), (174, 242))
         refs = _refs(self.doc["spec"]["layout"])
         self.assertEqual(set(refs), set(self.elements))
         self.assertEqual(len(refs), len(set(refs)))

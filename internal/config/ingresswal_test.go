@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
@@ -278,5 +279,28 @@ func TestValidateIngressWALAcceptsReceiverBodyCapBounds(t *testing.T) {
 				t.Fatalf("Validate body cap %d: %v", value, err)
 			}
 		})
+	}
+}
+
+func TestIngressWALMaxReplayAgeDefaultLoadAndValidate(t *testing.T) {
+	if got := config.Default().IngressWAL.MaxReplayAge.D(); got != 6*time.Hour {
+		t.Errorf("IngressWAL.MaxReplayAge default = %v, want 6h", got)
+	}
+	cfg, err := config.Load(writeTemp(t, "ingress_wal:\n  max_replay_age: 30m\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.IngressWAL.MaxReplayAge.D(); got != 30*time.Minute {
+		t.Errorf("IngressWAL.MaxReplayAge = %v, want 30m", got)
+	}
+	disabled := config.Default()
+	disabled.IngressWAL.MaxReplayAge = config.Duration(0)
+	if err := disabled.Validate(); err != nil {
+		t.Errorf("max_replay_age 0 (disabled) rejected: %v", err)
+	}
+	negative := config.Default()
+	negative.IngressWAL.MaxReplayAge = config.Duration(-time.Minute)
+	if err := negative.Validate(); err == nil || !strings.Contains(err.Error(), "ingress_wal.max_replay_age") {
+		t.Errorf("negative max_replay_age error = %v, want an ingress_wal.max_replay_age error", err)
 	}
 }

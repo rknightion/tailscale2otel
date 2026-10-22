@@ -715,3 +715,44 @@ func (c *ingressWALCoordinator) Close() error {
 	})
 	return c.closeErr
 }
+
+// ingressWALExpirer is the optional storage seam for replay-age expiry. The
+// filesystem Store implements it; a WAL without it simply never expires.
+type ingressWALExpirer interface {
+	ExpireBefore(context.Context, time.Time, func(tailnet, source, signal string) bool) ([]ingresswal.ExpiredEntry, error)
+}
+
+// ExpireStale retires, without replay, entries accepted before cutoff whose
+// route is configured, and reports each to account with the route's delivery
+// provider. It runs before a drain, while nothing is prepared. A zero cutoff,
+// a nil WAL or a WAL without the expiry seam retires nothing. Errors carry the
+// bounded replay error class only: raw storage errors can embed entry names.
+func (c *ingressWALCoordinator) ExpireStale(
+	ctx context.Context,
+	cutoff time.Time,
+	account func(*telemetry.Provider, ingresswal.ExpiredEntry),
+) (int, int64, error) {
+	if c.wal == nil || cutoff.IsZero() {
+		return 0, 0, nil
+	}
+	expirer, ok := c.wal.(ingressWALExpirer)
+	if !ok {
+		return 0, 0, nil
+	}
+	expired, err := expirer.ExpireBefore(ctx, cutoff, func(tailnet, source, signal string) bool {
+		_, known := c.routes[ingressWALRouteKey{tailnet: tailnet, source: source, signal: signal}]
+		return known
+	})
+	var bytes int64
+	for _, entry := range expired {
+		bytes += entry.EncodedBytes
+		if account != nil {
+			route := c.routes[ingressWALRouteKey{tailnet: entry.Tailnet, source: entry.Source, signal: entry.Signal}]
+			account(route.delivery, entry)
+		}
+	}
+	if err != nil {
+		err, _ = boundedIngressWALReplayError(err)
+	}
+	return len(expired), bytes, err
+}

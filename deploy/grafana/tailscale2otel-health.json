@@ -6669,7 +6669,7 @@
         "spec": {
           "id": 72,
           "title": "Ingress permanently rejected units lost",
-          "description": "Deliberately lost pinned metrics collections or durable log batches after ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections, excluding 401/403/408/429. One unit per collection/batch, not per WAL entry or record. Member WAL obligations resolve so later work can proceed. The paired advisory alert never pages.",
+          "description": "Deliberately lost pinned metrics collections or durable log batches after ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections, excluding 401/403/408/429. One unit per collection/batch, not per WAL entry or record. Member WAL obligations resolve so later work can proceed. The paired advisory alert never pages. The `expired` series counts WAL ENTRIES retired without replay on startup or promotion because they were accepted longer ago than ingress_wal.max_replay_age (typically a former leader's backlog stranded while it was a standby).",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -6692,6 +6692,28 @@
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_tailnet}} {{signal}}",
+                        "format": "time_series"
+                      }
+                    }
+                  }
+                },
+                {
+                  "kind": "PanelQuery",
+                  "spec": {
+                    "refId": "B",
+                    "hidden": false,
+                    "query": {
+                      "kind": "DataQuery",
+                      "version": "v0",
+                      "group": "",
+                      "datasource": {
+                        "name": "${ds_prometheus}"
+                      },
+                      "spec": {
+                        "expr": "sum by (tailscale_tailnet, source) (increase(tailscale2otel_ingress_wal_expired_entries_total{tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
+                        "instant": false,
+                        "range": true,
+                        "legendFormat": "{{tailscale_tailnet}} expired {{source}} entries",
                         "format": "time_series"
                       }
                     }
@@ -6722,7 +6744,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "No permanent rejection losses recorded.",
+                  "noValue": "No permanent rejection or expiry losses recorded.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -6744,7 +6766,7 @@
         "spec": {
           "id": 73,
           "title": "Ingress WAL on-disk bytes",
-          "description": "Encoded bytes on the WAL filesystem. There is no TTL or eviction, so this is bounded only by ingress_wal.max_bytes.",
+          "description": "Encoded bytes on the WAL filesystem. There is no capacity eviction, so this is bounded by ingress_wal.max_bytes; entries older than ingress_wal.max_replay_age are retired only when a drain starts.",
           "links": [],
           "data": {
             "kind": "QueryGroup",

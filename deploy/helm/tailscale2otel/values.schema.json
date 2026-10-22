@@ -1237,6 +1237,9 @@
                         "max_permanent_rejections": {
                             "type": "integer",
                             "minimum": 1
+                        },
+                        "max_replay_age": {
+                            "type": "string"
                         }
                     },
                     "additionalProperties": false

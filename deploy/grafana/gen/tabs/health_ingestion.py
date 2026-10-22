@@ -234,20 +234,26 @@ def tab_health_ingestion(scope):
     wal = [
         (panel("Ingress permanently rejected units lost", "timeseries",
                [prom_t("sum by (tailscale_tailnet, signal) (increase(tailscale2otel_ingress_wal_permanent_drops_total[%s]))" % RI,
-                       legend="{{tailscale_tailnet}} {{signal}}")],
+                       legend="{{tailscale_tailnet}} {{signal}}"),
+                prom_t("sum by (tailscale_tailnet, source) (increase(tailscale2otel_ingress_wal_expired_entries_total[%s]))" % RI,
+                       legend="{{tailscale_tailnet}} expired {{source}} entries", refid="B")],
                unit="short", custom=ts_custom(), options=ts_opts(),
-               novalue="No permanent rejection losses recorded.",
+               novalue="No permanent rejection or expiry losses recorded.",
                desc="Deliberately lost pinned metrics collections or durable log batches after "
                     "ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx "
                     "rejections, excluding 401/403/408/429. One unit per collection/batch, "
                     "not per WAL entry or record. Member WAL obligations resolve so later "
-                    "work can proceed. The paired advisory alert never pages."), 12, 6),
+                    "work can proceed. The paired advisory alert never pages. The `expired` "
+                    "series counts WAL ENTRIES retired without replay on startup or promotion "
+                    "because they were accepted longer ago than ingress_wal.max_replay_age "
+                    "(typically a former leader's backlog stranded while it was a standby)."), 12, 6),
         (panel("Ingress WAL on-disk bytes", "timeseries",
                [prom_t("max(tailscale2otel_ingress_wal_pending_size_bytes)", legend="pending"),
                 prom_t("max(tailscale2otel_ingress_wal_orphan_size_bytes)", legend="retained staging", refid="B")],
                unit="bytes", custom=ts_custom(stack="normal"), options=ts_opts(), novalue=_WAL_EMPTY,
-               desc="Encoded bytes on the WAL filesystem. There is no TTL or eviction, so this "
-                    "is bounded only by ingress_wal.max_bytes."), 12, 6),
+               desc="Encoded bytes on the WAL filesystem. There is no capacity eviction, so this "
+                    "is bounded by ingress_wal.max_bytes; entries older than "
+                    "ingress_wal.max_replay_age are retired only when a drain starts."), 12, 6),
         (panel("Ingress WAL byte capacity fill", "timeseries",
                [prom_t("max(tailscale2otel_ingress_wal_pending_size_fill_ratio)", legend="bytes fill")],
                unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(), novalue=_WAL_EMPTY,

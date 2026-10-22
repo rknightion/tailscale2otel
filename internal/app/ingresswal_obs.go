@@ -5,8 +5,20 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
+
+// emitIngressWALExpired counts one entry retired by replay-age expiry. It is
+// emitted on the entry's own tailnet provider, unconditionally like the
+// permanent-drop counter, because it records data loss.
+func emitIngressWALExpired(e telemetry.Emitter, source, signal string) {
+	doc := appcatalog.DocIngressWALExpiredEntries
+	e.Counter(doc.Name, doc.Unit, doc.Description, 1, telemetry.Attrs{
+		semconv.AttrIngestSource: source,
+		semconv.AttrIngestSignal: signal,
+	})
+}
 
 func emitIngressWALHealth(e telemetry.Emitter, coordinator *ingressWALCoordinator) {
 	if coordinator == nil || coordinator.wal == nil {

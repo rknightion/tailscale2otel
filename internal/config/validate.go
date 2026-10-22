@@ -2666,6 +2666,9 @@ func (c *Config) validateIngressWAL() error {
 	if c.IngressWAL.MaxPermanentRejections < 1 {
 		return fmt.Errorf("ingress_wal.max_permanent_rejections must be >= 1 (got %d)", c.IngressWAL.MaxPermanentRejections)
 	}
+	if c.IngressWAL.MaxReplayAge < 0 {
+		return fmt.Errorf("ingress_wal.max_replay_age must be >= 0 (0 disables expiry; got %s)", c.IngressWAL.MaxReplayAge.D())
+	}
 	if !c.IngressWAL.Enabled {
 		return nil
 	}

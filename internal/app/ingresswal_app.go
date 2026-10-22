@@ -7,6 +7,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/ingresswal"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
 func (a *App) buildIngressWAL(routes []ingressWALRoute) error {
@@ -100,6 +101,7 @@ func (a *App) startIngressWAL(ctx, walCtx context.Context) (chan error, <-chan s
 		"receiver_budget", budget)
 
 	go func() {
+		a.expireStaleIngressWAL(ctx)
 		if err := a.ingressWAL.ReplayStartup(ctx); err != nil {
 			if ctx.Err() == nil {
 				a.logger.Error("ingress WAL startup drain unavailable; receivers will not open",
@@ -179,5 +181,32 @@ func waitIngressWALOpen(ctx context.Context, open <-chan struct{}) bool {
 		return true
 	case <-ctx.Done():
 		return false
+	}
+}
+
+// expireStaleIngressWAL retires, before a drain, the backlog accepted longer
+// ago than ingress_wal.max_replay_age. The WAL buffers work ahead of delivery;
+// a former leader that sat as a standby for days would otherwise replay a
+// backlog that backends reject as too old. A failure here is logged and the
+// drain proceeds: the drain reports any storage fault itself.
+func (a *App) expireStaleIngressWAL(ctx context.Context) {
+	maxAge := a.cfg.IngressWAL.MaxReplayAge.D()
+	if maxAge <= 0 {
+		return
+	}
+	entries, bytes, err := a.ingressWAL.ExpireStale(ctx, time.Now().Add(-maxAge),
+		func(p *telemetry.Provider, entry ingresswal.ExpiredEntry) {
+			emitIngressWALExpired(p.Emitter(), entry.Source, entry.Signal)
+		})
+	if entries > 0 {
+		a.logger.Warn("ingress WAL expired stale entries without replay",
+			"component", appcatalog.ComponentIngressWAL,
+			"entries", entries,
+			"bytes", bytes,
+			"max_replay_age", maxAge)
+	}
+	if err != nil && ctx.Err() == nil {
+		a.logger.Warn("ingress WAL expiry incomplete; draining the remaining backlog",
+			"component", appcatalog.ComponentIngressWAL, "error", err)
 	}
 }
