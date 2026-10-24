@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.2](https://github.com/rknightion/tailscale2otel/compare/v5.2.1...v5.2.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* stop restart and failover replay sending logs Loki rejects as too old ([e997149](https://github.com/rknightion/tailscale2otel/commit/e99714980704e2710ab93097a1695eefbcbb35c8))
+
 ## [5.2.1](https://github.com/rknightion/tailscale2otel/compare/v5.2.0...v5.2.1) (2026-10-21)
 
 
