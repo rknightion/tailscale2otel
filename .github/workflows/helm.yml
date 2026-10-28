@@ -31,7 +31,7 @@ jobs:
     name: helm lint + template + schema + docs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 
@@ -81,7 +81,7 @@ jobs:
       # passes the ldflag, so local regeneration is byte-identical. If you bump
       # this action, update HELM_DOCS_VERSION in that script to match.
       - name: helm-docs is in sync (norwoodj/helm-docs)
-        uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2
+        uses: losisin/helm-docs-github-action@3a4528e97c49a5e83de6b78c50c61c8ee5c9f944 # v2.0.0
         with:
           chart-search-root: ${{ env.CHART_DIR }}
           fail-on-diff: true
@@ -91,7 +91,7 @@ jobs:
     name: config.Load validates example + rendered config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
 

@@ -46,6 +46,8 @@ jobs:
       id-token: write # exchanged for a tailnet identity and an OpenBao token
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # The default GITHUB_TOKEN cannot write to another repository. This used to be
       # GITSYNC_PAT; that PAT was revoked in the 2026-08-08 secret sweep and this lane
@@ -69,7 +71,9 @@ jobs:
           tailscale-audience: ${{ secrets.TS_WIF_BROKER_AUDIENCE }}
 
       - name: check out the GitSync repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # Keeps its credentials: the commit-and-push step below needs them, and
+        # this job uploads no artifacts.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
         with:
           repository: m7kni/gc-gitsync-m7kni
           token: ${{ steps.bao.outputs.token }}
