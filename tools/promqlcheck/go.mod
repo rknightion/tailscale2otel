@@ -13,7 +13,7 @@ require (
 	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.73.0 // indirect
+	github.com/prometheus/common v0.73.1 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
 	go.uber.org/atomic v1.12.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
