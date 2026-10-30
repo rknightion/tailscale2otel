@@ -45,7 +45,7 @@ runs:
         fi
     - name: Claude enrichment
       if: ${{ inputs.anthropic-api-key != '' || inputs.claude-code-oauth-token != '' }}
-      uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
+      uses: anthropics/claude-code-action@6d5ae526d25ce88daa2200be073e1a373167f064 # v1.0.265
       with:
         anthropic_api_key: ${{ inputs.anthropic-api-key }}
         claude_code_oauth_token: ${{ inputs.claude-code-oauth-token }}
