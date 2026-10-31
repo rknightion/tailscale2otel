@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.2.2](https://github.com/rknightion/tailscale2otel/compare/v5.2.1...v5.2.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies to v0.37.2 ([#770](https://github.com/rknightion/tailscale2otel/issues/770)) ([b16d650](https://github.com/rknightion/tailscale2otel/commit/b16d6503cacdb70e4df01d41134a50b6913a5636))
+* **deps:** update module github.com/prometheus/common to v0.73.0 ([#771](https://github.com/rknightion/tailscale2otel/issues/771)) ([ec15e0f](https://github.com/rknightion/tailscale2otel/commit/ec15e0f7a1283b3d63d1aac8192dc923cd64ff18))
+* **deps:** update module github.com/prometheus/common to v0.73.1 ([#784](https://github.com/rknightion/tailscale2otel/issues/784)) ([d7a1535](https://github.com/rknightion/tailscale2otel/commit/d7a153507dd7e5ae025827af584ac5b92c56117c))
+* **deps:** update module google.golang.org/grpc to v1.85.0 ([#764](https://github.com/rknightion/tailscale2otel/issues/764)) ([3a146fc](https://github.com/rknightion/tailscale2otel/commit/3a146fc8ef472db035de031d4a5ce21dfd332426))
+* **deps:** update module modernc.org/sqlite to v1.61.1 ([#787](https://github.com/rknightion/tailscale2otel/issues/787)) ([61e2739](https://github.com/rknightion/tailscale2otel/commit/61e273961a97aa12d5c31e04a871c88a7222b5f8))
+* stop restart and failover replay sending logs Loki rejects as too old ([e997149](https://github.com/rknightion/tailscale2otel/commit/e99714980704e2710ab93097a1695eefbcbb35c8))
+
 ## [5.2.1](https://github.com/rknightion/tailscale2otel/compare/v5.2.0...v5.2.1) (2026-10-21)
 
 
