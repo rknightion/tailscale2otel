@@ -2322,7 +2322,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_collector) (tailscale2otel_log_catchup_skipped_seconds_total{tailscale_tailnet=~\"$tailnet\"})",
+                        "expr": "sum by (tailscale_collector) (tailscale2otel_log_catchup_skipped_seconds_total{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"})",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_collector}}",
@@ -2397,7 +2397,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_collector) (rate(tailscale2otel_log_catchup_skipped_seconds_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
+                        "expr": "sum by (tailscale_collector) (rate(tailscale2otel_log_catchup_skipped_seconds_total{tailscale_tailnet=~\"$tailnet\", tailscale_collector=~\"$collector\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_collector}}",

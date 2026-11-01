@@ -69,6 +69,7 @@ def metric_controls(metric, variables):
     if metric.startswith(('tailscale2otel_scrape_', 'tailscale2otel_subrequest_')) or metric in {
         'tailscale2otel_api_availability_ratio', 'tailscale2otel_api_last_probe_seconds',
         'tailscale2otel_capability_status_ratio', 'tailscale2otel_checkpoint_persist_errors_total',
+        'tailscale2otel_log_catchup_skipped_seconds_total',
     }:
         if 'collector' in variables:
             out['tailscale_collector'] = 'collector'
