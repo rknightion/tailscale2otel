@@ -73,6 +73,7 @@ type SessionsCollector struct {
 	cursor                 time.Time
 	seen                   map[string]time.Time
 	pendingEvidenceDeletes []string
+	logMaxRecordAge        time.Duration
 	sessionLogEnabled      bool
 	sessionLogCategories   pii.Categories
 	sessionLogRedactor     *pii.Redactor
@@ -125,6 +126,13 @@ func WithSessionLog(enabled bool, cats pii.Categories, addrs enrich.AddrSet) Ses
 		c.sessionLogRedactor = pii.New(cats)
 		c.sessionLogAddrSet = addrs
 	}
+}
+
+// WithSessionsLogMaxRecordAge baselines cold-start sessions older than the shared
+// delivery horizon without emitting session deltas or logs. Zero (the standalone
+// default) disables the horizon; a durable cursor keeps its existing semantics.
+func WithSessionsLogMaxRecordAge(age time.Duration) SessionsOption {
+	return func(c *SessionsCollector) { c.logMaxRecordAge = age }
 }
 
 // NewSessions returns the independently scheduled PAM session collector.
@@ -181,6 +189,10 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 	additions := make(map[string]time.Time)
 	active := make(map[sessionSeries]map[string]struct{})
 	newCursor := c.cursor
+	var baselineBefore time.Time
+	if c.cursor.IsZero() && c.logMaxRecordAge > 0 {
+		baselineBefore = c.now().Add(-c.logMaxRecordAge)
+	}
 	for {
 		if _, duplicate := requestedPages[pageNumber]; duplicate {
 			return fmt.Errorf("pam sessions: pagination repeated page %d", pageNumber)
@@ -212,7 +224,9 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 				stop = true
 				continue
 			}
-			c.emitSession(e, *s)
+			if baselineBefore.IsZero() || s.StartTime.IsZero() || !s.StartTime.Before(baselineBefore) {
+				c.emitSession(e, *s)
+			}
 			additions[digest] = s.StartTime
 			if s.StartTime.After(newCursor) {
 				newCursor = s.StartTime

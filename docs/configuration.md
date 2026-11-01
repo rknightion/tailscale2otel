@@ -219,7 +219,10 @@ Each intentionally skipped span is consumed in the checkpoint, counted in
 with one WARN. This is deliberate loss of backend-rejected history, not a record-count estimate.
 Old source-timestamped logs inside a returned window or object are also suppressed; metrics
 retain their existing processing. Key lifecycle events use the same horizon and baseline older
-transitions. `0s` disables these clamps everywhere, allowing historical backfill only when the
+transitions. On a cold PAM session start, the same horizon records sessions with an older
+`StartTime` as seen baseline without session deltas or per-session logs; current active-session
+gauges still report. Warm-cursor behaviour is unchanged, and sessions with missing `StartTime`
+remain eligible. `0s` disables these clamps everywhere, allowing historical backfill only when the
 backend accepts it. Negative values and a nonzero horizon at or below an enabled poll collector's `lag`
 are rejected, because that leaves no mature records within the allowed horizon.
 Set the horizon below the backend's maximum

@@ -314,6 +314,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 			pam.WithSnapshotHeartbeat(c.PAM.SnapshotHeartbeat.D())), c.PAM.Interval.D())
 		rt.registry.Register(pam.NewSessions(d.pamClient, c.PAM.SessionsInterval.D(), d.store, d.evidenceStore,
 			pam.WithSessionsAPIState(rt.apiState),
+			pam.WithSessionsLogMaxRecordAge(cfg.Delivery.LogMaxRecordAge.D()),
 			pam.WithSessionLog(c.PAM.SessionLogEnabled, piiCategories(cfg.PIIFilter), d.addrSet)), c.PAM.SessionsInterval.D())
 	}
 	if nm := c.NodeMetrics; nm.Enabled && cp.Supports("nodemetrics") {

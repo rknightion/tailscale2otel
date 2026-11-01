@@ -114,6 +114,9 @@ tool module can never affect the main module's build.
   horizon (default `144h`, `0s` disables). Catch-up persists the skipped lower bound, counts
   skipped seconds by collector, and logs one WARN per skipped span. A log-only emitter guard
   also suppresses old source timestamps inside returned windows/objects; metric processing remains.
+  On a cold PAM session start, the same horizon records older sessions as seen baseline without
+  session deltas or logs; current active-session gauges still report. Warm cursors are unchanged,
+  `0s` disables the PAM horizon, and sessions with missing `StartTime` remain eligible.
 - For `flowlogs` and `auditlogs` pick exactly ONE ingestion path per log type (`source: poll` or
   `stream`). `both`, or running the receiver while a collector still polls, double-counts;
   cross-source dedup is a best-effort failsafe and the app WARNs at startup.

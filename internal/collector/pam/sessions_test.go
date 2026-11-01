@@ -13,6 +13,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/b0api"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
@@ -197,7 +198,7 @@ func TestSessionsCollectorTreatsEveryWireFieldAsOptional(t *testing.T) {
 		return sessionPage(0, b0api.Session{}), nil
 	})
 	rec := telemetrytest.New()
-	if err := NewSessions(api, 0, collector.NewMemoryStore(), collector.NewMemoryStore()).Collect(context.Background(), rec.Emitter()); err != nil {
+	if err := NewSessions(api, 0, collector.NewMemoryStore(), collector.NewMemoryStore(), WithSessionsLogMaxRecordAge(collector.DefaultLogMaxRecordAge)).Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect() with zero-value session error = %v", err)
 	}
 	if got := sumMetric(rec, metricSessions); got != 1 {
@@ -427,4 +428,67 @@ func sumMetric(rec *telemetrytest.Recorder, name string) float64 {
 		total += point.Value
 	}
 	return total
+}
+
+func TestSessionsCollectorColdStartHorizon(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	horizon := 6 * 24 * time.Hour
+	old := session("old", now.Add(-horizon-time.Second), "ssh")
+	recent := session("recent", now.Add(-time.Hour), "ssh")
+	boundary := session("boundary", now.Add(-horizon), "ssh")
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		warm bool
+		want int
+	}{
+		{"cold", horizon, false, 2},
+		{"disabled", 0, false, 3},
+		{"warm", horizon, true, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cursors, evidence := collector.NewMemoryStore(), collector.NewMemoryStore()
+			if tc.warm {
+				if err := cursors.Set(sessionsCursorKey, old.StartTime.Add(-time.Second)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			api := sessionAPIFunc(func(_ context.Context, opts ...b0api.PageOptions) (b0api.SessionPage, error) {
+				if opts[0].Page == 1 {
+					return sessionPage(2, recent, boundary), nil
+				}
+				return sessionPage(0, old), nil
+			})
+			opts := []SessionsOption{WithSessionsClock(func() time.Time { return now }), WithSessionLog(true, nil, enrich.DefaultAddrSet()), WithSessionsLogMaxRecordAge(tc.age)}
+			c := NewSessions(api, 0, cursors, evidence, opts...)
+			rec := telemetrytest.New()
+			if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(sessionLogs(rec)); got != tc.want {
+				t.Errorf("session logs = %d, want %d", got, tc.want)
+			}
+			if got := sumMetric(rec, metricSessions); got != float64(tc.want) {
+				t.Errorf("session delta = %v, want %d", got, tc.want)
+			}
+			if got := len(evidence.Keys()); got != 3 {
+				t.Errorf("evidence count = %d, want 3 including old baseline", got)
+			}
+			if got, ok := cursors.Get(sessionsCursorKey); !ok || !got.Equal(recent.StartTime) {
+				t.Errorf("cursor = %v, %v; want %v", got, ok, recent.StartTime)
+			}
+			for _, next := range []*SessionsCollector{c, NewSessions(api, 0, cursors, evidence, opts...)} {
+				replay := telemetrytest.New()
+				if err := next.Collect(context.Background(), replay.Emitter()); err != nil {
+					t.Fatal(err)
+				}
+				if got := len(sessionLogs(replay)); got != 0 {
+					t.Errorf("replay logs = %d, want 0", got)
+				}
+				if got := sumMetric(replay, metricSessions); got != 0 {
+					t.Errorf("replay delta = %v, want 0", got)
+				}
+			}
+		})
+	}
 }
