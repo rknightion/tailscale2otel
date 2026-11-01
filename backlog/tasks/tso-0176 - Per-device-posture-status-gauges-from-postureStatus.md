@@ -4,13 +4,13 @@ title: Per-device posture status gauges from postureStatus
 status: Parked
 assignee:
   - '@loop30'
-created_date: '2026-10-11 10:40'
-updated_date: '2026-10-12 21:18'
+created_date: 2026-10-11 10:40
+updated_date: '2026-11-01T20:54:00Z'
 labels: []
 dependencies:
   - TSO-0175
 references:
-  - 'https://tailscale.com/docs/features/device-posture/monitoring-postures'
+  - https://tailscale.com/docs/features/device-posture/monitoring-postures
 priority: high
 type: feature
 ordinal: 176000
@@ -56,4 +56,6 @@ loop28: 0 implementation attempts; held by TSO-0172 (live dashboard audit), whos
 loop29: 0 implementation attempts; undispatched dependency park. TSO-0172 (comprehensive live dashboard audit) cannot start before 2026-10-11T21:05:15Z under its required minimum fresh window and has not landed. Resume only after that audit is accepted, landed and composed/CI/delivery green, then preceding frozen chain tasks settle. No candidate work or live call occurred.
 
 loop30: 0 implementation attempts; authorized fields=all and fields=id,postureStatus GET captures succeeded but both returned only empty postureStatus objects, so no populated shape/fixture can be proven. D68 park, fleet successor released. Captures/receipt remain ignored in /Users/rob/repos/tailscale2otel/codex/loop30/worktrees/tso0176/.capture/tso0176/. No tracked changes, gate, rules publication or tailnet mutation. Resume on authorized populated real captures or a concrete owner-approved wire/proof source; configured posture definitions were not independently observed.
+
+2026-11-01 loop33 prep (owner-authorised, non-impacting lab policy change): root cause of loop30's empty captures found. The devices API reports postureStatus as {} for every device until at least one grant uses srcPosture; defining postures alone evaluates none, and failingPostures returns nothing. A probe posture plus an additive grant to a device-less tag now switch evaluation on. Observed wire shape (structural only): postureStatus is an object keyed by posture name; each value is {passing: bool, impacting: bool, failingAssertions: [string]}, one entry per DEFINED posture (not only referenced ones). All three states are present in the lab: passing; failing and not impacting; failing and impacting. fields=all also carries postureStatus. Fresh captures for AC #1 are the loop's job under the Standing read-only grant.
 <!-- SECTION:NOTES:END -->
