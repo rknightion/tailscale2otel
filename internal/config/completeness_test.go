@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // defaultKeySet is the canonical set of every leaf configuration key, derived by

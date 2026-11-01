@@ -3,10 +3,15 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"gopkg.in/yaml.v3"
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestRun_PrintEffectiveConfigJSON is the #309 acceptance check: every key
@@ -217,5 +222,48 @@ func TestRun_PrintEffectiveConfigLoadError(t *testing.T) {
 	}
 	if stdout.String() != "" {
 		t.Errorf("stdout should be empty on error, got %q", stdout.String())
+	}
+}
+
+// TestRun_PrintEffectiveConfigYAMLGolden pins the pre-migration wire output,
+// including duration decoding, environment overrides, nested maps and redaction.
+func TestRun_PrintEffectiveConfigYAMLGolden(t *testing.T) {
+	t.Setenv("TS2OTEL_COLLECTORS__DEVICES__INTERVAL", "37s")
+	path := writeTempConfig(t, minimalValidYAML+`
+collectors:
+  devices:
+    interval: 19s
+  users:
+    interval: 7s
+profiling:
+  pyroscope:
+    tags:
+      zone: example-zone
+      team: example-team
+otlp:
+  headers:
+    X-Example: fixture-secret
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Collectors.Devices.Interval.D() != 37*time.Second || cfg.Collectors.Users.Interval.D() != 7*time.Second {
+		t.Fatal("file durations or environment override decoded incorrectly")
+	}
+	if cfg.Profiling.Pyroscope.Tags["zone"] != "example-zone" || cfg.Profiling.Pyroscope.Tags["team"] != "example-team" || cfg.OTLP.Headers["X-Example"].Reveal() != "fixture-secret" {
+		t.Fatal("nested maps decoded incorrectly")
+	}
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-print-effective-config", "-print-effective-config-provenance", "-print-effective-config-format", "yaml", "-config", path}, &stdout, &stderr)
+	if code != 0 || stderr.Len() != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, &stderr)
+	}
+	golden, err := os.ReadFile(filepath.Join("testdata", "effectiveconfig.golden.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(stdout.Bytes(), golden) {
+		t.Fatalf("effective config differs from pre-migration golden:\n%s", &stdout)
 	}
 }

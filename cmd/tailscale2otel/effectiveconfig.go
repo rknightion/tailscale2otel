@@ -8,7 +8,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 	"github.com/rknightion/tailscale2otel/v5/internal/configexport"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 // effectiveConfigEntry is one row of -print-effective-config's output: the
