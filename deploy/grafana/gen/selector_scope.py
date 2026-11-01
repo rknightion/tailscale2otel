@@ -162,13 +162,17 @@ def scope_tempo(expr):
 def scope_queries(elements, variables):
     names = {v['spec']['name'] for v in variables}
     for element in elements:
+        # Fleet aggregates cannot acquire device filters on only one operand.
+        # Retain ownership controls and consume metadata before schema output.
+        population = element.pop('_population', 'selected')
+        panel_names = names - {'os_type', 'host_name'} if population == 'fleet' else names
         ps = element['spec']
         for pq in ps['data']['spec']['queries']:
             query = pq['spec']['query']
             ds = query.get('datasource', {}).get('name')
             qs = query['spec']
             if ds == '${ds_prometheus}':
-                qs['expr'] = scope_promql(qs['expr'], names)
+                qs['expr'] = scope_promql(qs['expr'], panel_names)
             elif ds == '${ds_loki}':
                 qs['expr'] = scope_loki(qs['expr'], names, ps['vizConfig']['group'] == 'logs')
             elif ds == '${ds_tempo}' and 'collector' in names:

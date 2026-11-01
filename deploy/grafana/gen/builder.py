@@ -212,8 +212,10 @@ def merge():
 def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           mappings=None, thresholds=None, custom=None, options=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
-          transformations=None):
+          transformations=None, population="selected"):
     global _id
+    if population not in {"selected", "fleet"}:
+        raise ValueError("unknown panel population: %s" % population)
     check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id
@@ -244,6 +246,9 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
             "queries": targets, "queryOptions": {}, "transformations": transformations or []}},
         "vizConfig": {"kind": "VizConfig", "group": ptype, "version": version, "spec": {
             "options": options or {}, "fieldConfig": {"defaults": defaults, "overrides": overrides or []}}}}}
+    if population == "fleet":
+        # Generator-only metadata, consumed at the leaf-tab scoping boundary.
+        ELEMENTS[name]["_population"] = population
     return name
 
 

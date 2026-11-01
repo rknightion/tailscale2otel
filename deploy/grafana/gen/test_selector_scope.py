@@ -174,6 +174,10 @@ def violations(doc):
                         if 'provider' in names:
                             expected['tailscale2otel_provider'] = 'provider'
                         for var, label in LOCAL.items():
+                            # These aggregate panels explicitly describe their fleet
+                            # population. Keep the expectation independent of metadata.
+                            if panel['title'] in {'Direct-capable %', 'Hard-NAT %', 'Hard-NAT fraction'} and var in {'os_type', 'host_name'}:
+                                continue
                             if var in names and label in attrs:
                                 expected[label] = var
                         if metric == 'tailscale_device_posture_ratio' and 'os_type' in names:

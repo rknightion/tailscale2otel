@@ -75,14 +75,19 @@ def tab_devices_connectivity(scope):
                unit="percentunit",
                thresholds=thr([(None, "red"), (0.5, "yellow"), (0.8, "green")]),
                options=stat_opts(color="background"),
-               desc="Fraction of devices capable of direct (non-relay) connections."), 6, 5),
+               population="fleet",
+               desc="Fleet-wide fraction of devices capable of direct (non-relay) connections. "
+                    "Ignores OS and host selectors; tailnet and provider selectors still apply."), 6, 5),
         (panel("Hard-NAT %", "stat",
                [prom_t("%s / on() group_left() sum(%s)"
                        % (lot("tailscale_devices_hard_nat_ratio"), lot("tailscale_devices_count_ratio")))],
                unit="percentunit",
                thresholds=thr([(None, "green"), (0.2, "yellow"), (0.5, "red")]),
                options=stat_opts(color="background"),
-               desc="Fraction of devices behind hard NAT (require relay for inbound connections)."), 6, 5),
+               population="fleet",
+               desc="Fleet-wide fraction of devices behind hard NAT (require relay for inbound "
+                    "connections). Ignores OS and host selectors; tailnet and provider selectors "
+                    "still apply."), 6, 5),
         (panel("Client capability support", "barchart",
                [prom_t("sum by (tailscale_connectivity_capability) (max by (tailscale_connectivity_capability) (%s))"
                        % lot("tailscale_devices_client_supports_ratio", WIN_SLOW),
@@ -135,7 +140,9 @@ def tab_devices_connectivity(scope):
                        legend="hard-NAT fraction")],
                unit="percentunit", min_=0, max_=1, custom=ts_custom(fill=10),
                options=ts_opts(),
-               desc="Fraction of devices behind hard NAT. This is a connectivity property, not "
+               population="fleet",
+               desc="Fleet-wide fraction of devices behind hard NAT. Ignores OS and host selectors; "
+                    "tailnet and provider selectors still apply. This is a connectivity property, not "
                     "a measurement of DERP load."), 12, 7),
         (panel("Configured peer-relay endpoints", "timeseries",
                [prom_t("sum(%s)" % sel("tailscaled_peer_relay_endpoints"),

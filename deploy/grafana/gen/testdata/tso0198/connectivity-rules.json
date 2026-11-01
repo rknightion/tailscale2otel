@@ -1,0 +1,340 @@
+{
+  "rule_files": [],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "OS=.*",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"windows\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.8
+            }
+          ]
+        },
+        {
+          "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.2
+            }
+          ]
+        },
+        {
+          "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS=linux",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"windows\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.8
+            }
+          ]
+        },
+        {
+          "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.2
+            }
+          ]
+        },
+        {
+          "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS=windows",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"windows\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.8
+            }
+          ]
+        },
+        {
+          "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.2
+            }
+          ]
+        },
+        {
+          "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "OS=absent",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\",os_type=\"windows\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "8+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "2+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"other\",tailscale2otel_provider=\"tailscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_count_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\",os_type=\"linux\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_direct_capable_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        },
+        {
+          "series": "tailscale_devices_hard_nat_ratio{tailscale_tailnet=\"fixture\",tailscale2otel_provider=\"headscale\"}",
+          "values": "100+0x2"
+        }
+      ],
+      "promql_expr_test": [
+        {
+          "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.8
+            }
+          ]
+        },
+        {
+          "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{tailscale_tailnet=\"fixture\", tailscale2otel_provider=\"tailscale\"}",
+              "value": 0.2
+            }
+          ]
+        },
+        {
+          "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": [
+            {
+              "labels": "{}",
+              "value": 0.2
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "missing telemetry",
+      "interval": "1m",
+      "input_series": [],
+      "promql_expr_test": [
+        {
+          "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": []
+        },
+        {
+          "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": []
+        },
+        {
+          "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"fixture\", tailscale2otel_provider=~\"tailscale\"}[10m]))",
+          "eval_time": "1m",
+          "exp_samples": []
+        }
+      ]
+    }
+  ]
+}
