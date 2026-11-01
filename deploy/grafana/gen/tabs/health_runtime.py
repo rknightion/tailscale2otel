@@ -64,6 +64,14 @@ def tab_health_runtime(scope):
                     "rate (~cores). Emitted on unix platforms only."), 6, 5),
     ]
     gcmem = [
+        (panel("Heap vs Go memory limit", "timeseries",
+               [prom_t("tailscale2otel_runtime_memory_heap_alloc_bytes", legend="{{instance}} heap"),
+                prom_t("tailscale2otel_runtime_memory_limit_bytes > 0", legend="{{instance}} Go limit")],
+               unit="bytes", custom=ts_custom(), options=ts_opts(),
+               desc="Allocated heap and the effective Go soft memory limit per process. "
+                    "Unlimited (-1) limits are hidden. Heap above 90% of a positive limit "
+                    "for 10 minutes fires the heap-near-limit alert. The Go limit covers "
+                    "more than the heap and is not the container memory limit."), 24, 7),
         (panel("Memory breakdown", "timeseries",
                [prom_t("max(tailscale2otel_runtime_memory_heap_inuse_bytes)", legend="heap in-use"),
                 prom_t("max(tailscale2otel_runtime_memory_heap_sys_bytes - tailscale2otel_runtime_memory_heap_inuse_bytes)", legend="heap idle"),

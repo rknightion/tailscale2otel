@@ -354,7 +354,7 @@ class RuleShapeTest(unittest.TestCase):
                 seen.add(uid)
 
     def test_rule_counts_are_as_documented(self):
-        self.assertEqual(115, len(alert_rules()))
+        self.assertEqual(116, len(alert_rules()))
         self.assertEqual(23, len(recording_rules()))
 
     def test_readme_policy_counts_match_the_catalogue(self):
@@ -567,6 +567,23 @@ class CoordinationNoStandbyAlertTest(unittest.TestCase):
         self.assertIn("__dashboardUid__", rule["annotations"])
         self.assertIn("__panelId__", rule["annotations"])
 
+
+
+class MemoryLimitCurrentQueryTest(unittest.TestCase):
+    def test_memory_limit_queries_current_state_without_changing_other_rules(self):
+        by_uid = rules.rules_by_uid()
+        memory = by_uid["ts2o-heap-near-memory-limit"]
+        model = memory["expressions"]["A"]["model"]
+        self.assertTrue(model["instant"])
+        self.assertFalse(model["range"])
+        self.assertEqual("0s", memory["expressions"]["A"]["relativeTimeRange"]["to"])
+        self.assertEqual("last", memory["expressions"]["B"]["model"]["reducer"])
+        self.assertEqual("Ok", memory["noDataState"])
+        for uid, rule in by_uid.items():
+            if uid != memory["uid"]:
+                with self.subTest(uid=uid):
+                    self.assertFalse(rule["expressions"]["A"]["model"]["instant"])
+                    self.assertTrue(rule["expressions"]["A"]["model"]["range"])
 
 class CoordinationFlappingAlertTest(unittest.TestCase):
     """Flapping comes from completed handovers, never gauge churn."""

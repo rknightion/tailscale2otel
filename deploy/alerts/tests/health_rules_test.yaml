@@ -872,3 +872,60 @@ tests:
       - eval_time: 150m
         alertname: FlowStoreCheckpointStale
         exp_alerts: []
+
+  # Compare each process with its own limit; a healthy large process must not
+  # mask a small process under pressure. Unlimited/zero/missing limits stay quiet.
+  - name: heap near effective Go memory limit sustained per process
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{job="tailscale2otel",instance="pressured"}'
+        values: '91+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{job="tailscale2otel",instance="pressured"}'
+        values: '100+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{job="tailscale2otel",instance="healthy"}'
+        values: '500+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{job="tailscale2otel",instance="healthy"}'
+        values: '1000+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="unlimited"}'
+        values: '100+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="unlimited"}'
+        values: '-1+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="zero"}'
+        values: '100+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="zero"}'
+        values: '0+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="missing"}'
+        values: '100+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="finite-to-unlimited"}'
+        values: '91+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="finite-to-unlimited"}'
+        values: '100+0x4 -1+0x15'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="finite-to-zero"}'
+        values: '91+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="finite-to-zero"}'
+        values: '100+0x4 0+0x15'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="boundary"}'
+        values: '90+0x20'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="boundary"}'
+        values: '100+0x20'
+      - series: 'tailscale2otel_runtime_memory_heap_alloc_bytes{instance="transient"}'
+        values: '91+0x5 50+0x14'
+      - series: 'tailscale2otel_runtime_memory_limit_bytes{instance="transient"}'
+        values: '100+0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: HeapNearGoMemoryLimit
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HeapNearGoMemoryLimit
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              job: tailscale2otel
+              instance: pressured
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: "Go heap is near its effective memory limit"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-internal-errors"

@@ -189,6 +189,7 @@ exporter health.
 | `tailscale2otel.runtime.memory.heap_inuse` | `By` | gauge | `tailscale2otel_runtime_memory_heap_inuse_bytes` | — | Bytes in in-use heap spans. |
 | `tailscale2otel.runtime.memory.heap_objects` | `1` | gauge | `tailscale2otel_runtime_memory_heap_objects_ratio` | — | Number of live heap objects (a **count**, despite the `_ratio` suffix). |
 | `tailscale2otel.runtime.memory.heap_sys` | `By` | gauge | `tailscale2otel_runtime_memory_heap_sys_bytes` | — | Bytes of heap memory obtained from the OS. |
+| `tailscale2otel.runtime.memory.limit` | `By` | gauge | `tailscale2otel_runtime_memory_limit_bytes` | — | Effective Go soft memory limit (GOMEMLIMIT or debug.SetMemoryLimit), in bytes; -1 means unlimited. The limit covers Go-managed memory, not just the heap, and is not a container memory limit. |
 | `tailscale2otel.runtime.memory.stack_inuse` | `By` | gauge | `tailscale2otel_runtime_memory_stack_inuse_bytes` | — | Bytes in in-use stack spans. |
 | `tailscale2otel.runtime.memory.sys` | `By` | gauge | `tailscale2otel_runtime_memory_sys_bytes` | — | Total bytes of memory obtained from the OS (the process's Go memory footprint). |
 | `tailscale2otel.scrape.budget` | `1` | gauge | `tailscale2otel_scrape_budget_ratio` | `tailscale_collector` | Last scrape duration as a fraction of the collector's poll interval (duration ÷ interval); values near or above `1` mean the scrape risks overrunning its interval. |

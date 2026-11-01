@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"math"
 	"runtime"
+	"runtime/debug"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
@@ -15,6 +17,7 @@ import (
 type runtimeStats struct {
 	goroutines    int
 	gomaxprocs    int
+	memoryLimit   int64
 	heapAlloc     uint64
 	heapSys       uint64
 	heapInuse     uint64
@@ -36,6 +39,7 @@ func readRuntimeStats() runtimeStats {
 	return runtimeStats{
 		goroutines:    runtime.NumGoroutine(),
 		gomaxprocs:    runtime.GOMAXPROCS(0),
+		memoryLimit:   debug.SetMemoryLimit(-1),
 		heapAlloc:     ms.HeapAlloc,
 		heapSys:       ms.HeapSys,
 		heapInuse:     ms.HeapInuse,
@@ -61,6 +65,12 @@ func emitRuntime(e telemetry.Emitter, cur runtimeStats, last *runtimeStats) {
 	}
 	gauge(appcatalog.DocRuntimeGoroutines, float64(cur.goroutines))
 	gauge(appcatalog.DocRuntimeGomaxprocs, float64(cur.gomaxprocs))
+	// -1 denotes unlimited; emit it to replace any previous finite limit.
+	limit := cur.memoryLimit
+	if limit == math.MaxInt64 {
+		limit = -1
+	}
+	gauge(appcatalog.DocRuntimeMemoryLimit, float64(limit))
 	gauge(appcatalog.DocRuntimeHeapAlloc, float64(cur.heapAlloc))
 	gauge(appcatalog.DocRuntimeHeapSys, float64(cur.heapSys))
 	gauge(appcatalog.DocRuntimeHeapInuse, float64(cur.heapInuse))

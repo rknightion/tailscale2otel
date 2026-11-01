@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"math"
+	"runtime/debug"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -122,5 +124,29 @@ func TestEmitRuntime_CounterResetGuardSkipsNegativeDelta(t *testing.T) {
 	emitRuntime(e, runtimeStats{numGC: 7}, &last)
 	if v := onePoint(t, rec, "tailscale2otel.runtime.gc.count").Value; v != 13 {
 		t.Fatalf("after growth: gc.count = %v, want 13", v)
+	}
+}
+
+// Exercise the real sampler and emitted signal, including runtime limit changes.
+func TestRuntimeMemoryLimit(t *testing.T) {
+	previous := debug.SetMemoryLimit(512 << 20)
+	t.Cleanup(func() { debug.SetMemoryLimit(previous) })
+	rec := telemetrytest.New()
+	var last runtimeStats
+	for _, tc := range []struct {
+		limit int64
+		want  float64
+	}{
+		{512 << 20, 512 << 20}, {256 << 20, 256 << 20}, {math.MaxInt64, -1},
+	} {
+		debug.SetMemoryLimit(tc.limit)
+		emitRuntime(rec.Emitter(), readRuntimeStats(), &last)
+		p := onePoint(t, rec, "tailscale2otel.runtime.memory.limit")
+		if p.Value != tc.want || p.Kind != "gauge" || p.Unit != "By" {
+			t.Fatalf("memory limit = %+v, want gauge %v By", p, tc.want)
+		}
+		if got := debug.SetMemoryLimit(-1); got != tc.limit {
+			t.Fatalf("sampler changed memory limit: got %d, want %d", got, tc.limit)
+		}
 	}
 }

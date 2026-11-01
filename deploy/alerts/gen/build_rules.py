@@ -261,9 +261,9 @@ def godur(dur):
     return "%ds" % s
 
 
-def _query_node(expr, ds_uid, lookback=3600):
+def _query_node(expr, ds_uid, lookback=3600, *, instant=False):
     model = {"datasource": _ds(ds_uid), "editorMode": "code", "expr": expr,
-             "instant": False, "range": True, "intervalMs": 1000,
+             "instant": instant, "range": not instant, "intervalMs": 1000,
              "maxDataPoints": 43200, "refId": "A"}
     if ds_uid == LOKI:
         model["queryType"] = "range"
@@ -439,7 +439,7 @@ _AUTOUPDATE_ELIGIBLE = (
 
 def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
           policy, runbook, panel=None,
-          ds=PROM, paused=True, lookback=3600,
+          ds=PROM, paused=True, lookback=3600, instant=False,
           domain="observability", page=None, hygiene=False):
     # `policy` is required and has no default on purpose (#388): the old global
     # fail-open default (execErrState: OK everywhere) is exactly the bug, and a
@@ -475,7 +475,7 @@ def alert(uid, title, expr, op, thr, dur, severity, summary, desc, *,
         "labels": _labels(severity, domain, page, hygiene),
         "annotations": annotations,
         "paused": paused,
-        "expressions": {"A": _query_node(expr, ds, lookback),
+        "expressions": {"A": _query_node(expr, ds, lookback, instant=instant),
                         "B": _reduce_node(),
                         "C": _threshold_node(op, thr)},
         "_prom": {"expr": expr, "op": op, "thr": thr, "ds": ds,
@@ -1027,6 +1027,20 @@ def groups():
               "probing or a misconfigured admin token.",
               domain="observability", paused=True,
               policy="advisory", runbook="exporter-internal-errors", panel="Admin auth rejected/s"),
+        alert("ts2o-heap-near-memory-limit", "Heap near Go memory limit",
+              "tailscale2otel_runtime_memory_heap_alloc_bytes / "
+              "(tailscale2otel_runtime_memory_limit_bytes > 0)",
+              "gt", 0.9, "10m", "warning",
+              "Go heap is near its effective memory limit",
+              "Allocated heap has exceeded 90% of the effective Go soft memory limit for 10 minutes. "
+              "The comparison pairs heap and limit from the same process; unlimited (-1), zero and "
+              "missing limits do not alert. Go-managed non-heap memory also consumes the limit. "
+              "Inspect heap retention and ingestion backlog before adjusting GOMEMLIMIT or container memory.",
+              # Filtering a changed limit out of a range leaves its old ratio in
+              # the frame; Reduce(last) would keep it until the range expires.
+              # Query only the current evaluation so unlimited/zero clears it.
+              domain="observability", paused=False, instant=True,
+              policy="optional", runbook="exporter-internal-errors", panel="Heap vs Go memory limit"),
         alert("ts2o-gc-cpu-fraction-high", "GC CPU fraction high",
               "max(tailscale2otel_runtime_gc_cpu_fraction_ratio)", "gt", 0.25, "15m", "info",
               "Go GC using a high CPU fraction",

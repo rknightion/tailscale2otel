@@ -83,6 +83,7 @@ const (
 const (
 	MetricRuntimeGoroutines  = "tailscale2otel.runtime.goroutines"
 	MetricRuntimeGomaxprocs  = "tailscale2otel.runtime.gomaxprocs"
+	MetricRuntimeMemoryLimit = "tailscale2otel.runtime.memory.limit"
 	MetricRuntimeHeapAlloc   = "tailscale2otel.runtime.memory.heap_alloc"
 	MetricRuntimeHeapSys     = "tailscale2otel.runtime.memory.heap_sys"
 	MetricRuntimeHeapInuse   = "tailscale2otel.runtime.memory.heap_inuse"
@@ -474,6 +475,13 @@ var (
 		Description: "Current GOMAXPROCS, the max OS threads executing Go code (a **count**, despite the `_ratio` suffix).",
 		Group:       GroupSelfObs,
 	}
+	DocRuntimeMemoryLimit = metricdoc.Metric{
+		Name:        MetricRuntimeMemoryLimit,
+		Unit:        semconv.UnitBytes,
+		Instrument:  metricdoc.Gauge,
+		Description: "Effective Go soft memory limit (GOMEMLIMIT or debug.SetMemoryLimit), in bytes; -1 means unlimited. The limit covers Go-managed memory, not just the heap, and is not a container memory limit.",
+		Group:       GroupSelfObs,
+	}
 	DocRuntimeHeapAlloc = metricdoc.Metric{
 		Name:        MetricRuntimeHeapAlloc,
 		Unit:        semconv.UnitBytes,
@@ -839,7 +847,7 @@ func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
 		DocUp, DocCoordinationLeader, DocCoordinationHandovers, DocUpdateAvailable, DocOrganizationTailnetsCount, DocAPIRequests, DocAPIRetries, DocAPIDuration, DocAPIRateLimitWait, DocAPIRateLimitUtilization,
 		DocRuntimeGoroutines, DocRuntimeGomaxprocs,
-		DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
+		DocRuntimeMemoryLimit, DocRuntimeHeapAlloc, DocRuntimeHeapSys, DocRuntimeHeapInuse, DocRuntimeStackInuse, DocRuntimeMemSys,
 		DocRuntimeHeapObjects, DocRuntimeGCNextTarget, DocRuntimeGCCPUFraction,
 		DocRuntimeGCCount, DocRuntimeGCPauseTime, DocRuntimeAllocBytes,
 		DocComponentErrors,

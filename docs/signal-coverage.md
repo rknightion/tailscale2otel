@@ -49,7 +49,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 262 | 261 | 59 | 11 | 46 |
-| self_obs | 105 | 105 | 43 | 9 | 10 |
+| self_obs | 106 | 106 | 45 | 9 | 10 |
 
 ## Operational signals
 
@@ -401,10 +401,11 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.runtime.gomaxprocs` | metric | `tailscale2otel_runtime_gomaxprocs_ratio` | visualized |  |
 | `tailscale2otel.runtime.goroutines` | metric | `tailscale2otel_runtime_goroutines_ratio` | visualized |  |
 | `tailscale2otel.runtime.memory.alloc` | metric | `tailscale2otel_runtime_memory_alloc_bytes_total` | visualized |  |
-| `tailscale2otel.runtime.memory.heap_alloc` | metric | `tailscale2otel_runtime_memory_heap_alloc_bytes` | visualized |  |
+| `tailscale2otel.runtime.memory.heap_alloc` | metric | `tailscale2otel_runtime_memory_heap_alloc_bytes` | visualized, alertable |  |
 | `tailscale2otel.runtime.memory.heap_inuse` | metric | `tailscale2otel_runtime_memory_heap_inuse_bytes` | visualized |  |
 | `tailscale2otel.runtime.memory.heap_objects` | metric | `tailscale2otel_runtime_memory_heap_objects_ratio` | visualized |  |
 | `tailscale2otel.runtime.memory.heap_sys` | metric | `tailscale2otel_runtime_memory_heap_sys_bytes` | visualized |  |
+| `tailscale2otel.runtime.memory.limit` | metric | `tailscale2otel_runtime_memory_limit_bytes` | visualized, alertable |  |
 | `tailscale2otel.runtime.memory.stack_inuse` | metric | `tailscale2otel_runtime_memory_stack_inuse_bytes` | visualized |  |
 | `tailscale2otel.runtime.memory.sys` | metric | `tailscale2otel_runtime_memory_sys_bytes` | visualized |  |
 | `tailscale2otel.scrape.budget` | metric | `tailscale2otel_scrape_budget_ratio` | visualized, alertable |  |
