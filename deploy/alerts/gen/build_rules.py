@@ -1110,6 +1110,21 @@ def groups():
               "by waiting: a config invalid at runtime has already been invalid since startup.",
               domain="observability", paused=False,
               policy="core", runbook="exporter-config-health", panel="Config valid"),
+        # Idle persistent stores checkpoint on the default hourly sweep. Allow
+        # two hours plus a 15m hold, and keep the oldest replica per tailnet.
+        # Memory stores and stores before their first checkpoint emit no series.
+        alert("ts2o-flow-store-checkpoint-stale", "Flow store checkpoint stale",
+              "time() - min by (tailscale_tailnet) "
+              "(tailscale2otel_flow_store_last_checkpoint_timestamp_seconds > 0)",
+              "gt", 7200, "15m", "warning",
+              "Persistent flow-store checkpoint is stale for {{ $labels.tailscale_tailnet }}",
+              "The persistent flow store has not completed a SQLite WAL checkpoint for over "
+              "two hours, sustained for 15m. A stuck checkpoint can grow the write-ahead journal. "
+              "Check flow-store errors, disk space, and long-running SQLite readers. The default "
+              "idle maintenance cadence is hourly; tune the threshold if using a longer sweep "
+              "interval. Absence is OK for memory stores and before the first checkpoint.",
+              domain="observability", paused=False,
+              policy="optional", runbook="flow-data-pipeline"),
         alert("ts2o-checkpoint-stalled", "Checkpoint persist stalled",
               "max(tailscale2otel_checkpoint_persist_age_seconds)", "gt", 1800, "15m", "warning",
               "Checkpoint has not been persisted recently",

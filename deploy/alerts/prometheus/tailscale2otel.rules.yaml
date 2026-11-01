@@ -451,6 +451,17 @@ groups:
         annotations:
           summary: "tailscale2otel config is invalid"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#exporter-config-health"
+      - alert: "FlowStoreCheckpointStale"
+        expr: "(time() - min by (tailscale_tailnet) (tailscale2otel_flow_store_last_checkpoint_timestamp_seconds > 0)) > 7200"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "observability"
+          skipinvestigation: "true"
+        annotations:
+          summary: "Persistent flow-store checkpoint is stale for {{ $labels.tailscale_tailnet }}"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
       - alert: "CheckpointPersistStalled"
         expr: "(max(tailscale2otel_checkpoint_persist_age_seconds)) > 1800"
         for: "15m"

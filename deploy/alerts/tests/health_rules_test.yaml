@@ -825,3 +825,50 @@ tests:
       - eval_time: 30m
         alertname: SubrequestCoverageIncomplete
         exp_alerts: []
+
+  # Persistent flow-store maintenance runs hourly even when there are no flows.
+  # A checkpoint older than two hours must remain stale for another 15 minutes.
+  - name: persistent flow checkpoint stale fires only after threshold and hold
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_flow_store_last_checkpoint_timestamp_seconds{tailscale_tailnet="stale.example",instance="replica-a"}'
+        values: '60+0x150'
+      - series: 'tailscale2otel_flow_store_last_checkpoint_timestamp_seconds{tailscale_tailnet="fresh.example",instance="replica-b"}'
+        values: '60+60x150'
+    alert_rule_test:
+      - eval_time: 121m
+        alertname: FlowStoreCheckpointStale
+        exp_alerts: []
+      - eval_time: 136m
+        alertname: FlowStoreCheckpointStale
+        exp_alerts: []
+      - eval_time: 137m
+        alertname: FlowStoreCheckpointStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              skipinvestigation: "true"
+              service: tailscale2otel
+              domain: observability
+              tailscale_tailnet: stale.example
+            exp_annotations:
+              summary: "Persistent flow-store checkpoint is stale for stale.example"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+
+  - name: persistent flow checkpoint fresh stays silent
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_flow_store_last_checkpoint_timestamp_seconds{tailscale_tailnet="fresh.example"}'
+        values: '60+60x150'
+    alert_rule_test:
+      - eval_time: 150m
+        alertname: FlowStoreCheckpointStale
+        exp_alerts: []
+
+  - name: persistent flow checkpoint absent stays silent for memory backend
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 150m
+        alertname: FlowStoreCheckpointStale
+        exp_alerts: []

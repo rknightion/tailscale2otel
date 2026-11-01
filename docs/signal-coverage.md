@@ -49,7 +49,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 262 | 261 | 59 | 11 | 46 |
-| self_obs | 105 | 105 | 42 | 9 | 10 |
+| self_obs | 105 | 105 | 43 | 9 | 10 |
 
 ## Operational signals
 
@@ -361,7 +361,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.export.log_records` | metric | `tailscale2otel_export_log_records_total` | visualized |  |
 | `tailscale2otel.export.spans` | metric | `tailscale2otel_export_spans_total` | visualized | #526 wave 2/3: panel scheduled on health/Delivery (OTLP export). |
 | `tailscale2otel.flow_store.journal.size` | metric | `tailscale2otel_flow_store_journal_size_bytes` | visualized |  |
-| `tailscale2otel.flow_store.last_checkpoint_timestamp` | metric | `tailscale2otel_flow_store_last_checkpoint_timestamp_seconds` | visualized |  |
+| `tailscale2otel.flow_store.last_checkpoint_timestamp` | metric | `tailscale2otel_flow_store_last_checkpoint_timestamp_seconds` | visualized, alertable |  |
 | `tailscale2otel.ingest.capture.delay` | metric | `tailscale2otel_ingest_capture_delay_seconds` | visualized |  |
 | `tailscale2otel.ingest.event.age` | metric | `tailscale2otel_ingest_event_age_seconds` | visualized |  |
 | `tailscale2otel.ingest.last_event_timestamp` | metric | `tailscale2otel_ingest_last_event_timestamp_seconds` | visualized, alertable, recorded |  |

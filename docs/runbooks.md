@@ -962,6 +962,16 @@ a threshold from your own history rather than assuming 50% is meaningful for you
 
 ## Flow data pipeline {#flow-data-pipeline}
 
+**Persistent flow-store checkpoint:** `ts2o-flow-store-checkpoint-stale` warns when the
+oldest reported checkpoint per tailnet is over two hours old for 15 minutes. The
+persistent SQLite backend checkpoints after committed writes and on its default
+hourly maintenance sweep, including while idle. Inspect flow-store errors, disk
+space, and long-running SQLite readers that may prevent a complete WAL checkpoint.
+Tune the threshold if you configure a sweep interval longer than two hours. It
+resolves when a successful checkpoint brings the age below the threshold. Memory
+stores and persistent stores before their first successful checkpoint emit no
+timestamp and stay silent; this rule cannot detect a checkpoint that never succeeds.
+
 **Rules:** `ts2o-no-flow-data`, `ts2o-flow-reporter-mismatch`, `ts2o-flow-logs-dropped`
 
 **What it means.** No network flow records have arrived for an hour while flow logging is on, flow

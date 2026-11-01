@@ -2693,7 +2693,8 @@
       "prom_name": "tailscale2otel_flow_store_last_checkpoint_timestamp_seconds",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
