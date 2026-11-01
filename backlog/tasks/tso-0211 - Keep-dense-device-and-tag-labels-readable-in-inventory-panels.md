@@ -1,9 +1,10 @@
 ---
 id: TSO-0211
-title: Keep dense device and tag labels readable in inventory panels
+title: Keep dense entity and category labels readable in dashboard panels
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:06:00Z'
+updated_date: '2026-11-01T22:20:00Z'
 labels:
   - dashboards
   - follow-up
@@ -34,3 +35,9 @@ A retained live Inventory and Hygiene render shows heavy label overlap in Device
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional retained renders show the same label-readability pattern in Service tags (rollup), Encryption posture population and Route-selection mode. Preserve recoverable identities/categories rather than silently narrowing the displayed population.
+<!-- SECTION:NOTES:END -->

@@ -1,16 +1,18 @@
 ---
 id: TSO-0213
-title: Make absent device security flags distinguishable and readable
+title: Distinguish absent telemetry from healthy states in generated panels
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:06:00Z'
+updated_date: '2026-11-01T22:55:00Z'
 labels:
   - dashboards
   - follow-up
 dependencies: []
 references:
   - /Users/rob/repos/tailscale2otel/deploy/grafana/gen/tabs/devices_inventory.py
-priority: medium
+  - /Users/rob/repos/tailscale2otel/deploy/grafana/gen/tabs/health_ingestion.py
+priority: high
 type: bug
 ordinal: 215000
 ---
@@ -26,6 +28,9 @@ Device security flags (per device) renders a long fallback sentence clipped acro
 - [ ] #1 Known positive, known negative and absent flag states are visually distinct without clipping at shipped dimensions.
 - [ ] #2 The absence explanation is fully available without pretending a missing value is a healthy zero.
 - [ ] #3 A synthetic mixed-state fixture and retained panel render prove the corrected behavior.
+- [ ] #4 Absent optional data uses a readable neutral or explicitly unknown state across the listed cards; populated healthy and failing states retain their intended distinction.
+- [ ] #5 Present all-zero device-flag bases display numeric zero while absent bases remain unavailable, preserving OS/host/tailnet/provider scope.
+- [ ] #6 Disabled or absent optional object-store feeds do not acquire a healthy zero from an unanchored fallback; observed feeds with zero exceptional events may show zero.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -34,3 +39,11 @@ Device security flags (per device) renders a long fallback sentence clipped acro
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional observed green unknown/absent states: Posture names dropped, Multiple simultaneous connections, Blocking incoming connections, Stale users (>30d), Pending exit-node shares, Unrecognized desired events, Requests delayed by the rate limiter and Metrics over cardinality cap. Object-store gaps clear and Object listing complete show the same absence explanation on contradictory red/green backgrounds. Long fallback text is also unreadable in some cards. Keep optional absence separate from health verdicts.
+
+Source review also proves two logical state errors: Multiple simultaneous connections and Blocking incoming connections use count(base == 1), which is empty when observed bases are all zero; Undecodable objects (broken feed) uses an unanchored zero fallback although no object-store feed is selected. Preserve known-zero, positive and absent populations separately, rather than solving only colors.
+<!-- SECTION:NOTES:END -->
