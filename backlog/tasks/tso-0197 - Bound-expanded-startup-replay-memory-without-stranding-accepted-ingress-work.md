@@ -1,10 +1,10 @@
 ---
 id: TSO-0197
 title: Bound expanded startup replay memory without stranding accepted ingress work
-status: To Do
+status: Parked
 assignee: []
 created_date: 2026-10-13 09:57
-updated_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:10:00Z'
 labels:
   - needs-triage
 dependencies: []
@@ -47,4 +47,6 @@ Owner approved design first on 2026-10-13. TSO-0197.01 (freeze the bounded repla
 loop32 completed TSO-0197.01 (freeze bounded replay-memory design and proof packets) under the approved design-only exception. Canonical independent PASS: /Users/rob/repos/tailscale2otel/codex/loop32/design-review.md. Two design corrections, zero implementation attempts. All four parent criteria remain unchecked, no remediation or numerical safe cap proven. Resume only after protected original-shape/representative ordinary-envelope prerequisites and separately commissioned implementation; retain one serial owner across frozen storage/preparation/delivery seams. TSO-0197.02 (preserve required delta first-cover effects across failed scheduled collection) records a source-grounded inferred failure-path finding; negative reproduction and repair remain uncommissioned.
 
 2026-11-01 owner commissioned implementation for loop33 (both TSO-0197 and TSO-0197.02), plus a read-only read of ingress WAL entry-size and shape statistics from a lab pod through the tailnet-proxied context, no writes, to supply the missing W1 workload input. One serial senior owner across the frozen storage/preparation/delivery seams, per the loop32 design.
+
+loop33: implementation commissioned, but W1 access prerequisite cannot be completed under current read-only command grant: distroless exporter lacks permitted inspection utilities, sidecar subPath excludes WAL. No diagnostic container, mount change, restart or synthetic sizing substitute attempted. Resume after owner-authorised read-only offline snapshot or diagnostic access supplies protected joint original-shape and ordinary/cgroup envelope evidence. Parent implementation not started, no cap or progress claim.
 <!-- SECTION:NOTES:END -->

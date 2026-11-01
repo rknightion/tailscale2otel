@@ -1,9 +1,10 @@
 ---
 id: TSO-0205
 title: Alert on a stale persistent flow-store checkpoint
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:11:00Z'
 labels:
   - alerts
 dependencies: []
@@ -32,3 +33,9 @@ tailscale2otel.flow_store.last_checkpoint_timestamp (internal/appcatalog/catalog
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Loop33 checkpoint lane: generated persistent-backend stale checkpoint alert with stale/fresh/absent promtool fixtures.
+<!-- SECTION:PLAN:END -->

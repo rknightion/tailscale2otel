@@ -1,9 +1,10 @@
 ---
 id: TSO-0203
 title: Alert when ingress WAL entries are retired as expired
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:09:00Z'
 labels:
   - alerts
 dependencies: []
@@ -32,3 +33,9 @@ TSO-0200 added tailscale2otel.ingress_wal.expired.entries, counting accepted wor
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Loop33 expired alert lane: normalized rule with increase/zero promtool proofs, generated outputs root-owned.
+<!-- SECTION:PLAN:END -->
