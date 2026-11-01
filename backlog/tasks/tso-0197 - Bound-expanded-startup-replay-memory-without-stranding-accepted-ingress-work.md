@@ -4,7 +4,7 @@ title: Bound expanded startup replay memory without stranding accepted ingress w
 status: Parked
 assignee: []
 created_date: 2026-10-13 09:57
-updated_date: '2026-11-01T21:10:00Z'
+updated_date: '2026-11-01T23:33:00Z'
 labels:
   - needs-triage
 dependencies: []
@@ -49,4 +49,6 @@ loop32 completed TSO-0197.01 (freeze bounded replay-memory design and proof pack
 2026-11-01 owner commissioned implementation for loop33 (both TSO-0197 and TSO-0197.02), plus a read-only read of ingress WAL entry-size and shape statistics from a lab pod through the tailnet-proxied context, no writes, to supply the missing W1 workload input. One serial senior owner across the frozen storage/preparation/delivery seams, per the loop32 design.
 
 loop33: implementation commissioned, but W1 access prerequisite cannot be completed under current read-only command grant: distroless exporter lacks permitted inspection utilities, sidecar subPath excludes WAL. No diagnostic container, mount change, restart or synthetic sizing substitute attempted. Resume after owner-authorised read-only offline snapshot or diagnostic access supplies protected joint original-shape and ordinary/cgroup envelope evidence. Parent implementation not started, no cap or progress claim.
+
+loop33 closeout park reaffirmed: owner evidence/access blocker remains. The authorized read-only WAL utilities cannot execute in the distroless exporter; the available sidecar does not mount that WAL. No cluster mutation was attempted. Resume the selected bounded design with an owner-authorized read-only WAL snapshot/diagnostic mechanism or protected supplied joint-shape and ordinary-memory-envelope evidence, then the same serial senior lane. No safe-cap or live-loss conclusion is established.
 <!-- SECTION:NOTES:END -->

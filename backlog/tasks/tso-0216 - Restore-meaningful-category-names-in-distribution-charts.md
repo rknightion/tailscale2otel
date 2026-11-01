@@ -4,6 +4,7 @@ title: Restore meaningful category names in distribution charts
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:20:00Z'
+updated_date: '2026-11-01T23:20:00Z'
 labels:
   - dashboards
   - follow-up
@@ -34,3 +35,9 @@ Retained live renders label Compliance distribution and Current flow share by tr
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional exact binding: rDNS cache fill shows two percentages without visible cache population labels. Current flow share transport/traffic pies are independently confirmed to render generic Value labels despite categorical time-series data.
+<!-- SECTION:NOTES:END -->

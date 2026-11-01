@@ -21,7 +21,7 @@ type ConfigurationResponse struct {
 }
 
 // TailnetName returns the canonical tailnet identifier from the response envelope
-// (e.g. "m7kni.io"): the live API's "tailnetId", falling back to the spec's
+// (e.g. "example.com"): the live API's "tailnetId", falling back to the spec's
 // "tailnet". Empty if neither is present.
 func (r ConfigurationResponse) TailnetName() string {
 	if r.TailnetID != "" {

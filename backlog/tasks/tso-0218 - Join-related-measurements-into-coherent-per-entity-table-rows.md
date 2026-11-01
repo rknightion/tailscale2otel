@@ -4,6 +4,7 @@ title: Join related measurements into coherent per-entity table rows
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:20:00Z'
+updated_date: '2026-11-01T23:20:00Z'
 labels:
   - dashboards
   - follow-up
@@ -34,3 +35,9 @@ Integration sync detail, Per-user detail and Connector health fragment the same 
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional exact audit binding: Subnet routes — advertised vs enabled renders blank Enabled cells despite populated query results. Preserve this as a per-route join/field-render discrepancy, with cause unresolved; a populated enabled/disabled route fixture must show both states in the same row. Backend presence alone does not prove that every route has an enabled counterpart.
+<!-- SECTION:NOTES:END -->

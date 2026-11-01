@@ -4,6 +4,7 @@ title: Align health and inventory colors with documented semantics
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:20:00Z'
+updated_date: '2026-11-01T23:20:00Z'
 labels:
   - dashboards
   - follow-up
@@ -34,3 +35,9 @@ Capability availability history paints supported rows red. Uptime, Process uptim
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional exact bindings: Capability availability history colors supported states red with raw numeric labels. Audit events accepted and Audit log lines in Loki color ordinary positive activity red without a loss comparison. Health state colors must be justified by the quantity and source availability.
+<!-- SECTION:NOTES:END -->

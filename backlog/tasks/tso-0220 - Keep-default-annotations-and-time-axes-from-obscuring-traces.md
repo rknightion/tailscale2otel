@@ -4,6 +4,7 @@ title: Keep default annotations and time axes from obscuring traces
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:20:00Z'
+updated_date: '2026-11-01T23:20:00Z'
 labels:
   - dashboards
   - follow-up
@@ -34,3 +35,9 @@ Dense blue annotation regions dominate many Overview, Collection, Delivery, iden
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Additional exact chart scope includes Collection API/scrape/enrichment time series, Ingestion WAL/stream/freshness charts, Delivery exporter/SIEM/traces charts and collapsed audit/dedup/WAL charts. Preserve separate axes where dimensions are already separated. The Policy Tailnet settings table is not a time series and must not receive a generic time-axis finding.
+<!-- SECTION:NOTES:END -->

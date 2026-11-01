@@ -93,6 +93,13 @@ tool module can never affect the main module's build.
   `internal/telemetrytest.Recorder` (an in-memory OTEL reader) and assert the emitted metrics and
   logs rather than internals. `testing/synctest` is the fake clock for time-dependent tests
   (`internal/app/heartbeat_test.go`); prefer it over real sleeps.
+- A failed scheduled SDK `Collect` is not transactional: the pinned metric SDK can reset delta
+  aggregation before a later callback or external Producer error is returned. Retaining replay
+  membership alone does not preserve that delta or justify a first-cover receipt. The deterministic
+  real-SDK regression also covers ordinary measurements between normal slots. Do not reapply
+  materialized records, merge failed snapshots, or add off-cadence collection as a substitute for
+  the selected transactional aggregation/reset design. This is local reproduction, not proof of
+  historical loss on a deployed exporter.
 - The `telemetry.Emitter` facade is the only thing touching OTLP. Collectors depend only on the
   frozen contracts (`telemetry.Emitter`, the collector interfaces, `enrich.DeviceCache`,
   `tsapi.Client`, the flow/audit processors) and each declares a narrow client interface it can

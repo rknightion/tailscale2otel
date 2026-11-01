@@ -4,7 +4,7 @@ title: Keep metadata free of numeric and duration formatting
 status: To Do
 assignee: []
 created_date: '2026-11-01T22:06:00Z'
-updated_date: '2026-11-01T22:20:00Z'
+updated_date: '2026-11-01T23:26:00Z'
 labels:
   - dashboards
   - follow-up
@@ -28,6 +28,7 @@ Last seen (time since) visibly formats an OS-version metadata cell with a second
 - [ ] #2 OS versions and other metadata preserve their original semantic display, including numeric-looking strings.
 - [ ] #3 A synthetic frame containing numeric-looking metadata and a real duration catches the previous formatting error.
 - [ ] #4 Identifier metadata remains recoverable without large-number abbreviation or numeric coercion that changes its meaning.
+- [ ] #5 Fraction and count-rate measurements, including utilization and trace activity/cadence, expose units matching their queries; identifiers retain identifier formatting.
 <!-- AC:END -->
 
 ## Definition of Done
@@ -41,4 +42,8 @@ Last seen (time since) visibly formats an OS-version metadata cell with a second
 
 <!-- SECTION:NOTES:BEGIN -->
 Node Metrics tables also abbreviate identifier metadata with large-number suffixes. Preserve identifiers and numeric-looking metadata semantically, in addition to restricting duration units to real measurements.
+
+Additional exact metadata/quantity binding: Per-metric utilization (top-N) renders raw decimal fractions without a unit in its header while its neighbor uses percent. Raw Node Metrics identifier cells use magnitude abbreviations. Label measures in one-hot info tables are valid; hidden numeric Value by itself is not a defect.
+
+Trace Span class activity and Scrape cadence by collector render rate traces without an explicit cadence/count-rate unit; include those quantity formats with the raw utilization fractions.
 <!-- SECTION:NOTES:END -->
