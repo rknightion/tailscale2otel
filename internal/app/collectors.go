@@ -219,6 +219,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		}
 		rt.registry.Register(keys.New(cp.Client, c.Keys.Interval.D(), c.Keys.ExpiryWarn.D(), nil,
 			keys.WithEvidenceStore(keysStore),
+			keys.WithLogMaxRecordAge(cfg.Delivery.LogMaxRecordAge.D()),
 			keys.WithPerEntity(cfg.Cardinality.PerEntity.Key),
 			keys.WithExpiryLogMode(c.Keys.ExpiryLogMode),
 			keys.WithAPIState(rt.apiState)), c.Keys.Interval.D())

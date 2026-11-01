@@ -1624,3 +1624,83 @@ func TestCollect_PendingOldestAgeIsBacklogLatencyNotFailureAge(t *testing.T) {
 		}
 	})
 }
+
+func TestCollect_SharedLogHorizon(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		want int
+	}{{"clamped", 6 * 24 * time.Hour, 1}, {"disabled", 0, 3}} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t, func(o *objectstore.Options) {
+				o.Layout = objectstore.LayoutFlat
+				o.InitialLookback = 10 * 24 * time.Hour
+				o.LogMaxRecordAge = tc.age
+				o.HorizonSelfObs = true
+			})
+			old := now.Add(-8 * 24 * time.Hour)
+			recent := now.Add(-time.Hour)
+			h.store.put(keyAt(old, ".ndjson"), []byte(record("old", old)+"\n"))
+			// Recent object containing an old source record must also respect the horizon.
+			h.store.put(keyAt(recent, ".ndjson"), []byte(record("embedded-old", old)+"\n"+record("recent", recent)+"\n"))
+			h.collect(t)
+			if got := h.flowRecords(); got != tc.want {
+				t.Errorf("logs=%d want %d", got, tc.want)
+			}
+			points := h.rec.MetricPoints(collector.MetricLogHorizonSkipped)
+			if tc.age > 0 && (len(points) != 1 || points[0].Value != 4*24*60*60 || points[0].Attrs["tailscale.collector"] != "objectstore") {
+				t.Errorf("skipped=%+v", points)
+			}
+			if tc.age == 0 && len(points) != 0 {
+				t.Errorf("disabled horizon skipped=%+v", points)
+			}
+		})
+	}
+}
+
+func TestCollect_ExpiredGapsDoNotConsumeCurrentObjectBudget(t *testing.T) {
+	clock := now
+	h := newHarness(t, func(o *objectstore.Options) {
+		o.Layout = objectstore.LayoutFlat
+		o.InitialLookback = 3 * time.Hour
+		o.LogMaxRecordAge = 3 * time.Hour
+		o.MaxObjects = 1
+		o.Now = func() time.Time { return clock }
+	})
+	oldAt := now.Add(-2 * time.Hour)
+	oldKey := keyAt(oldAt, ".ndjson")
+	h.store.put(oldKey, []byte(record("old", oldAt)+"\n"))
+	h.store.getErr[oldKey] = errors.New("fixture transient object error")
+	h.collect(t)
+	clock = now.Add(4 * time.Hour)
+	freshAt := clock.Add(-10 * time.Minute)
+	h.store.put(keyAt(freshAt, ".ndjson"), []byte(record("fresh", freshAt)+"\n"))
+	h.store.listErr = errors.New("fixture list failure")
+	if err := h.col.Collect(context.Background(), h.rec.Emitter()); err == nil {
+		t.Fatal("expected listing failure")
+	}
+	for _, point := range h.rec.MetricPoints("tailscale2otel.objectstore.skipped") {
+		if point.Attrs["reason"] == "before_cursor" && point.Value != 0 {
+			t.Fatalf("gap removal counted before its checkpoint batch succeeded: %+v", point)
+		}
+	}
+	h.store.listErr = nil
+	h.collect(t)
+	if got := h.flowRecords(); got != 1 {
+		t.Errorf("records=%d, want current object despite expired gap", got)
+	}
+	attempts := 0
+	for _, key := range h.store.getCalls {
+		if key == oldKey {
+			attempts++
+		}
+	}
+	if attempts != 1 {
+		t.Errorf("expired gap attempted %d times, want initial attempt only", attempts)
+	}
+	for _, key := range h.cp.Keys() {
+		if strings.Contains(key, "/gap/") {
+			t.Errorf("expired gap remains in checkpoint: %q", key)
+		}
+	}
+}

@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "72",
+      "__panelId__": "74",
       "description": "A pinned metrics collection or durable log batch reached ingress_wal.max_permanent_rejections consecutive permanent HTTP 4xx rejections (excluding 401, 403, 408 and 429). The unit was deliberately lost and its member WAL obligations resolved so later work can proceed. This counts collections/batches, not entries or records. Check destination timestamp and payload acceptance constraints; this advisory never pages. A first positive observation with no five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
       "summary": "Permanently rejected {{ $labels.signal }} work was dropped for {{ $labels.tailscale_tailnet }}"

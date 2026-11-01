@@ -397,7 +397,7 @@
                 },
                 "initial_lookback": {
                   "default": "6h",
-                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)",
+                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions",
                   "examples": [
                     "6h"
                   ],
@@ -784,7 +784,7 @@
                 },
                 "initial_lookback": {
                   "default": "6h",
-                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)",
+                  "description": "cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions",
                   "examples": [
                     "6h"
                   ],
@@ -1675,6 +1675,15 @@
     "delivery": {
       "additionalProperties": false,
       "properties": {
+        "log_max_record_age": {
+          "default": "144h",
+          "description": "shared poll/object-store catch-up and key lifecycle log horizon (6 days); 0s disables the clamp; keep below the backend acceptance limit",
+          "examples": [
+            "144h"
+          ],
+          "pattern": "^-?([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+          "type": "string"
+        },
         "mode": {
           "default": "otlp",
           "description": "otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.\u003csignal\u003e.endpoint explicitly opts that signal back in under prometheus mode",

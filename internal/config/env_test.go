@@ -198,3 +198,65 @@ func TestLoadRejectsEnvVarIndexingIntoTailnets(t *testing.T) {
 		t.Errorf("error = %q, want it to name the file-only config key", err)
 	}
 }
+
+func TestLoadLogHorizon(t *testing.T) {
+	for _, value := range []string{"48h", "0s"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("TS2OTEL_DELIVERY__LOG_MAX_RECORD_AGE", value)
+			cfg, err := config.Load(writeTemp(t, "delivery:\n  log_max_record_age: 144h\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want, _ := time.ParseDuration(value)
+			if cfg.Delivery.LogMaxRecordAge.D() != want {
+				t.Fatalf("age=%v want %v", cfg.Delivery.LogMaxRecordAge, want)
+			}
+		})
+	}
+	t.Run("negative", func(t *testing.T) {
+		t.Setenv("TS2OTEL_DELIVERY__LOG_MAX_RECORD_AGE", "-1h")
+		if _, err := config.Load(""); err == nil {
+			t.Fatal("negative horizon accepted")
+		}
+	})
+}
+
+func TestLogHorizonWarnings(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Flowlogs.Enabled = true
+	cfg.Collectors.Flowlogs.InitialLookback = config.Duration(10 * 24 * time.Hour)
+	cfg.Collectors.Auditlogs.Enabled = true
+	cfg.Collectors.Auditlogs.Source = "objectstore"
+	cfg.Collectors.Auditlogs.ObjectStore.InitialLookback = config.Duration(10 * 24 * time.Hour)
+	for _, key := range []string{"collectors.flowlogs.initial_lookback", "collectors.auditlogs.objectstore.initial_lookback"} {
+		if !strings.Contains(strings.Join(cfg.Warnings(), "\n"), key+" exceeds delivery.log_max_record_age") {
+			t.Errorf("missing horizon advisory for %s", key)
+		}
+	}
+	cfg.Delivery.LogMaxRecordAge = 0
+	if strings.Contains(strings.Join(cfg.Warnings(), "\n"), "exceeds delivery.log_max_record_age") {
+		t.Fatal("disabled horizon warns")
+	}
+}
+
+func TestValidateLogHorizonMustExceedPollLag(t *testing.T) {
+	cfg := config.Default()
+	cfg.Collectors.Flowlogs.Enabled = true
+	cfg.Collectors.Flowlogs.Source = "poll"
+	cfg.Delivery.LogMaxRecordAge = cfg.Collectors.Flowlogs.Lag
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "delivery.log_max_record_age") {
+		t.Fatalf("horizon equal to poll lag must fail, got %v", err)
+	}
+	cfg.Delivery.LogMaxRecordAge = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("disabled horizon: %v", err)
+	}
+	cfg.Delivery.LogMaxRecordAge = cfg.Collectors.Flowlogs.Lag
+	cfg.Collectors.Flowlogs.Source = "stream"
+	cfg.Streaming.Enabled = true
+	cfg.Streaming.Token = config.Secret("fixture-token")
+	cfg.Collectors.Auditlogs.Enabled = false
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("non-poll source has no poll-lag constraint: %v", err)
+	}
+}

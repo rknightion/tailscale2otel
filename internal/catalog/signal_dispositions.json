@@ -2887,6 +2887,15 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale2otel.log.catchup.skipped",
+      "prom_name": "tailscale2otel_log_catchup_skipped_seconds_total",
+      "surface": "self_obs",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale2otel.log.record.truncated",
       "prom_name": "tailscale2otel_log_record_truncated_total",
       "surface": "self_obs",

@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v5/internal/geoip"
 )
@@ -121,7 +122,7 @@ func Default() *Config {
 			// Matches the built-in stdout cadence; stated for the same reason.
 			Stdout: OTLPStdoutConfig{MetricInterval: dur(5 * time.Second)},
 		},
-		Delivery: DeliveryConfig{Mode: "otlp"},
+		Delivery: DeliveryConfig{Mode: "otlp", LogMaxRecordAge: Duration(collector.DefaultLogMaxRecordAge)},
 		Enrichment: EnrichmentConfig{
 			CacheTTL:              dur(5 * time.Minute),
 			DeviceCacheStaleAfter: 0,

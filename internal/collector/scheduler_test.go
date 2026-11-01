@@ -715,3 +715,70 @@ func TestRunTick_CollectorLabelSeriesGrowthIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// Stale checkpoints must skip backend-rejected history before max-window chunking.
+func TestScheduler_StaleCheckpointLogHorizon(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	floor := now.Add(-6 * 24 * time.Hour)
+	store := collector.NewMemoryStore()
+	if err := store.Set("auditlogs", now.Add(-10*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rec := telemetrytest.New()
+	var logs bytes.Buffer
+	s := collector.NewScheduler(rec.Emitter(), store, collector.WithClock(func() time.Time { return now }), collector.WithLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	c := winFunc{name: "auditlogs", fn: func(_ context.Context, from, to time.Time, e telemetry.Emitter) (time.Time, error) {
+		if !from.Equal(floor) {
+			t.Errorf("from=%v, want horizon %v", from, floor)
+		}
+		if !to.Equal(floor.Add(time.Hour)) {
+			t.Errorf("to=%v, want first bounded catch-up chunk", to)
+		}
+		e.LogEvent(telemetry.Event{Name: "old", Timestamp: floor.Add(-time.Second)})
+		e.LogEventCtx(context.Background(), telemetry.Event{Name: "boundary", Timestamp: floor})
+		return to, nil
+	}}
+	entry := collector.Entry{Collector: c, InitialLookback: 5 * time.Minute, MaxWindow: time.Hour}
+	var success time.Time
+	s.RunTick(context.Background(), entry, &success)
+	points := rec.MetricPoints(collector.MetricLogHorizonSkipped)
+	if len(points) != 1 || points[0].Value != 4*24*60*60 || points[0].Attrs["tailscale.collector"] != "auditlogs" {
+		t.Errorf("skipped span=%+v", points)
+	}
+	telemetrytest.AssertCatalogAttrs(t, rec, collector.Catalog(), nil)
+	if got := len(rec.LogRecords()); got != 1 {
+		t.Errorf("logs=%d, want only boundary record", got)
+	}
+	if got := strings.Count(logs.String(), "log catch-up horizon clamped"); got != 1 {
+		t.Errorf("clamp WARN count=%d; %s", got, logs.String())
+	}
+}
+
+type mutateThenFailStore struct{ collector.CheckpointStore }
+
+func (s mutateThenFailStore) Set(key string, at time.Time) error {
+	if err := s.CheckpointStore.Set(key, at); err != nil {
+		return err
+	}
+	return errors.New("fixture persist failure")
+}
+
+func TestScheduler_HorizonSkipCountedWhenCheckpointMutatesBeforeFailure(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	memory := collector.NewMemoryStore()
+	if err := memory.Set("auditlogs", now.Add(-10*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rec := telemetrytest.New()
+	s := collector.NewScheduler(rec.Emitter(), mutateThenFailStore{memory}, collector.WithClock(func() time.Time { return now }), collector.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))))
+	c := winFunc{name: "auditlogs", fn: func(context.Context, time.Time, time.Time, telemetry.Emitter) (time.Time, error) {
+		t.Fatal("fetch after failed checkpoint persistence")
+		return time.Time{}, nil
+	}}
+	var success time.Time
+	s.RunTick(context.Background(), collector.Entry{Collector: c, InitialLookback: time.Hour, MaxWindow: time.Hour}, &success)
+	points := rec.MetricPoints(collector.MetricLogHorizonSkipped)
+	if len(points) != 1 || points[0].Value != 4*24*60*60 {
+		t.Fatalf("consumed history must be counted despite persistence failure: %+v", points)
+	}
+}

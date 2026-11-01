@@ -110,6 +110,10 @@ tool module can never affect the main module's build.
   (`tailscale_devices_count_ratio`).
 - The otlphttp exporter does NOT append `/v1/{metrics,logs}` - `internal/telemetry.otlpHTTPURL()`
   does. A bare gateway URL 404s silently without it.
+- `delivery.log_max_record_age` is the shared poll/object-store catch-up and key lifecycle
+  horizon (default `144h`, `0s` disables). Catch-up persists the skipped lower bound, counts
+  skipped seconds by collector, and logs one WARN per skipped span. A log-only emitter guard
+  also suppresses old source timestamps inside returned windows/objects; metric processing remains.
 - For `flowlogs` and `auditlogs` pick exactly ONE ingestion path per log type (`source: poll` or
   `stream`). `both`, or running the receiver while a collector still polls, double-counts;
   cross-source dedup is a best-effort failsafe and the app WARNs at startup.

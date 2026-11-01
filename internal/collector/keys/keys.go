@@ -128,12 +128,6 @@ const (
 	lifecycleRevokedWatermarkKey = "keys/lifecycle/revoked"
 )
 
-// lifecycleEventHorizon bounds how far in the past a lifecycle transition may
-// be and still be emitted. Older transitions are history, not news, and log
-// backends refuse records that old (Grafana Cloud Loki rejects anything older
-// than seven days), so a cold start records them as baseline instead.
-const lifecycleEventHorizon = 6 * 24 * time.Hour
-
 // opListTailnetKeys is the upstream operationId of the list call.
 const opListTailnetKeys = "listTailnetKeys"
 
@@ -145,14 +139,15 @@ type lister interface {
 
 // Collector reports Tailscale key inventory on each tick.
 type Collector struct {
-	api            lister
-	interval       time.Duration
-	expiryWarn     time.Duration
-	now            func() time.Time
-	perEntity      bool
-	expiryLogMode  string // "daily" (default) | "always" | "off"
-	expiryState    map[string]expiryState
-	lifecycleState map[string]lifecycleState
+	api             lister
+	interval        time.Duration
+	expiryWarn      time.Duration
+	logMaxRecordAge time.Duration
+	now             func() time.Time
+	perEntity       bool
+	expiryLogMode   string // "daily" (default) | "always" | "off"
+	expiryState     map[string]expiryState
+	lifecycleState  map[string]lifecycleState
 	// evidence holds the lifecycle watermarks across restarts.
 	evidence collector.CheckpointStore
 	// tracker records this collector's per-operation availability for the admin
@@ -234,21 +229,25 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 		now = time.Now
 	}
 	c := &Collector{
-		api:            api,
-		interval:       interval,
-		expiryWarn:     expiryWarn,
-		now:            now,
-		perEntity:      true,
-		expiryLogMode:  expiryLogModeDaily,
-		expiryState:    make(map[string]expiryState),
-		lifecycleState: make(map[string]lifecycleState),
-		evidence:       collector.NewMemoryStore(),
+		api:             api,
+		interval:        interval,
+		expiryWarn:      expiryWarn,
+		logMaxRecordAge: collector.DefaultLogMaxRecordAge,
+		now:             now,
+		perEntity:       true,
+		expiryLogMode:   expiryLogModeDaily,
+		expiryState:     make(map[string]expiryState),
+		lifecycleState:  make(map[string]lifecycleState),
+		evidence:        collector.NewMemoryStore(),
 	}
 	for _, o := range opts {
 		o(c)
 	}
 	return c
 }
+
+// WithLogMaxRecordAge sets the shared lifecycle log horizon; zero disables it.
+func WithLogMaxRecordAge(d time.Duration) Option { return func(c *Collector) { c.logMaxRecordAge = d } }
 
 // Name returns the stable collector identifier.
 func (c *Collector) Name() string { return "keys" }
@@ -317,7 +316,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	createdMark, _ := c.evidence.Get(lifecycleCreatedWatermarkKey)
 	revokedMark, _ := c.evidence.Get(lifecycleRevokedWatermarkKey)
-	horizon := now.Add(-lifecycleEventHorizon)
+	var horizon time.Time
+	if c.logMaxRecordAge > 0 {
+		horizon = now.Add(-c.logMaxRecordAge)
+	}
 	newCreatedMark, newRevokedMark := createdMark, revokedMark
 
 	for i := range ks {

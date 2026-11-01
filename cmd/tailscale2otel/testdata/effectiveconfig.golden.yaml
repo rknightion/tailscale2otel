@@ -684,6 +684,9 @@
 - key: coordination.retry_period
   value: 2s
   provenance: default
+- key: delivery.log_max_record_age
+  value: 144h0m0s
+  provenance: default
 - key: delivery.mode
   value: otlp
   provenance: default

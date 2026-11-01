@@ -111,11 +111,12 @@ type Scheduler struct {
 	now     func() time.Time
 	// staggerWindow bounds the random startup delay applied to each collector's
 	// first tick, to de-synchronize polls (see WithStaggerWindow). Zero disables it.
-	staggerWindow time.Duration
-	logger        *slog.Logger
-	selfObs       bool
-	status        *StatusTracker // optional; records per-collector run outcomes for the status page
-	tracer        trace.Tracer   // optional; emits one root span per scrape cycle
+	staggerWindow   time.Duration
+	logger          *slog.Logger
+	selfObs         bool
+	logMaxRecordAge time.Duration
+	status          *StatusTracker // optional; records per-collector run outcomes for the status page
+	tracer          trace.Tracer   // optional; emits one root span per scrape cycle
 	// namespace, when non-empty, prefixes every checkpoint store key with
 	// namespace+"/" so multiple schedulers (one per tailnet) sharing a
 	// CheckpointStore don't collide. Empty keeps the bare collector name.
@@ -133,6 +134,11 @@ type SchedulerOption func(*Scheduler)
 // fire immediately. Defaults to defaultStaggerWindow.
 func WithStaggerWindow(d time.Duration) SchedulerOption {
 	return func(s *Scheduler) { s.staggerWindow = d }
+}
+
+// WithLogMaxRecordAge bounds window catch-up; zero disables the horizon.
+func WithLogMaxRecordAge(d time.Duration) SchedulerOption {
+	return func(s *Scheduler) { s.logMaxRecordAge = d }
 }
 
 // WithClock overrides the time source (used in tests).
@@ -177,12 +183,13 @@ func (s *Scheduler) checkpointKey(name string) string {
 // emitter and checkpoint store.
 func NewScheduler(e telemetry.Emitter, store CheckpointStore, opts ...SchedulerOption) *Scheduler {
 	s := &Scheduler{
-		emitter:       e,
-		store:         store,
-		now:           time.Now,
-		staggerWindow: defaultStaggerWindow,
-		logger:        slog.Default(),
-		selfObs:       true,
+		emitter:         e,
+		store:           store,
+		now:             time.Now,
+		staggerWindow:   defaultStaggerWindow,
+		logger:          slog.Default(),
+		selfObs:         true,
+		logMaxRecordAge: DefaultLogMaxRecordAge,
 	}
 	for _, o := range opts {
 		o(s)
@@ -417,7 +424,31 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 // when there is no new window to poll) so the caller can record scrape metrics.
 func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) error {
 	last, hasLast := s.store.Get(s.checkpointKey(c.Name()))
-	from, to, ok := nextWindow(last, hasLast, s.now(), c.Lag(), e.InitialLookback, e.MaxWindow)
+	now := s.now()
+	start := last
+	if !hasLast {
+		start = now.Add(-c.Lag()).Add(-e.InitialLookback)
+	}
+	floor := ClampLogStart(start, now, s.logMaxRecordAge)
+	if floor.After(start) {
+		// The skipped interval is intentionally consumed, even if the fetch fails.
+		err := s.store.Set(s.checkpointKey(c.Name()), floor)
+		// Built-in durable stores mutate memory before attempting persistence.
+		// Account for consumed history even when that durable write fails.
+		consumed, present := s.store.Get(s.checkpointKey(c.Name()))
+		if err == nil || (present && !consumed.Before(floor)) {
+			ReportLogHorizonSkip(s.emitter, s.logger, c.Name(), start, floor, s.selfObs)
+		}
+		if err != nil {
+			s.logger.Warn("checkpoint persist failed", "collector", c.Name(), "error", err)
+			if s.selfObs {
+				EmitCheckpointPersistError(s.emitter, c.Name())
+			}
+			return err
+		}
+		last, hasLast = floor, true
+	}
+	from, to, ok := nextWindow(last, hasLast, now, c.Lag(), e.InitialLookback, e.MaxWindow, s.logMaxRecordAge)
 	if !ok {
 		return nil
 	}
@@ -428,7 +459,8 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 			replaying = true
 		}
 	}
-	hwm, err := c.CollectWindow(ctx, from, to, s.emitter)
+	from = ClampLogStart(from, now, s.logMaxRecordAge)
+	hwm, err := c.CollectWindow(ctx, from, to, LogHorizonEmitter(s.emitter, s.now, s.logMaxRecordAge))
 	if err != nil {
 		// Do not advance the checkpoint: the next tick retries the same window
 		// (at-least-once, no gaps).

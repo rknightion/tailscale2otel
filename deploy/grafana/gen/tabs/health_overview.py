@@ -229,4 +229,19 @@ def tab_health_overview(scope):
         autogrid_row("Degradation summary", degraded, present="has_scrape_err"),
         row("API throttling", api_degraded),
         row("Coordination churn", coordination_churn),
+        # No scrape-error sentinel: successful recovery can still skip history.
+        row("Log acceptance horizon", [
+            (panel("Log catch-up skipped duration", "timeseries",
+                   [prom_t("sum by (tailscale_collector) (tailscale2otel_log_catchup_skipped_seconds_total)",
+                           legend="{{tailscale_collector}}")],
+                   unit="s", custom=ts_custom(), options=ts_opts(),
+                   novalue="No skipped-history samples in the selected range.",
+                   desc="Cumulative history duration deliberately skipped beyond delivery.log_max_record_age, by collector. Includes the first exported positive sample after a cold start; resets when the process restarts. This is a time span, not a record estimate."), 12, 6),
+            (panel("Log catch-up skipped seconds/s", "timeseries",
+                   [prom_t("sum by (tailscale_collector) (rate(tailscale2otel_log_catchup_skipped_seconds_total[%s]))" % RI,
+                           legend="{{tailscale_collector}}")],
+                   unit="s", custom=ts_custom(), options=ts_opts(),
+                   novalue="No skipped-history rate samples in the selected range.",
+                   desc="Rate of history duration deliberately skipped beyond delivery.log_max_record_age, by collector. The absolute duration panel also shows a first positive sample with no earlier sample for a rate."), 12, 6),
+        ]),
     ]

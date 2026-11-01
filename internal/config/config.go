@@ -131,6 +131,8 @@ type CoordinationConfig struct {
 // enables both paths.
 type DeliveryConfig struct {
 	Mode string `yaml:"mode" reload:"restart"`
+	// LogMaxRecordAge bounds log catch-up and lifecycle emission; zero disables it.
+	LogMaxRecordAge Duration `yaml:"log_max_record_age" reload:"restart"`
 }
 
 // PrometheusPullEnabled reports whether the pull reader and listener are in

@@ -1220,3 +1220,23 @@ func TestCollect_KeyLifecycleOlderThanHorizonIsBaseline(t *testing.T) {
 		}
 	}
 }
+
+func TestCollect_KeyLifecycleSharedHorizon(t *testing.T) {
+	now := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+		want int
+	}{{"shorter", time.Hour, 0}, {"disabled", 0, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := keys.New(&fakeLister{keys: []tsapi.Key{{ID: "historical", Type: "auth", Created: now.Add(-30 * 24 * time.Hour)}}}, 0, time.Hour, func() time.Time { return now }, keys.WithLogMaxRecordAge(tc.age))
+			rec := telemetrytest.New()
+			if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+				t.Fatal(err)
+			}
+			if got := len(logsNamed(rec, keys.EventKeyCreated)); got != tc.want {
+				t.Fatalf("created=%d want %d", got, tc.want)
+			}
+		})
+	}
+}

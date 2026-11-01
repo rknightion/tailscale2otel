@@ -875,6 +875,9 @@
                 "delivery": {
                     "type": "object",
                     "properties": {
+                        "log_max_record_age": {
+                            "type": "string"
+                        },
                         "mode": {
                             "type": "string"
                         }

@@ -149,6 +149,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_OTLP__TRACES__RETRY__INITIAL_INTERVAL` | `0s` | `restart` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_OTLP__TRACES__RETRY__MAX_INTERVAL` | `0s` | `restart` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
 | `TS2OTEL_OTLP__TRACES__RETRY__MAX_ELAPSED_TIME` | `0s` | `restart` | an untouched block inherits otlp.retry; setting ANY field overrides the whole policy for this signal |
+| `TS2OTEL_DELIVERY__LOG_MAX_RECORD_AGE` | `144h` | `restart` | shared poll/object-store catch-up and key lifecycle log horizon (6 days); 0s disables the clamp; keep below the backend acceptance limit |
 | `TS2OTEL_DELIVERY__MODE` | `otlp` | `restart` | otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.<signal>.endpoint explicitly opts that signal back in under prometheus mode |
 | `TS2OTEL_ENRICHMENT__CACHE_TTL` | `5m` | `restart` | staleness alarm threshold for the IP/nodeID -> name device cache |
 | `TS2OTEL_ENRICHMENT__DEVICE_CACHE_STALE_AFTER` | `0s` | `restart` | mark cached identity stale after this age; 0 preserves fresh-until-replaced behaviour |
@@ -237,7 +238,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__SESSION_TOKEN_FILE` | `""` | `restart` | read the temporary session token from this path instead; value XOR file |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INTERVAL` | `60s` | `restart` | how often the bucket is listed |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__LOOKBACK` | `1h` | `restart` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
-| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | `restart` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | `restart` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | `restart` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_SEEN_KEYS` | `5000` | `restart` | durable seen-object identities retained per destination; too low can re-ingest an evicted object inside the lookback |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | `restart` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |
@@ -268,7 +269,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__SESSION_TOKEN_FILE` | `""` | `restart` | read the temporary session token from this path instead; value XOR file |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INTERVAL` | `60s` | `restart` | how often the bucket is listed |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__LOOKBACK` | `1h` | `restart` | how far back past the cursor each listing reaches, so a late-arriving object is still found |
-| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | `restart` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back) |
+| `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__INITIAL_LOOKBACK` | `6h` | `restart` | cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECTS` | `200` | `restart` | objects ingested per cycle; the remainder is counted, logged and picked up next cycle |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_SEEN_KEYS` | `5000` | `restart` | durable seen-object identities retained per destination |
 | `TS2OTEL_COLLECTORS__AUDITLOGS__OBJECTSTORE__MAX_OBJECT_WIRE_BYTES` | `67108864` | `restart` | reject and quarantine one object requiring more than 64 MiB of GET response bytes |

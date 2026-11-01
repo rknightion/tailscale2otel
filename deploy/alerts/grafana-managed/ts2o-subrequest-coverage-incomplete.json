@@ -13,7 +13,7 @@
   "spec": {
     "annotations": {
       "__dashboardUid__": "tailscale2otel-health",
-      "__panelId__": "77",
+      "__panelId__": "79",
       "description": "Per-entity subrequest coverage has stayed below 1 for collector {{ $labels.tailscale_collector }} on {{ $labels.tailscale_tailnet }} for 15m. The enclosing scrape can succeed while posture or invite data is incomplete. Check subrequest failures by type and availability state for permissions or API failures. Complete coverage is 1, including when no entities need a subrequest; the alert resolves when all subrequest types recover to 1. Optional collectors without subrequests produce no series and stay quiet.",
       "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health",
       "summary": "Collector {{ $labels.tailscale_collector }} subrequest coverage incomplete for {{ $labels.tailscale_tailnet }}"

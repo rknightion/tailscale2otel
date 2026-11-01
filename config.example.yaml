@@ -270,6 +270,7 @@ otlp:
 
 # ── Delivery topology ──────────────────────────────────────────────────────────
 delivery:
+  log_max_record_age: 144h           # shared poll/object-store catch-up and key lifecycle log horizon (6 days); 0s disables the clamp; keep below the backend acceptance limit
   mode: otlp                         # otlp keeps historical push-only delivery; prometheus serves /metrics and suppresses inherited OTLP metrics/logs/traces; dual enables both. An otlp.<signal>.endpoint explicitly opts that signal back in under prometheus mode
 
 # ── Enrichment (device-name cache + optional reverse DNS) ───────────────────────
@@ -386,7 +387,7 @@ collectors:
       session_token_file: ""          # read the temporary session token from this path instead; value XOR file
       interval: 60s                   # how often the bucket is listed
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
-      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
       max_seen_keys: 5000             # durable seen-object identities retained per destination; too low can re-ingest an evicted object inside the lookback
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes
@@ -419,7 +420,7 @@ collectors:
       session_token_file: ""          # read the temporary session token from this path instead; value XOR file
       interval: 60s                   # how often the bucket is listed
       lookback: 1h                    # how far back past the cursor each listing reaches, so a late-arriving object is still found
-      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; CAPPED IN EFFECT AT 14 DAYS under layout: partitioned (a larger value silently ingests only the newest 14 day partitions — use layout: flat to reach further back)
+      initial_lookback: 6h            # cold-start reach-back, so a first run against a long history doesn't ingest all of it; clamped to delivery.log_max_record_age (6d by default); with the horizon disabled, partitioned layout still enumerates at most the newest 14 day partitions
       max_objects: 200                # objects ingested per cycle; the remainder is counted, logged and picked up next cycle
       max_seen_keys: 5000             # durable seen-object identities retained per destination
       max_object_wire_bytes: 67108864 # reject and quarantine one object requiring more than 64 MiB of GET response bytes

@@ -305,6 +305,7 @@ func (c *Config) validateWebhookCredentials() error {
 // steer operators toward the safer choice without removing flexibility.
 func (c *Config) Warnings() []string {
 	var w []string
+	w = append(w, c.logHorizonWarnings()...)
 	if c.Coordination.Mode == "kubernetes" &&
 		(c.Collectors.Flowlogs.Source == "both" || c.Collectors.Auditlogs.Source == "both") {
 		w = append(w, "coordination.mode=kubernetes with a flowlogs or auditlogs source=both: cross-source de-duplication is process-local and cannot suppress duplicates across replicas. Use one ingestion source per log type when deploying more than one replica.")
@@ -1190,6 +1191,27 @@ func (c *Config) validationChecks() []configCheck {
 	add("otlp.protocol", oneOfRemediation("otlp.protocol", "grpc", "http", "stdout"), func() error {
 		if !oneOf(c.OTLP.Protocol, "grpc", "http", "stdout") {
 			return fmt.Errorf("otlp.protocol %q invalid: must be one of grpc, http, stdout", c.OTLP.Protocol)
+		}
+		return nil
+	})
+	add("delivery.log_max_record_age", "Set delivery.log_max_record_age above each enabled poll collector lag; 0 disables the log horizon.", func() error {
+		age := c.Delivery.LogMaxRecordAge
+		if age < 0 {
+			return fmt.Errorf("delivery.log_max_record_age must be >= 0")
+		}
+		if age > 0 {
+			for _, poll := range []struct {
+				name, source string
+				enabled      bool
+				lag          Duration
+			}{
+				{"flowlogs", c.Collectors.Flowlogs.Source, c.Collectors.Flowlogs.Enabled, c.Collectors.Flowlogs.Lag},
+				{"auditlogs", c.Collectors.Auditlogs.Source, c.Collectors.Auditlogs.Enabled, c.Collectors.Auditlogs.Lag},
+			} {
+				if poll.enabled && pollsSource(poll.source) && age <= poll.lag {
+					return fmt.Errorf("delivery.log_max_record_age must exceed collectors.%s.lag (%v) for an enabled poll source, or be 0 to disable the horizon", poll.name, poll.lag.D())
+				}
+			}
 		}
 		return nil
 	})

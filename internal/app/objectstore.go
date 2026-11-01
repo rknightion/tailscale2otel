@@ -224,6 +224,8 @@ func newObjectStoreCollector(
 	}
 
 	opts := objectStoreOptions(dest)
+	opts.LogMaxRecordAge = d.cfg.Delivery.LogMaxRecordAge.D()
+	opts.HorizonSelfObs = d.cfg.SelfObservability.Enabled
 	opts.Logger = d.logger
 	opts.OnIngest = onIngest
 	opts.OnAccepted = onAccepted

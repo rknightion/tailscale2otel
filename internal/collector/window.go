@@ -12,13 +12,14 @@ import "time"
 //     huge range; the collector catches up over successive ticks.
 //   - ok is false when there is nothing new to poll yet (from >= to), in which
 //     case the caller should skip this tick without advancing the checkpoint.
-func nextWindow(last time.Time, hasLast bool, now time.Time, lag, initialLookback, maxWindow time.Duration) (from, to time.Time, ok bool) {
+func nextWindow(last time.Time, hasLast bool, now time.Time, lag, initialLookback, maxWindow, logMaxRecordAge time.Duration) (from, to time.Time, ok bool) {
 	to = now.Add(-lag)
 	if hasLast {
 		from = last
 	} else {
 		from = to.Add(-initialLookback)
 	}
+	from = ClampLogStart(from, now, logMaxRecordAge)
 	if !to.After(from) {
 		return time.Time{}, time.Time{}, false
 	}

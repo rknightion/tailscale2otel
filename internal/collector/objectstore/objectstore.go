@@ -171,7 +171,11 @@ type Options struct {
 	Interval        time.Duration
 	Lookback        time.Duration
 	InitialLookback time.Duration
-	MaxObjects      int
+	// LogMaxRecordAge bounds catch-up and emitted log timestamps; zero disables it.
+	LogMaxRecordAge time.Duration
+	// HorizonSelfObs controls the skipped-span counter (the WARN is unconditional).
+	HorizonSelfObs bool
+	MaxObjects     int
 	// MaxSeenKeys bounds the durable seen-object identities regardless of what
 	// pruning by time would keep. It must be positive when supplied by config;
 	// direct package callers that leave it unset retain the historical bound.
@@ -371,13 +375,27 @@ const opListObjects = "listObjects"
 // ingestion behind it forever.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	now := c.now().UTC()
+	admission := newHorizonAdmission(now, c.opts.LogMaxRecordAge)
 	cursor, ok := c.cp.Get(cursorKey)
 	if !ok || cursor.IsZero() {
 		cursor = now.Add(-c.opts.InitialLookback)
 	}
+	floor := admission.start(cursor)
+	if floor.After(cursor) {
+		err := c.cp.Set(cursorKey, floor)
+		consumed, present := c.cp.Get(cursorKey)
+		if err == nil || (present && !consumed.Before(floor)) {
+			collector.ReportLogHorizonSkip(e, c.logger, c.Name(), cursor, floor, c.opts.HorizonSelfObs)
+		}
+		if err != nil {
+			return err
+		}
+		cursor = floor
+	}
+	e = collector.LogHorizonEmitter(e, c.now, c.opts.LogMaxRecordAge)
 	// Overlap backwards so an object that landed after the cursor passed its
 	// timestamp is still found. The seen set is what makes this free.
-	from := cursor.Add(-c.opts.Lookback)
+	from := admission.start(cursor.Add(-c.opts.Lookback))
 
 	state, err := loadScanState(c.cp, c.opts.Prefix, c.opts.Layout)
 	if err != nil {
@@ -395,6 +413,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	batch := newCheckpointBatch()
 	for _, key := range state.StaleKeys {
 		batch.delete(key)
+	}
+	// Saved walks are admitted before listingPrefixes applies its prefix cap.
+	// Keep a boundary day: it can contain both expired and acceptable objects.
+	for prefix := range state.Positions {
+		if admission.expiredPartition(prefix, c.opts.Layout) {
+			delete(state.Positions, prefix)
+			batch.clearScanPosition(c.cp, prefix)
+		}
 	}
 	seen, err := c.seenKeys()
 	if err != nil {
@@ -517,12 +543,22 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	gapDeferred := 0
+	expiredSkipped := 0
 	// retried counts attempts, not objects: one gap row attempted on three cycles
 	// is three retries, which is what distinguishes an object recovering from one
 	// failing over and over under the bounded backoff.
 	retried := 0
 	cycleExhausted := false
 	for _, gap := range gaps {
+		at, comp, parsed := parseKey(gap.Key, c.opts.Layout)
+		if parsed && !admission.allows(at) {
+			// Expired history cannot use the retry budget ahead of current data.
+			// Retire its state atomically with this cycle's other checkpoint work.
+			delete(gapsByIdentity, gap.Identity)
+			batch.resolveGap(c.cp, gap.Identity)
+			expiredSkipped++
+			continue
+		}
 		if gap.Quarantined || now.Before(gap.NextAttempt) {
 			continue
 		}
@@ -530,7 +566,6 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			gapDeferred++
 			continue
 		}
-		at, comp, parsed := parseKey(gap.Key, c.opts.Layout)
 		if !parsed {
 			gap.Attempts++
 			gap.Quarantined = true
@@ -553,7 +588,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
-	listing, listAttempted, listErr, err := c.enumerate(ctx, from, now, seen, gapsByIdentity, state.Positions, e)
+	listing, listAttempted, listErr, err := c.enumerate(ctx, from, now, admission, seen, gapsByIdentity, state.Positions, e)
 	// Observed once per Collect, right after the scan finishes, on every path
 	// including the error path below: enumerate aborts on its FIRST failing
 	// List call, so listErr here is exactly that first non-nil List error this
@@ -665,6 +700,10 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if err := batch.apply(c.cp); err != nil {
 		return fmt.Errorf("objectstore: persist collection state: %w", err)
 	}
+	if expiredSkipped > 0 {
+		e.Counter(docSkipped.Name, docSkipped.Unit, docSkipped.Description, float64(expiredSkipped),
+			telemetry.Attrs{attrReason: reasonBeforeCursor})
+	}
 	return nil
 }
 
@@ -733,6 +772,38 @@ func flatPrefix(base string) string {
 	return base + "/"
 }
 
+// horizonAdmission is the one immutable absolute cutoff for a collection cycle.
+// Every retained scan, gap retry and listed candidate crosses it before a
+// prefix or object budget is consumed. A zero cutoff disables admission limits.
+type horizonAdmission struct{ cutoff time.Time }
+
+func newHorizonAdmission(now time.Time, age time.Duration) horizonAdmission {
+	if age <= 0 {
+		return horizonAdmission{}
+	}
+	return horizonAdmission{cutoff: now.Add(-age)}
+}
+
+func (h horizonAdmission) allows(at time.Time) bool {
+	return h.cutoff.IsZero() || !at.Before(h.cutoff)
+}
+
+func (h horizonAdmission) start(at time.Time) time.Time {
+	if !h.allows(at) {
+		return h.cutoff
+	}
+	return at
+}
+
+func (h horizonAdmission) expiredPartition(prefix string, layout Layout) bool {
+	if h.cutoff.IsZero() || layout != LayoutPartitioned || len(prefix) < len("2006/01/02/") {
+		return false
+	}
+	// Loaded partition prefixes have already passed configuration/layout checks.
+	day, err := time.Parse("2006/01/02/", prefix[len(prefix)-len("2006/01/02/"):])
+	return err == nil && !day.AddDate(0, 0, 1).After(h.cutoff)
+}
+
 // beforeLowerBound reports whether an object stamped at is skipped for sitting
 // below the listing lower bound.
 //
@@ -775,6 +846,7 @@ func (c *Collector) beforeLowerBound(at, from time.Time, active bool) bool {
 func (c *Collector) enumerate(
 	ctx context.Context,
 	from, now time.Time,
+	admission horizonAdmission,
 	seen map[string]struct{},
 	gaps map[string]gapState,
 	positions map[string]string,
@@ -821,6 +893,11 @@ func (c *Collector) enumerate(
 				// never become a candidate: a candidate is what advances the
 				// cursor, and the cursor is the next cycle's lower bound.
 				future++
+			case !admission.allows(at):
+				// Absolute admission precedes the active-partition overlap
+				// exemption and candidate/object-budget admission.
+				stale++
+				item.safe = true
 			case c.beforeLowerBound(at, from, progress.active):
 				stale++
 				item.safe = true

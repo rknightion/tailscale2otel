@@ -152,6 +152,7 @@ func newRuntime(rt *tailnetRuntime, d runtimeDeps) *tailnetRuntime {
 	schedOpts := []collector.SchedulerOption{
 		collector.WithLogger(withComponent(d.logger, compCollector)),
 		collector.WithSelfObs(selfObs),
+		collector.WithLogMaxRecordAge(cfg.Delivery.LogMaxRecordAge.D()),
 		collector.WithStatusTracker(rt.status),
 		collector.WithTracer(rt.tracer),
 		collector.WithStaggerWindow(cfg.Scheduler.InitialStaggerWindow.D()),

@@ -211,6 +211,21 @@ suggests it. Keys under a dynamic map (`otlp.headers.*`, a node-metrics target's
 
 ## Delivery modes {#delivery-modes}
 
+`delivery.log_max_record_age` defaults to `144h` (six days). Poll and object-store
+catch-up starts at the newer of its cursor/initial lookback and `now - log_max_record_age`.
+The scheduler applies this before `max_window` chunking and after replay overlap.
+Each intentionally skipped span is consumed in the checkpoint, counted in
+`tailscale2otel.log.catchup.skipped` (seconds, with `tailscale.collector`), and reported
+with one WARN. This is deliberate loss of backend-rejected history, not a record-count estimate.
+Old source-timestamped logs inside a returned window or object are also suppressed; metrics
+retain their existing processing. Key lifecycle events use the same horizon and baseline older
+transitions. `0s` disables these clamps everywhere, allowing historical backfill only when the
+backend accepts it. Negative values and a nonzero horizon at or below an enabled poll collector's `lag`
+are rejected, because that leaves no mature records within the allowed horizon.
+Set the horizon below the backend's maximum
+accepted record age. The environment override is `TS2OTEL_DELIVERY__LOG_MAX_RECORD_AGE`.
+An enabled poll or object-store `initial_lookback` beyond the horizon warns at startup.
+
 `delivery.mode` selects the first-class metrics delivery path. Its default is `otlp`, which preserves
 the existing OTLP exporter behaviour. Valid values are:
 
@@ -1052,7 +1067,7 @@ be built from it, and that is an immutable fault rather than something a retry f
 | `collectors.flowlogs.objectstore.session_token_file` | `""` | Read the temporary session token from this path instead of an inline value. Set value **or** file, never both; content is whitespace-trimmed at startup. |
 | `collectors.flowlogs.objectstore.interval` | `60s` | How often the bucket is listed. |
 | `collectors.flowlogs.objectstore.lookback` | `1h` | How far back past the cursor each listing reaches, so an object that arrived late is still found. Setting it below `interval` is warned about: the overlap would be smaller than the gap between listings, so an object landing between two cycles could be missed. |
-| `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. **Capped in effect at 14 days under `layout: partitioned`** - a larger value silently ingests only the most recent 14 day partitions and is warned about at startup. |
+| `collectors.flowlogs.objectstore.initial_lookback` | `6h` | Cold-start reach-back, so a first run against a bucket holding months of exports does not try to ingest all of it. **Clamped to `delivery.log_max_record_age` (six days by default).** With that clamp disabled, `layout: partitioned` additionally enumerates at most the newest 14 day partitions and warns about a larger lookback; flat and recorder layouts have no partition cap. |
 | `collectors.flowlogs.objectstore.max_objects` | `200` | Objects ingested per cycle. Exceeding it is not an error: the remainder is counted into `tailscale2otel.objectstore.skipped{reason="per_cycle_budget"}`, logged at WARN, reported by the `tailscale2otel.objectstore.backlog` gauge, and picked up next cycle. |
 | `collectors.flowlogs.objectstore.max_seen_keys` | `5000` | Durable seen-object identities retained per destination. Too small a value can re-admit an evicted object inside the lookback as new; must be positive. |
 | `collectors.flowlogs.objectstore.max_object_wire_bytes` | `67108864` (64 MiB) | Maximum GET response bytes read from one object. A breach quarantines that object as a durable gap, including compressed objects that consume work without producing decoded rows. Must be positive. |

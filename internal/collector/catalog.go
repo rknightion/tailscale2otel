@@ -17,7 +17,15 @@ import (
 // enrich.cache_* metrics.
 const groupSelfObs = "Self-observability"
 
+// MetricLogHorizonSkipped is the intentionally skipped catch-up span, in seconds.
+const MetricLogHorizonSkipped = "tailscale2otel.log.catchup.skipped"
+
 var (
+	docLogHorizonSkipped = metricdoc.Metric{
+		Name: MetricLogHorizonSkipped, Unit: semconv.UnitSeconds, Instrument: metricdoc.Counter,
+		Description: "Catch-up time span intentionally skipped because it predates delivery.log_max_record_age, by collector.",
+		Attributes:  []string{semconv.AttrCollector}, Group: groupSelfObs,
+	}
 	docScrapeDuration = metricdoc.Metric{
 		Name:        MetricScrapeDuration,
 		Unit:        semconv.UnitSeconds,
@@ -102,7 +110,7 @@ var (
 // Catalog returns the self-observability metrics this package emits, for the doc
 // generator.
 func Catalog() []metricdoc.Metric {
-	return []metricdoc.Metric{docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docScrapeDurationHistogram, docCheckpointPersistErrors, docCheckpointDiskSize, docCheckpointPersistAge}
+	return []metricdoc.Metric{docLogHorizonSkipped, docScrapeDuration, docScrapeSuccess, docScrapeErrors, docScrapeLastTimestamp, docScrapeStaleness, docScrapeBudget, docScrapeDurationHistogram, docCheckpointPersistErrors, docCheckpointDiskSize, docCheckpointPersistAge}
 }
 
 // LogCatalog returns the log events this package emits (none).

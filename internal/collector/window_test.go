@@ -57,7 +57,7 @@ func TestNextWindow(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			from, to, ok := nextWindow(tc.last, tc.hasLast, now, lag, initial, maxW)
+			from, to, ok := nextWindow(tc.last, tc.hasLast, now, lag, initial, maxW, 0)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v", ok, tc.wantOK)
 			}
@@ -71,5 +71,15 @@ func TestNextWindow(t *testing.T) {
 				t.Fatalf("to = %v, want %v", to, tc.wantTo)
 			}
 		})
+	}
+}
+
+func TestNextWindowLogHorizon(t *testing.T) {
+	now := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	for _, warm := range []bool{false, true} {
+		from, to, ok := nextWindow(now.Add(-10*24*time.Hour), warm, now, time.Minute, 10*24*time.Hour, time.Hour, 6*24*time.Hour)
+		if !ok || !from.Equal(now.Add(-6*24*time.Hour)) || !to.Equal(from.Add(time.Hour)) {
+			t.Fatalf("warm=%v got %v %v %v", warm, from, to, ok)
+		}
 	}
 }
