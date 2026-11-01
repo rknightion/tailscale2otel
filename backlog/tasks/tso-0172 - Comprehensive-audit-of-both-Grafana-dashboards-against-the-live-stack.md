@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@loop33'
 created_date: 2026-10-11 10:33
-updated_date: '2026-11-01T21:32:00Z'
+updated_date: '2026-11-01T22:06:00Z'
 labels: []
 dependencies:
   - TSO-0191
@@ -609,4 +609,6 @@ loop29: 0 new implementation attempts, 3 cumulative of owner-raised 5. D70 minim
 2026-10-12 re-scope (Rob, after loop28 and loop29 both landed nothing): AC #3 (selector-scope test across all tabs) moved to TSO-0191 (land the dashboard selector-scope guard from the retained audit candidate), which carries the retained loop28 candidate. This task keeps the live evidence: panel verdicts, live query execution with absences explained, and catalog-signal dispositions. It runs after TSO-0191 and the two dashboard-fix chains land, so it audits the fixed dashboards rather than panels about to change. Attempt count carried: 3 of 5 used.
 
 loop33 attempt4of5 admitted after required connectivity/memory landings. Browser signed in; current deployed exporter identifies5.2.1, distinct from newly shipped source. Final exhaustive inventory/query window will bind the final published dashboard artifacts; no audit acceptance yet.
+
+loop33 retained live Inventory and Hygiene render inspected independently across all33panels. Structural findings filed: TSO-0211 (readable dense device and tag labels), TSO-0212 (visible device table measurements), TSO-0213 (readable absent security-flag states), TSO-0214 (legible organization-tailnet card), TSO-0215 (duration units restricted to measurement fields). These are newly observed follow-ups outside the owner-approved loop33 implementation set. Device-country map absence remains under causal investigation, not assumed defective from a blank basemap. No panel verdict is accepted merely because its backend query returned successfully.
 <!-- SECTION:NOTES:END -->

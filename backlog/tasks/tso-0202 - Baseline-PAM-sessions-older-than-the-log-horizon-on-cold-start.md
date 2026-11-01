@@ -1,10 +1,11 @@
 ---
 id: TSO-0202
 title: Baseline PAM sessions older than the log horizon on cold start
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loop33'
 created_date: '2026-11-01T20:55:00Z'
-updated_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:58:00Z'
 labels: []
 dependencies:
   - TSO-0201
@@ -33,3 +34,9 @@ With no cursor, internal/collector/pam/sessions.go pages every historical sessio
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Use landed delivery.log_max_record_age in PAM sessions: deterministic cold-start older/newer fixtures, seen baseline without old logs, unchanged warm cursor behavior, zero-disable coverage; exact gate and code review.
+<!-- SECTION:PLAN:END -->
