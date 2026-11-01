@@ -104,6 +104,8 @@ tool module can never affect the main module's build.
   `internal/app` and imports `internal/catalog` to render its tables, so the app layer's own
   self-obs descriptors live in the leaf package `internal/appcatalog`. Put new app-layer descriptors
   there; `internal/app/catalog_test.go` guards them against their emit sites.
+- Loki range queries use `$__auto`; never copy the Prometheus-only `$__rate_interval` into Loki.
+  Offline macro substitutions can mask real browser query errors.
 - OTLP-to-Prometheus naming: queries use the *normalized* name, not the OTEL source name. Dots to
   underscores, monotonic counters get `_total`, units suffix (`By`->`_bytes`, `s`->`_seconds`,
   `d`->`_days`), and a unit-`"1"` gauge gets `_ratio` even for plain integer counts

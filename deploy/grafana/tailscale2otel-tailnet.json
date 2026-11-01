@@ -15505,7 +15505,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum(rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__rate_interval]))",
+                        "expr": "sum(rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "log events"

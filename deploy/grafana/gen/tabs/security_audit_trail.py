@@ -128,7 +128,7 @@ def tab_security_audit_trail(scope):
                [prom_t("sum by (tailscale_audit_change, tailscale_audit_action) "
                        "(rate(tailscale_config_audit_changes_total[%s]))" % RI,
                        legend="metric {{tailscale_audit_change}}/{{tailscale_audit_action}}"),
-                loki_t("sum(rate(%s [%s]))" % (AUD, RI),
+                loki_t("sum(rate(%s [$__auto]))" % AUD,
                        legend="log events")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
                novalue="0",
