@@ -1,9 +1,10 @@
 ---
 id: TSO-0201
 title: Clamp log catch-up windows to a shared log-acceptance horizon
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:01:00Z'
 labels:
   - guarded
   - data-loss
@@ -37,3 +38,9 @@ nextWindow (internal/collector/window.go) resumes from a checkpoint of any age a
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Loop33 horizon lane: shared key and clamp/count semantics across ingestion paths, config seams, gate and review.
+<!-- SECTION:PLAN:END -->

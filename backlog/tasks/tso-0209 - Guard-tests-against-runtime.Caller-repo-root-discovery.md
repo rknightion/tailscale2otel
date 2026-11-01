@@ -1,9 +1,10 @@
 ---
 id: TSO-0209
 title: Guard tests against runtime.Caller repo-root discovery
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:01:00Z'
 labels:
   - test
 dependencies: []
@@ -29,3 +30,9 @@ Commit 55c8d1d9 replaced runtime.Caller root discovery with internal/repotest.Ro
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Loop33 rootguard lane: AST guard with planted negative, gate and review.
+<!-- SECTION:PLAN:END -->

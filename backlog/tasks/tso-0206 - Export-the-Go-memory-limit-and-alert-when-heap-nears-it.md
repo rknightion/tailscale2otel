@@ -1,9 +1,10 @@
 ---
 id: TSO-0206
 title: Export the Go memory limit and alert when heap nears it
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-01T20:55:00Z'
+updated_date: '2026-11-01T21:01:00Z'
 labels:
   - alerts
   - dashboards
@@ -33,3 +34,9 @@ OOM restarts happened (TSO-0192, TSO-0197). The chart sets GOMEMLIMIT but no met
 - [ ] #2 just gen leaves no diff (only if a generated artifact's inputs changed)
 - [ ] #3 just --fmt --check passes and every new recipe has a # doc comment and a [group(...)]
 <!-- DOD:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+Loop33 memory lane: effective memory limit gauge, panel and alert, gate and review.
+<!-- SECTION:PLAN:END -->
