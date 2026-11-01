@@ -122,6 +122,9 @@ tool module can never affect the main module's build.
   latency, routes, os.version, nodeId, tags) comes from `tsapi.DevicesRich()` (raw
   `GET /devices?fields=all`), **not** the flat `tsclient.Device`. Synthetic fixtures miss these;
   validate record-type changes against the real captures in `.capture/`.
+- `DevicesRich` decodes `postureStatus` as a name-keyed verdict map. The vendored singleton
+  schema needs the explicit, tested synthesis overlay in the contract tests. `failingAssertions`
+  stays PII-filtered free text in log details; never promote it to metric labels.
 - Profiling is opt-in and admin-coupled: `/debug/pprof` mounts on the admin server, so
   `profiling.pprof.enabled` requires `admin.enabled` (`Validate()` errors otherwise). Mutex and
   block profiles stay empty unless `mutex_profile_fraction`/`block_profile_rate` are set. The

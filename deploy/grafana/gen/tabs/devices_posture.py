@@ -19,7 +19,7 @@ the name at its OWN scope. The registry allows one name in two different TAB sco
 forbids only the dashboard+tab mix.
 """
 
-from builder import (autogrid_row, barchart_opts, hq, lot, organize, panel, PII,
+from builder import (LOKI_TN, loki_t, autogrid_row, barchart_opts, hq, lot, organize, panel, PII,
                      pii_sentinel, prom_t, row, sentinel, stat_opts, thr, ts_custom,
                      ts_opts, WIN_SLOW)
 from tabs._devices_common import NO_PER_DEVICE, TP
@@ -174,7 +174,39 @@ def tab_devices_posture(scope):
                     "rather than counted as non-compliant."), 24, 8),
     ]
 
+    status_rollups = [
+        (panel("Devices failing impacting postures", "timeseries",
+               [prom_t("max by (tailscale_tailnet, tailscale2otel_provider, tailscale_posture_name) (%s)" % lot('tailscale_devices_posture_failed_ratio{tailscale_posture_impacting="true"}', WIN_SLOW),
+                       legend="{{tailscale_tailnet}} {{tailscale_posture_name}}")],
+               unit="short", options=ts_opts(),
+               desc="Server-evaluated failing device count per impacting posture, from fields=all. Available with per-device metrics disabled. Zero means a reported posture has no impacting failures; absence means no posture verdicts reported. Up to 50 lexical posture names per poll."), 16, 7),
+        (panel("Posture names dropped", "stat",
+               [prom_t("max(%s)" % lot("tailscale_devices_posture_names_dropped_ratio", WIN_SLOW))],
+               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
+               options=stat_opts(color="background"),
+               desc="Posture names omitted beyond the fleet-wide 50-name cap on this poll. Dropped postures are absent from verdict gauges, rollups and assertion change logs."), 8, 7),
+    ]
+    status_devices = [
+        (panel("Server posture passing by device", "table",
+               [prom_t(lot("tailscale_device_posture_passing_ratio{host_name=~\"$host_name\"}", WIN_SLOW), instant=True, fmt="table")],
+               transformations=[organize(exclude=_infra)],
+               desc="Server-evaluated posture verdict per device: 1 passing, 0 failing. Requires per-device metrics. Assertion text is log-only."), 12, 8),
+        (panel("Server posture impacting by device", "table",
+               [prom_t(lot("tailscale_device_posture_impacting_ratio{host_name=~\"$host_name\"}", WIN_SLOW), instant=True, fmt="table")],
+               transformations=[organize(exclude=_infra)],
+               desc="Server-reported impacting flag per device and posture: 1 impacting, 0 non-impacting. Requires per-device metrics."), 12, 8),
+    ]
+
+    status_logs = [
+        (panel("Posture assertion changes", "logs",
+               [loki_t(LOKI_TN + ' | event_name=`tailscale.device.posture.failing_assertions` | host_name=~"$host_name"')],
+               desc="One record per device when its failing posture assertions change. Assertion text is in the free-text PII-filtered details attribute; posture_log_mode=off suppresses these logs."), 24, 8),
+    ]
+
     return [
+        row("Server posture assertion changes", status_logs, hide_when=["pii_perdevice"]),
+        row("Server-evaluated posture failures", status_rollups),
+        row("Server-evaluated device verdicts", status_devices, hide_when=["pii_perdevice"]),
         autogrid_row("Device security flags", secflags, present="has_device_flags"),
         # Deliberate asymmetry (a 6-wide stat beside an 18-wide timeseries, then a
         # full-width barchart) — AutoGrid would flatten it to equal cells, so this row

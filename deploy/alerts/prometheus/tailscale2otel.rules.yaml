@@ -668,6 +668,16 @@ groups:
         annotations:
           summary: "Device node keys are expiring within 7 days"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#credential-expiry"
+      - alert: "DevicesFailingImpactingPostures"
+        expr: "(max by (tailscale_tailnet, tailscale2otel_provider, tailscale_posture_name) (tailscale_devices_posture_failed_ratio{tailscale_posture_impacting=\"true\"})) > 0"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "Devices fail impacting posture {{ $labels.tailscale_posture_name }}"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
       - alert: "DevicePostureAttributeExpiring14d"
         expr: "(count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and (max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))) > 0"
         for: "1h"

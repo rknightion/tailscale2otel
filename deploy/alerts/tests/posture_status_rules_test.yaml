@@ -1,0 +1,42 @@
+# Server verdict rollups must alert only on impacting failures and clear on recovery.
+rule_files:
+  - ../prometheus/tailscale2otel.rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - name: impacting failures alert while non-impacting and passing postures stay quiet
+    interval: 1m
+    input_series:
+      - series: 'tailscale_devices_posture_failed_ratio{tailscale_tailnet="synthetic",tailscale_posture_name="posture:required",tailscale_posture_impacting="true"}'
+        values: '1x20 0x20'
+      - series: 'tailscale_devices_posture_failed_ratio{tailscale_tailnet="synthetic",tailscale_posture_name="posture:advisory",tailscale_posture_impacting="false"}'
+        values: '5x40'
+      - series: 'tailscale_devices_posture_failed_ratio{tailscale_tailnet="synthetic",tailscale_posture_name="posture:healthy",tailscale_posture_impacting="true"}'
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: DevicesFailingImpactingPostures
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: DevicesFailingImpactingPostures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: security
+              tailscale_tailnet: synthetic
+              tailscale_posture_name: posture:required
+            exp_annotations:
+              summary: "Devices fail impacting posture posture:required"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#device-posture-coverage"
+      - eval_time: 30m
+        alertname: DevicesFailingImpactingPostures
+        exp_alerts: []
+  - name: absent posture verdicts do not invent healthy or failing devices
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: DevicesFailingImpactingPostures
+        exp_alerts: []

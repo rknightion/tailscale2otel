@@ -48,7 +48,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 262 | 261 | 59 | 11 | 46 |
+| operational | 267 | 266 | 60 | 11 | 46 |
 | self_obs | 106 | 106 | 45 | 9 | 10 |
 
 ## Operational signals
@@ -64,6 +64,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.change` | log_event | `event_name="tailscale.device.change"` | visualized |  |
 | `tailscale.device.key_expiring` | log_event | `event_name="tailscale.device.key_expiring"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Security & Audit > Identity & Keys. |
 | `tailscale.device.posture` | log_event | `event_name="tailscale.device.posture"` | visualized, drives_a_variable |  |
+| `tailscale.device.posture.failing_assertions` | log_event | `event_name="tailscale.device.posture.failing_assertions"` | visualized |  |
 | `tailscale.device.tailnet_lock_error` | log_event | `event_name="tailscale.device.tailnet_lock_error"` | visualized |  |
 | `tailscale.device_invite` | log_event | `event_name="tailscale.device_invite"` | visualized | #526 wave 2/3: panel scheduled on tailnet/Devices > Inventory & Hygiene. |
 | `tailscale.dns.snapshot` | log_event | `event_name="tailscale.dns.snapshot"` | visualized |  |
@@ -126,6 +127,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.device.multiple_connections` | metric | `tailscale_device_multiple_connections_ratio` | visualized, alertable | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.online` | metric | `tailscale_device_online_ratio` | visualized, alertable, recorded, drives_a_variable |  |
 | `tailscale.device.posture` | metric | `tailscale_device_posture_ratio` | visualized, alertable, recorded, drives_a_variable |  |
+| `tailscale.device.posture.impacting` | metric | `tailscale_device_posture_impacting_ratio` | visualized |  |
+| `tailscale.device.posture.passing` | metric | `tailscale_device_posture_passing_ratio` | visualized |  |
 | `tailscale.device.posture_identity.disabled` | metric | `tailscale_device_posture_identity_disabled_ratio` | visualized | One series per device: deliberately query-only, for ad-hoc drill-down onto a named host rather than a default panel that would carry the whole fleet. |
 | `tailscale.device.routes.advertised` | metric | `tailscale_device_routes_advertised` | visualized, drives_a_variable |  |
 | `tailscale.device.routes.enabled` | metric | `tailscale_device_routes_enabled` | visualized |  |
@@ -147,6 +150,8 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.devices.key_expiry` | metric | `tailscale_devices_key_expiry_days` | visualized, drives_a_variable |  |
 | `tailscale.devices.key_expiry_disabled` | metric | `tailscale_devices_key_expiry_disabled_ratio` | visualized, alertable |  |
 | `tailscale.devices.outdated` | metric | `tailscale_devices_outdated_ratio` | visualized, alertable |  |
+| `tailscale.devices.posture.failed` | metric | `tailscale_devices_posture_failed_ratio` | visualized, alertable |  |
+| `tailscale.devices.posture.names_dropped` | metric | `tailscale_devices_posture_names_dropped_ratio` | visualized |  |
 | `tailscale.devices.posture_compliance.failed` | metric | `tailscale_devices_posture_compliance_failed_ratio` | visualized |  |
 | `tailscale.devices.ssh_enabled` | metric | `tailscale_devices_ssh_enabled_ratio` | visualized |  |
 | `tailscale.devices.untagged` | metric | `tailscale_devices_untagged_ratio` | visualized |  |

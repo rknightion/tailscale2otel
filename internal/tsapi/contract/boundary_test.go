@@ -41,7 +41,7 @@ func TestBoundary_EveryConsumedOperationSurvivesEveryShape(t *testing.T) {
 			continue
 		}
 
-		for _, v := range oas.BoundaryVariants(o.Response, 8) {
+		for _, v := range oas.BoundaryVariants(responseForSynthesis(t, op.ID, o.Response), 8) {
 			if reason, skip := boundaryExemptions[op.ID][v.Kind]; skip {
 				t.Logf("%s/%s: exempt — %s", op.ID, v.Kind, reason)
 				continue
@@ -142,7 +142,7 @@ func TestBoundary_AdditiveFieldIsReportedAsAnUnknownKey(t *testing.T) {
 			continue // bare array: no top-level keys to report
 		}
 
-		for _, v := range oas.BoundaryVariants(o.Response, 8) {
+		for _, v := range oas.BoundaryVariants(responseForSynthesis(t, op.ID, o.Response), 8) {
 			if v.Kind != oas.BoundaryAdditiveField {
 				continue
 			}

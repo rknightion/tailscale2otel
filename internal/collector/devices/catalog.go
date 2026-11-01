@@ -554,9 +554,18 @@ var (
 	}
 )
 
+var (
+	docPosturePassing      = metricdoc.Metric{Name: "tailscale.device.posture.passing", Unit: semconv.UnitDimensionless, Instrument: metricdoc.Gauge, Description: "Server-evaluated posture passing flag (`1` passing, `0` failing). Up to 50 lexical posture names per poll; gated by `cardinality.per_entity.device`, with no extra API calls.", Attributes: []string{semconv.HostID, semconv.HostName, semconv.AttrPostureName}, Group: groupDevices}
+	docPostureImpacting    = metricdoc.Metric{Name: "tailscale.device.posture.impacting", Unit: semconv.UnitDimensionless, Instrument: metricdoc.Gauge, Description: "Server-reported posture impacting flag (`1` impacting, `0` non-impacting). Uses the same capped posture set as passing; gated by `cardinality.per_entity.device`.", Attributes: []string{semconv.HostID, semconv.HostName, semconv.AttrPostureName}, Group: groupDevices}
+	docPostureFailed       = metricdoc.Metric{Name: "tailscale.devices.posture.failed", Unit: semconv.UnitDimensionless, Instrument: metricdoc.Gauge, Description: "Number of failing devices per server-evaluated posture and impacting state (a count despite `_ratio`). Up to 50 lexical posture names per poll; emitted even with per-device metrics off. Explicit zeroes for reported postures, absent when postureStatus is empty or absent.", Attributes: []string{semconv.AttrPostureName, semconv.AttrPostureImpacting}, Group: groupDevices}
+	docPostureNamesDropped = metricdoc.Metric{Name: "tailscale.devices.posture.names_dropped", Unit: semconv.UnitDimensionless, Instrument: metricdoc.Gauge, Description: "Distinct server-evaluated posture names omitted beyond the fleet-wide 50-name cap on this poll.", Group: groupDevices}
+	docPostureStatusLog    = metricdoc.LogEvent{Name: "tailscale.device.posture.failing_assertions", Severity: "WARN", Description: "Failing assertions for a device's selected server-evaluated postures, once on first failure and each change; recovery resets the baseline. Assertions are JSON in the existing free-text PII-filtered posture details attribute, never metric labels. Suppressed by posture_log_mode=off.", Attributes: []string{semconv.HostID, semconv.HostName, attrPostureDetails}, Group: groupDevices}
+)
+
 // Catalog returns the metrics this package emits, for the doc generator.
 func Catalog() []metricdoc.Metric {
 	return []metricdoc.Metric{
+		docPosturePassing, docPostureImpacting, docPostureFailed, docPostureNamesDropped,
 		docOnline, docLastSeen, docKeyExpiry, docUpdateAvailable, docDERPLatency,
 		docMultipleConnections, docBlocksIncomingConnections, docPostureIdentityDisabled,
 		docRoutesAdvertised, docRoutesEnabled, docDevicesCount, docDeviceInvites, docPostureInfo,
@@ -578,5 +587,5 @@ func Catalog() []metricdoc.Metric {
 
 // LogCatalog returns the log events this package emits, for the doc generator.
 func LogCatalog() []metricdoc.LogEvent {
-	return []metricdoc.LogEvent{docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog, docDeviceAttributeExpiringLog, docDeviceChangeLog}
+	return []metricdoc.LogEvent{docPostureStatusLog, docPosture, docTailnetLockError, docDeviceInviteLog, docDeviceKeyExpiryLog, docDeviceAttributeExpiringLog, docDeviceChangeLog}
 }

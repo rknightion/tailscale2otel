@@ -407,7 +407,8 @@ type Collector struct {
 	// lastPosture remembers each device's last-emitted posture signature
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
 	// device absent from the map is first-seen and counts as changed.
-	lastPosture map[string]string
+	lastPosture       map[string]string
+	lastPostureStatus map[string][32]byte
 
 	// Expiry state is retained only while an entity remains inside the warning
 	// window. The maps are pruned to the current tick's expiring entities after
@@ -939,6 +940,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if c.changeLogEnabled {
 		c.observeDeviceChanges(e, devs, c.now())
 	}
+
+	c.emitPostureStatus(e, devs)
 
 	c.cache.Replace(toMetas(devs))
 	// cache_age is NOT emitted here: right after Replace it is always ~0, so a

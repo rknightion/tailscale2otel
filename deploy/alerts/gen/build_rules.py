@@ -1363,6 +1363,17 @@ def groups():
               "(ts2o-device-key-expiring-critical) is restricted to tagged devices.",
               domain="security", paused=False,
               policy="optional", runbook="credential-expiry", panel="Devices by days-to-expiry bucket"),
+        alert("ts2o-device-posture-impacting", "Devices failing impacting postures",
+              'max by (tailscale_tailnet, tailscale2otel_provider, tailscale_posture_name) (tailscale_devices_posture_failed_ratio{tailscale_posture_impacting="true"})',
+              "gt", 0, "15m", "warning",
+              "Devices fail impacting posture {{ $labels.tailscale_posture_name }}",
+              "One or more devices have failed a server-evaluated impacting posture for 15 minutes. "
+              "Inspect assertion change logs and repair the failing device posture. "
+              "The rollup is available with per-device metrics disabled; absent when no posture verdicts are reported. "
+              "Posture names are capped at 50 per poll.",
+              domain="security", paused=False,
+              policy="optional", runbook="device-posture-coverage",
+              panel="Devices failing impacting postures"),
         alert("ts2o-device-attribute-expiring-14d", "Device posture attribute expiring (<14d)",
               "count((max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() < 14*86400) and "
               "(max by (host_id, attribute) (tailscale_device_attribute_expiry_seconds) - time() > 0))",

@@ -374,3 +374,9 @@ const (
 	UnitDays          = "d"
 	UnitDimensionless = "1"
 )
+
+// Server-evaluated posture metric dimensions; assertion text is never a label.
+const (
+	AttrPostureName      = "tailscale.posture.name"
+	AttrPostureImpacting = "tailscale.posture.impacting"
+)

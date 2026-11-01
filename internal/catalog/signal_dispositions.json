@@ -105,6 +105,14 @@
     },
     {
       "kind": "log_event",
+      "name": "tailscale.device.posture.failing_assertions",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "log_event",
       "name": "tailscale.device.tailnet_lock_error",
       "surface": "operational",
       "dispositions": [
@@ -708,6 +716,24 @@
     },
     {
       "kind": "metric",
+      "name": "tailscale.device.posture.impacting",
+      "prom_name": "tailscale_device_posture_impacting_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.device.posture.passing",
+      "prom_name": "tailscale_device_posture_passing_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
+      ]
+    },
+    {
+      "kind": "metric",
       "name": "tailscale.device.posture_identity.disabled",
       "prom_name": "tailscale_device_posture_identity_disabled_ratio",
       "surface": "operational",
@@ -908,6 +934,25 @@
       "dispositions": [
         "visualized",
         "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.devices.posture.failed",
+      "prom_name": "tailscale_devices_posture_failed_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized",
+        "alertable"
+      ]
+    },
+    {
+      "kind": "metric",
+      "name": "tailscale.devices.posture.names_dropped",
+      "prom_name": "tailscale_devices_posture_names_dropped_ratio",
+      "surface": "operational",
+      "dispositions": [
+        "visualized"
       ]
     },
     {

@@ -73,7 +73,7 @@ func TestFuzz_SchemaSynthDecodes(t *testing.T) {
 			continue
 		}
 
-		body := oas.SynthesizeBody(o.Response, 8)
+		body := oas.SynthesizeBody(responseForSynthesis(t, op.ID, o.Response), 8)
 		rep := contract.Decode(op, body)
 		if rep.Err != nil {
 			t.Errorf("%s: synth body decode err: %v\nbody=%s", op.ID, rep.Err, body)

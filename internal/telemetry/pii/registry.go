@@ -159,6 +159,9 @@ var geoNonIdentifier = map[string]bool{
 
 // nonIdentifier is the explicit allowlist of keys that are never PII/identifiers.
 var nonIdentifier = map[string]bool{
+	// Posture names are bounded operator-defined policy check names, like check below.
+	// The collector selects at most 50 per poll; impacting is a boolean verdict.
+	"tailscale.posture.name": true, "tailscale.posture.impacting": true,
 	// Kubernetes-audit (#462): every one of these is normalized to a closed
 	// admit-set before emission (unknown -> "other"), so none can carry a
 	// client-controlled value. tailscale.k8s.command_class in particular is the

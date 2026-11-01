@@ -202,6 +202,9 @@ def violations(doc):
                                 offenders.append((identity, ds, var, expr))
                     if 'tailscale.device_invite' in expr and 'host_name' in names and '$host_name' not in expr:
                         offenders.append((identity, ds, 'host_name', expr))
+                    if ('tailscale.device.posture.failing_assertions' in expr and 'host_name' in names
+                            and '| host_name=~"$host_name"' not in expr):
+                        offenders.append((identity, ds, 'host_name', expr))
                     if panel['title'] == 'Log volume by event' and '$log_event' not in expr:
                         offenders.append((identity, ds, 'log_event', expr))
                 elif ds == '${ds_tempo}':
@@ -227,6 +230,20 @@ class SelectorScopeTest(unittest.TestCase):
             doc = build.build(spec)
             with self.subTest(dashboard=spec.uid):
                 self.assertEqual(violations(doc), [])
+
+    def test_posture_assertion_log_obeys_host_selector(self):
+        doc = build.build(dashboards.BY_KEY['tailnet'])
+        panels = [el['spec'] for el in doc['spec']['elements'].values()
+                  if el['spec']['title'] == 'Posture assertion changes']
+        self.assertEqual(len(panels), 1)
+        query = panels[0]['data']['spec']['queries'][0]['spec']['query']['spec']
+        self.assertIn('tailscale.device.posture.failing_assertions', query['expr'])
+        matcher = '| host_name=~"$host_name"'
+        self.assertIn(matcher, query['expr'])
+        self.assertFalse(any(x[0][2] == 'Posture assertion changes' for x in violations(doc)))
+        query['expr'] = query['expr'].replace(matcher, '')
+        self.assertTrue(any(x[0][2] == 'Posture assertion changes' and x[2] == 'host_name'
+                            for x in violations(doc)))
 
     def test_shipped_documents_are_scoped_too(self):
         for spec in dashboards.ALL:

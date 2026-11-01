@@ -46,6 +46,9 @@ type RichDevice struct {
 	// never become telemetry.
 	PostureIdentity *PostureIdentity
 
+	// PostureStatus is the server-evaluated verdict keyed by posture name.
+	PostureStatus map[string]PostureStatus
+
 	// TailnetLockKey is the device's tailnet-lock public key (present on every
 	// node regardless of whether tailnet lock is enabled); TailnetLockError is
 	// non-empty when the node has a tailnet-lock problem (e.g. an unsigned node).
@@ -84,6 +87,13 @@ type RichDevice struct {
 // RichDevice.PostureIdentity) so they can never become telemetry.
 type PostureIdentity struct {
 	Disabled bool
+}
+
+// PostureStatus is a server-evaluated posture verdict. Assertion text is log-only.
+type PostureStatus struct {
+	Passing           bool     `json:"passing"`
+	Impacting         bool     `json:"impacting"`
+	FailingAssertions []string `json:"failingAssertions"`
 }
 
 // DistroInfo describes the operating-system distribution reported by a device.
@@ -137,7 +147,8 @@ type richDevice struct {
 	SSHEnabled                bool `json:"sshEnabled"`
 	IsEphemeral               bool `json:"isEphemeral"`
 
-	MultipleConnections bool `json:"multipleConnections"`
+	MultipleConnections bool                     `json:"multipleConnections"`
+	PostureStatus       map[string]PostureStatus `json:"postureStatus"`
 
 	// PostureIdentity intentionally decodes ONLY the disabled field.
 	// serialNumbers (a wire sibling field) is never given a struct field here,
@@ -195,6 +206,7 @@ func (c *Client) DevicesRich(ctx context.Context) ([]RichDevice, error) {
 	for _, d := range wire.Devices {
 		rd := RichDevice{
 			ID:                        d.ID,
+			PostureStatus:             d.PostureStatus,
 			NodeID:                    d.NodeID,
 			Name:                      d.Name,
 			Hostname:                  d.Hostname,

@@ -1065,6 +1065,25 @@
     },
     {
       "op": "listTailnetDevices",
+      "path": "PostureStatus{}.FailingAssertions[]",
+      "type": "tsapi.RichDevice",
+      "disposition": "emitted",
+      "note": "log only: assertion text is JSON in the existing free-text PII-filtered posture details attribute; never a metric label"
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "PostureStatus{}.Impacting",
+      "type": "tsapi.RichDevice",
+      "disposition": "emitted"
+    },
+    {
+      "op": "listTailnetDevices",
+      "path": "PostureStatus{}.Passing",
+      "type": "tsapi.RichDevice",
+      "disposition": "emitted"
+    },
+    {
+      "op": "listTailnetDevices",
       "path": "SSHEnabled",
       "type": "tsapi.RichDevice",
       "disposition": "emitted"
