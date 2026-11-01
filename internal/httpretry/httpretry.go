@@ -111,21 +111,31 @@ func ComputeBackoff(delay, maxDelay time.Duration, rnd float64) (sleep, next tim
 
 // RetryAfter parses a Retry-After header as either seconds or an HTTP date.
 func RetryAfter(h string) time.Duration {
-	if h == "" {
-		return 0
-	}
+	d, _ := ParseRetryAfter(h, time.Now())
+	return max(d, 0)
+}
+
+// ParseRetryAfter parses seconds or an HTTP date relative to now. The boolean
+// distinguishes an absent or invalid header from a valid nonpositive delay,
+// allowing callers to apply their own immediate-retry and maximum-delay policy.
+// Callers that accept surrounding whitespace should trim it before parsing.
+func ParseRetryAfter(h string, now time.Time) (time.Duration, bool) {
 	if secs, err := strconv.Atoi(h); err == nil {
 		if secs <= 0 {
-			return 0
+			return 0, true
 		}
-		return time.Duration(secs) * time.Second
+		// Saturate before converting seconds to nanoseconds so a large server
+		// delay cannot wrap around into an immediate retry.
+		const maxDuration = time.Duration(1<<63 - 1)
+		if int64(secs) > int64(maxDuration/time.Second) {
+			return maxDuration, true
+		}
+		return time.Duration(secs) * time.Second, true
 	}
 	if when, err := http.ParseTime(h); err == nil {
-		if d := time.Until(when); d > 0 {
-			return d
-		}
+		return when.Sub(now), true
 	}
-	return 0
+	return 0, false
 }
 
 // RetryableOutcome reports whether a generic HTTP outcome warrants a retry.

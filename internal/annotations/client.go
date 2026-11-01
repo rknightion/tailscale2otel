@@ -10,11 +10,11 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/httpguard"
+	"github.com/rknightion/tailscale2otel/v5/internal/httpretry"
 )
 
 // annotationsPath is the ONLY Grafana path this package ever calls. It is a
@@ -246,30 +246,15 @@ const (
 // header) rather than an error: a malformed header must never be able to stall
 // or short-circuit the writer.
 func parseRetryAfter(header string, now time.Time) time.Duration {
-	header = strings.TrimSpace(header)
-	if header == "" {
+	delay, ok := httpretry.ParseRetryAfter(strings.TrimSpace(header), now)
+	if !ok {
 		return 0
 	}
-	clamp := func(d time.Duration) time.Duration {
-		if d <= 0 {
-			// Legal, and means "retry now". Returned as a nanosecond so it
-			// stays distinct from the "absent" zero.
-			return time.Nanosecond
-		}
-		// A proxy answering 429 with a ten-day Retry-After would otherwise park
-		// the writer past any plausible operator attention span.
-		if d > backoffCeiling {
-			return backoffCeiling
-		}
-		return d
+	if delay <= 0 {
+		// Keep a server-stated immediate retry distinct from an absent header.
+		return time.Nanosecond
 	}
-	if seconds, err := strconv.Atoi(header); err == nil {
-		return clamp(time.Duration(seconds) * time.Second)
-	}
-	if at, err := http.ParseTime(header); err == nil {
-		return clamp(at.Sub(now))
-	}
-	return 0
+	return min(delay, backoffCeiling)
 }
 
 // backoffDelay returns the wait for a rate-limited write. A server-stated
