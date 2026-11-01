@@ -1,0 +1,108 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-ingress-wal-expired-entries"
+  },
+  "spec": {
+    "annotations": {
+      "__dashboardUid__": "tailscale2otel-health",
+      "__panelId__": "72",
+      "description": "Accepted ingress WAL entries were retired without replay on startup or promotion because they were older than ingress_wal.max_replay_age. This is explicit data loss, counted per entry by receiver source and signal, not successful delivery. Check replay age, backlog and standby duration. This advisory never pages. A first positive observation with no five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers",
+      "summary": "Expired {{ $labels.source }} WAL entries lost {{ $labels.signal }} work for {{ $labels.tailscale_tailnet }}"
+    },
+    "execErrState": "Ok",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (tailscale_tailnet, source, signal) ((increase(tailscale2otel_ingress_wal_expired_entries_total[5m]) > 0) or ((tailscale2otel_ingress_wal_expired_entries_total > 0) unless tailscale2otel_ingress_wal_expired_entries_total offset 5m))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  0
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "0s",
+    "labels": {
+      "domain": "observability",
+      "page": "false",
+      "service": "tailscale2otel",
+      "severity": "advisory",
+      "skipinvestigation": "true"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Ingress WAL expired entries",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

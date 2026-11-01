@@ -771,3 +771,57 @@ tests:
       - eval_time: 7m
         alertname: IngressWALExpiredEntries
         exp_alerts: []
+
+  # --- SubrequestCoverageIncomplete: sustained partial snapshots --------------
+  - name: sustained incomplete subrequests fire only for their collector and tailnet then recover
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_subrequest_coverage_ratio{tailscale_collector="devices",tailscale_tailnet="example.com",tailscale_subrequest="posture_attributes"}'
+        values: '0.5+0x15 1+0x10'
+      - series: 'tailscale2otel_subrequest_coverage_ratio{tailscale_collector="devices",tailscale_tailnet="example.com",tailscale_subrequest="device_invites"}'
+        values: '1+0x26'
+      - series: 'tailscale2otel_subrequest_coverage_ratio{tailscale_collector="devices",tailscale_tailnet="other.example",tailscale_subrequest="posture_attributes"}'
+        values: '1+0x26'
+      - series: 'tailscale2otel_subrequest_coverage_ratio{tailscale_collector="users",tailscale_tailnet="example.com",tailscale_subrequest="user_invites"}'
+        values: '1+0x26'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: tailscale2otel
+              domain: observability
+              skipinvestigation: "true"
+              tailscale_collector: devices
+              tailscale_tailnet: example.com
+            exp_annotations:
+              summary: "Collector devices subrequest coverage incomplete for example.com"
+              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
+      - eval_time: 16m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts: []
+
+  - name: transient subrequest coverage dip stays quiet after recovery
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_subrequest_coverage_ratio{tailscale_collector="devices",tailscale_tailnet="example.com",tailscale_subrequest="posture_attributes"}'
+        values: '0+0x9 1+0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts: []
+
+  - name: absent optional subrequest coverage stays quiet
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: SubrequestCoverageIncomplete
+        exp_alerts: []

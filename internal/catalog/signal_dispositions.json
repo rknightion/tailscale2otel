@@ -2769,7 +2769,8 @@
       "prom_name": "tailscale2otel_ingress_wal_expired_entries_total",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -3458,7 +3459,8 @@
       "prom_name": "tailscale2otel_subrequest_coverage_ratio",
       "surface": "self_obs",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {

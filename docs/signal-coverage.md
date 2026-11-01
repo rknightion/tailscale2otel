@@ -49,7 +49,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 262 | 261 | 59 | 11 | 46 |
-| self_obs | 105 | 105 | 40 | 9 | 10 |
+| self_obs | 105 | 105 | 42 | 9 | 10 |
 
 ## Operational signals
 
@@ -369,7 +369,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.ingest.size` | metric | `tailscale2otel_ingest_size_bytes_total` | visualized |  |
 | `tailscale2otel.ingest.timestamp_skew` | metric | `tailscale2otel_ingest_timestamp_skew_total` | visualized |  |
 | `tailscale2otel.ingress_wal.completion.markers` | metric | `tailscale2otel_ingress_wal_completion_markers_ratio` | visualized |  |
-| `tailscale2otel.ingress_wal.expired.entries` | metric | `tailscale2otel_ingress_wal_expired_entries_total` | visualized |  |
+| `tailscale2otel.ingress_wal.expired.entries` | metric | `tailscale2otel_ingress_wal_expired_entries_total` | visualized, alertable |  |
 | `tailscale2otel.ingress_wal.orphan.size` | metric | `tailscale2otel_ingress_wal_orphan_size_bytes` | visualized |  |
 | `tailscale2otel.ingress_wal.orphan.stages` | metric | `tailscale2otel_ingress_wal_orphan_stages_ratio` | visualized |  |
 | `tailscale2otel.ingress_wal.pending.entries` | metric | `tailscale2otel_ingress_wal_pending_entries_ratio` | visualized |  |
@@ -419,7 +419,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.series.limit` | metric | `tailscale2otel_series_limit` | visualized, alertable |  |
 | `tailscale2otel.series.overflowing` | metric | `tailscale2otel_series_overflowing_ratio` | visualized, alertable |  |
 | `tailscale2otel.subrequest.attempts` | metric | `tailscale2otel_subrequest_attempts_total` | visualized |  |
-| `tailscale2otel.subrequest.coverage` | metric | `tailscale2otel_subrequest_coverage_ratio` | visualized |  |
+| `tailscale2otel.subrequest.coverage` | metric | `tailscale2otel_subrequest_coverage_ratio` | visualized, alertable |  |
 | `tailscale2otel.subrequest.failures` | metric | `tailscale2otel_subrequest_failures_total` | visualized |  |
 | `tailscale2otel.tls.cert.not_after` | metric | `tailscale2otel_tls_cert_not_after_seconds` | visualized, alertable | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload) - ALERTABLE-ONLY today. |
 | `tailscale2otel.tls.cert.not_before` | metric | `tailscale2otel_tls_cert_not_before_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (TLS cert reload). |

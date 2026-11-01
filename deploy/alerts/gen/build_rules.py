@@ -786,6 +786,22 @@ def groups():
               "(uid tailscale2otel-health).",
               domain="observability", paused=False,
               policy="core", runbook="collector-scrape-health", panel="Scrape success by collector"),
+        # Partial per-entity failures do not fail the enclosing scrape. Preserve
+        # tailnet ownership and use the worst subrequest type in each collector.
+        alert("ts2o-subrequest-coverage-incomplete", "Subrequest coverage incomplete",
+              "min by (tailscale_collector, tailscale_tailnet) (tailscale2otel_subrequest_coverage_ratio)",
+              "lt", 1, "15m", "warning",
+              "Collector {{ $labels.tailscale_collector }} subrequest coverage incomplete for {{ $labels.tailscale_tailnet }}",
+              "Per-entity subrequest coverage has stayed below 1 for collector "
+              "{{ $labels.tailscale_collector }} on {{ $labels.tailscale_tailnet }} for 15m. "
+              "The enclosing scrape can succeed while posture or invite data is incomplete. "
+              "Check subrequest failures by type and availability state for permissions or API "
+              "failures. Complete coverage is 1, including when no entities need a subrequest; "
+              "the alert resolves when all subrequest types recover to 1. Optional collectors "
+              "without subrequests produce no series and stay quiet.",
+              domain="observability", paused=False,
+              policy="optional", runbook="tailscale-api-health",
+              panel="Subrequest coverage (last pass)"),
         alert("ts2o-collector-scrape-stale", "Collector scrape stale",
               "max by (tailscale_collector) (time() - tailscale2otel_scrape_last_timestamp_seconds)",
               "gt", 3600, "10m", "warning",
