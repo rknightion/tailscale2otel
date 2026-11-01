@@ -1,11 +1,11 @@
 ---
 id: TSO-0172
 title: Comprehensive audit of both Grafana dashboards against the live stack
-status: Parked
+status: In Progress
 assignee:
-  - '@loop28'
-created_date: '2026-10-11 10:33'
-updated_date: '2026-10-12 19:03'
+  - '@loop33'
+created_date: 2026-10-11 10:33
+updated_date: '2026-11-01T21:32:00Z'
 labels: []
 dependencies:
   - TSO-0191
@@ -46,6 +46,8 @@ Inventory every generated panel and catalog signal; extend selector-scope proof 
 loop27: retained patch verified and applied cleanly to fresh base; finish live absence/control/render evidence, then root review, landing and exact-SHA gates.
 
 loop28: apply verified retained candidate to fresh main worktree, update only D64 tailnet-matcher expectations, reprove selector negative mutation, complete live prerequisite/control/non-Overview evidence, then guarded review and sharded CodeRabbit, staged candidate gate, root landing and composed/CI/sync checks.
+
+loop33 attempt4of5: after connectivity and memory landing, freeze final published dashboard/source identities and >=3h explicit live window; inventory every panel/query/variable, execute all signal queries, causally classify absence from same-image evidence, verify all tabs/controls, file observable follow-ups and retain exact proof boundaries.
 <!-- SECTION:PLAN:END -->
 
 ## Implementation Notes
@@ -605,4 +607,6 @@ loop28: 1 implementation attempt in this run, 3 of the owner-raised 5 total; par
 loop29: 0 new implementation attempts, 3 cumulative of owner-raised 5. D70 minimum 3h fresh audit window is not yet available; earliest eligible lane start 2026-10-11T21:05:15Z. Parked for time, not authority or implementation failure. Retained candidate patch hash, base and staged tree verified unchanged; no source change, query, gate, review, landing or publication. AC #1-4 remain unchecked, AC #5 untouched. Resume attempt 4 on lane-worker-retry after that time using the original launch, D71 same-image effective configuration proof and freshly re-executed window queries. Goal needs=time is encoded as evidence-later because the event schema rejects time; this is not acceptance or Done.
 
 2026-10-12 re-scope (Rob, after loop28 and loop29 both landed nothing): AC #3 (selector-scope test across all tabs) moved to TSO-0191 (land the dashboard selector-scope guard from the retained audit candidate), which carries the retained loop28 candidate. This task keeps the live evidence: panel verdicts, live query execution with absences explained, and catalog-signal dispositions. It runs after TSO-0191 and the two dashboard-fix chains land, so it audits the fixed dashboards rather than panels about to change. Attempt count carried: 3 of 5 used.
+
+loop33 attempt4of5 admitted after required connectivity/memory landings. Browser signed in; current deployed exporter identifies5.2.1, distinct from newly shipped source. Final exhaustive inventory/query window will bind the final published dashboard artifacts; no audit acceptance yet.
 <!-- SECTION:NOTES:END -->
