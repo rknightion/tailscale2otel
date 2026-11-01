@@ -1,5 +1,33 @@
 # Changelog
 
+## [5.3.0](https://github.com/rknightion/tailscale2otel/compare/v5.2.1...v5.3.0) (2026-11-01)
+
+
+### Features
+
+* **alerts:** detect stale persistent flow checkpoints ([4c84259](https://github.com/rknightion/tailscale2otel/commit/4c84259bf43a5295a69731caf8d25446877454df))
+* **alerts:** report expired ingress WAL entries ([09b2280](https://github.com/rknightion/tailscale2otel/commit/09b22803aae07c82b8f9bb16a6afe6a7da6d6e91))
+* **alerts:** report incomplete subrequest coverage ([9f2abc6](https://github.com/rknightion/tailscale2otel/commit/9f2abc6efa1283270cbc7b1774d04aa46e9cc85d))
+* **devices:** export bounded per-device posture verdicts ([0326885](https://github.com/rknightion/tailscale2otel/commit/03268855bff6fcad43f6c302e6c76a32d606410f))
+* **runtime:** expose and alert on the effective Go memory limit ([fdaa4d8](https://github.com/rknightion/tailscale2otel/commit/fdaa4d8b84c44cde5ca99c00f6f4256886a8b409))
+
+
+### Bug Fixes
+
+* **dashboards:** use Loki auto interval for audit rate ([371cd92](https://github.com/rknightion/tailscale2otel/commit/371cd92dc2822ba5069e359f7b3e2fe2bcc9348a))
+* **delivery:** clamp catch-up to the shared log horizon ([5355f59](https://github.com/rknightion/tailscale2otel/commit/5355f59d5f77ccc2235eeb3532f6ffd33ec8c828))
+* **deps:** update go dependencies to v0.37.2 ([#770](https://github.com/rknightion/tailscale2otel/issues/770)) ([b16d650](https://github.com/rknightion/tailscale2otel/commit/b16d6503cacdb70e4df01d41134a50b6913a5636))
+* **deps:** update module github.com/oschwald/maxminddb-golang/v2 to v2.9.0 ([#791](https://github.com/rknightion/tailscale2otel/issues/791)) ([09a2cd7](https://github.com/rknightion/tailscale2otel/commit/09a2cd77e0800bc9b4e5f2997a502b1689dd7824))
+* **deps:** update module github.com/prometheus/common to v0.73.0 ([#771](https://github.com/rknightion/tailscale2otel/issues/771)) ([ec15e0f](https://github.com/rknightion/tailscale2otel/commit/ec15e0f7a1283b3d63d1aac8192dc923cd64ff18))
+* **deps:** update module github.com/prometheus/common to v0.73.1 ([#784](https://github.com/rknightion/tailscale2otel/issues/784)) ([d7a1535](https://github.com/rknightion/tailscale2otel/commit/d7a153507dd7e5ae025827af584ac5b92c56117c))
+* **deps:** update module google.golang.org/grpc to v1.85.0 ([#764](https://github.com/rknightion/tailscale2otel/issues/764)) ([3a146fc](https://github.com/rknightion/tailscale2otel/commit/3a146fc8ef472db035de031d4a5ce21dfd332426))
+* **deps:** update module modernc.org/sqlite to v1.61.1 ([#787](https://github.com/rknightion/tailscale2otel/issues/787)) ([61e2739](https://github.com/rknightion/tailscale2otel/commit/61e273961a97aa12d5c31e04a871c88a7222b5f8))
+* **grafana:** keep connectivity ratios on consistent fleet populations ([acdce12](https://github.com/rknightion/tailscale2otel/commit/acdce128b942d8f69b1710dd6fd6955f80594fdf))
+* **grafana:** scope log catch-up panels by collector ([1d321fe](https://github.com/rknightion/tailscale2otel/commit/1d321fec55ac8f6c8e499db94be7f961db714117))
+* **httpretry:** share retry-after parsing with overflow-safe delays ([8ccbe4c](https://github.com/rknightion/tailscale2otel/commit/8ccbe4c10d10d78b3ed07952a8edc57723909ce1))
+* **pam:** baseline cold sessions beyond log horizon ([d308d23](https://github.com/rknightion/tailscale2otel/commit/d308d23153305c0dfc93cfd8fdd23db079817373))
+* stop restart and failover replay sending logs Loki rejects as too old ([e997149](https://github.com/rknightion/tailscale2otel/commit/e99714980704e2710ab93097a1695eefbcbb35c8))
+
 ## [5.2.1](https://github.com/rknightion/tailscale2otel/compare/v5.2.0...v5.2.1) (2026-10-21)
 
 
