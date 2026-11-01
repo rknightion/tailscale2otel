@@ -7,9 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/rknightion/tailscale2otel/v5/internal/repotest"
 )
 
 // These tests exercise the same boundary that protects the generation tools:
@@ -103,11 +104,11 @@ type toolRunResult struct {
 
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller could not locate toolpins_test.go")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(source), "..", ".."))
+	return root
 }
 
 func readToolPins(t *testing.T, root string) map[string]string {

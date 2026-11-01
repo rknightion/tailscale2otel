@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/catalog"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/repotest"
 )
 
 var writeCapabilityCounts = flag.Bool("write-capability-counts", false, "rewrite internal/catalog/capability_counts.json")
@@ -54,11 +54,11 @@ func TestCapabilityCountsSourceInSync(t *testing.T) {
 
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate capability count source")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	return root
 }
 
 func deriveCapabilityCounts(t *testing.T, root string) capabilityCounts {

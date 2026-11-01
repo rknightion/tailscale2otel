@@ -4,21 +4,21 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/app/statusdata"
 	"github.com/rknightion/tailscale2otel/v5/internal/app/statushtml"
+	"github.com/rknightion/tailscale2otel/v5/internal/repotest"
 )
 
 func repositoryRoot(t *testing.T) string {
 	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", "..", ".."))
+	return root
 }
 
 func familyTokenBlock(t *testing.T) string {

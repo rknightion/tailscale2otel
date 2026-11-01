@@ -4,9 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"testing"
+
+	"github.com/rknightion/tailscale2otel/v5/internal/repotest"
 )
 
 func TestPropertyTaxonomyCoversVendoredSchema(t *testing.T) {
@@ -109,11 +110,11 @@ type auditEnums struct {
 
 func vendoredAuditEnums(t *testing.T) auditEnums {
 	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	root, err := repotest.Root()
+	if err != nil {
+		t.Fatalf("locate repository root: %v", err)
 	}
-	path := filepath.Join(filepath.Dir(thisFile), "..", "..", "spec", "tailscale-api.json")
+	path := filepath.Join(root, "spec", "tailscale-api.json")
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read vendored schema %q: %v", path, err)
