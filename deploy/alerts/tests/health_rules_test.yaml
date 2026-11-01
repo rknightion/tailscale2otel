@@ -693,3 +693,81 @@ tests:
       - eval_time: 6m
         alertname: IngressPermanentlyRejectedDataLost
         exp_alerts: []
+
+  # --- IngressWALExpiredEntries: accepted entries lost past replay age --------
+  - name: increasing expired entries fire per receiver source and signal
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_expired_entries_total{tailscale_tailnet="example.com",source="stream",signal="logs"}'
+        values: '0+1x10'
+      - series: 'tailscale2otel_ingress_wal_expired_entries_total{tailscale_tailnet="example.com",source="webhook",signal="metrics"}'
+        values: '0+2x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: IngressWALExpiredEntries
+        exp_alerts:
+          - exp_labels:
+              tailscale_tailnet: example.com
+              source: stream
+              signal: logs
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              page: "false"
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: Expired stream WAL entries lost logs work for example.com
+              runbook_url: https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers
+          - exp_labels:
+              tailscale_tailnet: example.com
+              source: webhook
+              signal: metrics
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              page: "false"
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: Expired webhook WAL entries lost metrics work for example.com
+              runbook_url: https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers
+
+  - name: zero or established unchanged expired entries stay silent
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_expired_entries_total{source="stream",signal="logs"}'
+        values: '0+0x10'
+      - series: 'tailscale2otel_ingress_wal_expired_entries_total{source="webhook",signal="metrics"}'
+        values: '3+0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: IngressWALExpiredEntries
+        exp_alerts: []
+
+  # The emitter creates a counter only when loss happens: no invented zero.
+  - name: first positive expiry observation fires without a prior sample then clears
+    interval: 1m
+    input_series:
+      - series: 'tailscale2otel_ingress_wal_expired_entries_total{tailscale_tailnet="example.com",source="stream",signal="logs"}'
+        values: '_ _ 1+0x8'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: IngressWALExpiredEntries
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: IngressWALExpiredEntries
+        exp_alerts:
+          - exp_labels:
+              tailscale_tailnet: example.com
+              source: stream
+              signal: logs
+              severity: advisory
+              service: tailscale2otel
+              domain: observability
+              page: "false"
+              skipinvestigation: "true"
+            exp_annotations:
+              summary: Expired stream WAL entries lost logs work for example.com
+              runbook_url: https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers
+      - eval_time: 7m
+        alertname: IngressWALExpiredEntries
+        exp_alerts: []

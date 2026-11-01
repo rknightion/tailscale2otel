@@ -927,6 +927,20 @@ def groups():
               "with no five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
               domain="observability", paused=False, page=False,
               policy="advisory", runbook="ingest-receivers", panel="Ingress permanently rejected units lost"),
+        alert("ts2o-ingress-wal-expired-entries", "Ingress WAL expired entries",
+              "sum by (tailscale_tailnet, source, signal) ("
+              "(increase(tailscale2otel_ingress_wal_expired_entries_total[5m]) > 0) or "
+              "((tailscale2otel_ingress_wal_expired_entries_total > 0) unless "
+              "tailscale2otel_ingress_wal_expired_entries_total offset 5m))",
+              "gt", 0, "0s", "advisory",
+              "Expired {{ $labels.source }} WAL entries lost {{ $labels.signal }} work for {{ $labels.tailscale_tailnet }}",
+              "Accepted ingress WAL entries were retired without replay on startup or promotion because "
+              "they were older than ingress_wal.max_replay_age. This is explicit data loss, counted per "
+              "entry by receiver source and signal, not successful delivery. Check replay age, backlog "
+              "and standby duration. This advisory never pages. A first positive observation with no "
+              "five-minute prior sample also alerts, so a monitoring gap can re-raise this advisory.",
+              domain="observability", paused=False, page=False,
+              policy="advisory", runbook="ingest-receivers", panel="Ingress permanently rejected units lost"),
         alert("ts2o-ingress-wal-near-capacity", "Ingress WAL near capacity",
               "max by (limit) ("
               'label_replace(tailscale2otel_ingress_wal_pending_entries_fill_ratio, "limit", "entries", "", "") or '
