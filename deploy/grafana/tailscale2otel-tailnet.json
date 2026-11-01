@@ -6995,7 +6995,7 @@
         "spec": {
           "id": 78,
           "title": "Direct-capable %",
-          "description": "Fraction of devices capable of direct (non-relay) connections.",
+          "description": "Fleet-wide fraction of devices capable of direct (non-relay) connections. Ignores OS and host selectors; tailnet and provider selectors still apply.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -7014,7 +7014,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
+                        "expr": "last_over_time(tailscale_devices_direct_capable_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7078,7 +7078,7 @@
         "spec": {
           "id": 79,
           "title": "Hard-NAT %",
-          "description": "Fraction of devices behind hard NAT (require relay for inbound connections).",
+          "description": "Fleet-wide fraction of devices behind hard NAT (require relay for inbound connections). Ignores OS and host selectors; tailnet and provider selectors still apply.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -7097,7 +7097,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
+                        "expr": "last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -7593,7 +7593,7 @@
         "spec": {
           "id": 85,
           "title": "Hard-NAT fraction",
-          "description": "Fraction of devices behind hard NAT. This is a connectivity property, not a measurement of DERP load.",
+          "description": "Fleet-wide fraction of devices behind hard NAT. Ignores OS and host selectors; tailnet and provider selectors still apply. This is a connectivity property, not a measurement of DERP load.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -7612,7 +7612,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", os_type=~\"$os_type\"}[10m]))",
+                        "expr": "sum(last_over_time(tailscale_devices_hard_nat_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])) / on() group_left() sum(last_over_time(tailscale_devices_count_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "hard-NAT fraction",
