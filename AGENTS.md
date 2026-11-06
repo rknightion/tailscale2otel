@@ -22,8 +22,7 @@ Off the Mac, when the remote gate runner is installed (`which gaterun`): `gateru
   `--yes` or `JUST_YES=1`; run `just` with stdin from `/dev/null`.
 - `just gen <family>...` and `just gen-<family>` are the same thing. Test failure messages and CI
   job names use the spaced spelling.
-- `just review-sharded` is the CodeRabbit path here - a whole-repo review exceeds the transport
-  limit. See `docs/coderabbit-sharded-review.md`.
+- Code review follows the combined maintainer gate below; incomplete review is never clean.
 - `just run` starts the exporter against `config.yaml`; `otlp.protocol: stdout` prints signals to
   the console for local debug with no backend.
 
@@ -199,3 +198,25 @@ Do not edit Backlog task, draft, document, decision, or milestone markdown files
 
 </CRITICAL_INSTRUCTION>
 <!-- BACKLOG.MD GUIDELINES END -->
+
+## Maintainer code review
+
+Enrolled Personal maintainers use the centrally managed `kodus-review` skill and authenticated
+adapter plus a separate independent local agent review before committing code. Freeze the exact
+base and candidate trees (including new files), sanitized intent and applicable central rules in
+the review evidence. Pin the central rules source by full commit, selected rule IDs and rendered
+SHA-256 in the local brief; verify that pin and the brief hash in the local review. Private rule
+context stays local and must not be copied into this repository or assumed to reach Kodus.
+
+Both components must pass for the same candidate identity. The independent agent inspects the
+full frozen candidate and base context against the intent and pinned rules; Kodus context is
+partial/unknown. Adapter exit zero alone is not combined approval. Missing, incomplete, unknown,
+unsupported or oversized reviews are no verdict: resolve or split into fully covered candidates,
+never omit changed files or substitute one component. Resolve verified findings and record their
+dispositions; unresolved critical, high or major findings block landing. Root-authored additions
+need their own exact-candidate review. Hosted reviews are supplementary and do not replace either
+local component, required tests, deployment authority or human approvals.
+
+Public contributors need no private maintainer configuration or paid review account; normal
+contribution and hosted-check requirements still apply. Never submit backup repositories,
+credentials, private fixtures or customer identifiers to an external reviewer.

@@ -2,8 +2,8 @@
 id: doc-0006
 title: TSO-0150 dashboard visualisation redesign
 type: specification
-created_date: '2026-09-19 10:03'
-updated_date: '2026-09-19 10:05'
+created_date: 2026-09-19 10:03
+updated_date: '2026-11-06T00:39:00Z'
 tags:
   - grafana
   - dashboards
@@ -81,7 +81,7 @@ Core row titles name the exact plugin ID and remain visible when the plugin is a
 1. Add focused generator tests for panel kind, options, field order, query bounds, conditional rendering, and PII gates.
 2. Regenerate both Grafana v2 artifacts and run dashboard generator tests plus PromQL validation.
 3. Run `just gen`, confirm no second-pass diff, and run `just check`.
-4. Run the repository sharded CodeRabbit review because generator logic has branching.
+4. Run the combined maintainer Kodus and independent local exact-candidate gate with pinned central rules because generator logic has branching.
 5. Push through the normal main workflow, verify the exact GitSync source commit, and inspect the rendered panels on m7kni with representative rollup and raw data.
 
 ## Non-goals

@@ -436,11 +436,6 @@ smoke tag="tailscale2otel:dev":
 coverage:
     go test -covermode=atomic -coverprofile=coverage.out ./...
 
-# run CodeRabbit in directory shards; transport-incomplete shards fail closed (see docs/coderabbit-sharded-review.md)
-[group('dev')]
-review-sharded base="main" dirs="cmd internal deploy scripts tools":
-    python3 scripts/shard_coderabbit_review.py --base '{{ base }}' --dirs {{ dirs }}
-
 # validate GitHub Actions syntax and embedded shell with the installed actionlint
 [group('check')]
 lint-workflows:

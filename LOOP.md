@@ -54,10 +54,9 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   unit suffixes, `_ratio` on unit-`1` gauges.
 - Pick exactly one ingestion path per log type (`poll` or `stream`); both double-counts.
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
-- A whole-repo CodeRabbit review exceeds the transport limit: `just review-sharded main .`
-  (positional base, then dirs; `base=main` passes that literal string).
-- CodeRabbit returns `No files to review` for staged Python under `deploy/grafana/gen` and
-  `deploy/alerts/gen`. That shard is unreviewed, not clean.
+- Code slices require the combined Kodus and independent local exact-candidate review in
+  the maintainer code-review contract. Include generated and new files in candidate coverage;
+  missing or oversized review is no verdict, never clean.
 - ci.yml's `dashboards-drift` job runs `just test-python` before it installs promtool, so a new
   Python test under `deploy/*/gen` or `scripts` that shells out to promtool passes locally and
   fails in CI. Keep promtool-dependent proof out of the unittest tree (retained evidence); never
