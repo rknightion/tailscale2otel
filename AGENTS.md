@@ -4,7 +4,7 @@ Polls the Tailscale (or Headscale) control plane and exports OpenTelemetry-nativ
 over OTLP, tuned for Grafana Cloud. Single static Go binary.
 
 This repository is PUBLIC. Keep lab-specific names, addresses, identifiers, credentials and
-observability captures out of every tracked file, `backlog/` included - write the shape, not the
+observability captures out of every tracked file, issue and pull request - write the shape, not the
 instance. Aggregate counts, timings and structural findings are fine.
 
 ## Task interface
@@ -160,6 +160,26 @@ tool module can never affect the main module's build.
   direct context only when the task genuinely cannot be done correctly through the proxy, such as
   an explicit ServiceAccount impersonation or an RBAC proof.
 
+## Tracking work
+
+Work is tracked in this repository's GitHub issues; they are the only queue. Do not add a checklist
+file such as `ROADMAP.md` beside them.
+
+- A pull request body says how it relates to an issue, on a line of its own: `Closes #N` with the
+  `Acceptance evidence` table from `.github/pull_request_template.md` (one row for each acceptance
+  criterion of that issue), `Refs #N` when it only relates to one, or `Task: none, <reason>`.
+- A pull request that changes `.github/workflows/` or `.github/actions/` carries no closing keyword:
+  write `Task: none, <reason>`, with `Refs #N` beside it if you like.
+- Contributors never need the project board or the tracker tooling; a maintainer handles both.
+- Issues and pull requests are public, so they carry no real identifiers: no email addresses,
+  handles, account ids, host or device names, addresses or coordinates. Write the shape, not the
+  instance.
+- Older commits, docs and tests cite legacy board ids such as `TSO-0001`. `just issue <ID>` prints
+  the issue each one became; `.github/tracker/id-map.json` is the map, and the retired board's
+  documents are under `.github/tracker/history/`.
+- A bare `#N` below 795 is a pull request, a bot issue or one of the 402 issues deleted from GitHub
+  on 2026-08-14; the deleted ones resolve through `archive/README.md`.
+
 ## Deeper references
 
 - `reference/generated-artifacts.md` - read before regenerating an artifact, changing a `gen-*`
@@ -168,36 +188,11 @@ tool module can never affect the main module's build.
   Grafana stack, or editing an artifact under `deploy/grafana` or `deploy/alerts`.
 - `reference/ci-gates.md` - read before editing a workflow or diagnosing a red check that
   `just check` does not reproduce.
-- `reference/backlog-workflow.md` - read before writing to the board.
 - `deploy/` carries its own instructions - read them before touching the Helm chart, the
   Dockerfiles, Compose or the release packaging.
 - `internal/collector/` - read before adding or changing a collector.
 - `internal/telemetry/` - read before changing the OTEL facade, semconv or the metrics catalog.
 - `spec/README.md` - read before refreshing the vendored OpenAPI spec.
-
-<!-- BACKLOG.MD GUIDELINES START -->
-<!-- backlog.md-instructions-version: 1.50.1 -->
-<CRITICAL_INSTRUCTION>
-
-## Backlog.md Workflow
-
-This project uses Backlog.md for task and project management.
-
-**For every user request in this project, run `backlog instructions overview` before answering or taking action.**
-
-Use the overview to decide whether to search, read, create, or update Backlog tasks.
-
-Before task lifecycle actions, read the matching detailed guide:
-- `backlog instructions task-creation` before creating or splitting tasks
-- `backlog instructions task-execution` before planning, changing status or assignee, adding a plan or implementation notes, or implementing task work
-- `backlog instructions task-finalization` before checking acceptance criteria, writing final summaries, or moving tasks to terminal statuses
-
-Use `backlog <command> --help` before running unfamiliar commands. Help shows options, fields, and examples.
-
-Do not edit Backlog task, draft, document, decision, or milestone markdown files directly. Use the `backlog` CLI so metadata, relationships, and history stay consistent.
-
-</CRITICAL_INSTRUCTION>
-<!-- BACKLOG.MD GUIDELINES END -->
 
 ## Maintainer code review
 

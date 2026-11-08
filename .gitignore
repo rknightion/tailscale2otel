@@ -60,7 +60,7 @@ checkpoints/
 /tailscale-api.yaml
 
 docs/superpowers/
-# Local long-running campaign goals and launch notes. Backlog tasks remain the
+# Local long-running campaign goals and launch notes. GitHub issues remain the
 # durable run record; these coordination artifacts are never committed.
 codex/
 # Some tooling writes plans/specs to the repo root instead of docs/. Same rule
@@ -121,10 +121,12 @@ docs/assets/social-card.png
 docs/assets/social-card.svg
 docs/fonts/
 
-# Claude Code repo-local config. `settings.json` and `hooks/` ARE tracked — they
-.claude/
+# Claude Code repo-local config. Per-user settings and hooks stay local; the vended contributor
+# skills under .claude/skills/ are tracked.
+.claude/*
+!.claude/skills/
 
-# Product-development candidate list — local working doc, evaluated into Backlog items manually
+# Product-development candidate list — local working doc, evaluated into issues manually
 /candidates.md
 
 # loop-pi (pi-subagents writes .pi/subagents/)

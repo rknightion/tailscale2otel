@@ -5,11 +5,28 @@ ci-required: ci-success, helm-success
 release-on-push: yes
 deploy-on-push: yes
 grafana-stack: robknight
+tracker: github
+landing: pr
 
 Public repository: no lab name, address, identifier, credential or observability capture in any
-tracked file, `backlog/` included. Run `just` with stdin from `/dev/null`. `just setup` once per
+tracked file, issue or pull request. Run `just` with stdin from `/dev/null`. `just setup` once per
 clone installs the pinned tools; a local lint or vuln result counts only when its pin assertion
 passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs.
+
+The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (maintainers only).
+
+## Queue
+
+- `just tracker queue` lists open issues at Project Status Ready on the rknightion Project; Parked
+  work sits at Needs input. A charter selects by labels (`type:task`, `type:bug`, `type:feature`,
+  `needs-triage`) and Project fields; never queue a `needs-triage` issue.
+- Only the root writes issues and the Project, through `just tracker`; a lane returns the status
+  and AC ticks it wants.
+- Name issues as `#N`. A legacy id (`TSO-0001`) resolves with `just issue <ID>`
+  (`.github/tracker/id-map.json`). A bare `#N` below 795 is a pull request, a bot issue or a
+  deleted pre-board issue (`archive/README.md`); imported tasks start at #795.
+- Drift workflows file and auto-close bot issues by their own lane labels: never put such a label on
+  a task, never close a bot issue by hand.
 
 ## Credentials
 
@@ -45,8 +62,6 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - Never hand-edit anything under `deploy/grafana` or `deploy/alerts`, or text between
   `<!-- BEGIN GENERATED -->` markers; run the matching `just gen-<family>`. Regenerating
   `internal/catalog/signal_dispositions.json` cannot turn a red coverage gate green.
-- `gen-check` and `helm-gen-check` use plain `git diff --exit-code`, so an applied but unstaged
-  candidate looks red: `git add` its paths before the gate, or gate a committed detached worktree.
 - OpenTelemetry modules (core, metric and trace SDKs, `sdk/log` at v1.x, and the 0.x log
   exporters) move together in one Renovate PR; never bump one alone or run a casual `go get` or
   `go mod tidy`.
@@ -57,10 +72,6 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
 - Code slices require the combined Kodus and independent local exact-candidate review in
   the maintainer code-review contract. Include generated and new files in candidate coverage;
   missing or oversized review is no verdict, never clean.
-- ci.yml's `dashboards-drift` job runs `just test-python` before it installs promtool, so a new
-  Python test under `deploy/*/gen` or `scripts` that shells out to promtool passes locally and
-  fails in CI. Keep promtool-dependent proof out of the unittest tree (retained evidence); never
-  add a skip-when-absent guard.
 - `helm-success` exists only for pushes touching `helm.yml`'s push paths (`deploy/helm/**`,
   `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`, `helm.yml` itself; no
   `workflow_dispatch`);
@@ -68,12 +79,8 @@ passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs
   and do not make a source edit to trigger it. Pull requests always report it.
 - The live spec endpoint emits YAML, but `spec/tailscale-api.json` stays JSON: re-vendor with
   `curl ... | yq -o=json '.'` (`spec/README.md`). `internal/oas.ParseSpec` keeps only GET operations.
-- The `tailscale.com/client/tailscale/v2` path is in root `go.mod`, 25 Go files and, as an
-  indirect require, three tool modules' `go.mod`; `clientlib-main.yml` hardcodes it. Move all of them
-  in one change and tidy every module.
-- Any push touching `deploy/grafana/**` also runs grafana-sync's unconditional `rules` job (prune,
-  then `gcx resources push`), even for a dashboard-only change. Authority for dashboard delivery
-  covers that rule publication too.
+- More traps in `reference/ci-gates.md`: dashboards-drift, gen-check staging, the Tailscale client
+  path, grafana-sync rules.
 - Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
 - Wall-clock flakes, auto-rc, reruns, release posture, RBAC proofs: `reference/ci-gates.md`.
 

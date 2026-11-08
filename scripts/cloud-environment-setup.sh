@@ -11,7 +11,6 @@
 # Keep the pins below aligned with AGENTS.md and the GitHub Actions workflows.
 set -euo pipefail
 
-readonly BACKLOG_VERSION="1.50.1"
 readonly GOLANGCI_LINT_VERSION="2.13.1"
 readonly GOVULNCHECK_VERSION="1.3.0"
 readonly GORELEASER_VERSION="2.16.0"
@@ -38,11 +37,6 @@ export GOBIN="$HOME/.local/bin"
 # version. Build Go-based validators and generators with the repository's
 # declared toolchain so cloud behavior stays aligned with CI.
 export GOTOOLCHAIN="go$(awk '$1 == "go" { print $2; exit }' go.mod)"
-
-echo "== installing task tracker"
-# Backlog.md is the source of truth for project work. Pinning it to the version
-# of the instructions embedded in AGENTS.md prevents CLI/instruction drift.
-npm install --global --prefix "$HOME/.local" "backlog.md@$BACKLOG_VERSION"
 
 echo "== installing Go validation tools"
 go install "golang.org/x/vuln/cmd/govulncheck@v$GOVULNCHECK_VERSION"
@@ -155,7 +149,6 @@ done < <(find . -name go.mod -not -path './.git/*' -not -path './.capture/*' \
 scripts/setup.sh
 
 echo "== setup smoke check"
-backlog --version
 go version
 golangci-lint version
 govulncheck -version
