@@ -1,13 +1,16 @@
 # GitHub Issues archive
 
 `github-issues-2026-08-14.json` is the complete contents of this repository's GitHub Issues tracker
-as of **2026-08-14**, captured immediately before the issues themselves were deleted. The project
-moved to Backlog.md on that date; see the *Closed GitHub issues* doc (`backlog doc list --plain`)
-for the browsable index, and this file for the bodies and replies behind it.
+as of **2026-08-14**, captured immediately before the issues themselves were deleted. Work was then
+tracked on a Backlog.md board and is tracked in GitHub issues again; the board's *Closed GitHub
+issues* document is the browsable index to this file, and this file holds the bodies and replies
+behind it.
 
 **This is the record, not a convenience copy.** The issues it describes no longer exist on GitHub, so
-`gh issue view <N>` will 404. Anything in the repository that cites `#NNN` — `AGENTS.md`, commit
-messages, code comments — resolves here.
+`gh issue view <N>` will 404. Anything in the repository that cites `#NNN` resolves here, with two
+exceptions: a number below 795 may instead be a pull request or a bot-filed issue, which GitHub still
+has, and a board id such as `TSO-0001` is not an issue number at all: `just issue TSO-0001` prints the
+issue it became.
 
 ## What it contains
 
