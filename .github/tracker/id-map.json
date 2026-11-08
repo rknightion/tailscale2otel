@@ -1,0 +1,978 @@
+{
+ "held": {},
+ "issues": {
+  "TSO-0001": {
+   "number": 824,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/824"
+  },
+  "TSO-0002": {
+   "number": 825,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/825"
+  },
+  "TSO-0002.01": {
+   "number": 826,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/826"
+  },
+  "TSO-0002.02": {
+   "number": 827,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/827"
+  },
+  "TSO-0002.03": {
+   "number": 828,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/828"
+  },
+  "TSO-0002.04": {
+   "number": 829,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/829"
+  },
+  "TSO-0003": {
+   "number": 830,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/830"
+  },
+  "TSO-0004": {
+   "number": 831,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/831"
+  },
+  "TSO-0005": {
+   "number": 832,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/832"
+  },
+  "TSO-0006": {
+   "number": 833,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/833"
+  },
+  "TSO-0007": {
+   "number": 834,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/834"
+  },
+  "TSO-0008": {
+   "number": 835,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/835"
+  },
+  "TSO-0009": {
+   "number": 836,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/836"
+  },
+  "TSO-0010": {
+   "number": 837,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/837"
+  },
+  "TSO-0011": {
+   "number": 838,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/838"
+  },
+  "TSO-0012": {
+   "number": 839,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/839"
+  },
+  "TSO-0013": {
+   "number": 840,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/840"
+  },
+  "TSO-0014": {
+   "number": 841,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/841"
+  },
+  "TSO-0015": {
+   "number": 842,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/842"
+  },
+  "TSO-0016": {
+   "number": 843,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/843"
+  },
+  "TSO-0017": {
+   "number": 844,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/844"
+  },
+  "TSO-0018": {
+   "number": 845,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/845"
+  },
+  "TSO-0019": {
+   "number": 846,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/846"
+  },
+  "TSO-0020": {
+   "number": 847,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/847"
+  },
+  "TSO-0021": {
+   "number": 848,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/848"
+  },
+  "TSO-0022": {
+   "number": 849,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/849"
+  },
+  "TSO-0023": {
+   "number": 850,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/850"
+  },
+  "TSO-0024": {
+   "number": 851,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/851"
+  },
+  "TSO-0025": {
+   "number": 852,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/852"
+  },
+  "TSO-0026": {
+   "number": 853,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/853"
+  },
+  "TSO-0027": {
+   "number": 854,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/854"
+  },
+  "TSO-0028": {
+   "number": 855,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/855"
+  },
+  "TSO-0029": {
+   "number": 856,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/856"
+  },
+  "TSO-0030": {
+   "number": 857,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/857"
+  },
+  "TSO-0031": {
+   "number": 858,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/858"
+  },
+  "TSO-0032": {
+   "number": 859,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/859"
+  },
+  "TSO-0033": {
+   "number": 860,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/860"
+  },
+  "TSO-0034": {
+   "number": 861,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/861"
+  },
+  "TSO-0035": {
+   "number": 862,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/862"
+  },
+  "TSO-0036": {
+   "number": 863,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/863"
+  },
+  "TSO-0037": {
+   "number": 864,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/864"
+  },
+  "TSO-0038": {
+   "number": 865,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/865"
+  },
+  "TSO-0039": {
+   "number": 866,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/866"
+  },
+  "TSO-0040": {
+   "number": 867,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/867"
+  },
+  "TSO-0041": {
+   "number": 868,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/868"
+  },
+  "TSO-0042": {
+   "number": 869,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/869"
+  },
+  "TSO-0043": {
+   "number": 870,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/870"
+  },
+  "TSO-0044": {
+   "number": 871,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/871"
+  },
+  "TSO-0045": {
+   "number": 872,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/872"
+  },
+  "TSO-0046": {
+   "number": 873,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/873"
+  },
+  "TSO-0047": {
+   "number": 874,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/874"
+  },
+  "TSO-0048": {
+   "number": 875,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/875"
+  },
+  "TSO-0049": {
+   "number": 876,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/876"
+  },
+  "TSO-0050": {
+   "number": 877,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/877"
+  },
+  "TSO-0051": {
+   "number": 878,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/878"
+  },
+  "TSO-0052": {
+   "number": 879,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/879"
+  },
+  "TSO-0053": {
+   "number": 880,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/880"
+  },
+  "TSO-0054": {
+   "number": 881,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/881"
+  },
+  "TSO-0055": {
+   "number": 882,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/882"
+  },
+  "TSO-0056": {
+   "number": 883,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/883"
+  },
+  "TSO-0057": {
+   "number": 884,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/884"
+  },
+  "TSO-0058": {
+   "number": 885,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/885"
+  },
+  "TSO-0059": {
+   "number": 886,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/886"
+  },
+  "TSO-0060": {
+   "number": 887,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/887"
+  },
+  "TSO-0061": {
+   "number": 888,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/888"
+  },
+  "TSO-0062": {
+   "number": 889,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/889"
+  },
+  "TSO-0063": {
+   "number": 890,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/890"
+  },
+  "TSO-0064": {
+   "number": 891,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/891"
+  },
+  "TSO-0065": {
+   "number": 892,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/892"
+  },
+  "TSO-0066": {
+   "number": 893,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/893"
+  },
+  "TSO-0067": {
+   "number": 894,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/894"
+  },
+  "TSO-0068": {
+   "number": 895,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/895"
+  },
+  "TSO-0069": {
+   "number": 896,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/896"
+  },
+  "TSO-0070": {
+   "number": 897,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/897"
+  },
+  "TSO-0071": {
+   "number": 898,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/898"
+  },
+  "TSO-0072": {
+   "number": 899,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/899"
+  },
+  "TSO-0073": {
+   "number": 900,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/900"
+  },
+  "TSO-0074": {
+   "number": 901,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/901"
+  },
+  "TSO-0075": {
+   "number": 902,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/902"
+  },
+  "TSO-0076": {
+   "number": 903,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/903"
+  },
+  "TSO-0077": {
+   "number": 904,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/904"
+  },
+  "TSO-0078": {
+   "number": 905,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/905"
+  },
+  "TSO-0079": {
+   "number": 906,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/906"
+  },
+  "TSO-0080": {
+   "number": 907,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/907"
+  },
+  "TSO-0081": {
+   "number": 908,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/908"
+  },
+  "TSO-0082": {
+   "number": 909,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/909"
+  },
+  "TSO-0083": {
+   "number": 910,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/910"
+  },
+  "TSO-0084": {
+   "number": 911,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/911"
+  },
+  "TSO-0085": {
+   "number": 912,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/912"
+  },
+  "TSO-0086": {
+   "number": 913,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/913"
+  },
+  "TSO-0087": {
+   "number": 914,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/914"
+  },
+  "TSO-0088": {
+   "number": 915,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/915"
+  },
+  "TSO-0089": {
+   "number": 916,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/916"
+  },
+  "TSO-0090": {
+   "number": 917,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/917"
+  },
+  "TSO-0091": {
+   "number": 918,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/918"
+  },
+  "TSO-0092": {
+   "number": 919,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/919"
+  },
+  "TSO-0093": {
+   "number": 920,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/920"
+  },
+  "TSO-0094": {
+   "number": 921,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/921"
+  },
+  "TSO-0095": {
+   "number": 922,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/922"
+  },
+  "TSO-0096": {
+   "number": 923,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/923"
+  },
+  "TSO-0097": {
+   "number": 924,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/924"
+  },
+  "TSO-0098": {
+   "number": 925,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/925"
+  },
+  "TSO-0099": {
+   "number": 926,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/926"
+  },
+  "TSO-0100": {
+   "number": 927,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/927"
+  },
+  "TSO-0101": {
+   "number": 928,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/928"
+  },
+  "TSO-0102": {
+   "number": 929,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/929"
+  },
+  "TSO-0103": {
+   "number": 930,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/930"
+  },
+  "TSO-0104": {
+   "number": 931,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/931"
+  },
+  "TSO-0105": {
+   "number": 932,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/932"
+  },
+  "TSO-0106": {
+   "number": 933,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/933"
+  },
+  "TSO-0107": {
+   "number": 934,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/934"
+  },
+  "TSO-0108": {
+   "number": 935,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/935"
+  },
+  "TSO-0109": {
+   "number": 936,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/936"
+  },
+  "TSO-0110": {
+   "number": 937,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/937"
+  },
+  "TSO-0111": {
+   "number": 938,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/938"
+  },
+  "TSO-0112": {
+   "number": 939,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/939"
+  },
+  "TSO-0113": {
+   "number": 940,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/940"
+  },
+  "TSO-0114": {
+   "number": 941,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/941"
+  },
+  "TSO-0115": {
+   "number": 942,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/942"
+  },
+  "TSO-0116": {
+   "number": 943,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/943"
+  },
+  "TSO-0117": {
+   "number": 944,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/944"
+  },
+  "TSO-0118": {
+   "number": 945,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/945"
+  },
+  "TSO-0119": {
+   "number": 946,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/946"
+  },
+  "TSO-0120": {
+   "number": 947,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/947"
+  },
+  "TSO-0121": {
+   "number": 948,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/948"
+  },
+  "TSO-0122": {
+   "number": 949,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/949"
+  },
+  "TSO-0123": {
+   "number": 950,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/950"
+  },
+  "TSO-0124": {
+   "number": 951,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/951"
+  },
+  "TSO-0125": {
+   "number": 952,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/952"
+  },
+  "TSO-0126": {
+   "number": 953,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/953"
+  },
+  "TSO-0127": {
+   "number": 954,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/954"
+  },
+  "TSO-0128": {
+   "number": 955,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/955"
+  },
+  "TSO-0129": {
+   "number": 956,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/956"
+  },
+  "TSO-0130": {
+   "number": 957,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/957"
+  },
+  "TSO-0131": {
+   "number": 958,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/958"
+  },
+  "TSO-0132": {
+   "number": 959,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/959"
+  },
+  "TSO-0133": {
+   "number": 960,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/960"
+  },
+  "TSO-0134": {
+   "number": 961,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/961"
+  },
+  "TSO-0135": {
+   "number": 962,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/962"
+  },
+  "TSO-0136": {
+   "number": 963,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/963"
+  },
+  "TSO-0137": {
+   "number": 964,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/964"
+  },
+  "TSO-0138": {
+   "number": 965,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/965"
+  },
+  "TSO-0139": {
+   "number": 966,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/966"
+  },
+  "TSO-0140": {
+   "number": 967,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/967"
+  },
+  "TSO-0141": {
+   "number": 968,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/968"
+  },
+  "TSO-0142": {
+   "number": 969,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/969"
+  },
+  "TSO-0143": {
+   "number": 970,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/970"
+  },
+  "TSO-0144": {
+   "number": 971,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/971"
+  },
+  "TSO-0145": {
+   "number": 972,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/972"
+  },
+  "TSO-0146": {
+   "number": 973,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/973"
+  },
+  "TSO-0147": {
+   "number": 974,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/974"
+  },
+  "TSO-0148": {
+   "number": 975,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/975"
+  },
+  "TSO-0149": {
+   "number": 976,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/976"
+  },
+  "TSO-0150": {
+   "number": 977,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/977"
+  },
+  "TSO-0151": {
+   "number": 978,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/978"
+  },
+  "TSO-0152": {
+   "number": 979,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/979"
+  },
+  "TSO-0153": {
+   "number": 980,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/980"
+  },
+  "TSO-0154": {
+   "number": 981,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/981"
+  },
+  "TSO-0155": {
+   "number": 982,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/982"
+  },
+  "TSO-0156": {
+   "number": 983,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/983"
+  },
+  "TSO-0157": {
+   "number": 984,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/984"
+  },
+  "TSO-0158": {
+   "number": 985,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/985"
+  },
+  "TSO-0159": {
+   "number": 986,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/986"
+  },
+  "TSO-0160": {
+   "number": 987,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/987"
+  },
+  "TSO-0161": {
+   "number": 988,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/988"
+  },
+  "TSO-0162": {
+   "number": 989,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/989"
+  },
+  "TSO-0163": {
+   "number": 990,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/990"
+  },
+  "TSO-0164": {
+   "number": 991,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/991"
+  },
+  "TSO-0165": {
+   "number": 992,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/992"
+  },
+  "TSO-0166": {
+   "number": 993,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/993"
+  },
+  "TSO-0167": {
+   "number": 994,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/994"
+  },
+  "TSO-0168": {
+   "number": 995,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/995"
+  },
+  "TSO-0169": {
+   "number": 996,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/996"
+  },
+  "TSO-0170": {
+   "number": 997,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/997"
+  },
+  "TSO-0171": {
+   "number": 998,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/998"
+  },
+  "TSO-0172": {
+   "number": 999,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/999"
+  },
+  "TSO-0173": {
+   "number": 1000,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1000"
+  },
+  "TSO-0174": {
+   "number": 1001,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1001"
+  },
+  "TSO-0175": {
+   "number": 1002,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1002"
+  },
+  "TSO-0176": {
+   "number": 1003,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1003"
+  },
+  "TSO-0177": {
+   "number": 1004,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1004"
+  },
+  "TSO-0178": {
+   "number": 1005,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1005"
+  },
+  "TSO-0179": {
+   "number": 1006,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1006"
+  },
+  "TSO-0180": {
+   "number": 1007,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1007"
+  },
+  "TSO-0181": {
+   "number": 1008,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1008"
+  },
+  "TSO-0182": {
+   "number": 1009,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1009"
+  },
+  "TSO-0183": {
+   "number": 1010,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1010"
+  },
+  "TSO-0184": {
+   "number": 1011,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1011"
+  },
+  "TSO-0185": {
+   "number": 1012,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1012"
+  },
+  "TSO-0186": {
+   "number": 1013,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1013"
+  },
+  "TSO-0187": {
+   "number": 1014,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1014"
+  },
+  "TSO-0188": {
+   "number": 1015,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1015"
+  },
+  "TSO-0189": {
+   "number": 1016,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1016"
+  },
+  "TSO-0190": {
+   "number": 1017,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1017"
+  },
+  "TSO-0191": {
+   "number": 1018,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1018"
+  },
+  "TSO-0192": {
+   "number": 1019,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1019"
+  },
+  "TSO-0193": {
+   "number": 1020,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1020"
+  },
+  "TSO-0194": {
+   "number": 1021,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1021"
+  },
+  "TSO-0195": {
+   "number": 1022,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1022"
+  },
+  "TSO-0196": {
+   "number": 1023,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1023"
+  },
+  "TSO-0197": {
+   "number": 795,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/795"
+  },
+  "TSO-0197.01": {
+   "number": 1024,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1024"
+  },
+  "TSO-0197.02": {
+   "number": 796,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/796"
+  },
+  "TSO-0198": {
+   "number": 1025,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1025"
+  },
+  "TSO-0199": {
+   "number": 1026,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1026"
+  },
+  "TSO-0200": {
+   "number": 1027,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1027"
+  },
+  "TSO-0201": {
+   "number": 1028,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1028"
+  },
+  "TSO-0202": {
+   "number": 1029,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1029"
+  },
+  "TSO-0203": {
+   "number": 1030,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1030"
+  },
+  "TSO-0204": {
+   "number": 1031,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1031"
+  },
+  "TSO-0205": {
+   "number": 1032,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1032"
+  },
+  "TSO-0206": {
+   "number": 1033,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1033"
+  },
+  "TSO-0207": {
+   "number": 1034,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1034"
+  },
+  "TSO-0208": {
+   "number": 1035,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1035"
+  },
+  "TSO-0209": {
+   "number": 1036,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/1036"
+  },
+  "TSO-0210": {
+   "number": 797,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/797"
+  },
+  "TSO-0211": {
+   "number": 798,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/798"
+  },
+  "TSO-0212": {
+   "number": 799,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/799"
+  },
+  "TSO-0213": {
+   "number": 800,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/800"
+  },
+  "TSO-0214": {
+   "number": 801,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/801"
+  },
+  "TSO-0215": {
+   "number": 802,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/802"
+  },
+  "TSO-0216": {
+   "number": 803,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/803"
+  },
+  "TSO-0217": {
+   "number": 804,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/804"
+  },
+  "TSO-0218": {
+   "number": 805,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/805"
+  },
+  "TSO-0219": {
+   "number": 806,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/806"
+  },
+  "TSO-0220": {
+   "number": 807,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/807"
+  },
+  "TSO-0221": {
+   "number": 808,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/808"
+  },
+  "TSO-0222": {
+   "number": 809,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/809"
+  },
+  "TSO-0223": {
+   "number": 810,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/810"
+  },
+  "TSO-0224": {
+   "number": 811,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/811"
+  },
+  "TSO-0225": {
+   "number": 812,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/812"
+  },
+  "TSO-0226": {
+   "number": 813,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/813"
+  },
+  "TSO-0227": {
+   "number": 814,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/814"
+  },
+  "TSO-0228": {
+   "number": 815,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/815"
+  },
+  "TSO-0229": {
+   "number": 816,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/816"
+  },
+  "TSO-0230": {
+   "number": 817,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/817"
+  },
+  "TSO-0231": {
+   "number": 818,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/818"
+  },
+  "TSO-0232": {
+   "number": 819,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/819"
+  },
+  "TSO-0233": {
+   "number": 820,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/820"
+  },
+  "TSO-0234": {
+   "number": 821,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/821"
+  },
+  "TSO-0235": {
+   "number": 822,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/822"
+  },
+  "TSO-0236": {
+   "number": 823,
+   "url": "https://github.com/rknightion/tailscale2otel/issues/823"
+  }
+ },
+ "prefix": "TSO",
+ "repo": "rknightion/tailscale2otel",
+ "schema": 1,
+ "source_sha": "5e1b270349ee9b405e86050d51c00bf369e30f94",
+ "synthetic": []
+}
