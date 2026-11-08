@@ -530,3 +530,18 @@ wait-for-proxy version="":
 [group('release')]
 bump-major major="":
     scripts/bump-module-major.sh {{ major }}
+
+# GitHub issues and the rknightion Project; maintainers only (needs the tracker tools and credentials)
+[group('tracker')]
+[positional-arguments]
+tracker *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export TRACKER_REPO=rknightion/tailscale2otel TRACKER_PROJECT_OWNER=rknightion TRACKER_PROJECT=7
+    export TRACKER_ISSUE_IDENTITY=app TRACKER_PROJECT_IDENTITY=user
+    exec tracker-with-token "$@"
+
+# print the issue a legacy board id (TSO-0001) became
+[group('tracker')]
+issue id:
+    TRACKER_REPO=rknightion/tailscale2otel tracker legacy {{ quote(id) }}

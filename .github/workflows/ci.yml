@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+    # `edited` re-runs CI when the pull request body changes, so the acceptance evidence check reads
+    # the new table. Every job runs on it: a job skipped by `if:` would report success to ci-success.
+    types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -552,6 +555,26 @@ jobs:
           path: ${{ matrix.package }}/testdata/corpus/**
           if-no-files-found: ignore
 
+  # A pull request that closes an issue shows evidence for each of its acceptance criteria. Checks
+  # only pull requests with a closing keyword (enforce-all-prs: false), because this repository takes
+  # outside and bot pull requests. The reusable fails on any event but pull_request, so it runs on
+  # pull requests only. Check run: `ac-evidence / Acceptance evidence`.
+  ac-evidence:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    uses: rknightion/.github/.github/workflows/ac-evidence.yml@8f00b7fb896191e598f12ed565395697c539add1 # v1.26.9
+
+  # The lines a pull request adds carry no identifier, email address, public address or credential
+  # shape. Pull requests only, like ac-evidence. Check run: `privacy-sweep / Privacy sweep`.
+  privacy-sweep:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/privacy-sweep.yml@8f00b7fb896191e598f12ed565395697c539add1 # v1.26.9
+
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
   # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
@@ -560,12 +583,28 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build]
+    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        env:
+          RESULTS: ${{ join(needs.*.result, ', ') }}
         run: |
-          echo "A required job failed or was cancelled: ${{ join(needs.*.result, ', ') }}"
+          echo "A required job failed or was cancelled: ${RESULTS}"
           exit 1
+      # A skipped job reports success, so on a pull request the pull request checks must have
+      # actually run and passed. Off a pull request they are skipped by design.
+      - name: Fail if a pull request check did not run
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          AC_EVIDENCE: ${{ needs.ac-evidence.result }}
+          PRIVACY_SWEEP: ${{ needs.privacy-sweep.result }}
+        run: |
+          if [[ "$AC_EVIDENCE" != "success" || "$PRIVACY_SWEEP" != "success" ]]; then
+            echo "ac-evidence: ${AC_EVIDENCE}, privacy-sweep: ${PRIVACY_SWEEP}; both must pass on a pull request"
+            exit 1
+          fi
       - name: All required jobs passed
-        run: echo "ci-success — ${{ join(needs.*.result, ', ') }}"
+        env:
+          RESULTS: ${{ join(needs.*.result, ', ') }}
+        run: echo "ci-success - ${RESULTS}"

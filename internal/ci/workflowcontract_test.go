@@ -1073,6 +1073,8 @@ func jobsOf(t *testing.T, doc map[string]any, name string) map[string]any {
 // below fails in that direction too.
 var reusableCallJobs = map[string]bool{
 	"actionlint.yml/actionlint":               true,
+	"ci.yml/ac-evidence":                      true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"ci.yml/privacy-sweep":                    true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"arm-automerge.yml/arm":                   true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"auto-rc.yml/rc":                          true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"auto-rc.yml/publish":                     true, // local reusable call; the called workflow owns its job timeouts
