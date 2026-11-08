@@ -46,3 +46,15 @@ refreshing the vendored OpenAPI spec.
   is silently dropped by release-please, so repair it additively with a second commit.
 - RBAC proofs (`auth can-i --as`) go through the direct cluster endpoint: the tailnet API proxy answers
   as the operator and returns a false `yes`.
+- ci.yml's `dashboards-drift` job runs `just test-python` before it installs promtool, so a new
+  Python test under `deploy/*/gen` or `scripts` that shells out to promtool passes locally and
+  fails in CI. Keep promtool-dependent proof out of the unittest tree (retained evidence); never
+  add a skip-when-absent guard.
+- The `tailscale.com/client/tailscale/v2` path is in root `go.mod`, 25 Go files and, as an
+  indirect require, three tool modules' `go.mod`; `clientlib-main.yml` hardcodes it. Move all of them
+  in one change and tidy every module.
+- Any push touching `deploy/grafana/**` also runs grafana-sync's unconditional `rules` job (prune,
+  then `gcx resources push`), even for a dashboard-only change. Authority for dashboard delivery
+  covers that rule publication too.
+- `gen-check` and `helm-gen-check` use plain `git diff --exit-code`, so an applied but unstaged
+  candidate looks red: `git add` its paths before the gate, or gate a committed detached worktree.
