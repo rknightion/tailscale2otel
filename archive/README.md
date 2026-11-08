@@ -3,8 +3,8 @@
 `github-issues-2026-08-14.json` is the complete contents of this repository's GitHub Issues tracker
 as of **2026-08-14**, captured immediately before the issues themselves were deleted. Work was then
 tracked on a Backlog.md board and is tracked in GitHub issues again; the board's *Closed GitHub
-issues* document is the browsable index to this file, and this file holds the bodies and replies
-behind it.
+issues* document (kept under `.github/tracker/history/`) is the browsable index to this file, and
+this file holds the bodies and replies behind it.
 
 **This is the record, not a convenience copy.** The issues it describes no longer exist on GitHub, so
 `gh issue view <N>` will 404. Anything in the repository that cites `#NNN` resolves here, with two
