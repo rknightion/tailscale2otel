@@ -1089,7 +1089,7 @@ var reusableCallJobs = map[string]bool{
 	"release-please.yml/edge":                 true,
 	"release-please.yml/binaries":             true,
 	"scorecard.yml/scorecard":                 true,
-	"zizmor.yml/zizmor":                       true,
+	"ci.yml/zizmor":                           true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 }
 
 // maxJobTimeout bounds the bound. A timeout of 360 is the implicit default
