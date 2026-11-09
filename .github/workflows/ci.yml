@@ -613,6 +613,16 @@ jobs:
           fi
           echo "No file under backlog/ is added or changed."
 
+  # zizmor fails a pull request on any finding (enforce); push runs upload SARIF instead.
+  zizmor:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: rknightion/.github/.github/workflows/zizmor.yml@3d332ffa11827d468db8de6d323288c4a48a595f # v1.29.3
+    with:
+      enforce: true
+
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
   # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
@@ -621,7 +631,7 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze]
+    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze, zizmor]
     steps:
       - name: Fail if any required job did not pass
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
