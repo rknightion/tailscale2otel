@@ -1572,7 +1572,7 @@ type NodeMetricsDiscovery struct {
 
 	// Address + instance selection.
 	AddressOrder   string `yaml:"address_order" reload:"restart"`   // "ipv4" (default) | "ipv6" (preferred family; falls back to the other)
-	InstanceSource string `yaml:"instance_source" reload:"restart"` // node identity label: "address" (default, host:port) | "name" (MagicDNS short name, unique) | "hostname" (OS hostname; NOT unique — collisions like "localhost" are disambiguated by address + WARN)
+	InstanceSource string `yaml:"instance_source" reload:"restart"` // node identity label: "name" (default, MagicDNS short name, unique) | "address" (host:port) | "hostname" (OS hostname; NOT unique — collisions like "localhost" are disambiguated by address + WARN)
 
 	// Passthrough labels merged onto each discovered target's series, for
 	// join-ability with tailscale.device.* (host.name/host.id, tailscale.tags).
