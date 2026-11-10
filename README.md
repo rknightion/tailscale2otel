@@ -47,7 +47,7 @@ the number of flow metric series.
 - **Central `tailscaled` node-metrics polling.** Scrapes each node's native client-metrics endpoint
   (`:5252`) from one place instead of deploying a scraper per node - with **automatic target
   discovery from the devices API** (tag include/exclude, online-only, address family). Emits both the
-  raw `tailscaled_*` series and 8 curated `tailscale.node.*` metrics with folded low-cardinality
+  raw `tailscaled_*` series and 9 curated `tailscale.node.*` metrics with folded low-cardinality
   attributes.
 - **Beyond the device API.** Users, auth keys / OAuth clients / API tokens
   (with expiry), tailnet settings, DNS, ACL policy (scored for structural risk: wildcards,
