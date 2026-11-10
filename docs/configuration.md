@@ -1736,7 +1736,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 
 ## `pii_filter` - PII / identifier redaction
 
-Runtime opt-out toggles for each identifier category. All 13 categories default to **`true`**
+Runtime opt-out toggles for each identifier category. All 14 categories default to **`true`**
 (identifiers are emitted as-is). Set a category to `false` to drop those identifiers from metrics,
 logs **and traces** at collection time. Gauges whose only meaningful identity is a redacted category
 are suppressed entirely. Categories are independent - you can redact external IPs while keeping

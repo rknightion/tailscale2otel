@@ -63,7 +63,7 @@ the number of flow metric series.
   a schedule, with a built-in MaxMind updater if you want one. Tailnet addresses are never geolocated.
 - **Multi-tailnet / MSP mode** - one process observing N tailnets, each with its own credentials, and
   `tailscale.tailnet` as a real label on every signal (no `target_info` join required).
-- **PII controls** cover 13 categories, including emails, user IDs, hostnames, IPs, node IDs and
+- **PII controls** cover 14 categories, including emails, user IDs, hostnames, IPs, node IDs and
   free-text detail. Categories retain their values by default; set a category to `false` to redact
   it from exported metric attributes, log records and spans. The [security
   guide](https://m7kni.io/tailscale2otel/security/) explains local storage and raw-policy exceptions.
