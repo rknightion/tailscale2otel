@@ -283,13 +283,15 @@ private tailnet endpoints.
 
 ## Exposing the receivers on Kubernetes (Ingress / Gateway API)
 
-The Helm chart ships **no inbound resource by default** (see `deploy/CLAUDE.md`'s "No Kubernetes
-Service" note). Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
+The Helm chart ships **no inbound resource by default**: each per-listener `Service`
+(`service.admin`, `service.prometheus`, `service.streaming`, `service.webhook`) is opt-in and
+defaults to `enabled: false`. Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
 **only for the two receiver listeners, `streaming` and `webhook`**. **Admin and Prometheus never get
 one, at any value** - they are introspection and scrape surfaces, and publishing either to the
 internet is never the right default, so the chart does not offer that as a one-line mistake. Reach
-those two the way `deploy/CLAUDE.md` already documents: a `Service` you manage yourself plus your own
-`Ingress`, or a `PodMonitor`/`ServiceMonitor` for Prometheus scraping.
+those two through their own opt-in `ClusterIP` Service (`service.admin.enabled`,
+`service.prometheus.enabled`) plus your own `Ingress`, or a `PodMonitor`/`ServiceMonitor` for
+Prometheus scraping.
 
 Both paths require a backing `Service` first (`service.streaming.enabled` /
 `service.webhook.enabled` - see [Configuration](configuration.md)), and both refuse to render if the
