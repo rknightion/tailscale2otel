@@ -153,7 +153,7 @@ streaming:
   enabled: true
   listen: ":8088"                    # bind address for the receiver
   path: /services/collector/event    # HEC endpoint path (Tailscale POSTs here)
-  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty on a non-loopback listen = every request REFUSED with 403)
+  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty on a non-loopback listen = config validation refuses to start)
   public_url: ""                     # externally reachable URL; required only when auto_configure: true
   tls:
     cert_file: ""                    # HTTPS cert (Tailscale requires HTTPS; `tailscale cert` works for private endpoints)
@@ -229,7 +229,7 @@ webhook:
   enabled: false
   listen: ":8089"                    # bind address for the webhook receiver
   path: /tailscale/webhook           # endpoint path Tailscale POSTs events to
-  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise requests get 403)
+  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise config validation refuses to start)
   tls:
     cert_file: ""                    # native HTTPS certificate; set with key_file
     key_file: ""                     # native HTTPS key; leave both empty behind an HTTPS reverse proxy
