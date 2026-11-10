@@ -191,7 +191,7 @@ suggests it. Keys under a dynamic map (`otlp.headers.*`, a node-metrics target's
 - [High availability](high-availability.md) and [`coordination`](#coordination-kubernetes-active-passive-operation)
 - [`pam`: PAM connection](#pam-tailscale-pam-border0-api-connection)
 - [`scheduler`: initial tick spread](#scheduler-initial-tick-spread)
-## `checkpoint` - poll cursors and semantic evidence {#checkpoint-poll-high-water-marks}
+- [`checkpoint` - poll cursors and semantic evidence](#checkpoint-poll-high-water-marks)
 - [`ingress_wal` - durable local receiver acceptance](#ingress_wal-durable-local-receiver-acceptance)
 - [`streaming` - Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
 - [`webhook` - event webhook receiver](#webhook-event-webhook-receiver)
