@@ -995,7 +995,9 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 			go runEnrichCacheAgeReporter(ctx, a.runtimes, interval)
 		}
 		if a.checkpointEffective == "file" {
-			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.cfg.Checkpoint.FilePath, interval)
+			// The effective path, not the configured one: a relocated default
+			// (#336) leaves nothing at cfg.Checkpoint.FilePath to stat.
+			go collector.RunCheckpointReporter(ctx, a.procEmitter, a.checkpointPath, interval)
 		}
 		// Per-tailnet self-obs: cardinality + export volume ride each tailnet's
 		// emitter (stamps tailscale.tailnet on every signal). api.*/scrape.* are already
