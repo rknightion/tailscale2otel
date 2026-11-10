@@ -106,7 +106,8 @@ the full list of what's affected and the required connection settings.
 5. Launches the admin HTTP server (health probes, status page, `POST /api/rdns/purge`, optional
    pprof) when `admin.enabled`.
 6. Launches the standalone Prometheus pull-endpoint server (`internal/app/metrics.go`) when
-   `prometheus.enabled`, serving the merged per-provider gatherers from the `ProviderSet`.
+   `prometheus.enabled` is set or `delivery.mode` is `prometheus` or `dual`, serving the merged
+   per-provider gatherers from the `ProviderSet`.
 7. Starts continuous profiling (Pyroscope push agent) when configured; failure to reach Pyroscope
    is non-fatal.
 
@@ -129,7 +130,8 @@ cursors through ConfigMaps. Enrichment, dedup and local views remain process-loc
 
 - **`SnapshotCollector`** - a point-in-time read, called on a fixed interval. Used by `devices`,
   `users`, `keys`, `settings`, `acl`, `dns`, `services`, `contacts`, `webhooks`,
-  `posture_integrations`, `log_stream`, and `nodemetrics`. Some retain state between ticks, including ACL ETags,
+  `posture_integrations`, `log_stream`, `oauth_apps`, `pam`, `nodemetrics` and the object-store
+  readers. Some retain state between ticks, including ACL ETags,
   previous snapshots, lifecycle observations and dedup sets.
 - **`WindowCollector`** - a time-windowed read, called with an explicit `[from, to]` range. Used
   by `flowlogs` and `auditlogs`. Each run returns a high-water mark that becomes the `from` of the
