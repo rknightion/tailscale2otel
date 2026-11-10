@@ -165,7 +165,7 @@ treat it as an order-of-magnitude planning number, not a measured one. Two ways 
   default 30-day retention - already past the row cap above. Below that rate, retention days × your
   connections/day × 300 bytes is the estimate; above it, the row cap is what actually bounds disk use.
 
-Measure your own tailnet's connection rate (the `tailscale.network.flow.count` metric, or watch the
+Measure your own tailnet's connection rate (the `tailscale.network.flows` metric, or watch the
 row count directly) before committing to a volume size, and raise `flows.store.max_rows` deliberately
 if 1.5 GB is too small a ceiling for the retention you want.
 
