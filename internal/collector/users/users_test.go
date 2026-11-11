@@ -9,6 +9,7 @@ import (
 
 	tsclient "tailscale.com/client/tailscale/v2"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/aclpolicy"
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector/users"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
@@ -616,6 +617,41 @@ func TestCollect_PropagatesInviteError(t *testing.T) {
 	c := users.New(&fakeLister{users: sampleUsers(), invitesErr: wantErr}, 0)
 	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
 		t.Fatalf("Collect err = %v, want %v", err, wantErr)
+	}
+}
+
+// recordingDirectorySink keeps every directory the collector publishes.
+type recordingDirectorySink struct {
+	published []aclpolicy.Directory
+}
+
+func (s *recordingDirectorySink) SetDirectory(d aclpolicy.Directory) error {
+	s.published = append(s.published, d)
+	return nil
+}
+
+// TestCollect_PublishesDirectoryWhenInvitesFail pins that the role directory
+// comes from the users response alone. A credential that may list users but
+// not user invites must still feed the ACL evaluator's role autogroups, even
+// though the collect itself reports the invites failure.
+func TestCollect_PublishesDirectoryWhenInvitesFail(t *testing.T) {
+	rec := telemetrytest.New()
+	wantErr := errors.New("invite boom")
+	sink := &recordingDirectorySink{}
+	c := users.New(&fakeLister{users: sampleUsers(), invitesErr: wantErr}, 0, users.WithDirectorySink(sink))
+
+	if err := c.Collect(context.Background(), rec.Emitter()); !errors.Is(err, wantErr) {
+		t.Fatalf("Collect err = %v, want %v", err, wantErr)
+	}
+	if len(sink.published) != 1 {
+		t.Fatalf("directory published %d time(s), want 1", len(sink.published))
+	}
+	roles := sink.published[0].Roles
+	if got, want := roles["alice@example.com"], string(tsclient.UserRoleOwner); got != want {
+		t.Errorf("role for the owner = %q, want %q", got, want)
+	}
+	if got, want := roles["bob@example.com"], string(tsclient.UserRoleMember); got != want {
+		t.Errorf("role for a member = %q, want %q", got, want)
 	}
 }
 

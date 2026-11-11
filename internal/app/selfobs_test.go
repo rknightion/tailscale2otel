@@ -183,7 +183,7 @@ func TestEmitPIIFilterCategory(t *testing.T) {
 		t.Errorf("category=%q value=%v, want 1 (emitted)", pii.CatHostnames, v)
 	}
 
-	// Verify all 13 categories are present.
+	// Verify every category is present.
 	for _, cat := range pii.AllCategories {
 		if _, ok := byCategory[string(cat)]; !ok {
 			t.Errorf("missing datapoint for category=%q", cat)

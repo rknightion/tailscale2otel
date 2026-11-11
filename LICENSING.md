@@ -22,7 +22,8 @@ never ship), using [`go-licenses`](https://github.com/google/go-licenses) and
   attaches it to each GitHub Release.
 - **`scripts/sbom.sh`** → `dist/sbom/tailscale2otel.spdx.json` (SPDX 2.3) +
   `dist/sbom/tailscale2otel.cdx.json` (CycloneDX 1.6), attached to each GitHub Release. (GoReleaser
-  additionally emits per-archive SBOMs and an image SBOM attestation.)
+  additionally emits per-archive SBOMs; the image SBOM comes from the shared container-publish
+  workflow that `publish.yml` calls, not from GoReleaser.)
 
 These are **regenerated at release time, not committed** - they change on every dependency bump, so
 committing and gating them would block hosted-Renovate automerge. They are therefore deliberately

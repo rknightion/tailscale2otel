@@ -35,7 +35,7 @@ All metrics and log attributes are authored to follow
   `_total` convention; that suffix is added later by the backend, not by us.
 - **Attribute keys are dotted/namespaced too** - e.g. `network.io.direction`,
   `http.response.status_code`, `service.version`, `host.name`. Tailscale-specific keys use a
-  `tailscale.*` prefix (e.g. `tailscale.src_node`, `tailscale.audit.action`).
+  `tailscale.*` prefix (e.g. `tailscale.src.node`, `tailscale.audit.action`).
 
 ### Grafana Cloud OTLP → Prometheus normalization
 

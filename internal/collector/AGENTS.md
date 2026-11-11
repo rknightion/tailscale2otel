@@ -88,8 +88,9 @@ alert. `TestEveryRegisteredCollectorRecordsAPIState` fails if you skip it. Three
 - The `metric_allow`/`metric_deny` (anchored regex on the metric NAME) and `drop_labels` (`instance`
   is never dropped) filters apply ONLY to forwarded passthrough samples in `emitSample` - never to
   `tailscale.node.up` or the `discovery.*` gauges.
-- **Per-entity gauge toggles are the main cardinality lever.** `cardinality.per_entity.{device,user,
-  key}` gate the per-entity gauges; switching one off falls back to the aggregate count (the
+- **Per-entity gauge toggles are the main cardinality lever.**
+  `cardinality.per_entity.{device,user,key,webhook,service}` gate the per-entity gauges; switching
+  one off falls back to the aggregate count (the
   key-expiry WARN log still fires when `per_entity.key` is off). `cardinality.flow.collapse_external`
   buckets unresolved IPs as `external`/`unknown` and, when `cardinality.flow.node_dims` is on, also
   sets the src/dst node labels on flow *metrics*.

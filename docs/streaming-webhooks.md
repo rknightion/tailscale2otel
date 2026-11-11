@@ -153,7 +153,7 @@ streaming:
   enabled: true
   listen: ":8088"                    # bind address for the receiver
   path: /services/collector/event    # HEC endpoint path (Tailscale POSTs here)
-  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty on a non-loopback listen = every request REFUSED with 403)
+  token: ""                          # set via TS2OTEL_STREAMING__TOKEN (empty on a non-loopback listen = config validation refuses to start)
   public_url: ""                     # externally reachable URL; required only when auto_configure: true
   tls:
     cert_file: ""                    # HTTPS cert (Tailscale requires HTTPS; `tailscale cert` works for private endpoints)
@@ -229,7 +229,7 @@ webhook:
   enabled: false
   listen: ":8089"                    # bind address for the webhook receiver
   path: /tailscale/webhook           # endpoint path Tailscale POSTs events to
-  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise requests get 403)
+  secret: ""                         # HMAC-SHA256 secret (set via TS2OTEL_WEBHOOK__SECRET; empty works only on loopback, otherwise config validation refuses to start)
   tls:
     cert_file: ""                    # native HTTPS certificate; set with key_file
     key_file: ""                     # native HTTPS key; leave both empty behind an HTTPS reverse proxy
@@ -283,13 +283,15 @@ private tailnet endpoints.
 
 ## Exposing the receivers on Kubernetes (Ingress / Gateway API)
 
-The Helm chart ships **no inbound resource by default** (see `deploy/CLAUDE.md`'s "No Kubernetes
-Service" note). Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
+The Helm chart ships **no inbound resource by default**: each per-listener `Service`
+(`service.admin`, `service.prometheus`, `service.streaming`, `service.webhook`) is opt-in and
+defaults to `enabled: false`. Since chart 0.21.0 it offers opt-in Ingress and Gateway API `HTTPRoute` objects, but
 **only for the two receiver listeners, `streaming` and `webhook`**. **Admin and Prometheus never get
 one, at any value** - they are introspection and scrape surfaces, and publishing either to the
 internet is never the right default, so the chart does not offer that as a one-line mistake. Reach
-those two the way `deploy/CLAUDE.md` already documents: a `Service` you manage yourself plus your own
-`Ingress`, or a `PodMonitor`/`ServiceMonitor` for Prometheus scraping.
+those two through their own opt-in `ClusterIP` Service (`service.admin.enabled`,
+`service.prometheus.enabled`) plus your own `Ingress`, or a `PodMonitor`/`ServiceMonitor` for
+Prometheus scraping.
 
 Both paths require a backing `Service` first (`service.streaming.enabled` /
 `service.webhook.enabled` - see [Configuration](configuration.md)), and both refuse to render if the

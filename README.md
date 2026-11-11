@@ -22,7 +22,7 @@ It runs as one static Go binary and supports a reduced collector set for
 | | |
 |---|---|
 | **342** metrics + **32** log-event types | across **17** collectors |
-| **19** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
+| **20** Tailscale API endpoints consumed | polled, streamed, or webhook-driven |
 | **140** shipped rules | **117** alert + **23** recording, Grafana-managed |
 | **2** Grafana dashboards | tailnet + exporter health, v2 dynamic (Grafana 13+) |
 | **OTLP** push (gRPC/HTTP) | **and/or** a Prometheus pull endpoint |
@@ -47,7 +47,7 @@ the number of flow metric series.
 - **Central `tailscaled` node-metrics polling.** Scrapes each node's native client-metrics endpoint
   (`:5252`) from one place instead of deploying a scraper per node - with **automatic target
   discovery from the devices API** (tag include/exclude, online-only, address family). Emits both the
-  raw `tailscaled_*` series and 8 curated `tailscale.node.*` metrics with folded low-cardinality
+  raw `tailscaled_*` series and 9 curated `tailscale.node.*` metrics with folded low-cardinality
   attributes.
 - **Beyond the device API.** Users, auth keys / OAuth clients / API tokens
   (with expiry), tailnet settings, DNS, ACL policy (scored for structural risk: wildcards,
@@ -63,7 +63,7 @@ the number of flow metric series.
   a schedule, with a built-in MaxMind updater if you want one. Tailnet addresses are never geolocated.
 - **Multi-tailnet / MSP mode** - one process observing N tailnets, each with its own credentials, and
   `tailscale.tailnet` as a real label on every signal (no `target_info` join required).
-- **PII controls** cover 13 categories, including emails, user IDs, hostnames, IPs, node IDs and
+- **PII controls** cover 14 categories, including emails, user IDs, hostnames, IPs, node IDs and
   free-text detail. Categories retain their values by default; set a category to `false` to redact
   it from exported metric attributes, log records and spans. The [security
   guide](https://m7kni.io/tailscale2otel/security/) explains local storage and raw-policy exceptions.
@@ -284,7 +284,7 @@ has broken decoders here before. The repository runs these checks:
 | **Schema-driven decode tests** | every PR (gates) | synthesizes payloads from the vendored OpenAPI spec + known wire quirks (numeric `proto`, polymorphic audit `old`/`new`) through the real decoders, plus a **boundary matrix** running every consumed operation against every boundary shape - null, empty container, nulled nullable fields, extreme values, an unknown enum member, an additive field, and a wrong container shape that must be *rejected*. Runs inside the normal `go test -race ./...` leg, which `ci-success` requires |
 | **Exploratory fuzzing** | pushes to main (advisory) | `go test -fuzz` over the HEC envelope, HEC timestamps and the flow/audit decoders. Deliberately **not** required: finding a NEW crasher is nondeterministic, so gating it would let an unrelated PR randomly block merges. Each target's seed corpus runs in the gated leg above, so a KNOWN crasher still blocks |
 | **OpenAPI drift** | daily | diffs the live spec against the vendored copy, scoped to consumed operations. Covers response fields, path/query/header **parameters** (requiredness, type, default, enum), the **success-status set** and **request/response media types**, classifying each as breaking, behavioral or additive |
-| **Client-lib tracking** | weekly | builds and tests against `tailscale-client-go/v2@main` and `@latest` |
+| **Client-lib tracking** | weekly | builds and tests against `tailscale.com/client/tailscale/v2@main` and `@latest` |
 | **Scheduled fuzzing** | weekly | the same nine fuzz targets for 15 minutes each instead of 120 seconds, where a nondeterministic finding costs nobody a blocked merge. Opens a deduplicated tracking issue on a crasher and attaches the failing input |
 | **Live contract** | daily | hits the real API read-only and asserts every consumed GET still decodes |
 | **Changelog review** | monthly | reads Tailscale's changelog feed for entries that name something this exporter collects and carry no recorded verdict in `spec/changelog-reviewed.json`. Catches a capability announced *before*, or without, any OpenAPI change. Reviewing an entry means recording a verdict - including a negative one, so a surface already declined is never re-proposed |
@@ -309,11 +309,12 @@ gh label create clientlib-drift -c FBCA04
 gh label create live-contract -c FBCA04
 ```
 
-The live lane stores **no long-lived Tailscale key**. It runs on a standard GitHub-hosted runner and
-mints a short-lived token from Tailscale's OAuth endpoint using a read-only (`all:read`) OAuth client,
-whose `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_CLIENT_SECRET` are repo secrets. Keeping them as secrets is safe
-because this lane is `schedule` + `workflow_dispatch` only, so a fork PR can never run it and never
-reach them; the minted token is masked and lives only for that run. Set the repo variable `TS_TAILNET`
+The live lane stores **no Tailscale credential at all**. It runs on a standard GitHub-hosted runner and
+authenticates by Workload Identity Federation: it exchanges the run's GitHub OIDC token for a
+short-lived Tailscale API token with read scope (`all:read`). Set the repo secrets `TS_WIF_CLIENT_ID`
+and `TS_WIF_AUDIENCE`; they are identifiers, not credentials, kept as secrets only to keep tailnet
+identifiers out of tracked files. The lane is `schedule` + `workflow_dispatch` only, and
+the minted token is masked and lives only for that run. Set the repo variable `TS_TAILNET`
 (the tailnet name is not a secret). Missing configuration fails the lane loudly rather than
 self-skipping, so a misconfigured preflight cannot look green. Optionally set the `ANTHROPIC_API_KEY` secret
 for Claude enrichment on the spec-drift and live lanes; the client-lib lane never receives it by

@@ -90,12 +90,13 @@ the optional `prometheus` pull endpoint serves `GET /metrics`. Receiver authenti
 enabled by a configured secret; an empty credential is accepted only on a loopback bind:
 
 - Leaving `webhook.secret` empty skips HMAC verification only on a loopback
-  `webhook.listen`. On any network-reachable bind, every request is refused with HTTP 403
-  before its body is read.
-- Leaving `streaming.token` empty is **refused rather than accepted** on a
-  network-reachable bind: the HEC receiver answers every request with HTTP 403 and logs an
-  ERROR at startup. It stays open only on a loopback `streaming.listen`. This fails closed,
-  so a missing token costs you ingestion, not silent acceptance of forged records.
+  `webhook.listen`. With `webhook.enabled: true` on any network-reachable bind, an empty
+  secret is a configuration error: `Config.Validate` rejects it and the exporter does not
+  start.
+- Leaving `streaming.token` empty is accepted only on a loopback `streaming.listen`. With
+  `streaming.enabled: true` on any network-reachable bind, an empty token is a configuration
+  error: `Config.Validate` rejects it and the exporter does not start.
+- The same rule applies to every entry under `streaming.routes` and `webhook.routes`.
 - Leaving `prometheus.auth.token` empty serves `/metrics` unauthenticated only on a loopback bind.
   A network-reachable bind returns HTTP 403 unless
   `prometheus.auth.allow_unauthenticated: true` explicitly acknowledges that every series,
@@ -110,7 +111,8 @@ for private tailnet endpoints.
 
 > Any field can be set via a `TS2OTEL_*` environment variable (the env layer
 > overrides the file). A mistyped variable name (`TS2OTEL_WEBHOOK__SECRT`) leaves
-> the secret empty; the receiver then fails closed on a network-reachable bind.
+> the secret empty; startup validation then rejects an enabled receiver on a
+> network-reachable bind.
 > The startup log WARNs on a `TS2OTEL_*`
 > variable that matches no config key, but double-check that auth credentials are
 > actually set.

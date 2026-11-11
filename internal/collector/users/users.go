@@ -297,6 +297,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 
+	if c.directory != nil {
+		// Published before the invites call: the directory comes from the users
+		// response alone, so an invites failure must not withhold it.
+		//
+		// A recompile failure is swallowed on purpose: the ACL evaluator is a
+		// side consumer of this collector and must never turn a policy problem
+		// into a users-collector failure. The sink retains the error for the
+		// status page.
+		_ = c.directory.SetDirectory(aclpolicy.Directory{Roles: roles})
+	}
+
 	invites, err := c.api.UserInvites(ctx)
 	apistate.Observe(e, c.tracker, c.Name(), opUserInvites, apistate.Disposition{}, err, c.now())
 	if err != nil {
@@ -353,14 +364,6 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 	c.inviteState = currentInvites
-
-	if c.directory != nil {
-		// A recompile failure is swallowed on purpose: the ACL evaluator is a
-		// side consumer of this collector and must never turn a policy problem
-		// into a users-collector failure. The sink retains the error for the
-		// status page.
-		_ = c.directory.SetDirectory(aclpolicy.Directory{Roles: roles})
-	}
 
 	return nil
 }

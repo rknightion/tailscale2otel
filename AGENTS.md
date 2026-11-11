@@ -209,9 +209,11 @@ tool module can never affect the main module's build.
   schema needs the explicit, tested synthesis overlay in the contract tests. `failingAssertions`
   stays PII-filtered free text in log details; never promote it to metric labels.
 - Profiling is opt-in and admin-coupled: `/debug/pprof` mounts on the admin server, so
-  `profiling.pprof.enabled` requires `admin.enabled` (`Validate()` errors otherwise). Mutex and
-  block profiles stay empty unless `mutex_profile_fraction`/`block_profile_rate` are set. The
-  Prometheus pull endpoint is a **second**, separate listener (default `127.0.0.1:2112`).
+  `profiling.pprof.enabled` requires `admin.enabled` and `admin.auth.token` (`Validate()` errors
+  otherwise). Mutex and block sampling default on (`mutex_profile_fraction: 5`,
+  `block_profile_rate: 100000`) but are applied only when pprof or Pyroscope is enabled; `0`
+  disables either. The Prometheus pull endpoint is a **second**, separate listener (default
+  `127.0.0.1:2112`).
 - The Pyroscope push agent needs `profiling.pyroscope.server_address`, and a `grafana.net` target
   also needs `basic_auth_password` (an access-policy token carrying `profiles:write`), which
   `Warnings()` flags.

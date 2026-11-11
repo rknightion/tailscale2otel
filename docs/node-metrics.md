@@ -351,6 +351,7 @@ instead.
 | Source family | Curated metric | Attributes |
 |---|---|---|
 | `tailscaled_inbound_bytes_total` / `tailscaled_outbound_bytes_total` | `tailscale.node.io` (`By`) | `network.io.direction` (`receive`/`transmit`), `tailscale.path` |
+| `tailscaled_serve_inbound_bytes_total` / `tailscaled_serve_outbound_bytes_total` | `tailscale.node.service.io` (`By`) | `network.io.direction`, `tailscale.service.name` (a `svc:` name; any other value folds to `__other__`) |
 | `tailscaled_inbound_packets_total` / `tailscaled_outbound_packets_total` | `tailscale.node.packets` (`{packet}`) | `network.io.direction`, `tailscale.path` |
 | `tailscaled_inbound_dropped_packets_total` / `tailscaled_outbound_dropped_packets_total` | `tailscale.node.packets.dropped` (`{packet}`) | `network.io.direction`, `tailscale.drop.reason` |
 | `tailscaled_peer_relay_forwarded_bytes_total` | `tailscale.node.peer_relay.io` (`By`) | - |

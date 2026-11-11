@@ -191,7 +191,7 @@ suggests it. Keys under a dynamic map (`otlp.headers.*`, a node-metrics target's
 - [High availability](high-availability.md) and [`coordination`](#coordination-kubernetes-active-passive-operation)
 - [`pam`: PAM connection](#pam-tailscale-pam-border0-api-connection)
 - [`scheduler`: initial tick spread](#scheduler-initial-tick-spread)
-## `checkpoint` - poll cursors and semantic evidence {#checkpoint-poll-high-water-marks}
+- [`checkpoint` - poll cursors and semantic evidence](#checkpoint-poll-high-water-marks)
 - [`ingress_wal` - durable local receiver acceptance](#ingress_wal-durable-local-receiver-acceptance)
 - [`streaming` - Splunk-HEC log receiver](#streaming-splunk-hec-log-receiver)
 - [`webhook` - event webhook receiver](#webhook-event-webhook-receiver)
@@ -1736,7 +1736,7 @@ Optional receiver for real-time Tailscale events (HMAC-verified). **Off by defau
 
 ## `pii_filter` - PII / identifier redaction
 
-Runtime opt-out toggles for each identifier category. All 13 categories default to **`true`**
+Runtime opt-out toggles for each identifier category. All 14 categories default to **`true`**
 (identifiers are emitted as-is). Set a category to `false` to drop those identifiers from metrics,
 logs **and traces** at collection time. Gauges whose only meaningful identity is a redacted category
 are suppressed entirely. Categories are independent - you can redact external IPs while keeping
