@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # ---- build ----
-FROM golang:1.27.3-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
+FROM golang:1.27.4-alpine@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS build
 # Refresh trust before downloading modules: the upstream Go image predates the
 # eMudhra intermediate distrust in Alpine's 20261020-r0 CA bundle.
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle
