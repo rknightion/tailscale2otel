@@ -769,7 +769,13 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 	}
 	// The tarball is verified against the release's own published sums rather than
 	// a checksum pasted here, which would silently rot on the next version bump.
-	if !strings.Contains(workflowScript(steps), "sha256sums.txt") {
+	// The download lives in the justfile's install-promtool recipe, which the
+	// workflow step must invoke.
+	if !strings.Contains(workflowScript(steps), "just install-promtool") {
+		t.Error("dashboards-drift does not install promtool through `just install-promtool`, " +
+			"so CI could pin a different version than the justfile")
+	}
+	if !strings.Contains(expandedRecipeBody(t, "install-promtool"), "sha256sums.txt") {
 		t.Error("the promtool download is not verified against the release's sha256sums.txt")
 	}
 	// `check rules` proves the expressions parse; it does not run them. A rule can
@@ -1292,7 +1298,6 @@ func TestCIRetryIsFailClosed(t *testing.T) {
 func TestTransientFetchesAreRetried(t *testing.T) {
 	for _, tc := range []struct{ workflow, job, needle string }{
 		{"api-drift.yml", "spec-drift", "api.tailscale.com/api/v2?outputOpenapiSchema=true"},
-		{"ci.yml", "dashboards-drift", "prometheus/releases/download"},
 	} {
 		t.Run(tc.workflow, func(t *testing.T) {
 			doc := readWorkflow(t, tc.workflow)
@@ -1335,6 +1340,29 @@ func TestTransientFetchesAreRetried(t *testing.T) {
 					"asserting nothing", tc.workflow, tc.job, tc.needle)
 			}
 		})
+	}
+}
+
+// The promtool download moved from a workflow step into the justfile's
+// install-promtool recipe, so the same retry-and-timeout rule is asserted on the
+// recipe body. The needle check keeps it from asserting nothing.
+func TestPromtoolFetchesAreRetried(t *testing.T) {
+	body := expandedRecipeBody(t, "install-promtool")
+	var fetches int
+	for line := range strings.SplitSeq(body, "\n") {
+		if !strings.Contains(line, "curl ") {
+			continue
+		}
+		fetches++
+		if !strings.Contains(line, "ci-retry.sh") {
+			t.Errorf("install-promtool fetches over the network without scripts/ci-retry.sh: %s", strings.TrimSpace(line))
+		}
+		if !strings.Contains(line, "--max-time") {
+			t.Errorf("install-promtool curl has no --max-time: %s", strings.TrimSpace(line))
+		}
+	}
+	if fetches == 0 || !strings.Contains(body, "prometheus/releases/download") {
+		t.Fatal("install-promtool no longer fetches the prometheus release; this guard is now asserting nothing")
 	}
 }
 

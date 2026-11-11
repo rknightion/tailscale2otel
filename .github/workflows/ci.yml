@@ -228,25 +228,16 @@ jobs:
       # that the metric NAMES exist, not that the expressions are syntactically
       # valid PromQL. Only the Prometheus-format file is checkable this way —
       # promtool does not understand Grafana's provisioning schema.
-      # promtool cannot be `go install`ed — the prometheus module carries replace
-      # directives, which go install refuses — so it comes from the pinned release
-      # tarball, verified against that release's own published sha256sums.txt
-      # rather than a checksum copied into this file (one that drifts on the next
-      # version bump is worse than none, because it gets deleted rather than
-      # updated).
+      # promtool cannot be `go install`ed (the prometheus module carries replace
+      # directives, which go install refuses), so `just install-promtool` fetches the
+      # release tarball and verifies it against that release's own published
+      # sha256sums.txt rather than a checksum copied into a file. The version pin
+      # lives in the justfile (`promtool_version`), the one place `just setup` also
+      # reads, so CI and a contributor's machine cannot drift apart.
       - name: install promtool (pinned)
-        env:
-          PROM_VERSION: 3.7.3
         run: |
-          set -euo pipefail
-          base="https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}"
-          archive="prometheus-${PROM_VERSION}.linux-amd64.tar.gz"
-          scripts/ci-retry.sh curl -fsSL --max-time 120 -o "/tmp/${archive}" "${base}/${archive}"
-          scripts/ci-retry.sh curl -fsSL --max-time 60 -o /tmp/sha256sums.txt "${base}/sha256sums.txt"
-          (cd /tmp && sha256sum --check --ignore-missing sha256sums.txt)
-          tar -xzf "/tmp/${archive}" -C /tmp
-          sudo install -m 0755 "/tmp/prometheus-${PROM_VERSION}.linux-amd64/promtool" /usr/local/bin/promtool
-          promtool --version
+          just install-promtool
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       # promtool only understands the plain Prometheus rules file. promqlcheck
       # parses the dashboard's 400+ panel queries and the Grafana provisioning

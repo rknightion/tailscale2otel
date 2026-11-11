@@ -20,6 +20,12 @@ chart_dir := "deploy/helm/tailscale2otel"
 golangci_version := "v2.14.0"
 govulncheck_version := "v1.3.0"
 
+# promtool cannot be `go install`ed (the prometheus module carries replace
+# directives), so install-promtool fetches this release tarball. CI runs the same
+# recipe, so this is the only place the version is written down.
+# renovate: datasource=github-releases depName=prometheus/prometheus extractVersion=^v(?<version>.*)$
+promtool_version := "3.7.3"
+
 # show the task surface
 default:
     @just --list
@@ -36,10 +42,51 @@ setup:
     # Installs helm-docs v1.14.2 (with the version ldflag) and
     # helm-values-schema-json v2.6.0 — the exact versions the helm.yml actions use.
     just gen-tools
+    just install-promtool
     for m in {{ modules }}; do
       echo "== go mod download ($m)"
       (cd "$m" && go mod download)
     done
+
+# install the pinned promtool into GOPATH/bin, verified against the release's own sha256sums.txt (idempotent)
+[script('bash')]
+install-promtool:
+    set -euo pipefail
+    want='{{ promtool_version }}'
+    dest="$(go env GOPATH)/bin"
+    if [ -x "$dest/promtool" ] && [ "$("$dest/promtool" --version 2>&1 | sed -nE 's/^promtool, version v?([^[:space:]]+).*/\1/p' | head -n 1)" = "$want" ]; then
+      echo "promtool $want already installed in $dest"
+      exit 0
+    fi
+    case "$(uname -s)" in
+      Linux) os=linux ;;
+      Darwin) os=darwin ;;
+      *) echo "unsupported OS for promtool: $(uname -s)" >&2; exit 1 ;;
+    esac
+    case "$(uname -m)" in
+      x86_64 | amd64) arch=amd64 ;;
+      arm64 | aarch64) arch=arm64 ;;
+      *) echo "unsupported architecture for promtool: $(uname -m)" >&2; exit 1 ;;
+    esac
+    if command -v sha256sum >/dev/null 2>&1; then
+      sums=(sha256sum --check --ignore-missing)
+    elif command -v shasum >/dev/null 2>&1; then
+      sums=(shasum -a 256 --check --ignore-missing)
+    else
+      echo "neither sha256sum nor shasum is available to verify the promtool download" >&2
+      exit 1
+    fi
+    base="https://github.com/prometheus/prometheus/releases/download/v${want}"
+    archive="prometheus-${want}.${os}-${arch}.tar.gz"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    scripts/ci-retry.sh curl -fsSL --max-time 120 -o "$tmp/$archive" "$base/$archive"
+    scripts/ci-retry.sh curl -fsSL --max-time 60 -o "$tmp/sha256sums.txt" "$base/sha256sums.txt"
+    (cd "$tmp" && "${sums[@]}" sha256sums.txt)
+    tar -xzf "$tmp/$archive" -C "$tmp" "prometheus-${want}.${os}-${arch}/promtool"
+    mkdir -p "$dest"
+    install -m 0755 "$tmp/prometheus-${want}.${os}-${arch}/promtool" "$dest/promtool"
+    "$dest/promtool" --version | head -n 1
 
 # format the justfile and every Go module in place
 [group('dev')]
@@ -374,11 +421,36 @@ config-check:
 promql:
     go run -C tools/promqlcheck . -root "$PWD"
 
+# Assert the installed promtool reports the justfile pin before rules-check runs.
+# Run `just setup` to install the pinned tool.
+[private]
+[script('bash')]
+assert-promtool-version:
+    set -euo pipefail
+    if ! command -v promtool >/dev/null 2>&1; then
+      echo "::error::promtool is not on PATH; run 'just setup' (it installs into $(go env GOPATH)/bin)" >&2
+      exit 1
+    fi
+    if ! output="$(promtool --version 2>&1)"; then
+      echo "::error::promtool version check failed; run 'just setup'" >&2
+      exit 1
+    fi
+    got="$(printf '%s\n' "$output" | sed -nE 's/^promtool, version v?([^[:space:]]+).*/\1/p' | head -n 1)"
+    want='{{ promtool_version }}'
+    if [ -z "$got" ]; then
+      echo "::error::promtool version output could not be parsed (justfile pin: $want); run 'just setup'" >&2
+      exit 1
+    fi
+    if [ "$got" != "$want" ]; then
+      echo "::error::promtool reports $got, but the justfile pins $want; run 'just setup'" >&2
+      exit 1
+    fi
+
 # promtool-validate and unit-test the shipped Prometheus rules
 [group('check')]
 [no-exit-message]
 [script('bash')]
-rules-check:
+rules-check: assert-promtool-version
     set -euo pipefail
     promtool check rules deploy/alerts/prometheus/tailscale2otel.rules.yaml
     promtool test rules deploy/alerts/tests/*.yaml
