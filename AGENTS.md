@@ -117,7 +117,7 @@ reproduces the set; the `gen` group in `just --list` is the only place the set i
 
 ## Modules and CI
 
-The Go floor is 1.27.3 in all five modules. The Go Alpine builder image still
+The Go floor is 1.27.4 in all five modules. The Go Alpine builder image still
 ships an older CA bundle, so its Dockerfile upgrades both `ca-certificates` and
 `ca-certificates-bundle` before module downloads. The distroless Debian 13 runtime
 must carry `ca-certificates` 20250419+deb13u1 or later; it has no curl or wget.

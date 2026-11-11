@@ -11,7 +11,7 @@ facts is edited here; changes to the rest go to that repository.
 ## This repository
 
 <!-- vended:repo-facts:begin -->
-tailscale2otel is a single static Go program (Go 1.27.3 or newer) that polls the Tailscale or
+tailscale2otel is a single static Go program (Go 1.27.4 or newer) that polls the Tailscale or
 Headscale control plane and exports OpenTelemetry metrics and logs. `just setup` installs the pinned
 `golangci-lint`, `govulncheck` and the two Helm doc generators, and points `core.hooksPath` at
 `.githooks`; `just --list` shows every task.
