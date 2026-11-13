@@ -4727,7 +4727,7 @@
         "spec": {
           "id": 53,
           "title": "Fleet tags (rollup)",
-          "description": "Device count per ACL tag across the fleet. Counts individual tags, so a device carrying two tags is counted under each.",
+          "description": "Device count per ACL tag across the fleet. Counts individual tags, so a device carrying two tags is counted under each. Shows the top $topn tags; raise Top N to see more.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -4746,7 +4746,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "topk($topn, sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4764,7 +4764,15 @@
                   "spec": {
                     "options": {
                       "excludeByName": {
-                        "Time": true
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true,
+                        "tailscale_tailnet": true,
+                        "tailscale2otel_provider": true
                       },
                       "renameByName": {},
                       "indexByName": {}
@@ -4791,7 +4799,8 @@
                 "tooltip": {
                   "mode": "single",
                   "sort": "none"
-                }
+                },
+                "xField": "tailscale_tag"
               },
               "fieldConfig": {
                 "defaults": {},
@@ -25203,7 +25212,7 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "barchart",
+            "group": "bargauge",
             "version": "12.1.0",
             "spec": {
               "options": {

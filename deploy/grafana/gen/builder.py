@@ -216,6 +216,8 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
     global _id
     if population not in {"selected", "fleet"}:
         raise ValueError("unknown panel population: %s" % population)
+    if ptype == "barchart" and "reduceOptions" in (options or {}):
+        raise ValueError("bar charts cannot use reducer options")
     check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id
