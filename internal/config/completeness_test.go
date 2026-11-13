@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -154,72 +155,131 @@ func TestHelmValuesCoverEveryKey(t *testing.T) {
 	}
 }
 
-// TestDocsConfigurationMentionsEveryKey is a best-effort guard that every
-// configuration key is described somewhere in docs/configuration.md. A key
-// counts as documented if its full dotted path appears in the prose, OR its leaf
-// name appears as the first cell of a markdown table row (the reference uses
-// both forms: full dotted paths in the per-section tables and bare leaf names in
-// the windowing / node_metrics.discovery sub-tables).
-//
-// It is intentionally lenient — leaf-name matching means a NEW field that reuses
-// a common leaf already present in the doc (e.g. another collector's `enabled`)
-// can slip through. TestExampleConfigCoversEveryKey is the rigorous guard;
-// this one catches the common case of a distinctly-named new field that nobody
-// wrote a reference entry for.
+// TestDocsConfigurationMentionsEveryKey requires the key's own path, a
+// heading-relative or slash-combined table entry, or an explicit mirrored subtree.
 func TestDocsConfigurationMentionsEveryKey(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "configuration.md"))
 	if err != nil {
-		t.Fatalf("read docs/configuration.md: %v", err)
+		t.Fatal(err)
 	}
-	doc := string(data)
-	leaves := tableLeafTokens(doc)
-
+	keys := defaultKeySet(t)
+	documented := documentedConfigKeys(string(data), keys)
 	var undocumented []string
-	for _, key := range sortedKeys(defaultKeySet(t)) {
-		leaf := key
-		if i := strings.LastIndex(key, "."); i >= 0 {
-			leaf = key[i+1:]
+	for _, key := range sortedKeys(keys) {
+		if !documented[key] {
+			undocumented = append(undocumented, key)
 		}
-		if strings.Contains(doc, key) || leaves[leaf] {
-			continue
-		}
-		undocumented = append(undocumented, key)
 	}
 	if len(undocumented) > 0 {
-		t.Errorf("docs/configuration.md does not mention %d config key(s) — add a reference entry:\n  %s",
-			len(undocumented), strings.Join(undocumented, "\n  "))
+		t.Errorf("docs/configuration.md does not mention %d config key(s) — add a reference entry:\n  %s", len(undocumented), strings.Join(undocumented, "\n  "))
 	}
 }
 
-// tableLeafTokens returns the set of leaf names documented in the first column
-// of any markdown table row. The reference writes keys in several forms — a full
-// dotted path (`collectors.devices.collect_routes`), a bare leaf
-// (`instance_source`), and slash-combined shorthand
-// (`streaming.tls.cert_file` / `.key_file`) — so each first cell is split on `/`
-// and whitespace, backticks stripped, and every token reduced to its leaf (the
-// part after the last dot). Leaf-level matching is deliberately lenient; see the
-// test doc comment.
-func tableLeafTokens(doc string) map[string]bool {
-	leaves := map[string]bool{}
-	for line := range strings.SplitSeq(doc, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "|") {
-			continue
-		}
-		parts := strings.Split(trimmed, "|")
-		if len(parts) < 2 {
-			continue
-		}
-		for _, tok := range strings.FieldsFunc(parts[1], func(r rune) bool {
-			return r == '/' || r == ' ' || r == '`'
-		}) {
-			if i := strings.LastIndex(tok, "."); i >= 0 {
-				tok = tok[i+1:]
+func documentedConfigKeys(doc string, keys map[string]bool) map[string]bool {
+	documented := map[string]bool{}
+	keyChar := func(c byte) bool {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '_'
+	}
+	for key := range keys {
+		for offset := 0; offset < len(doc); {
+			i := strings.Index(doc[offset:], key)
+			if i < 0 {
+				break
 			}
-			if tok != "" {
-				leaves[tok] = true
+			i += offset
+			end := i + len(key)
+			if (i == 0 || !keyChar(doc[i-1]) && doc[i-1] != '.') && (end == len(doc) || !keyChar(doc[end])) {
+				documented[key] = true
+				break
+			}
+			offset = end
+		}
+	}
+	quoted := regexp.MustCompile("`([^`]+)`")
+	prefix := ""
+	for line := range strings.SplitSeq(doc, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			prefix = ""
+			matches := quoted.FindAllStringSubmatch(line, -1)
+			if len(matches) == 1 && strings.Contains(matches[0][1], ".") {
+				candidate := matches[0][1] + "."
+				for key := range keys {
+					if strings.HasPrefix(key, candidate) {
+						prefix = candidate
+						break
+					}
+				}
+			}
+		}
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+		cell := strings.Split(line, "|")[1]
+		tokens := strings.FieldsFunc(cell, func(r rune) bool { return r == '/' || r == ' ' || r == '`' })
+		for i, token := range tokens {
+			if i > 0 && strings.HasPrefix(token, ".") && strings.Contains(tokens[0], ".") {
+				first := tokens[0]
+				key := first[:strings.LastIndex(first, ".")] + token
+				if keys[first] && keys[key] {
+					documented[key] = true
+				}
+			} else if !strings.Contains(token, ".") && prefix != "" && keys[prefix+token] {
+				documented[prefix+token] = true
 			}
 		}
 	}
-	return leaves
+	mirrors := map[string]string{
+		"collectors.auditlogs.objectstore.": "collectors.flowlogs.objectstore.",
+		"collectors.k8s_audit.objectstore.": "collectors.flowlogs.objectstore.",
+	}
+	for prefix, source := range mirrors {
+		if !strings.Contains(doc, "`"+prefix+"*`") {
+			continue
+		}
+		for key := range keys {
+			if strings.HasPrefix(key, prefix) && documented[source+strings.TrimPrefix(key, prefix)] {
+				documented[key] = true
+			}
+		}
+	}
+	return documented
+}
+
+func TestDocumentedConfigKeys(t *testing.T) {
+	keys := map[string]bool{
+		"first.enabled": true, "second.enabled": true, "streaming.tls.cert_file": true,
+		"streaming.tls.key_file": true, "collector.discovery.interval": true,
+		"collectors.flowlogs.objectstore.bucket":  true,
+		"collectors.auditlogs.objectstore.bucket": true, "collectors.k8s_audit.objectstore.bucket": true,
+	}
+	cases := []struct {
+		name, doc string
+		want      []string
+	}{
+		{"full path", "`first.enabled`", []string{"first.enabled"}},
+		{"shared leaf", "| enabled | true |", nil},
+		{"bounded path", "prefixfirst.enabled first.enabled_suffix", nil},
+		{"descendant path", "`first.enabled.child`", []string{"first.enabled"}},
+		{"slash", "| `streaming.tls.cert_file` / `.key_file` |", []string{"streaming.tls.cert_file", "streaming.tls.key_file"}},
+		{"heading", "#### `collector.discovery`\n| interval |", []string{"collector.discovery.interval"}},
+		{"ambiguous heading", "#### `collector.discovery` and `other.path`\n| interval |", nil},
+		{"reset heading", "#### `collector.discovery`\n#### Other\n| interval |", nil},
+		{"mirrors", "`collectors.flowlogs.objectstore.bucket` `collectors.auditlogs.objectstore.*` `collectors.k8s_audit.objectstore.*`", []string{"collectors.flowlogs.objectstore.bucket", "collectors.auditlogs.objectstore.bucket", "collectors.k8s_audit.objectstore.bucket"}},
+		{"undeclared mirror", "`collectors.flowlogs.objectstore.bucket`", []string{"collectors.flowlogs.objectstore.bucket"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := documentedConfigKeys(tc.doc, keys)
+			want := map[string]bool{}
+			for _, key := range tc.want {
+				want[key] = true
+			}
+			for key := range keys {
+				if got[key] != want[key] {
+					t.Errorf("documented[%s] = %v, want %v", key, got[key], want[key])
+				}
+			}
+		})
+	}
 }
