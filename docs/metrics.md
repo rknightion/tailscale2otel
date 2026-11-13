@@ -282,18 +282,17 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
 > the same cap, so it flags the condition too.
 
-> **Per-entity gauges drop out on churn (no ghost series).** Metrics are exported with **cumulative**
-> temporality (what Grafana Cloud / Mimir ingest). A *synchronous* cumulative gauge would re-export a
-> stale value forever once its attribute set has been seen (upstream
-> [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)), so every churning
-> per-entity gauge - `tailscale.device.online` and its per-device siblings, the by-version/by-tag/
-> by-region/by-CIDR rollups, `tailscale.node.up`, and the per-resolver/per-search-path `tailscale.dns.*`
-> - is instead emitted as an **observable** gauge from a per-tick snapshot. An observable gauge under
-> cumulative temporality reports only the series observed in the current collection, so when a device is
-> **removed or renamed** (or a version/tag/resolver stops appearing) its series simply **drops out of
-> the export on the next scrape** rather than ghosting, and it stops consuming a cardinality-limit slot
-> (issue #55). Dashboards and alerts on `device.online==1` / `node.up` therefore reflect the live fleet
-> without needing to join against a separate recency signal.
+> **Gauges whose labels can change use snapshots.** Metrics use cumulative temporality,
+> under which a synchronous gauge can keep exporting the last value for a departed entity
+> ([otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)). Collectors
+> publish changing label sets as observable gauges from each successful poll's snapshot.
+> Examples include devices and their rollups, node reachability, DNS entries, keys, users,
+> posture integrations, log streams, ACL sections, services, OAuth apps, webhook endpoints,
+> and the flow unique-destination gauges (snapshotted per rollup interval).
+> Removed entities disappear from subsequent exports; failed or incomplete source reads retain
+> the last complete snapshot. Synchronous gauges are limited to nil attributes or fixed label
+> sets written in full on every pass, with the reason recorded in
+> `internal/collector/gaugeguard_test.go`.
 >
 > One deliberate exception: the **forwarded node-metrics passthrough samples** (the raw series scraped
 > from each node's tailscaled `:5252` endpoint) are still synchronous - their names are dynamic and

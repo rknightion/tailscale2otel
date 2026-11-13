@@ -97,8 +97,9 @@ stale sets each cycle. `Emitter.GaugeSnapshot` wraps that, and collectors accumu
 `telemetry.GaugeSnapshotBuilder` - hold one, `Add` points each `Collect`, then `Flush`, which
 re-emits every gauge it has ever seen, empty snapshots included, so an emptied metric clears.
 
-Every attribute-keyed (churning) gauge must use it. Only **nil-attr single-series** gauges stay
-synchronous, because they cannot churn. The one deliberate exception is nodemetrics' forwarded
+Every attribute-keyed (churning) gauge must use it. Synchronous gauges may have **nil attributes**
+or a **fixed label set written in full on every pass**, with a reasoned entry in
+`internal/collector/gaugeguard_test.go`. The one deliberate exception is nodemetrics' forwarded
 passthrough samples: dynamic names plus monotonic counters, so snapshot semantics do not fit.
 
 ## Testing
