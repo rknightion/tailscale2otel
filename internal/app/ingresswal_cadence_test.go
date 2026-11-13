@@ -904,8 +904,8 @@ func TestIngressWALScheduledCadence_CumulativeDetail(t *testing.T) {
 			}
 		}
 
-		// Synchronous unique gauge: a later original changes the SAME series
-		// from 1 to 2, the next to 1, and idle slots retain the last value.
+		// Interval snapshots report each interval independently and remove idle
+		// sources; durable originals in one interval merge their observations.
 		before := f.uniquePortValues(t)
 		if len(before) == 0 {
 			t.Fatal("prefix exported no unique-port gauge")
@@ -928,13 +928,13 @@ func TestIngressWALScheduledCadence_CumulativeDetail(t *testing.T) {
 			t.Fatalf("unique ports at %v=%v and %v=%v, want 2 then 1", slotA, values[slotA], slotB, values[slotB])
 		}
 		for at := slotB + interval; at <= time.Since(f.epoch); at += interval {
-			if got, ok := values[at]; !ok || got != 1 {
-				t.Fatalf("idle slot %v unique ports=%v (present=%v), want retained 1", at, got, ok)
+			if got, ok := values[at]; ok {
+				t.Fatalf("idle slot %v retains unique ports=%v, want absent", at, got)
 			}
 		}
-		// Two originals materialized at one slot: the LATER original's value
-		// wins. Both are admitted before the worker's next window pass so they
-		// share one producer group.
+		// Two originals materialized at one slot contribute the union of ports.
+		// Both are admitted before the worker's next window pass so they share
+		// one producer group.
 		if err := f.stopWorker(); err != nil {
 			t.Fatal(err)
 		}
@@ -943,8 +943,8 @@ func TestIngressWALScheduledCadence_CumulativeDetail(t *testing.T) {
 		f.startWorker()
 		f.sleepPastSlot(interval)
 		slotCD := time.Since(f.epoch).Truncate(interval)
-		if got := f.uniquePortValues(t)[slotCD]; got != 2 {
-			t.Fatalf("same-slot unique ports=%v, want the later original's 2", got)
+		if got := f.uniquePortValues(t)[slotCD]; got != 5 {
+			t.Fatalf("same-slot unique ports=%v, want the union of both originals' 5", got)
 		}
 		f.assertNormalCadence(t, interval)
 
