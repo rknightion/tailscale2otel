@@ -5148,7 +5148,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
-                  "noValue": "0",
+                  "noValue": "No Prometheus pull-endpoint series. Requires prometheus.enabled and at least one scrape against the exporter's /metrics endpoint.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -6698,7 +6698,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])) or vector(0)",
+                        "expr": "sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])) or (0 * count(last_over_time(tailscale2otel_objectstore_gap_healthy_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",

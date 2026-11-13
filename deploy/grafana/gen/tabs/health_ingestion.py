@@ -203,7 +203,7 @@ def tab_health_ingestion(scope):
                     "and attempts stopped by a configured wire-byte/decompressed-byte/record-"
                     "count budget."), 12, 7),
         (panel("Undecodable objects (broken feed)", "stat",
-               [prom_t('sum(increase(tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}[$__range])) or vector(0)',
+               [prom_t('sum(increase(tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}[$__range])) or (0 * count(last_over_time(tailscale2otel_objectstore_gap_healthy_ratio[10m])))',
                        instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"), novalue=_OBJ_EMPTY,

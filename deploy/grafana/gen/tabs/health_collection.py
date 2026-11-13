@@ -333,7 +333,7 @@ def tab_health_collection(scope):
                     "slow."), 8, 6),
         (panel("Pull-endpoint gather errors/s", "timeseries",
                [prom_t("sum(rate(tailscale2otel_metrics_scrape_gather_errors_total[%s]))" % RI, legend="gather errors/s")],
-               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(),
+               unit="cps", novalue=_PULL_EMPTY, custom=ts_custom(), options=ts_opts(),
                desc="Prometheus registry Gather errors hit while serving /metrics; the handler "
                     "continues on error and returns 200 with the remaining series, so a "
                     "non-zero rate means series are silently being dropped from every "
