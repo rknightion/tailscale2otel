@@ -1145,6 +1145,8 @@ classifyLoop:
 			s.writeError(w, http.StatusServiceUnavailable, "durable append failed, retry shortly")
 			return
 		}
+		// These counts describe records admitted to the WAL, not records applied.
+		s.recordBatchAttributes(span, batch, len(raw))
 		s.writeAck(w)
 		return
 	}
@@ -1158,27 +1160,28 @@ classifyLoop:
 		return
 	}
 
-	flows := len(batch.flows)
-	audits := len(batch.audits)
-	skipped := batch.classifyUnknown + batch.unwrapDropped
-
 	// Record aggregate counts and body size on the span before the success ack.
-	if span.IsRecording() {
-		if s.phase2DeadlineExceeded(r.Context(), w, span) {
-			return
-		}
-		span.SetAttributes(
-			attribute.Int("tailscale.stream.flows", flows),
-			attribute.Int("tailscale.stream.audits", audits),
-			attribute.Int("tailscale.stream.skipped", skipped),
-			attribute.Int("http.request.body.size", len(raw)), // bounded decompressed bytes
-		)
+	if span.IsRecording() && s.phase2DeadlineExceeded(r.Context(), w, span) {
+		return
 	}
+	s.recordBatchAttributes(span, batch, len(raw))
 
 	if s.phase2DeadlineExceeded(r.Context(), w, span) {
 		return
 	}
 	s.writeAck(w)
+}
+
+func (s *Server) recordBatchAttributes(span trace.Span, batch decodedBatch, rawLen int) {
+	if !span.IsRecording() {
+		return
+	}
+	span.SetAttributes(
+		attribute.Int("tailscale.stream.flows", len(batch.flows)),
+		attribute.Int("tailscale.stream.audits", len(batch.audits)),
+		attribute.Int("tailscale.stream.skipped", batch.classifyUnknown+batch.unwrapDropped),
+		attribute.Int("http.request.body.size", rawLen),
+	)
 }
 
 // ApplyDurable deterministically reconstructs and applies one body that already
