@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/jsonbudget"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
@@ -105,10 +106,17 @@ const collectorLabelOther = "other"
 
 // Scheduler runs each registered collector on its own goroutine and ticker,
 // isolating failures so one collector cannot stop the others.
+type windowLimit struct {
+	span      time.Duration
+	successes int
+}
+
 type Scheduler struct {
-	emitter telemetry.Emitter
-	store   CheckpointStore
-	now     func() time.Time
+	windowLimitsMu sync.Mutex
+	windowLimits   map[string]*windowLimit
+	emitter        telemetry.Emitter
+	store          CheckpointStore
+	now            func() time.Time
 	// staggerWindow bounds the random startup delay applied to each collector's
 	// first tick, to de-synchronize polls (see WithStaggerWindow). Zero disables it.
 	staggerWindow   time.Duration
@@ -423,6 +431,19 @@ func (s *Scheduler) runTick(ctx context.Context, e Entry, lastSuccess *time.Time
 // checkpoint on success. It returns the collector's error (nil on success or
 // when there is no new window to poll) so the caller can record scrape metrics.
 func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) error {
+	for range 8 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		more, err := s.runWindowLimited(ctx, c, e)
+		if err != nil || !more {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Scheduler) runWindowLimited(ctx context.Context, c WindowCollector, e Entry) (bool, error) {
 	last, hasLast := s.store.Get(s.checkpointKey(c.Name()))
 	now := s.now()
 	start := last
@@ -444,13 +465,13 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 			if s.selfObs {
 				EmitCheckpointPersistError(s.emitter, c.Name())
 			}
-			return err
+			return false, err
 		}
 		last, hasLast = floor, true
 	}
 	from, to, ok := nextWindow(last, hasLast, now, c.Lag(), e.InitialLookback, e.MaxWindow, s.logMaxRecordAge)
 	if !ok {
-		return nil
+		return false, nil
 	}
 	replaying := false
 	if rc, ok := c.(ReplayWindowCollector); ok && hasLast {
@@ -460,14 +481,53 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 		}
 	}
 	from = ClampLogStart(from, now, s.logMaxRecordAge)
+	originalTo := to
+	key := s.checkpointKey(c.Name())
+	s.windowLimitsMu.Lock()
+	span := time.Duration(0)
+	if limit := s.windowLimits[key]; limit != nil {
+		span = limit.span
+	}
+	s.windowLimitsMu.Unlock()
+	if span > 0 {
+		// Prioritize forward progress over overlap while responses exceed the budget.
+		if replaying {
+			from = ClampLogStart(last, now, s.logMaxRecordAge)
+			replaying = false
+		}
+		if to.Sub(from) > span {
+			to = from.Add(span)
+		}
+	}
 	hwm, err := c.CollectWindow(ctx, from, to, LogHorizonEmitter(s.emitter, s.now, s.logMaxRecordAge))
 	if err != nil {
+		if errors.Is(err, jsonbudget.ErrTooLarge) {
+			requested := to.Sub(from)
+			next := max(requested/2, 10*time.Second)
+			s.windowLimitsMu.Lock()
+			if s.windowLimits == nil {
+				s.windowLimits = make(map[string]*windowLimit)
+			}
+			s.windowLimits[key] = &windowLimit{span: next}
+			s.windowLimitsMu.Unlock()
+			message := "response exceeds tailscale.max_log_response_bytes; shrinking poll window"
+			if requested <= 10*time.Second {
+				message = "cannot fit floor poll window in tailscale.max_log_response_bytes; use stream or object-store source"
+			}
+			s.logger.Warn(message, "collector", c.Name(), "attempted_window", requested, "next_window", next)
+		} else {
+			s.windowLimitsMu.Lock()
+			if limit := s.windowLimits[key]; limit != nil {
+				limit.successes = 0
+			}
+			s.windowLimitsMu.Unlock()
+		}
 		// Do not advance the checkpoint: the next tick retries the same window
 		// (at-least-once, no gaps).
 		if !isShutdownCancellation(ctx, err) {
 			s.logger.Warn("window collector failed", "collector", c.Name(), "error", err)
 		}
-		return err
+		return false, err
 	}
 	if replaying {
 		// The request intentionally started before the durable cursor, but a
@@ -477,11 +537,40 @@ func (s *Scheduler) runWindow(ctx context.Context, c WindowCollector, e Entry) e
 	} else if hwm.IsZero() {
 		hwm = to
 	}
+	if span > 0 && hasLast && hwm.Before(last) {
+		hwm = last
+	}
 	if err := s.store.Set(s.checkpointKey(c.Name()), hwm); err != nil {
 		s.logger.Warn("checkpoint persist failed", "collector", c.Name(), "error", err)
 		if s.selfObs {
 			EmitCheckpointPersistError(s.emitter, c.Name())
 		}
+		// A rejected store may retain its old cursor; repeating immediately would
+		// emit the same successful fetch again within this tick.
+		s.windowLimitsMu.Lock()
+		if limit := s.windowLimits[key]; limit != nil {
+			limit.successes = 0
+		}
+		s.windowLimitsMu.Unlock()
+		return false, nil
 	}
-	return nil
+	if span > 0 {
+		maximum := e.MaxWindow
+		if rc, ok := c.(ReplayWindowCollector); ok {
+			maximum += rc.ReplayOverlap()
+		}
+		s.windowLimitsMu.Lock()
+		if limit := s.windowLimits[key]; limit != nil {
+			limit.successes++
+			if limit.successes >= 10 {
+				limit.span *= 2
+				limit.successes = 0
+				if maximum > 0 && limit.span >= maximum {
+					delete(s.windowLimits, key)
+				}
+			}
+		}
+		s.windowLimitsMu.Unlock()
+	}
+	return span > 0 && to.Before(originalTo) && hwm.After(from), nil
 }
