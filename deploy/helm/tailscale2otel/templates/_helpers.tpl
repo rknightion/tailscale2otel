@@ -2,14 +2,18 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/* Maximum supported StatefulSet ordinal count, also used by pod-label RBAC. */}}
+{{- define "tailscale2otel.maxReplicas" -}}3{{- end -}}
+
 {{/* Validate the replica count before rendering either workload kind. */}}
 {{- define "tailscale2otel.validateReplicaCount" -}}
 {{- $replicas := int .Values.replicaCount -}}
 {{- if lt $replicas 1 -}}
 {{- fail (printf "replicaCount must be at least 1 (got %d)" $replicas) -}}
 {{- end -}}
-{{- if gt $replicas 3 -}}
-{{- fail (printf "replicaCount must be at most 3 (got %d): Kubernetes coordination supports at most three active-passive replicas" $replicas) -}}
+{{- $maxReplicas := include "tailscale2otel.maxReplicas" . | int -}}
+{{- if gt $replicas $maxReplicas -}}
+{{- fail (printf "replicaCount must be at most %d (got %d): Kubernetes coordination supports at most %d active-passive replicas" $maxReplicas $replicas $maxReplicas) -}}
 {{- end -}}
 {{- if and (gt $replicas 1) (ne .Values.config.coordination.mode "kubernetes") -}}
 {{- fail (printf "replicaCount must be 1 unless config.coordination.mode=kubernetes (got %d replicas with mode %q): multiple pollers would double-emit every metric and log" $replicas .Values.config.coordination.mode) -}}
