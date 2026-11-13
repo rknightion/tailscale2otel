@@ -5391,17 +5391,20 @@
                   {
                     "type": "markers",
                     "name": "Devices",
+                    "location": {
+                      "mode": "lookup",
+                      "lookup": "lookup",
+                      "gazetteer": "public/gazetteer/countries.json"
+                    },
                     "config": {
                       "showLegend": true,
                       "style": {
                         "size": {
                           "field": "Devices",
-                          "fixed": 5
+                          "fixed": 5,
+                          "min": 4,
+                          "max": 20
                         }
-                      },
-                      "location": {
-                        "mode": "lookup",
-                        "lookup": "lookup"
                       }
                     }
                   }
