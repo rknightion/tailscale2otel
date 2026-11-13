@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -98,11 +99,11 @@ type Collector struct {
 	now func() time.Time
 	// replayStore holds digest-only identities across a process restart. It is
 	// supplied already namespaced by the app for multi-tailnet isolation.
-	replayStore    collector.CheckpointStore
-	replayOverlap  time.Duration
-	replayCapacity int
-	replaySeen     map[string]time.Time // SHA-256 hex digest -> inclusive expiry
-	replayLoadErr  error
+	replayStore          collector.CheckpointStore
+	replayOverlap        time.Duration
+	replayCapacity       int
+	replaySeen           map[string]time.Time // SHA-256 hex digest -> inclusive expiry
+	pendingReplayDeletes []string
 }
 
 // Option configures optional Collector behavior.
@@ -227,8 +228,8 @@ func (c *Collector) ReplayOverlap() time.Duration {
 // Connections already seen on a previous tick (boundary overlap) are filtered
 // out before processing so their metrics are emitted only once.
 func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e telemetry.Emitter) (time.Time, error) {
-	if c.replayLoadErr != nil {
-		return time.Time{}, c.replayLoadErr
+	if err := c.retryReplayCleanup(); err != nil {
+		return time.Time{}, err
 	}
 	if c.featureCheck != nil {
 		enabled, err := c.featureCheck(ctx)
@@ -379,9 +380,8 @@ func (c *Collector) replayContains(digest string) bool {
 }
 
 // loadReplayState restores only this collector's digest-only state, pruning
-// malformed and over-capacity entries deterministically. New cannot
-// return an error, so a cleanup failure is carried into CollectWindow where it
-// prevents a scheduler checkpoint advance.
+// malformed and over-capacity entries deterministically. Durable cleanup waits
+// for CollectWindow, where a transient failure can be returned and retried.
 func (c *Collector) loadReplayState() {
 	if !c.replayEnabled() {
 		return
@@ -402,12 +402,18 @@ func (c *Collector) loadReplayState() {
 	for _, digest := range c.trimReplayCapacity() {
 		deletes = append(deletes, replayKey(digest))
 	}
-	if len(deletes) == 0 {
-		return
+	c.pendingReplayDeletes = uniqueSorted(deletes)
+}
+
+func (c *Collector) retryReplayCleanup() error {
+	if len(c.pendingReplayDeletes) == 0 {
+		return nil
 	}
-	if err := collector.UpdateCheckpointBatch(c.replayStore, nil, uniqueSorted(deletes)); err != nil {
-		c.replayLoadErr = err
+	if err := collector.UpdateCheckpointBatch(c.replayStore, nil, c.pendingReplayDeletes); err != nil {
+		return fmt.Errorf("clean up flow replay checkpoints: %w", err)
 	}
+	c.pendingReplayDeletes = nil
+	return nil
 }
 
 func validReplayDigest(digest string) bool {
