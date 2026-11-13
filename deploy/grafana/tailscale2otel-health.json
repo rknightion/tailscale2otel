@@ -2450,7 +2450,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "noValue": "No skipped-history rate samples in the selected range.",
                   "custom": {
                     "drawStyle": "line",
@@ -2459,7 +2459,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []
@@ -4251,7 +4252,7 @@
                         "expr": "sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "rate-limiter wait s/s",
+                        "legendFormat": "rate-limiter wait",
                         "format": "time_series"
                       }
                     }
@@ -4273,7 +4274,7 @@
                         "expr": "sum(rate(tailscale2otel_api_duration_seconds_sum{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "API request time s/s",
+                        "legendFormat": "API request time",
                         "format": "time_series"
                       }
                     }
@@ -4303,7 +4304,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -4311,7 +4312,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []
@@ -12907,7 +12909,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -12915,7 +12917,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []

@@ -235,9 +235,9 @@ def tab_health_collection(scope):
                desc="Time a request spent blocked on the client-side rate limiter "
                     "(tailscale.http.rate_limit) before its first attempt."), 12, 7),
         (panel("Time waiting vs time on the wire", "timeseries",
-               [prom_t("sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum[%s]))" % RI, legend="rate-limiter wait s/s"),
-                prom_t("sum(rate(tailscale2otel_api_duration_seconds_sum[%s]))" % RI, legend="API request time s/s", refid="B")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
+               [prom_t("sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum[%s]))" % RI, legend="rate-limiter wait"),
+                prom_t("sum(rate(tailscale2otel_api_duration_seconds_sum[%s]))" % RI, legend="API request time", refid="B")],
+               unit="none", custom=dict(ts_custom(), axisLabel="seconds per second"), options=ts_opts(),
                desc="Seconds spent per second waiting on the client limiter versus actually "
                     "on the wire to the Tailscale API."), 6, 7),
         (panel("Requests delayed by the rate limiter", "stat",
