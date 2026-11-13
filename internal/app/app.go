@@ -33,6 +33,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/provider"
 	"github.com/rknightion/tailscale2otel/v5/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v5/internal/release"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
@@ -1497,26 +1498,25 @@ func checkpointStoreWithDefaultAndFatal(
 		collector.WithWriteDebounce(cfg.Checkpoint.WriteDebounce.D()),
 	}
 	store, err := collector.NewFileStore(path, storeOpts...)
-	if errors.Is(err, collector.ErrCorruptCheckpoint) {
-		// Non-critical window-cursor state: rename the corrupt file aside and start
-		// from an empty checkpoint (cold start from initial_lookback) rather than
-		// fail startup. The dir is writable (checked above), so a fresh file store
-		// persists going forward.
-		aside := path + ".corrupt"
-		if renameErr := os.Rename(path, aside); renameErr != nil {
-			logger.Warn("checkpoint file is corrupt and could not be renamed aside; falling back to in-memory checkpoints",
-				"file_path", path, "error", err, "rename_error", renameErr)
-			return collector.NewMemoryStore(), checkpointOutcome{
-				Kind:   "memory",
-				Reason: fmt.Sprintf("checkpoint file %s is corrupt and could not be renamed aside", path),
-			}, nil
+	if errors.Is(err, collector.ErrCorruptCheckpoint) || errors.Is(err, safefile.ErrTooLarge) {
+		// Window cursors are disposable; retain the rejected file for diagnosis and
+		// cold-start rather than repeatedly failing startup.
+		suffix, problem := ".corrupt", "is corrupt"
+		if errors.Is(err, safefile.ErrTooLarge) {
+			suffix, problem = ".oversize", "exceeded the read limit"
 		}
-		logger.Warn("checkpoint file was corrupt/unreadable; renamed it aside and started from an empty checkpoint "+
-			"(window collectors cold-start from initial_lookback)",
+		aside := path + suffix
+		if renameErr := os.Rename(path, aside); renameErr != nil {
+			logger.Warn("checkpoint file "+problem+" and could not be renamed aside; falling back to in-memory checkpoints",
+				"file_path", path, "error", err, "rename_error", renameErr)
+			return collector.NewMemoryStore(), checkpointOutcome{Kind: "memory", Reason: fmt.Sprintf("checkpoint file %s %s and could not be renamed aside", path, problem)}, nil
+		}
+		logger.Warn("checkpoint file "+problem+"; renamed it aside and started from an empty checkpoint (window collectors cold-start from initial_lookback)",
 			"file_path", path, "moved_to", aside, "error", err)
-		reason = fmt.Sprintf("checkpoint file was corrupt; renamed aside to %s and cold-started", aside)
+		reason = fmt.Sprintf("checkpoint file %s; renamed aside to %s and cold-started", problem, aside)
 		store, err = collector.NewFileStore(path, storeOpts...)
 	}
+
 	if err != nil {
 		return nil, checkpointOutcome{}, err
 	}

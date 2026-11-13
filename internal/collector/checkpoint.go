@@ -21,6 +21,9 @@ import (
 // the data is disposable window-cursor state, so the cost is a single cold start.
 var ErrCorruptCheckpoint = errors.New("checkpoint file is corrupt or unreadable")
 
+// ErrCheckpointTooLarge reports a persist refused to preserve a readable checkpoint.
+var ErrCheckpointTooLarge = errors.New("checkpoint file would exceed the read limit")
+
 // ACLAuditChangeCheckpointKey stores the newest source timestamp carried by a
 // classified ACL configuration-audit event. The audit processor advances it;
 // the ACL collector re-emits it on every poll so the gauge survives restarts.
@@ -149,6 +152,7 @@ type fileStore struct {
 	timer         *time.Timer
 	dirty         bool
 	persistErr    error
+	oversize      bool
 }
 
 // NewFileStore returns a file-backed checkpoint store, loading any existing
@@ -330,7 +334,21 @@ func (s *fileStore) persistLocked() error {
 	if err != nil {
 		return err
 	}
-	return writeFileAtomic(s.path, data, checkpointFileMode)
+	if int64(len(data)) > safefile.MaxCheckpointBytes {
+		if !s.oversize {
+			slog.Default().Warn("checkpoint file exceeds read limit; lower collectors.flowlogs.replay_seen_capacity or the number of polled tailnets", "path", s.path, "bytes", len(data), "limit", safefile.MaxCheckpointBytes)
+			s.oversize = true
+		}
+		return fmt.Errorf("%w: %d bytes exceeds %d", ErrCheckpointTooLarge, len(data), safefile.MaxCheckpointBytes)
+	}
+	if err := writeFileAtomic(s.path, data, checkpointFileMode); err != nil {
+		return err
+	}
+	if s.oversize {
+		slog.Default().Info("checkpoint file persistence recovered", "path", s.path, "bytes", len(data), "limit", safefile.MaxCheckpointBytes)
+		s.oversize = false
+	}
+	return nil
 }
 
 // keysOf returns the keys of a checkpoint map (unordered).
