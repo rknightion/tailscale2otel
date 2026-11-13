@@ -283,9 +283,37 @@ func (s *Store) sweep(ctx context.Context) (err error) {
 		}
 	}()
 	cutoff := timeToDB(s.opts.Now().Add(-s.opts.Retention))
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM flows WHERE time < ?", cutoff); err != nil {
-		s.fail(err)
-		return err
+	for batch := 0; batch < maxSweepBatches; batch++ {
+		if err := ctx.Err(); err != nil {
+			if batch > 0 {
+				return nil
+			}
+			s.fail(err)
+			return err
+		}
+		result, err := s.db.ExecContext(ctx, "DELETE FROM flows WHERE seq IN (SELECT seq FROM flows WHERE time < ? ORDER BY time ASC, seq ASC LIMIT ?)", cutoff, s.opts.SweepBatchRows)
+		if err != nil {
+			if batch > 0 && ctx.Err() != nil {
+				return nil
+			}
+			s.fail(err)
+			return err
+		}
+		removed, err := result.RowsAffected()
+		if err != nil {
+			s.fail(err)
+			return err
+		}
+		if s.afterSweepChunk != nil {
+			s.afterSweepChunk(removed)
+		}
+		if removed < int64(s.opts.SweepBatchRows) {
+			break
+		}
+	}
+
+	if ctx.Err() != nil {
+		return nil
 	}
 
 	if s.opts.MaxRows > 0 {

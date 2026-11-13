@@ -54,6 +54,8 @@ import (
 // overridable through flows.store.*; these are the values an operator gets by
 // setting nothing but the path.
 const (
+	sweepBatchRows       = 20000
+	maxSweepBatches      = 50
 	DefaultRetention     = 30 * 24 * time.Hour
 	DefaultMaxRows       = 5_000_000
 	DefaultMaxExportRows = 50_000
@@ -113,6 +115,8 @@ type Options struct {
 	ConversionTimeout time.Duration
 	// SweepInterval is how often retention and the row cap are enforced.
 	SweepInterval time.Duration
+	// SweepBatchRows bounds one retention delete transaction; zero uses the internal default.
+	SweepBatchRows int
 	// IncrementalVacuumInterval controls how often SQLite free pages are
 	// reclaimed. Zero inherits SweepInterval, so retention changes eventually
 	// shrink the database without another operator action.
@@ -130,6 +134,9 @@ type Options struct {
 }
 
 func (o *Options) applyDefaults() {
+	if o.SweepBatchRows <= 0 {
+		o.SweepBatchRows = sweepBatchRows
+	}
 	if o.Retention <= 0 {
 		o.Retention = DefaultRetention
 	}
@@ -188,11 +195,12 @@ type Store struct {
 	done  chan struct{}
 	wg    sync.WaitGroup
 
-	mu           sync.Mutex
-	recorded     int64
-	drops        int64
-	failure      error
-	setupFailure error
+	mu              sync.Mutex
+	recorded        int64
+	drops           int64
+	failure         error
+	setupFailure    error
+	afterSweepChunk func(int64) // optional deterministic maintenance test hook
 	// lastCheckpointAt is guarded by mu with the counters above. It is kept in
 	// process memory rather than SQLite metadata: the timestamp describes this
 	// process's observed maintenance, not data carried across a restart.
