@@ -239,8 +239,30 @@ var durationType = reflect.TypeFor[Duration]()
 // through untouched.
 func durationDecodeHook() mapstructure.DecodeHookFunc {
 	return func(from reflect.Type, to reflect.Type, data any) (any, error) {
-		if to != durationType || from.Kind() != reflect.String {
+		if to != durationType || from == durationType {
 			return data, nil
+		}
+		value := reflect.ValueOf(data)
+		switch from.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if value.Int() == 0 {
+				return data, nil
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+			if value.Uint() == 0 {
+				return data, nil
+			}
+		case reflect.Float32, reflect.Float64:
+			if value.Float() == 0 {
+				return data, nil
+			}
+		case reflect.String:
+			// Parse strings below, preserving the environment and YAML string contract.
+		default:
+			return data, nil
+		}
+		if from.Kind() != reflect.String {
+			return nil, fmt.Errorf("duration %v has no unit: write it as a string such as \"30s\"", data)
 		}
 		s, _ := data.(string)
 		d, err := time.ParseDuration(s)
