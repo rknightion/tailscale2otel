@@ -39,18 +39,21 @@ jobs:
             yq -o=json '.' /tmp/live.raw > /tmp/live.json # yq is preinstalled on ubuntu-latest
           fi
 
+      - name: Build the classifier
+        run: go build -C tools/apidrift -o "$RUNNER_TEMP/apidrift" .
+
       - name: Classify drift on consumed operations
         id: drift
         run: |
           set +e
-          go run -C tools/apidrift . -old "$PWD/spec/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
+          "$RUNNER_TEMP/apidrift" -old "$PWD/spec/tailscale-api.json" -new /tmp/live.json -format md > /tmp/drift.md
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Classify upstream operation-set drift
         id: operation_drift
         run: |
           set +e
-          go run -C tools/apidrift . -operations -new /tmp/live.json -format md > /tmp/operation-drift.md
+          "$RUNNER_TEMP/apidrift" -operations -new /tmp/live.json -format md > /tmp/operation-drift.md
           echo "code=$?" >> "$GITHUB_OUTPUT"
 
       - name: Fail on tool error (any non-zero that is not the drift signal '3')
