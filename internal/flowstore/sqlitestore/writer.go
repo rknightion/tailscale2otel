@@ -225,9 +225,13 @@ func (s *Store) maintain(ctx context.Context, sweep, reclaim bool) {
 	if sweep {
 		_ = s.sweep(ctx)
 	}
-	_ = s.checkpoint(ctx)
+	checkpointCtx, checkpointCancel := s.queryCtx()
+	_ = s.checkpoint(checkpointCtx)
+	checkpointCancel()
 	if reclaim {
-		_ = s.incrementalVacuum(ctx)
+		vacuumCtx, vacuumCancel := s.queryCtx()
+		_ = s.incrementalVacuum(vacuumCtx)
+		vacuumCancel()
 	}
 }
 
@@ -319,16 +323,37 @@ func (s *Store) sweep(ctx context.Context) (err error) {
 	if s.opts.MaxRows > 0 {
 		var count int64
 		if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM flows").Scan(&count); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			s.fail(err)
 			return err
 		}
-		if excess := count - s.opts.MaxRows; excess > 0 {
-			if _, err := s.db.ExecContext(ctx,
-				"DELETE FROM flows WHERE seq IN (SELECT seq FROM flows ORDER BY time ASC, seq ASC LIMIT ?)",
-				excess,
-			); err != nil {
+		for excess := count - s.opts.MaxRows; excess > 0; {
+			if ctx.Err() != nil {
+				return nil
+			}
+			chunk := min(excess, int64(s.opts.SweepBatchRows))
+			result, err := s.db.ExecContext(ctx,
+				"DELETE FROM flows WHERE seq IN (SELECT seq FROM flows ORDER BY time ASC, seq ASC LIMIT ?)", chunk)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				s.fail(err)
 				return err
+			}
+			removed, err := result.RowsAffected()
+			if err != nil {
+				s.fail(err)
+				return err
+			}
+			if s.afterSweepChunk != nil {
+				s.afterSweepChunk(removed)
+			}
+			excess -= removed
+			if removed < chunk {
+				break
 			}
 		}
 	}
