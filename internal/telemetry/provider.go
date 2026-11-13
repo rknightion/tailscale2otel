@@ -331,7 +331,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		// early (attributes are set afterwards) and OnEnd gets an immutable
 		// snapshot — see the piiSpanExporter doc comment in trace.go. A no-op
 		// filter (no category disabled) returns traceExp unchanged.
-		traceExp = newPIISpanExporter(traceExp, opts.PIIFilter)
+		traceExp = newPIISpanExporter(traceExp, opts.PIIFilter, opts.TailnetName)
 		// Outermost, so it times and observes the whole export including the PII
 		// filter's work — that is what the backend's latency actually is.
 		spanObserver := newObservingSpanExporter(traceExp, delivery)

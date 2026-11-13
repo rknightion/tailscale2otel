@@ -72,6 +72,9 @@ var keyCategory = map[string]Category{
 	"exception.stacktrace": CatFreeTextDetails, // RecordError(WithStackTrace): file paths
 }
 
+// urlValueKeys carry URLs whose literal IP host also follows the IP category policy.
+var urlValueKeys = map[string]bool{"url.full": true}
+
 // ipValueKeys are keys whose VALUE is an IP that must be range-classified. For mixed
 // keys (src/dst.node, exit_node, node), a non-IP value falls back to ipKeyFallback[key].
 var ipValueKeys = map[string]bool{
