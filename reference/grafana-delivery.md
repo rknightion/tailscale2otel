@@ -3,7 +3,9 @@
 Read before pushing, deleting or debugging anything on the live Grafana stack, or before editing an
 artifact under `deploy/grafana` or `deploy/alerts`.
 
-Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained. The project is Grafana v2 /
+The dashboards and rule manifests under `deploy/grafana` and `deploy/alerts` are generated,
+never hand-edited. The two `README.md` files and the `gen/` and `tests/` sources there are
+hand-maintained. The project is Grafana v2 /
 Grafana 13+ only and will never ship a Classic export: v1 cannot express `conditionalRendering`, so
 every feature-gated tab would render permanently empty rather than hiding. Alert rules are
 Grafana-managed `rules.alerting.grafana.app/v0alpha1` manifests, one JSON per rule.

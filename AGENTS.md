@@ -113,7 +113,9 @@ reproduces the set; the `gen` group in `just --list` is the only place the set i
   ships. It does NOT extend to mutating the tailnet itself.
 - **Do NOT push DASHBOARDS with `gcx`.** They are delivered into `m7kni/gc-gitsync-m7kni` by
   `.github/workflows/grafana-sync.yml`; an API push is an out-of-band edit the next sync undoes.
-- Nothing under `deploy/grafana` or `deploy/alerts` is hand-maintained. The project is Grafana v2 /
+- The dashboards and rule manifests under `deploy/grafana` and `deploy/alerts` are generated,
+never hand-edited. The two `README.md` files and the `gen/` and `tests/` sources there are
+hand-maintained. The project is Grafana v2 /
   Grafana 13+ only and will never ship a Classic export.
 
 ## Modules and CI
