@@ -205,7 +205,7 @@ func (e *otelEmitter) GaugeSnapshot(name, unit, desc string, points []GaugePoint
 			continue
 		}
 		attrs := Attrs(filtered)
-		e.card.Observe(name, attrs)
+		e.card.ObserveSnapshot(name, attrs)
 		resolved = append(resolved, obsPoint{value: p.Value, kvs: e.buildAttrs(name, attrs)})
 	}
 	e.emittedPoints.Add(uint64(len(resolved)))

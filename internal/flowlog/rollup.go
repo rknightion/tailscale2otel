@@ -18,8 +18,9 @@ const (
 )
 
 // defaultRollupTopN bounds the number of busiest src/dst node pairs kept per
-// flush when RollupTopN is unset (<= 0). Comfortably under the per-instrument
-// cardinality cap (cardinality.metric_limit, default 10000).
+// flush when RollupTopN is unset (<= 0). This bounds each flush, not lifetime
+// series: cumulative instruments retain changing pairs across flushes and can
+// still reach cardinality.metric_limit (default 10000).
 const defaultRollupTopN = 500
 
 // Insert-time safety caps on the live accumulator maps. Unlike topN (which is

@@ -76,7 +76,8 @@ type Options struct {
 	MaxLogAttrValueBytes int
 
 	// CardinalityLimit is the hard per-instrument limit on the number of distinct
-	// attribute sets collected per cycle; sets beyond it collapse into the SDK's
+	// attribute sets retained by the instrument (lifetime for cumulative synchronous
+	// instruments, per collection for observable gauges); excess sets collapse into the SDK's
 	// otel_metric_overflow series. 0 or negative means unlimited. The app layer
 	// supplies the configured default (10000); the same value caps the
 	// self-observability series tracker so series.active pins exactly at the limit.
@@ -359,6 +360,7 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 	var card *CardinalityTracker
 	if opts.SelfObsEnabled {
 		card = NewCardinalityTrackerWithLimits(opts.CardinalityLimit, opts.CardinalityLabelValueCap)
+		card.lifetime = opts.MetricTemporality != "delta"
 	}
 
 	emitter := newOtelEmitter(mp.Meter(scopeName), lp.Logger(scopeName), card, reservedPromotedLabels(opts), opts.Logger, opts.PIIFilter, constAttrs)
