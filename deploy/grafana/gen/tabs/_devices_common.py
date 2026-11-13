@@ -49,3 +49,8 @@ def flag_map(field, mapping):
     """
     return {"matcher": {"id": "byName", "options": field},
             "properties": [{"id": "mappings", "value": mapping}]}
+
+
+def count_flag(selector):
+    """Count enabled flags, returning zero only when the selected source exists."""
+    return f"count({selector} == 1) or (0 * count({selector}))"
