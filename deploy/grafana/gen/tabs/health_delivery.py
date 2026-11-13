@@ -170,7 +170,7 @@ def tab_health_delivery(scope):
                [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[%s])) / clamp_min("
                        "sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_total[%s])), 0.001)" % (RI, RI),
                        legend="{{tailscale_logstream_type}}")],
-               unit="percentunit", min_=0, custom=ts_custom(), options=ts_opts(),
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(),
                desc="Failed share of attempted delivery requests. The denominator is clamped, so a "
                     "type with no attempts reads 0 rather than dividing by zero."), 8, 6),
         (panel("Failed requests/s by type", "timeseries",
