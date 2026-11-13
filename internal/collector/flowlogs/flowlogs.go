@@ -263,7 +263,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	// Expired durable identities must not suppress a late record. Deletions are
 	// held until after processing so a failed API request does not turn startup
 	// cleanup into a durable side effect.
-	stale := c.pruneExpiredReplay(c.now())
+	stale := c.pruneExpiredReplay(from)
 	resp = c.validRecords(resp, e)
 	deduped, additions := c.dedupe(resp, e)
 	c.proc.ProcessAllCtx(ctx, deduped, e)
@@ -378,14 +378,13 @@ func (c *Collector) replayContains(digest string) bool {
 }
 
 // loadReplayState restores only this collector's digest-only state, pruning
-// malformed, expired, and over-capacity entries deterministically. New cannot
+// malformed and over-capacity entries deterministically. New cannot
 // return an error, so a cleanup failure is carried into CollectWindow where it
 // prevents a scheduler checkpoint advance.
 func (c *Collector) loadReplayState() {
 	if !c.replayEnabled() {
 		return
 	}
-	now := c.now()
 	deletes := make([]string, 0)
 	for _, key := range c.replayStore.Keys() {
 		digest, ok := strings.CutPrefix(key, replayKeyPrefix)
@@ -393,7 +392,7 @@ func (c *Collector) loadReplayState() {
 			continue
 		}
 		expiry, exists := c.replayStore.Get(key)
-		if !exists || !validReplayDigest(digest) || expiry.Before(now) {
+		if !exists || !validReplayDigest(digest) {
 			deletes = append(deletes, key)
 			continue
 		}
@@ -418,16 +417,15 @@ func validReplayDigest(digest string) bool {
 	return err == nil
 }
 
-// pruneExpiredReplay drops identities strictly after their inclusive expiry.
-// Equality remains valid so an overlap exactly at its configured horizon is
-// still protected.
-func (c *Collector) pruneExpiredReplay(now time.Time) []string {
+// pruneExpiredReplay drops identities only once the requested window starts
+// after their acceptance window. API bounds have inclusive second precision.
+func (c *Collector) pruneExpiredReplay(from time.Time) []string {
 	if !c.replayEnabled() {
 		return nil
 	}
 	deletes := make([]string, 0)
 	for digest, expiry := range c.replaySeen {
-		if expiry.Before(now) {
+		if expiry.Before(from.Truncate(time.Second).Add(c.replayOverlap)) {
 			delete(c.replaySeen, digest)
 			deletes = append(deletes, replayKey(digest))
 		}
@@ -445,9 +443,6 @@ func (c *Collector) persistReplay(additions map[string]struct{}, deletes []strin
 	updates := make(map[string]time.Time, len(additions))
 	expiry := to.Add(c.replayOverlap)
 	for digest := range additions {
-		if expiry.Before(c.now()) {
-			continue
-		}
 		c.replaySeen[digest] = expiry
 	}
 	for _, digest := range c.trimReplayCapacity() {
