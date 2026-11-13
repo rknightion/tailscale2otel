@@ -340,7 +340,7 @@ def state_timeline_opts(per_page=None):
 
 
 def heatmap_opts():
-    return {"calculate": False, "yAxis": {"axisPlacement": "left", "unit": "s"},
+    return {"calculate": False, "cellValues": {"unit": "cps"}, "yAxis": {"axisPlacement": "left", "unit": "s"},
             "legend": {"show": True},
             "tooltip": {"show": True, "yHistogram": False}}
 

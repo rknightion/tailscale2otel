@@ -3233,7 +3233,7 @@
         "spec": {
           "id": 35,
           "title": "Scrape duration distribution",
-          "description": "Distribution of scrape wall-clock duration across collectors. The p50/p95/p99 panel remains the per-collector trend view.",
+          "description": "Distribution of scrape wall-clock duration across collectors. The p50/p95/p99 panel remains the per-collector trend view. Colour is observations per second in each duration bucket.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3256,7 +3256,7 @@
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{le}}",
-                        "format": "time_series"
+                        "format": "heatmap"
                       }
                     }
                   }
@@ -3273,6 +3273,9 @@
             "spec": {
               "options": {
                 "calculate": false,
+                "cellValues": {
+                  "unit": "cps"
+                },
                 "yAxis": {
                   "axisPlacement": "left",
                   "unit": "s"
@@ -3287,7 +3290,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "cps",
                   "noValue": "No scrape-duration histogram buckets in the selected range."
                 },
                 "overrides": []
