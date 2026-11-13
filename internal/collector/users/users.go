@@ -106,7 +106,9 @@ type Collector struct {
 	inviteState  map[string]inviteSnapshot
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
-	tracker *apistate.Tracker
+	tracker      *apistate.Tracker
+	userGauges   *telemetry.GaugeSnapshotBuilder
+	inviteGauges *telemetry.GaugeSnapshotBuilder
 }
 
 // DirectorySink receives the login-to-role directory each collect, so the ACL
@@ -164,6 +166,8 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 func New(api lister, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
 		api:          api,
+		userGauges:   telemetry.NewGaugeSnapshotBuilder(),
+		inviteGauges: telemetry.NewGaugeSnapshotBuilder(),
 		interval:     interval,
 		perEntity:    true,
 		activityData: true,
@@ -271,25 +275,25 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// them unconditionally would report a fabricated 0/not-connected as if
 		// it were real data (issue #64).
 		if c.activityData {
-			e.Gauge(docUserDevices.Name, docUserDevices.Unit, docUserDevices.Description,
+			c.userGauges.Add(docUserDevices.Name, docUserDevices.Unit, docUserDevices.Description,
 				float64(u.DeviceCount), idAttrs)
 
 			connected := 0.0
 			if u.CurrentlyConnected {
 				connected = 1.0
 			}
-			e.Gauge(docUserConnected.Name, docUserConnected.Unit, docUserConnected.Description,
+			c.userGauges.Add(docUserConnected.Name, docUserConnected.Unit, docUserConnected.Description,
 				connected, idAttrs)
 		}
 
 		if !u.LastSeen.IsZero() {
-			e.Gauge(docUserLastSeen.Name, docUserLastSeen.Unit, docUserLastSeen.Description,
+			c.userGauges.Add(docUserLastSeen.Name, docUserLastSeen.Unit, docUserLastSeen.Description,
 				float64(u.LastSeen.Unix()), idAttrs)
 		}
 	}
 
 	for k, n := range counts {
-		e.Gauge(docUsersCount.Name, docUsersCount.Unit, docUsersCount.Description,
+		c.userGauges.Add(docUsersCount.Name, docUsersCount.Unit, docUsersCount.Description,
 			float64(n), telemetry.Attrs{
 				attrRole:   k.role,
 				attrStatus: k.status,
@@ -297,6 +301,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			})
 	}
 
+	c.userGauges.Flush(e)
 	if c.directory != nil {
 		// Published before the invites call: the directory comes from the users
 		// response alone, so an invites failure must not withhold it.
@@ -340,13 +345,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 	for k, n := range inviteCounts {
-		e.Gauge(docUserInvites.Name, docUserInvites.Unit, docUserInvites.Description,
+		c.inviteGauges.Add(docUserInvites.Name, docUserInvites.Unit, docUserInvites.Description,
 			float64(n), telemetry.Attrs{
 				attrInviteRole:     k.role,
 				attrInviteDelivery: k.delivery,
 			})
 	}
 
+	c.inviteGauges.Flush(e)
 	// UserInvites is an open-invites snapshot: a first sighting is not proof of
 	// creation, and a later absence is not proof of acceptance, revocation, or
 	// cancellation. Emit only the two observable transitions, and update the
