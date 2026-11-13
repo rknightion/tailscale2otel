@@ -2,8 +2,11 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/knadh/koanf/v2"
 )
 
 // unknownFileKeys returns the sorted set of fileKeys (the dotted config keys
@@ -147,4 +150,84 @@ func unknownKeyError(unknown, validKeys []string) error {
 	}
 	return fmt.Errorf("unknown configuration key(s) in config file: %s — remove them or fix the "+
 		"typo; unrecognized keys are rejected rather than silently ignored", strings.Join(parts, ", "))
+}
+
+// unknownListEntryKeys walks the file and Config together, checking fields only
+// inside struct-list entries. Map fields intentionally retain arbitrary keys.
+func unknownListEntryKeys(fk *koanf.Koanf) ([]string, []string) {
+	return unknownStructListKeys(reflect.TypeFor[Config](), fk.Raw())
+}
+
+func unknownStructListKeys(root reflect.Type, data any) ([]string, []string) {
+	var unknown, valid []string
+	var addValid func(reflect.Type, string)
+	addValid = func(typ reflect.Type, path string) {
+		for typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
+		}
+		if typ.Kind() != reflect.Struct {
+			return
+		}
+		for name, field := range configYAMLFields(typ) {
+			key := path + "." + name
+			valid = append(valid, key)
+			addValid(field, key)
+		}
+	}
+	var walk func(reflect.Type, any, string, bool)
+	walk = func(typ reflect.Type, value any, path string, inList bool) {
+		for typ.Kind() == reflect.Pointer {
+			typ = typ.Elem()
+		}
+		switch typ.Kind() {
+		case reflect.Slice:
+			elem := typ.Elem()
+			for elem.Kind() == reflect.Pointer {
+				elem = elem.Elem()
+			}
+			if elem.Kind() != reflect.Struct {
+				return
+			}
+			items, _ := value.([]any)
+			for i, item := range items {
+				walk(elem, item, fmt.Sprintf("%s[%d]", path, i), true)
+			}
+		case reflect.Struct:
+			values, _ := value.(map[string]any)
+			fields := configYAMLFields(typ)
+			if inList {
+				addValid(typ, path)
+			}
+			for name, val := range values {
+				key := name
+				if path != "" {
+					key = path + "." + name
+				}
+				field, ok := fields[name]
+				if !ok {
+					if inList {
+						unknown = append(unknown, key)
+					}
+					continue
+				}
+				walk(field, val, key, inList)
+			}
+		}
+	}
+	walk(root, data, "", false)
+	sort.Strings(unknown)
+	sort.Strings(valid)
+	return unknown, valid
+}
+
+func configYAMLFields(typ reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		name, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
+		if field.PkgPath == "" && name != "" && name != "-" {
+			fields[name] = field.Type
+		}
+	}
+	return fields
 }
