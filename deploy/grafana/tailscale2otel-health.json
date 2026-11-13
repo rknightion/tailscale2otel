@@ -15848,7 +15848,7 @@
         "spec": {
           "id": 175,
           "title": "Ingest vs export cost (per minute)",
-          "description": "Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
+          "description": "Exported datapoints, exported log records and per-source ingested records, all per minute. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15867,10 +15867,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_export_datapoints_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])*60",
+                        "expr": "sum(rate(tailscale2otel_export_datapoints_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "DPM (datapoints/min)",
+                        "legendFormat": "exported datapoints/min",
                         "format": "time_series"
                       }
                     }
@@ -15889,10 +15889,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_export_log_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])*60",
+                        "expr": "sum(rate(tailscale2otel_export_log_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "LPM (log rec/min)",
+                        "legendFormat": "exported log records/min",
                         "format": "time_series"
                       }
                     }
@@ -15911,10 +15911,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (source, signal) (rate(tailscale2otel_ingest_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
+                        "expr": "sum by (source, signal) (rate(tailscale2otel_ingest_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "{{source}}/{{signal}} ingest rec/s",
+                        "legendFormat": "{{source}}/{{signal}} ingested records/min",
                         "format": "time_series"
                       }
                     }
@@ -16052,7 +16052,24 @@
                     "axisPlacement": "auto"
                   }
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "forwarded/uncataloged series active"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
