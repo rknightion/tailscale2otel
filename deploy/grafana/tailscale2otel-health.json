@@ -14738,7 +14738,7 @@
         "kind": "Panel",
         "spec": {
           "id": 162,
-          "title": "Active series over time (top $topn)",
+          "title": "Series cap utilization over time (top $topn)",
           "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families. Observed reporters only; a visible reporter without a positive limit makes capacity uncertain, and completely missing reporters cannot be detected.",
           "links": [],
           "data": {
@@ -14802,7 +14802,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "share of series cap"
                   }
                 },
                 "overrides": []

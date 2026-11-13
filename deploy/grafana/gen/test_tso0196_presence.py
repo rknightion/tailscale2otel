@@ -24,7 +24,7 @@ class CardinalityPresenceTest(unittest.TestCase):
 
     def test_absent_capacity_is_uncertain_including_unlimited_configuration(self):
         for title in ['Series limit', 'Busiest metric — % of cap',
-                      'Per-metric utilization (top-N)', 'Active series over time (top $topn)']:
+                      'Per-metric utilization (top-N)', 'Series cap utilization over time (top $topn)']:
             self.assertIn('uncertain', self.no_value(title).lower())
             self.assertIn('cannot establish unlimited', self.no_value(title).lower())
             expr = self.expr(title)
@@ -43,7 +43,7 @@ class CardinalityPresenceTest(unittest.TestCase):
 
     def test_scope_applies_to_every_presence_operand(self):
         for title in ['Series limit', 'Busiest metric — % of cap',
-                      'Per-metric utilization (top-N)', 'Active series over time (top $topn)',
+                      'Per-metric utilization (top-N)', 'Series cap utilization over time (top $topn)',
                       'Overflowing now', 'Metrics over cardinality cap']:
             expr = self.expr(title)
             self.assertIn('tailscale_tailnet=~"$tailnet"', expr)
