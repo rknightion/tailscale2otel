@@ -293,6 +293,10 @@ func unknownEnvVars(validKeys []string) []string {
 			continue
 		}
 		seen[name] = true
+		// Load has already validated and applied every matching tailnet overlay.
+		if strings.HasPrefix(name, tailnetEnvPrefix) && strings.HasSuffix(name, tailnetOAuthSecretEnvSuffix) {
+			continue
+		}
 		key := envKey(name)
 		if valid[key] || keyExtendsKnown(key, valid) {
 			continue
