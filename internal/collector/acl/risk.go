@@ -41,15 +41,15 @@ type autoApproversDoc struct {
 // gauges. Each section's metrics are emitted only when the section is present
 // (and decodable), including value 0 ("present but clean").
 func (c *Collector) emitRiskScores(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
-	emitRuleRisk(e, top, "acls", emitFindings)
-	emitRuleRisk(e, top, "grants", emitFindings)
-	emitSSHRisk(e, top, emitFindings)
-	emitAutoApproverRisk(e, top, emitFindings)
+	emitRuleRisk(e, c.gauges, top, "acls", emitFindings)
+	emitRuleRisk(e, c.gauges, top, "grants", emitFindings)
+	emitSSHRisk(e, c.gauges, top, emitFindings)
+	emitAutoApproverRisk(e, c.gauges, top, emitFindings)
 }
 
 // emitRuleRisk emits wildcard_rules{src,dst}, unrestricted_rules, and
 // posture_gated_rules for one rule-bearing section (acls or grants).
-func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section string, emitFindings bool) {
+func emitRuleRisk(e telemetry.Emitter, gauges *telemetry.GaugeSnapshotBuilder, top map[string]json.RawMessage, section string, emitFindings bool) {
 	raw, ok := top[section]
 	if !ok {
 		return
@@ -96,20 +96,20 @@ func emitRuleRisk(e telemetry.Emitter, top map[string]json.RawMessage, section s
 		}
 	}
 
-	e.Gauge(docACLWildcardRules.Name, docACLWildcardRules.Unit, docACLWildcardRules.Description,
+	gauges.Add(docACLWildcardRules.Name, docACLWildcardRules.Unit, docACLWildcardRules.Description,
 		float64(wildSrc), telemetry.Attrs{attrSection: section, attrPosition: "src"})
-	e.Gauge(docACLWildcardRules.Name, docACLWildcardRules.Unit, docACLWildcardRules.Description,
+	gauges.Add(docACLWildcardRules.Name, docACLWildcardRules.Unit, docACLWildcardRules.Description,
 		float64(wildDst), telemetry.Attrs{attrSection: section, attrPosition: "dst"})
-	e.Gauge(docACLUnrestricted.Name, docACLUnrestricted.Unit, docACLUnrestricted.Description,
+	gauges.Add(docACLUnrestricted.Name, docACLUnrestricted.Unit, docACLUnrestricted.Description,
 		float64(unrestricted), telemetry.Attrs{attrSection: section})
-	e.Gauge(docACLPostureGated.Name, docACLPostureGated.Unit, docACLPostureGated.Description,
+	gauges.Add(docACLPostureGated.Name, docACLPostureGated.Unit, docACLPostureGated.Description,
 		float64(posture), telemetry.Attrs{attrSection: section})
 }
 
 // emitSSHRisk counts Tailscale SSH rules with a wildcard source or destination.
 // SSH uses src/dst for access; its "users" field is login usernames (not source
 // identities) and is deliberately ignored here.
-func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
+func emitSSHRisk(e telemetry.Emitter, gauges *telemetry.GaugeSnapshotBuilder, top map[string]json.RawMessage, emitFindings bool) {
 	raw, ok := top["ssh"]
 	if !ok {
 		return
@@ -128,14 +128,14 @@ func emitSSHRisk(e telemetry.Emitter, top map[string]json.RawMessage, emitFindin
 			}
 		}
 	}
-	e.Gauge(docACLSSHWildcard.Name, docACLSSHWildcard.Unit, docACLSSHWildcard.Description,
+	gauges.Add(docACLSSHWildcard.Name, docACLSSHWildcard.Unit, docACLSSHWildcard.Description,
 		float64(wild), nil)
 }
 
 // emitAutoApproverRisk emits the depth of each auto-approver kind. When the
 // autoApprovers section is present, all three kinds are emitted (0 when empty),
 // so "present but none" is an explicit signal.
-func emitAutoApproverRisk(e telemetry.Emitter, top map[string]json.RawMessage, emitFindings bool) {
+func emitAutoApproverRisk(e telemetry.Emitter, gauges *telemetry.GaugeSnapshotBuilder, top map[string]json.RawMessage, emitFindings bool) {
 	raw, ok := top["autoApprovers"]
 	if !ok {
 		return
@@ -144,11 +144,11 @@ func emitAutoApproverRisk(e telemetry.Emitter, top map[string]json.RawMessage, e
 	if err := json.Unmarshal(raw, &aa); err != nil {
 		return
 	}
-	e.Gauge(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
+	gauges.Add(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
 		float64(len(aa.Routes)), telemetry.Attrs{attrApproverKind: "routes"})
-	e.Gauge(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
+	gauges.Add(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
 		float64(len(aa.ExitNode)), telemetry.Attrs{attrApproverKind: "exit_node"})
-	e.Gauge(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
+	gauges.Add(docACLAutoApprovers.Name, docACLAutoApprovers.Unit, docACLAutoApprovers.Description,
 		float64(len(aa.Services)), telemetry.Attrs{attrApproverKind: "services"})
 	if !emitFindings {
 		return
