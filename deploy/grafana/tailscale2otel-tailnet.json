@@ -15682,7 +15682,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}"
@@ -15916,7 +15916,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
+                        "expr": "sum by (tailscale_target_type) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_type}}"
@@ -15993,7 +15993,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}/{{tailscale_target_type}}"
@@ -16071,7 +16071,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (user_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (user_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{user_name}}"
@@ -16144,7 +16144,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_target_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (tailscale_target_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_name}}"
@@ -16431,7 +16431,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` [$__auto]))",
+                        "expr": "sum by (event_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{event_name}}"
