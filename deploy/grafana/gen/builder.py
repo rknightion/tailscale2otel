@@ -225,6 +225,12 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         raise ValueError("unknown panel population: %s" % population)
     if ptype == "barchart" and "reduceOptions" in (options or {}):
         raise ValueError("bar charts cannot use reducer options")
+    if ptype in {"stat", "gauge", "bargauge"} and thresholds and not any(
+            m.get("type") == "special" and m.get("options", {}).get("match") == "null"
+            for m in mappings or []):
+        mappings = list(mappings or []) + [{"type": "special", "options": {
+            "match": "null", "result": {"text": novalue if novalue is not None else "No data",
+                                         "color": "gray"}}}]
     check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id

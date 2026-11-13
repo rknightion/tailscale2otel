@@ -698,6 +698,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1033,6 +1045,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -1128,6 +1150,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -1209,6 +1241,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1284,6 +1328,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1363,6 +1419,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2608,6 +2676,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2687,6 +2767,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2770,6 +2862,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No subnet-route data \u2014 needs the devices collector (collectors.devices) and a control plane that reports approved routes.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2850,6 +2954,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device-tag data \u2014 needs the devices collector (collectors.devices) and a control plane that reports device tags.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2934,6 +3050,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device-invite data \u2014 needs the devices collector (collectors.devices.collect_device_invites).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3029,6 +3157,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -3110,6 +3248,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3321,6 +3471,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3842,6 +4004,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device inventory \u2014 needs the devices collector (collectors.devices) reporting tailscale.devices.count.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4233,6 +4407,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4312,6 +4498,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4461,6 +4659,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No fleet version comparison \u2014 enable version_checks.devices (and the upstream latest version must be reachable).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4553,6 +4763,16 @@
                           "text": "update available",
                           "color": "yellow",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No self update-check data \u2014 enable version_checks.self (dev builds never report).",
+                          "color": "gray"
                         }
                       }
                     }
@@ -6095,6 +6315,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Not reported \u2014 needs a control plane that reports node-key expiry state, and the devices collector.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6242,6 +6474,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Not reported \u2014 needs a control plane that reports node-key expiry state, and the devices collector.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6389,6 +6633,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device series \u2014 needs cardinality.per_entity.device, and a control plane that reports this field.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6469,6 +6725,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device series \u2014 needs cardinality.per_entity.device, and a control plane that reports this field.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6549,6 +6817,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6628,6 +6908,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7162,6 +7454,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7438,6 +7742,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7521,6 +7837,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7685,6 +8013,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7771,6 +8111,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7855,6 +8207,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -8659,6 +9023,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10751,6 +11127,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10990,6 +11378,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -12290,6 +12690,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No node-metrics target series. Enable node_metrics and discover at least one target.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -12386,6 +12798,16 @@
                           "text": "UP",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
                         }
                       }
                     }
@@ -13408,6 +13830,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15257,6 +15691,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "0",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15994,6 +16440,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16073,6 +16531,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16165,6 +16635,16 @@
                           "text": "on",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
                         }
                       }
                     }
@@ -16453,6 +16933,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16722,6 +17214,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No posture integration has reported a sync yet.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16806,6 +17310,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17681,6 +18197,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17982,6 +18510,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -18131,6 +18671,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -18616,6 +19168,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -19247,6 +19811,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No contact data \u2014 enable the contacts collector (collectors.contacts).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -19401,6 +19977,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -19480,6 +20068,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -21551,6 +22151,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "0",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -22326,6 +22938,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No validation result. Prerequisites: collectors.acl.enabled with collectors.acl.validate, and a credential carrying the policy_file:read scope. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -22451,6 +23073,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -23923,6 +24557,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-user data \u2014 needs the users collector and cardinality.per_entity.user.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -25994,6 +26640,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -26391,6 +27049,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No GeoIP series. Prerequisites: enrichment.geoip.enabled with a country or ASN database on disk, and self_observability.enabled. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [

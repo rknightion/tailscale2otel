@@ -2516,6 +2516,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2673,6 +2685,16 @@
                           "text": "UP",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
                         }
                       }
                     }
@@ -3548,6 +3570,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4325,6 +4359,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -5968,6 +6014,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -6062,6 +6118,16 @@
                           "text": "truncated",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -6667,6 +6733,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7468,6 +7546,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-entity subrequest series. Requires a collector that fans out per entity \u2014 devices posture attributes, device invites, or user invites \u2014 and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -8987,6 +9077,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No processor-queue series. Requires self_observability.enabled and at least one log or trace export path active (the queue only exists once something is being batched for OTLP export).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -9268,6 +9370,16 @@
                           "text": "on",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No auditlogs scrape reported. Prerequisites: collectors.auditlogs.enabled with collectors.auditlogs.source of poll or both. A stream, webhook or objectstore path reports no scrape here \u2014 read the ingestion-path panel. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
                         }
                       }
                     }
@@ -9917,6 +10029,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No enabled receivers.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10159,6 +10283,16 @@
                           "text": "degraded",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No Grafana annotation activity. Requires grafana_annotations.url to be configured.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -10923,6 +11057,16 @@
                           "text": "ERROR",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No delivery status \u2014 no configured log stream has reported one.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -14268,6 +14412,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Overflow unknown \u2014 no overflow-labelled series observed; absence is not proof of zero overflow.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -14350,6 +14506,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -14783,6 +14951,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15155,6 +15335,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Overflow unknown \u2014 no reporter telemetry observed.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15853,6 +16045,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No node-metrics name-budget series. Requires node_metrics.enabled with at least one target, and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
