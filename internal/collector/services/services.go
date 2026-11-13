@@ -92,7 +92,8 @@ type Collector struct {
 	cache                 *enrich.DeviceCache
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
-	tracker *apistate.Tracker
+	tracker    *apistate.Tracker
+	listGauges *telemetry.GaugeSnapshotBuilder
 	// now is the clock, injectable from tests.
 	now func() time.Time
 }
@@ -162,6 +163,7 @@ func WithClock(now func() time.Time) Option {
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
 		api:                   a,
+		listGauges:            telemetry.NewGaugeSnapshotBuilder(),
 		interval:              interval,
 		perEntity:             true,
 		collectTags:           true,
@@ -268,7 +270,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	apistate.Observe(e, c.tracker, c.Name(), opListServices, servicesDisposition, addrsErr, c.now())
 
 	e.Gauge(docCount.Name, docCount.Unit, docCount.Description, float64(len(svcs)), nil)
-	c.emitTagRollup(e, svcs)
+	c.emitTagRollup(svcs)
+	if c.perEntity {
+		for _, service := range svcs {
+			c.listGauges.Add(docPorts.Name, docPorts.Unit, docPorts.Description, float64(len(service.Ports)), serviceAttrs(service))
+		}
+	}
+	c.listGauges.Flush(e)
 
 	if !c.perEntity {
 		return nil
@@ -279,10 +287,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// ServiceHosts call actually happens this tick — collect_hosts off, or no
 	// services to iterate, must leave it unknown rather than claiming a state.
 	var (
-		hostsAttempted bool
-		hostsComplete  bool
-		hostsErr       error
-		hostInfoPoints []telemetry.GaugePoint
+		hostsAttempted  bool
+		hostsComplete   bool
+		hostsErr        error
+		hostInfoPoints  []telemetry.GaugePoint
+		hostCountPoints []telemetry.GaugePoint
 	)
 	var hostResults []hostResult
 	if c.collectHosts {
@@ -290,8 +299,6 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 	for i := range svcs {
 		s := &svcs[i]
-		e.Gauge(docPorts.Name, docPorts.Unit, docPorts.Description,
-			float64(len(s.Ports)), serviceAttrs(*s))
 		if c.collectHosts {
 			result := hostResults[i]
 			if result.attempted {
@@ -304,13 +311,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 						hostsErr = result.err
 					}
 				} else {
-					c.emitHosts(e, *s, result.hosts, &hostInfoPoints)
+					c.emitHosts(*s, result.hosts, &hostInfoPoints, &hostCountPoints)
 				}
 			}
 		}
 	}
 	if c.collectHosts && hostsComplete && hostsErr == nil {
 		e.GaugeSnapshot(docHostInfo.Name, docHostInfo.Unit, docHostInfo.Description, hostInfoPoints)
+		e.GaugeSnapshot(docHosts.Name, docHosts.Unit, docHosts.Description, hostCountPoints)
 	}
 	if hostsAttempted {
 		apistate.Observe(e, c.tracker, c.Name(), opListServiceHosts, servicesDisposition, hostsErr, c.now())
@@ -351,7 +359,7 @@ func (c *Collector) populateEnrichCache(ctx context.Context) error {
 // + configured state, and appends host identity points. Fetching happens in the
 // bounded pool above; this method only mutates the emitter-owned state on the
 // collector goroutine.
-func (c *Collector) emitHosts(e telemetry.Emitter, service tsapi.VIPService, hosts []tsapi.ServiceHost, hostInfoPoints *[]telemetry.GaugePoint) {
+func (c *Collector) emitHosts(service tsapi.VIPService, hosts []tsapi.ServiceHost, hostInfoPoints, hostCountPoints *[]telemetry.GaugePoint) {
 	type bucket struct{ approval, configured string }
 	counts := make(map[bucket]int, len(hosts))
 	for _, h := range hosts {
@@ -361,7 +369,7 @@ func (c *Collector) emitHosts(e telemetry.Emitter, service tsapi.VIPService, hos
 		attrs := serviceAttrs(service)
 		attrs[attrApproval] = b.approval
 		attrs[attrConfigured] = b.configured
-		e.Gauge(docHosts.Name, docHosts.Unit, docHosts.Description, float64(n), attrs)
+		*hostCountPoints = append(*hostCountPoints, telemetry.GaugePoint{Value: float64(n), Attrs: attrs})
 	}
 	for _, h := range hosts {
 		*hostInfoPoints = append(*hostInfoPoints, c.hostInfoPoint(service, h))
@@ -373,7 +381,7 @@ func (c *Collector) emitHosts(e telemetry.Emitter, service tsapi.VIPService, hos
 // the devices rollup. The overflow bucket preserves the total number of
 // service/tag memberships without allowing operator-authored tags to grow
 // metric cardinality without bound.
-func (c *Collector) emitTagRollup(e telemetry.Emitter, svcs []tsapi.VIPService) {
+func (c *Collector) emitTagRollup(svcs []tsapi.VIPService) {
 	if !c.collectTags {
 		return
 	}
@@ -390,7 +398,7 @@ func (c *Collector) emitTagRollup(e telemetry.Emitter, svcs []tsapi.VIPService) 
 		return
 	}
 	emit := func(tag string, n int) {
-		e.Gauge(docByTag.Name, docByTag.Unit, docByTag.Description, float64(n), telemetry.Attrs{attrTag: tag})
+		c.listGauges.Add(docByTag.Name, docByTag.Unit, docByTag.Description, float64(n), telemetry.Attrs{attrTag: tag})
 	}
 	if c.tagLimit <= 0 || len(byTag) <= c.tagLimit {
 		for tag, n := range byTag {
