@@ -1,6 +1,6 @@
 """Border0-only Tailscale PAM inventory, configuration shape and sessions."""
 
-from builder import (DASHBOARD, RI, WIN_SLOW, bargauge_opts, logs_opts, loki_t,
+from builder import (joined, DASHBOARD, RI, WIN_SLOW, bargauge_opts, logs_opts, loki_t,
                      lot, merge, organize, panel, prom_t, row, sentinel,
                      stat_opts, ts_custom, ts_opts)
 
@@ -50,11 +50,11 @@ def tab_policy_pam(scope):
 
     connector_health = [
         (panel("Connector health", "table",
-               [prom_t(latest("tailscale_pam_connector_connected_ratio"), instant=True, fmt="table", refid="A"),
-                prom_t(latest("tailscale_pam_connector_last_seen_age_seconds"), instant=True, fmt="table", refid="B"),
-                prom_t(latest("tailscale_pam_connector_sockets_ratio"), instant=True, fmt="table", refid="C"),
-                prom_t(latest("tailscale_pam_connector_tokens_ratio"), instant=True, fmt="table", refid="D"),
-                prom_t(latest("tailscale_pam_connector_plugins_ratio"), instant=True, fmt="table", refid="E")],
+               [prom_t(joined(latest("tailscale_pam_connector_connected_ratio"), ['tailscale_pam_connector_name']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(latest("tailscale_pam_connector_last_seen_age_seconds"), ['tailscale_pam_connector_name']), instant=True, fmt="table", refid="B"),
+                prom_t(joined(latest("tailscale_pam_connector_sockets_ratio"), ['tailscale_pam_connector_name']), instant=True, fmt="table", refid="C"),
+                prom_t(joined(latest("tailscale_pam_connector_tokens_ratio"), ['tailscale_pam_connector_name']), instant=True, fmt="table", refid="D"),
+                prom_t(joined(latest("tailscale_pam_connector_plugins_ratio"), ['tailscale_pam_connector_name']), instant=True, fmt="table", refid="E")],
                transformations=[merge(), organize(exclude=_INFRA,
                                          rename={"tailscale_pam_connector_name": "Connector",
                                                  "Value #A": "Connected",
