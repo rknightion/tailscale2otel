@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.4](https://img.shields.io/badge/Version-0.36.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.5](https://img.shields.io/badge/Version-0.36.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
