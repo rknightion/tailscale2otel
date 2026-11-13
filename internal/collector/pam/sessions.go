@@ -27,6 +27,7 @@ const (
 	defaultSessionEvidenceCapacity = 1024
 	sessionsCursorKey              = "pam/sessions/cursor"
 	sessionEvidenceKeyPrefix       = "pam/sessions/evidence/"
+	sessionOpenKeyPrefix           = "pam/sessions/open/"
 	opSessions                     = "border0GetSessions"
 	metricSessions                 = "tailscale.pam.sessions"
 	metricSessionDuration          = "tailscale.pam.session.duration"
@@ -59,8 +60,9 @@ var (
 )
 
 // SessionsCollector polls Border0's newest-first session history. Counter and
-// histogram families are emitted only for session IDs not present in durable
-// evidence and newer than the independent poll cursor.
+// acceptance is emitted only for session IDs not present in durable evidence
+// and newer than the independent poll cursor. Accepted open sessions retain
+// separate durable state until their duration and terminal kill are observed.
 type SessionsCollector struct {
 	api                    sessionAPI
 	interval               time.Duration
@@ -72,6 +74,7 @@ type SessionsCollector struct {
 	capacity               int
 	cursor                 time.Time
 	seen                   map[string]time.Time
+	open                   map[string]time.Time
 	pendingEvidenceDeletes []string
 	logMaxRecordAge        time.Duration
 	sessionLogEnabled      bool
@@ -154,6 +157,7 @@ func NewSessions(a sessionAPI, interval time.Duration, cursorStore, evidenceStor
 		pageSize:           defaultSessionsPageSize,
 		capacity:           defaultSessionEvidenceCapacity,
 		seen:               make(map[string]time.Time),
+		open:               make(map[string]time.Time),
 		sessionLogRedactor: pii.New(nil),
 	}
 	for _, opt := range opts {
@@ -189,6 +193,13 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 	additions := make(map[string]time.Time)
 	active := make(map[sessionSeries]map[string]struct{})
 	newCursor := c.cursor
+	open := make(map[string]time.Time, len(c.open))
+	for digest, start := range c.open {
+		open[digest] = start
+	}
+	c.trimOpen(open)
+	observedOpen := make(map[string]bool)
+	stop := false
 	var baselineBefore time.Time
 	if c.cursor.IsZero() && c.logMaxRecordAge > 0 {
 		baselineBefore = c.now().Add(-c.logMaxRecordAge)
@@ -204,7 +215,6 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 			return err
 		}
 
-		stop := false
 		for i := range page.SessionLogs {
 			s := &page.SessionLogs[i]
 			if s.EndTime == nil {
@@ -216,16 +226,25 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 				}
 				ids[sessionDigestFor(*s)] = struct{}{}
 			}
+			digest := sessionDigestFor(*s)
+			observedOpen[digest] = true
+			if _, exists := open[digest]; exists && s.EndTime != nil {
+				c.emitSessionCompletion(e, *s)
+				delete(open, digest)
+			}
 			if stop {
 				continue
 			}
-			digest := sessionDigestFor(*s)
 			if _, exists := c.seen[digest]; exists || (!c.cursor.IsZero() && !s.StartTime.After(c.cursor)) {
 				stop = true
 				continue
 			}
 			if baselineBefore.IsZero() || s.StartTime.IsZero() || !s.StartTime.Before(baselineBefore) {
 				c.emitSession(e, *s)
+				if s.EndTime == nil && s.SessionID != "" && !s.StartTime.IsZero() {
+					open[digest] = s.StartTime
+					c.trimOpen(open)
+				}
 			}
 			additions[digest] = s.StartTime
 			if s.StartTime.After(newCursor) {
@@ -233,14 +252,18 @@ func (c *SessionsCollector) Collect(ctx context.Context, e telemetry.Emitter) er
 			}
 		}
 
-		if stop || page.Pagination == nil || page.Pagination.NextPage <= 0 {
+		var lastStart time.Time
+		if len(page.SessionLogs) > 0 {
+			lastStart = page.SessionLogs[len(page.SessionLogs)-1].StartTime
+		}
+		if (stop && !needsOpenSessionScan(open, observedOpen, lastStart)) || page.Pagination == nil || page.Pagination.NextPage <= 0 {
 			break
 		}
 		pageNumber = page.Pagination.NextPage
 	}
 
 	c.emitActive(e, active)
-	return c.persistState(additions, newCursor)
+	return c.persistState(additions, open, newCursor)
 }
 
 type sessionSeries struct {
@@ -255,6 +278,25 @@ func (c *SessionsCollector) emitSession(e telemetry.Emitter, s b0api.Session) {
 		attrSessionType:         sessionType,
 		attrAuthorizationResult: boundedAuthorizationResult(s.Result),
 	})
+	// Only identifiable sessions with a start time can be completed later.
+	// Preserve acceptance-time kill accounting for untrackable open records.
+	if s.EndTime != nil || s.SessionID == "" || s.StartTime.IsZero() {
+		c.emitSessionCompletion(e, s)
+	}
+	for i := range s.Events {
+		e.Counter(docPAMSessionEvents.Name, docPAMSessionEvents.Unit, docPAMSessionEvents.Description, 1, telemetry.Attrs{
+			attrSessionEventType:   boundedSessionEventType(s.Events[i].Type),
+			attrSessionEventStatus: boundedSessionEventStatus(s.Events[i].Status),
+		})
+	}
+	if c.sessionLogEnabled {
+		c.emitSessionLog(e, s)
+	}
+}
+
+// emitSessionCompletion records the terminal fields without repeating acceptance.
+func (c *SessionsCollector) emitSessionCompletion(e telemetry.Emitter, s b0api.Session) {
+	sessionType := boundedSessionType(s.SessionType)
 	if s.Killed {
 		e.Counter(docPAMSessionsKilled.Name, docPAMSessionsKilled.Unit, docPAMSessionsKilled.Description, 1, telemetry.Attrs{
 			attrServiceName: s.SocketName,
@@ -266,15 +308,32 @@ func (c *SessionsCollector) emitSession(e telemetry.Emitter, s b0api.Session) {
 			s.EndTime.Sub(s.StartTime).Seconds(), sessionDurationBucketsSeconds,
 			telemetry.Attrs{attrSessionType: sessionType})
 	}
-	for i := range s.Events {
-		e.Counter(docPAMSessionEvents.Name, docPAMSessionEvents.Unit, docPAMSessionEvents.Description, 1, telemetry.Attrs{
-			attrSessionEventType:   boundedSessionEventType(s.Events[i].Type),
-			attrSessionEventStatus: boundedSessionEventStatus(s.Events[i].Status),
-		})
+}
+
+// needsOpenSessionScan preserves newest-first paging while searching only as
+// far as an accepted open session not yet encountered in this poll.
+func needsOpenSessionScan(open map[string]time.Time, observed map[string]bool, lastStart time.Time) bool {
+	var oldest time.Time
+	for digest, start := range open {
+		if !observed[digest] && (oldest.IsZero() || start.Before(oldest)) {
+			oldest = start
+		}
 	}
-	if c.sessionLogEnabled {
-		c.emitSessionLog(e, s)
+	return !oldest.IsZero() && (lastStart.IsZero() || !lastStart.Before(oldest))
+}
+
+func (c *SessionsCollector) trimOpen(open map[string]time.Time) []string {
+	var dropped []string
+	if c.logMaxRecordAge > 0 {
+		horizon := c.now().Add(-c.logMaxRecordAge)
+		for digest, start := range open {
+			if start.Before(horizon) {
+				delete(open, digest)
+				dropped = append(dropped, digest)
+			}
+		}
 	}
+	return append(dropped, trimSessionEvidence(open, c.capacity)...)
 }
 
 func (c *SessionsCollector) emitSessionLog(e telemetry.Emitter, s b0api.Session) {
@@ -458,18 +517,26 @@ func (c *SessionsCollector) loadState() {
 	deletes := make([]string, 0)
 	for _, key := range c.evidenceStore.Keys() {
 		digest, ok := strings.CutPrefix(key, sessionEvidenceKeyPrefix)
+		target := c.seen
 		if !ok {
-			continue
+			digest, ok = strings.CutPrefix(key, sessionOpenKeyPrefix)
+			if !ok {
+				continue
+			}
+			target = c.open
 		}
 		observedAt, exists := c.evidenceStore.Get(key)
 		if !exists || !validSessionDigest(digest) {
 			deletes = append(deletes, key)
 			continue
 		}
-		c.seen[digest] = observedAt
+		target[digest] = observedAt
 	}
 	for _, digest := range c.trimEvidence() {
 		deletes = append(deletes, sessionEvidenceKeyPrefix+digest)
+	}
+	for _, digest := range c.trimOpen(c.open) {
+		deletes = append(deletes, sessionOpenKeyPrefix+digest)
 	}
 	c.pendingEvidenceDeletes = sortedUnique(deletes)
 }
@@ -485,7 +552,7 @@ func (c *SessionsCollector) retryEvidenceCleanup() error {
 	return nil
 }
 
-func (c *SessionsCollector) persistState(additions map[string]time.Time, cursor time.Time) error {
+func (c *SessionsCollector) persistState(additions, open map[string]time.Time, cursor time.Time) error {
 	staged := make(map[string]time.Time, len(c.seen)+len(additions))
 	for digest, start := range c.seen {
 		staged[digest] = start
@@ -504,12 +571,23 @@ func (c *SessionsCollector) persistState(additions map[string]time.Time, cursor 
 	for _, digest := range dropped {
 		deletes = append(deletes, sessionEvidenceKeyPrefix+digest)
 	}
+	for digest, start := range open {
+		if previous, exists := c.open[digest]; !exists || !previous.Equal(start) {
+			updates[sessionOpenKeyPrefix+digest] = start
+		}
+	}
+	for digest := range c.open {
+		if _, exists := open[digest]; !exists {
+			deletes = append(deletes, sessionOpenKeyPrefix+digest)
+		}
+	}
 	// Evidence is persisted before the independent cursor. A crash between the
 	// two operations can repeat a bounded request but cannot double-count it.
 	if err := collector.UpdateCheckpointBatch(c.evidenceStore, updates, sortedUnique(deletes)); err != nil {
 		return err
 	}
 	c.seen = staged
+	c.open = open
 	if cursor.After(c.cursor) {
 		if err := c.cursorStore.Set(sessionsCursorKey, cursor); err != nil {
 			return err
