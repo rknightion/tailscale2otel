@@ -212,12 +212,12 @@ def tab_cardinality(scope):
     # New row: ingest vs export cost (Task 1.8 Step 3 + 1H.3)
     cost = [
         (panel("Ingest vs export cost (per minute)", "timeseries",
-               [prom_t("rate(tailscale2otel_export_datapoints_total[%s])*60" % RI, legend="DPM (datapoints/min)"),
-                prom_t("rate(tailscale2otel_export_log_records_total[%s])*60" % RI, legend="LPM (log rec/min)"),
-                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI,
-                       legend="{{source}}/{{signal}} ingest rec/s")],
+               [prom_t("sum(rate(tailscale2otel_export_datapoints_total[%s]))*60" % RI, legend="exported datapoints/min"),
+                prom_t("sum(rate(tailscale2otel_export_log_records_total[%s]))*60" % RI, legend="exported log records/min"),
+                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))*60" % RI,
+                       legend="{{source}}/{{signal}} ingested records/min")],
                unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
-               desc="Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. "
+               desc="Exported datapoints, exported log records and per-source ingested records, all per minute. "
                     "Rising DPM driven by a single source → check that group in 'Active series by group'."), 24, 8),
     ]
 
@@ -237,6 +237,9 @@ def tab_cardinality(scope):
                 prom_t("sum(last_over_time(tailscale2otel_series_by_group{metric_group=\"other\"}[%s]))" % WIN_FAST,
                        legend="forwarded/uncataloged series active", refid="B")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               overrides=[{"matcher": {"id": "byName", "options": "forwarded/uncataloged series active"},
+                           "properties": [{"id": "unit", "value": "short"},
+                                          {"id": "custom.axisPlacement", "value": "right"}]}],
                novalue="No node-metrics name-budget series. Requires node_metrics.enabled with at "
                        "least one target, and self_observability.enabled.",
                desc="Samples dropped because their metric NAME had not been seen before and the "
