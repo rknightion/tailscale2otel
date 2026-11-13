@@ -264,12 +264,15 @@ def tab_network(scope):
                        % loki_flow, refid="A", legend="tx", instant=True),
                 loki_t("sum(sum_over_time(%s | unwrap tailscale_rx_bytes [$__range]))"
                        % loki_flow, refid="B", legend="rx", instant=True)],
-               unit="bytes", options=bargauge_opts(),
+               unit="bytes", min_=0, options=bargauge_opts(),
+               overrides=[{"matcher": {"id": "byFrameRefID", "options": ref},
+                           "properties": [{"id": "displayName", "value": label}]}
+                          for ref, label in (("A", "TX bytes"), ("B", "RX bytes"))],
                novalue="No matching flow-log records in the selected range.",
                desc="Bytes summed directly from raw flow-log records over the selected range, "
                     "independent of the Prometheus rollup/raw metric mode. Empty means no "
                     "matching log records; a populated zero is shown only when records carry "
-                    "zero bytes."), 24, 8),
+                    "zero bytes. Summed over the selected dashboard range."), 24, 8),
     ]
     # Top node-pair talkers from flow logs — node identity; gate pii_node.
     fl_pairs = [
