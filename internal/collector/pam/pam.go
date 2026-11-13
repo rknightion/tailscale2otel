@@ -363,8 +363,7 @@ func (c *Collector) emitOrganization(e telemetry.Emitter, organization *b0api.Or
 		e.Gauge(docOrgSettingEnabled.Name, docOrgSettingEnabled.Unit, docOrgSettingEnabled.Description,
 			boolValue(setting.on), telemetry.Attrs{attrSettingName: setting.name})
 	}
-	e.Gauge(docOrgPlanInfo.Name, docOrgPlanInfo.Unit, docOrgPlanInfo.Description, 1,
-		telemetry.Attrs{attrPlan: organization.Subscription.Plan.Slug})
+	emitGaugeSnapshot(e, docOrgPlanInfo.Name, docOrgPlanInfo.Unit, docOrgPlanInfo.Description, []telemetry.GaugePoint{{Value: 1, Attrs: telemetry.Attrs{attrPlan: organization.Subscription.Plan.Slug}}})
 
 	limits := organization.Subscription.SubscriptionLimit
 	for _, limit := range []struct {

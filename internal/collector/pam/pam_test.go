@@ -232,3 +232,21 @@ func readFixture(t *testing.T, name string, out any) {
 		t.Fatalf("decode tracked fixture %s: %v", name, err)
 	}
 }
+
+func TestPlanInfoGaugeFollowsPlanChange(t *testing.T) {
+	api := &fakeAPI{organization: &b0api.Organization{}}
+	api.organization.Subscription.Plan.Slug = "example-basic"
+	c := New(api, 0)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	api.organization.Subscription.Plan.Slug = "example-premium"
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	points := rec.MetricPoints(metricOrgPlanInfo)
+	if len(points) != 1 || points[0].Attrs[attrPlan] != "example-premium" || points[0].Value != 1 {
+		t.Errorf("plan info = %v, want current plan only", points)
+	}
+}

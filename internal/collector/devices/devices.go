@@ -1482,7 +1482,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	c.emitDistroRollup(byDistro)
 	if complete {
-		c.emitPostureCompliance(e, postureResults)
+		c.emitPostureCompliance(sub, postureResults)
 	}
 
 	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
@@ -2049,7 +2049,7 @@ func (c *Collector) emitAttributes(e telemetry.Emitter, sub *telemetry.GaugeSnap
 // configured exact-match assertion. Only successful posture fetches reach
 // results: a failed subrequest is availability data, not evidence that a device
 // violates its posture policy.
-func (c *Collector) emitPostureCompliance(e telemetry.Emitter, results []postureResult) {
+func (c *Collector) emitPostureCompliance(sub *telemetry.GaugeSnapshotBuilder, results []postureResult) {
 	if len(results) == 0 {
 		return
 	}
@@ -2061,7 +2061,7 @@ func (c *Collector) emitPostureCompliance(e telemetry.Emitter, results []posture
 				failed++
 			}
 		}
-		e.Gauge(docPostureComplianceFailed.Name, docPostureComplianceFailed.Unit,
+		sub.Add(docPostureComplianceFailed.Name, docPostureComplianceFailed.Unit,
 			docPostureComplianceFailed.Description, float64(failed), telemetry.Attrs{
 				attrComplianceCheck: check.Name,
 			})

@@ -158,3 +158,23 @@ func TestPartialSubrequestPhaseKeepsPreviousPostureSnapshot(t *testing.T) {
 		t.Errorf("complete empty invite snapshot = %v", got)
 	}
 }
+
+func TestPostureComplianceGaugeDropsWithoutResults(t *testing.T) {
+	api := &budgetAPI{devices: budgetDevices(1)}
+	c := devices.New(api, enrich.NewDeviceCache(), time.Second, false, true, devices.WithPostureComplianceChecks([]devices.PostureComplianceCheck{{Name: "example-check", Attribute: "custom:ready", Equals: "false"}}))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	const name = "tailscale.devices.posture_compliance.failed"
+	if points := rec.MetricPoints(name); len(points) != 1 || points[0].Value != 1 {
+		t.Fatalf("initial compliance = %v", points)
+	}
+	api.devices = nil
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if points := rec.MetricPoints(name); len(points) != 0 {
+		t.Errorf("compliance without results = %v", points)
+	}
+}
