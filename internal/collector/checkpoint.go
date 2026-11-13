@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,18 @@ type CheckpointStore interface {
 	Keys() []string
 	// Delete removes a stored key (used when migrating a renamed key).
 	Delete(name string) error
+}
+
+// CheckpointReloader refreshes shared cursors after leadership is acquired.
+// Reload is a promotion boundary, never a retry policy for conflicting writes.
+type CheckpointReloader interface {
+	Reload(context.Context) error
+}
+
+// CheckpointInitializer prepares collector state after shared cursors are refreshed.
+// The application invokes it before starting any collector or receiver.
+type CheckpointInitializer interface {
+	InitializeCheckpoints() error
 }
 
 // checkpointBatchStore is implemented by the built-in stores so a collector

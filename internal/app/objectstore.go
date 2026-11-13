@@ -224,6 +224,7 @@ func newObjectStoreCollector(
 	}
 
 	opts := objectStoreOptions(dest)
+	opts.DeferCheckpointMigration = true
 	opts.LogMaxRecordAge = d.cfg.Delivery.LogMaxRecordAge.D()
 	opts.HorizonSelfObs = d.cfg.SelfObservability.Enabled
 	opts.Logger = d.logger

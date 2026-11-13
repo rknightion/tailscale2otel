@@ -315,3 +315,24 @@ func (s *recoveringReplayStore) Delete(key string) error {
 	}
 	return s.CheckpointStore.Delete(key)
 }
+
+func TestInitializeCheckpointsAdoptsPromotedReplayState(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	store := collector.NewMemoryStore()
+	resp := oneTCPResponse()
+	standby := New(&fakeAPI{resp: resp}, newProcessor(), 0, 0, nil, nil, WithReplay(time.Minute, 8, store))
+	active := New(&fakeAPI{resp: resp}, newProcessor(), 0, 0, nil, nil, WithReplay(time.Minute, 8, store))
+	if _, err := active.CollectWindow(context.Background(), now.Add(-time.Minute), now, telemetrytest.New().Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if err := standby.InitializeCheckpoints(); err != nil {
+		t.Fatal(err)
+	}
+	rec := telemetrytest.New()
+	if _, err := standby.CollectWindow(context.Background(), now.Add(-time.Minute), now, rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if got := sumIO(rec); got != 0 {
+		t.Fatalf("promoted replica emitted %v duplicate bytes", got)
+	}
+}

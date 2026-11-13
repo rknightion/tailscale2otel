@@ -11,6 +11,8 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/audit"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
 	storeapi "github.com/rknightion/tailscale2otel/v5/internal/objectstore"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 )
@@ -151,5 +153,38 @@ func TestNew_LegacyMigrationIsFlowOnly(t *testing.T) {
 	}
 	if _, ok := cp.Get(namespace + "/" + cursorKey); ok {
 		t.Error("the audit namespace adopted the flow legacy cursor as its own")
+	}
+}
+
+func TestDeferredCheckpointMigrationWaitsForPromotion(t *testing.T) {
+	cp := collector.NewMemoryStore()
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := cp.Set(legacyCursorKey, at); err != nil {
+		t.Fatal(err)
+	}
+	scope := CheckpointScope{Tailnet: "example", Provider: "s3", Signal: "flow", Feed: FeedID("endpoint", "bucket", "flow")}
+	c, err := New(emptyBackend{}, NewFlowSignal(flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{})), cp, Options{Scope: scope, DeferCheckpointMigration: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cp.Get(legacyCursorKey); !ok {
+		t.Fatal("constructor migrated shared cursor")
+	}
+	advanced := at.Add(time.Hour)
+	if err := cp.Set(legacyCursorKey, advanced); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.InitializeCheckpoints(); err != nil {
+		t.Fatal(err)
+	}
+	ns, err := scope.Namespace()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := cp.Get(ns + "/" + cursorKey); !ok || !got.Equal(advanced) {
+		t.Fatalf("promoted object cursor %v/%v", got, ok)
+	}
+	if _, ok := cp.Get(legacyCursorKey); ok {
+		t.Fatal("active migration retained legacy cursor")
 	}
 }
