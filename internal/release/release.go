@@ -28,6 +28,33 @@ import (
 // and any suffix (-t<hash>, -dev<date>, "v0.2.0"). Three components required.
 var versionRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.(\d+)`)
 
+// selfPrereleaseRe recognizes only release channels used by the exporter;
+// Tailscale build suffixes retain their existing triple-only comparison.
+var selfPrereleaseRe = regexp.MustCompile(`^v?\d+\.\d+\.\d+-((?i:rc|alpha|beta)(?:[a-zA-Z0-9.]+|$))`)
+
+// IsPrerelease reports whether raw identifies an exporter prerelease channel.
+func IsPrerelease(raw string) bool { return selfPrereleaseRe.MatchString(raw) }
+
+// SelfOlderThan compares exporter releases, including prerelease-to-final upgrades.
+// Two prereleases of the same triple are not ordered against each other.
+func SelfOlderThan(current, latest string) (older bool, ok bool) {
+	cur, curOK := Parse(current)
+	lat, latOK := Parse(latest)
+	if !curOK || !latOK {
+		return false, false
+	}
+	return cur.Less(lat) || cur == lat && IsPrerelease(current) && !IsPrerelease(latest), true
+}
+
+// NormalizeSelf preserves an exporter prerelease identifier for display.
+func NormalizeSelf(raw string) string {
+	normalized := Normalize(raw)
+	if match := selfPrereleaseRe.FindStringSubmatch(raw); match != nil {
+		return normalized + "-" + match[1]
+	}
+	return normalized
+}
+
 // Version is a parsed MAJOR.MINOR.PATCH triple.
 type Version struct{ Major, Minor, Patch int }
 

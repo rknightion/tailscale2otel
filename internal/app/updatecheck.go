@@ -19,13 +19,12 @@ func emitUpdateCheck(e telemetry.Emitter, latest func() (string, bool), selfVers
 	if !ok {
 		return
 	}
-	cur, ok1 := release.Parse(selfVersion)
-	up, ok2 := release.Parse(lv)
-	if !ok1 || !ok2 {
+	older, ok := release.SelfOlderThan(selfVersion, lv)
+	if !ok {
 		return
 	}
 	val := 0.0
-	if cur.Less(up) {
+	if older {
 		val = 1
 	}
 	e.Gauge(appcatalog.DocUpdateAvailable.Name, appcatalog.DocUpdateAvailable.Unit,
@@ -126,9 +125,8 @@ func updateInfo(enabled bool, snap release.Snapshot, selfVersion string) statusd
 		return info
 	}
 
-	cur, curOK := release.Parse(selfVersion)
-	lat, latOK := release.Parse(snap.Latest)
-	if !curOK || !latOK {
+	older, ok := release.SelfOlderThan(selfVersion, snap.Latest)
+	if !ok {
 		// A "dev" build or an unparseable upstream value: we HAVE data, but
 		// comparing it would be misleading, so this must never render as
 		// "current" (issue #330's trustworthy-comparison requirement).
@@ -136,9 +134,11 @@ func updateInfo(enabled bool, snap release.Snapshot, selfVersion string) statusd
 		return info
 	}
 
-	info.CurrentVersion = release.Normalize(selfVersion)
+	info.CurrentVersion = release.NormalizeSelf(selfVersion)
 	info.LatestVersion = release.Normalize(snap.Latest)
-	if cur.Less(lat) {
+	if older {
+		cur, _ := release.Parse(selfVersion)
+		lat, _ := release.Parse(snap.Latest)
 		info.State = "available"
 		info.MinorsBehind = release.MinorsBehind(cur, lat)
 	} else {
