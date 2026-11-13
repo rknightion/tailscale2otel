@@ -1241,6 +1241,17 @@ polled or streamed one and reaches the same processor. The export additionally c
 publisher timestamp, which supplies the ingest freshness/lag view; the polled API carries a `type`
 field the export does not. Neither field is required.
 
+### `collectors.k8s_audit`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `collectors.k8s_audit.enabled` | `false` | Collect Kubernetes audit events from object storage. |
+
+The keys under `collectors.k8s_audit.objectstore.*` are the same as
+`collectors.flowlogs.objectstore`, except that `layout` defaults to `recorder`.
+Object storage is the only source, so there is no `source` key. See
+[Kubernetes audit collection](kubernetes-audit.md) for setup.
+
 ### Snapshot collectors
 
 | Key | Default | Description |
@@ -2072,6 +2083,15 @@ Tailscale data. The pprof handlers mount on the admin server.
 | `profiling.pyroscope.server_address` | `""` | Pyroscope/Grafana Cloud Profiles URL. **Required when `pyroscope.enabled`.** |
 | `profiling.pyroscope.basic_auth_user` | `""` | Grafana Cloud: the profiles instance ID (Basic-auth user). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER`. |
 | `profiling.pyroscope.basic_auth_password` | `""` | Grafana Cloud: an access-policy token with `profiles:write` (Basic-auth password). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD`. |
+| `profiling.pyroscope.basic_auth_password_file` | `""` | Read the password from a whitespace-trimmed file, for example a Docker secret. Set the value or the file, not both. |
+| `profiling.pyroscope.headers` | `{}` | Extra HTTP headers on profile uploads. Values are secrets and redact from status and logs; reserved authorization and tenant headers take precedence. |
+| `profiling.pyroscope.tls.insecure_skip_verify` | `false` | Skip server-certificate verification while retaining TLS. Prefer `ca_file`. |
+| `profiling.pyroscope.tls.ca_file` | `""` | PEM CA bundle trusted by the outbound profiles client. |
+| `profiling.pyroscope.tls.cert_file` | `""` | Client certificate for mutual TLS. Set together with `key_file`. |
+| `profiling.pyroscope.tls.key_file` | `""` | Client key for `profiling.pyroscope.tls.cert_file`. |
+| `profiling.pyroscope.span_profiles.enabled` | `false` | Correlate sampled CPU profiles with trace spans. Requires tracing and Pyroscope; other profile types cannot carry span identity. |
+| `profiling.pyroscope.credential_reload.enabled` | `false` | Run the background poller for password, header and TLS file rotation without restarting. |
+| `profiling.pyroscope.credential_reload.interval` | `30s` | Credential-file poll period, minimum `5s`. Ignored when reload is disabled. |
 | `profiling.pyroscope.tenant_id` | `""` | `X-Scope-OrgID` for multi-tenant servers (leave empty for Grafana Cloud). |
 | `profiling.pyroscope.upload_rate` | `60s` | How often profiles are flushed to the server. |
 | `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. Must be set via YAML (map field). |
