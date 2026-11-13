@@ -701,3 +701,46 @@ func fileSize(t *testing.T, path string) int64 {
 	}
 	return info.Size()
 }
+
+func TestSweep_DeletesExpiredRowsInBoundedBatches(t *testing.T) {
+	for _, expired := range []int{35, 505} {
+		t.Run(fmt.Sprint(expired), func(t *testing.T) {
+			opts := testOpts(t)
+			opts.SweepBatchRows = 10
+			s := openTestStore(t, opts)
+			now := time.Now()
+			for range expired {
+				insertFlow(t, s, map[string]any{"time": timeToDB(now.Add(-2 * time.Hour))})
+			}
+			insertFlow(t, s, map[string]any{"time": timeToDB(now)})
+			var batches []int64
+			s.afterSweepChunk = func(n int64) { batches = append(batches, n) }
+			if err := s.sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			wantRemaining := 1
+			wantBatches := 4
+			if expired > 500 {
+				wantRemaining = 6
+				wantBatches = 50
+			}
+			if got := rowCount(t, s.db); got != wantRemaining {
+				t.Fatalf("remaining=%d, want %d", got, wantRemaining)
+			}
+			if len(batches) != wantBatches {
+				t.Fatalf("batches=%v, want %d statements", batches, wantBatches)
+			}
+			for _, n := range batches {
+				if n > 10 {
+					t.Errorf("batch removed %d, want <=10", n)
+				}
+			}
+			if err := s.sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := rowCount(t, s.db); got != 1 {
+				t.Fatalf("second sweep rows=%d, want retained row only", got)
+			}
+		})
+	}
+}
