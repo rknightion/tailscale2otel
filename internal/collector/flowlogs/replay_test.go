@@ -146,8 +146,11 @@ func TestReplayStateLoadPrunesCapacityDeterministically(t *testing.T) {
 		}
 	}
 
-	_ = New(&fakeAPI{}, newProcessor(), 0, 0, nil, nil,
+	c := New(&fakeAPI{}, newProcessor(), 0, 0, nil, nil,
 		WithReplay(time.Minute, 2, store), withClock(func() time.Time { return now }))
+	if _, err := c.CollectWindow(context.Background(), now, now.Add(time.Minute), telemetrytest.New().Emitter()); err != nil {
+		t.Fatal(err)
+	}
 	got := store.Keys()
 	if len(got) != 2 || !contains(got, keepA) || !contains(got, keepB) {
 		t.Fatalf("replay keys after deterministic prune = %v, want %q and %q", got, keepA, keepB)
@@ -266,4 +269,49 @@ func TestReplayNoDuplicatesAboveDedupCapacity(t *testing.T) {
 	if got := sumIO(rec); got != 3600 {
 		t.Fatalf("io = %v, want two distinct connections (3600)", got)
 	}
+}
+
+func TestReplayStartupCleanupIsRetried(t *testing.T) {
+	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	store := &recoveringReplayStore{CheckpointStore: collector.NewMemoryStore(), fail: true}
+	if err := store.Set(replayKeyPrefix+"malformed", now); err != nil {
+		t.Fatal(err)
+	}
+	c := New(&fakeAPI{}, newProcessor(), 0, 0, nil, nil, WithReplay(time.Minute, 8, store), withClock(func() time.Time { return now }))
+	if store.deletes != 0 {
+		t.Fatalf("constructor performed %d writes", store.deletes)
+	}
+	hwm, err := c.CollectWindow(context.Background(), now.Add(-time.Minute), now, telemetrytest.New().Emitter())
+	if err == nil || !hwm.IsZero() {
+		t.Fatalf("failed cleanup: hwm=%v err=%v", hwm, err)
+	}
+	store.fail = false
+	hwm, err = c.CollectWindow(context.Background(), now.Add(-time.Minute), now, telemetrytest.New().Emitter())
+	if err != nil || !hwm.Equal(now) {
+		t.Fatalf("recovered cleanup: hwm=%v err=%v", hwm, err)
+	}
+	if _, ok := store.Get(replayKeyPrefix + "malformed"); ok {
+		t.Fatal("stale replay key retained")
+	}
+	writes := store.deletes
+	if _, err = c.CollectWindow(context.Background(), now, now.Add(time.Minute), telemetrytest.New().Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if store.deletes != writes {
+		t.Fatal("cleanup retried after success")
+	}
+}
+
+type recoveringReplayStore struct {
+	collector.CheckpointStore
+	fail    bool
+	deletes int
+}
+
+func (s *recoveringReplayStore) Delete(key string) error {
+	s.deletes++
+	if s.fail {
+		return errors.New("synthetic storage unavailable")
+	}
+	return s.CheckpointStore.Delete(key)
 }
