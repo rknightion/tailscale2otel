@@ -813,7 +813,10 @@
                         "version": "Version",
                         "go_version": "Go version"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "version": 0,
+                        "go_version": 1
+                      }
                     }
                   }
                 }
@@ -892,10 +895,14 @@
                         "coordination_identity": "Pod identity",
                         "coordination_lease_name": "Lease",
                         "coordination_namespace": "Namespace",
-                        "coordination_state": "State",
-                        "Value": "Leader"
+                        "coordination_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "coordination_identity": 0,
+                        "coordination_lease_name": 1,
+                        "coordination_namespace": 2,
+                        "coordination_state": 3
+                      }
                     }
                   }
                 }
@@ -1045,14 +1052,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -2808,7 +2817,10 @@
                         "tailscale_node": "Node",
                         "Value": "Up"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -3304,7 +3316,10 @@
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -4389,7 +4404,11 @@
                         "tailscale_api_operation": "Operation",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_operation": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -4470,7 +4489,10 @@
                         "tailscale_collector": "Collector",
                         "tailscale_api_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_state": 1
+                      }
                     }
                   }
                 }
@@ -4544,14 +4566,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "tailscale_capability": "Capability",
                         "Value": "Scopes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_capability": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -4650,7 +4674,11 @@
                         "tailscale_api_operation": "Operation",
                         "tailscale_api_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_operation": 1,
+                        "tailscale_api_state": 2
+                      }
                     }
                   }
                 }
@@ -10624,14 +10652,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "category": "Category",
                         "Value": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "category": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -10728,7 +10758,11 @@
                         "tailscale_logstream_destination_type": "Destination",
                         "Value": "Configured"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_logstream_log_type": 0,
+                        "tailscale_logstream_destination_type": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -11435,7 +11469,10 @@
                         "tailscale_logstream_type": "Log type",
                         "Value": "Last activity age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_logstream_type": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -15192,7 +15229,10 @@
                         "metric_name": "Metric",
                         "Value": "Utilization"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "metric_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -15268,7 +15308,9 @@
                       "renameByName": {
                         "__name__": "Metric"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "__name__": 0
+                      }
                     }
                   }
                 }
@@ -15344,7 +15386,9 @@
                       "renameByName": {
                         "metric_name": "Metric"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "metric_name": 0
+                      }
                     }
                   }
                 }

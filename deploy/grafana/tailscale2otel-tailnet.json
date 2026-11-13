@@ -2085,7 +2085,10 @@
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -2302,7 +2305,10 @@
                         "tailscale2otel_provider": "Provider",
                         "Value": "Series"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale2otel_provider": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -2430,7 +2436,12 @@
                         "Value #B": "Max staleness (s)",
                         "Value #C": "API errors/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_tailnet": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -4622,7 +4633,9 @@
                       "renameByName": {
                         "tailscale_client_version": "Version"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_client_version": 0
+                      }
                     }
                   }
                 }
@@ -5232,7 +5245,12 @@
                         "os_version": "OS version",
                         "tailscale_user": "User"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "os_type": 1,
+                        "os_version": 2,
+                        "tailscale_user": 3
+                      }
                     }
                   }
                 }
@@ -5328,7 +5346,11 @@
                         "tailscale_user": "User",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_user": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -5407,7 +5429,11 @@
                         "tailscale_user": "User",
                         "Value": "Last seen"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_user": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -5586,7 +5612,16 @@
                         "Value #D": "Multiple connections",
                         "Value #E": "Posture identity disabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "os_type": 1,
+                        "tailscale_user": 2,
+                        "Value #A": 3,
+                        "Value #B": 4,
+                        "Value #C": 5,
+                        "Value #D": 6,
+                        "Value #E": 7
+                      }
                     }
                   }
                 }
@@ -5823,7 +5858,10 @@
                         "host_name": "Host",
                         "Value": "Minors behind"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -8220,7 +8258,13 @@
                         "Value #C": "IPv6",
                         "Value #D": "Endpoints"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3,
+                        "Value #D": 4
+                      }
                     }
                   }
                 }
@@ -8401,7 +8445,9 @@
                       "renameByName": {
                         "host_name": "Host"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0
+                      }
                     }
                   }
                 }
@@ -8823,7 +8869,10 @@
                         "host_name": "Host",
                         "tailscale_exit_node_enabled": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_exit_node_enabled": 1
+                      }
                     }
                   }
                 }
@@ -8929,7 +8978,11 @@
                         "Value #A": "Advertised",
                         "Value #B": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2
+                      }
                     }
                   }
                 }
@@ -9107,7 +9160,12 @@
                         "tailscale_derp_preferred": "Preferred",
                         "Value": "Latency"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_derp_region": 1,
+                        "tailscale_derp_preferred": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -10372,7 +10430,11 @@
                         "tailscale_dst_node": "Destination",
                         "Value": "TX bytes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "tailscale_dst_node": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -11008,7 +11070,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11101,7 +11166,10 @@
                         "tailscale_dst_node": "Destination node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11194,7 +11262,10 @@
                         "tailscale_dst_service": "Destination service",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_service": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11285,7 +11356,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Unique peers"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11362,7 +11436,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Unique ports"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11675,7 +11752,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11768,7 +11848,10 @@
                         "tailscale_dst_node": "Destination node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11861,7 +11944,10 @@
                         "tailscale_dst_service": "Destination service",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_service": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12751,7 +12837,10 @@
                         "tailscale_node": "Node",
                         "Value": "Advertised"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12831,7 +12920,10 @@
                         "tailscale_node": "Node",
                         "Value": "Approved"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12911,7 +13003,10 @@
                         "tailscale_node": "Node",
                         "Value": "Messages"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12991,7 +13086,10 @@
                         "tailscale_node": "Node",
                         "Value": "Region ID"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13071,7 +13169,10 @@
                         "tailscale_node": "Node",
                         "Value": "Endpoints"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13387,7 +13488,10 @@
                         "path": "Path",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "path": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13905,7 +14009,10 @@
                         "tailscale_path": "Path",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_path": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13996,7 +14103,10 @@
                         "tailscale_node": "Node",
                         "Value": "Home region ID"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -16854,7 +16964,14 @@
                         "Value #C": "Provider hosts",
                         "Value #D": "Last sync age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_posture_provider": 0,
+                        "tailscale_posture_integration": 1,
+                        "Value #A": 2,
+                        "Value #B": 3,
+                        "Value #C": 4,
+                        "Value #D": 5
+                      }
                     }
                   }
                 }
@@ -16997,7 +17114,11 @@
                         "Value #B": "Reporting",
                         "Value #C": "Unknown / unsupported"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "Value #A": 0,
+                        "Value #B": 1,
+                        "Value #C": 2
+                      }
                     }
                   }
                 }
@@ -17154,7 +17275,11 @@
                         "attribute": "Attribute",
                         "Value": "Value"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "attribute": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -17234,7 +17359,12 @@
                         "attribute": "Attribute",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "host_id": 1,
+                        "attribute": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -17466,7 +17596,12 @@
                         "Value #C": "Reporting",
                         "Value #D": "Unknown / unsupported"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "Value #A": 0,
+                        "Value #B": 1,
+                        "Value #C": 2,
+                        "Value #D": 3
+                      }
                     }
                   }
                 }
@@ -18559,7 +18694,13 @@
                         "tailscale_key_type": "Type",
                         "Value": "Allowed tags"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_owner": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_type": 3,
+                        "Value": 4
+                      }
                     }
                   }
                 }
@@ -18640,7 +18781,13 @@
                         "tailscale_key_owner": "Owner",
                         "tailscale_key_scope_class": "Privilege class"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_owner": 3,
+                        "tailscale_key_scope_class": 4
+                      }
                     }
                   }
                 }
@@ -18721,7 +18868,13 @@
                         "tailscale_key_owner": "Owner",
                         "tailscale_key_tag_scope": "Tag scope"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_owner": 3,
+                        "tailscale_key_tag_scope": 4
+                      }
                     }
                   }
                 }
@@ -22365,7 +22518,10 @@
                         "tailscale_acl_validation_kind": "Kind",
                         "Value": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_acl_validation_kind": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -23070,7 +23226,11 @@
                         "tailscale_dns_resolver_kind": "Kind",
                         "tailscale_dns_resolver_use_with_exit_node": "ExitNode"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dns_resolver_address": 0,
+                        "tailscale_dns_resolver_kind": 1,
+                        "tailscale_dns_resolver_use_with_exit_node": 2
+                      }
                     }
                   }
                 }
@@ -23150,7 +23310,10 @@
                         "tailscale_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -23312,7 +23475,10 @@
                         "tailscale_feature": "Feature",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_feature": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -23408,7 +23574,9 @@
                       "renameByName": {
                         "tailscale_setting_role": "Role"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_role": 0
+                      }
                     }
                   }
                 }
@@ -23486,7 +23654,9 @@
                       "renameByName": {
                         "tailscale_setting_route_selection": "Mode"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_route_selection": 0
+                      }
                     }
                   }
                 }
@@ -24194,7 +24364,12 @@
                         "Value #B": "Devices",
                         "Value #C": "Last seen"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "user_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -24352,7 +24527,11 @@
                         "tailscale_key_type": "Type",
                         "Value": "Scopes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_description": 0,
+                        "tailscale_key_type": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -24422,7 +24601,10 @@
                         "tailscale_key_scope_values": "Scopes",
                         "Value": "Keys"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_scope_values": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -24504,7 +24686,12 @@
                         "tailscale_key_description": "Description",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -24933,7 +25120,12 @@
                         "Value #B": "Node attributes",
                         "Value #C": "Redirect targets"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_oauth_app_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -25001,7 +25193,10 @@
                         "tailscale_oauth_app_scope_values": "Granted scopes",
                         "Value": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_oauth_app_scope_values": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -25150,7 +25345,13 @@
                         "tailscale_service_configured": "Configured",
                         "Value": "Hosts"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_service_approval": 2,
+                        "tailscale_service_configured": 3,
+                        "Value": 4
+                      }
                     }
                   }
                 }
@@ -25394,7 +25595,14 @@
                         "Value #A": "Hosts",
                         "Value #B": "Port rules"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_service_approval": 2,
+                        "tailscale_service_configured": 3,
+                        "Value #A": 4,
+                        "Value #B": 5
+                      }
                     }
                   }
                 }
@@ -25482,7 +25690,20 @@
                         "tailscale_service_configured": "Configured",
                         "Value": "Backing host"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_node_id": 2,
+                        "host_name": 3,
+                        "host_id": 4,
+                        "os_type": 5,
+                        "os_version": 6,
+                        "tailscale_user": 7,
+                        "tailscale_tags": 8,
+                        "tailscale_service_approval": 9,
+                        "tailscale_service_configured": 10,
+                        "Value": 11
+                      }
                     }
                   }
                 }
@@ -25658,7 +25879,10 @@
                         "tailscale_webhook_event": "Event category",
                         "Value": "Covered"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_event": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -25913,7 +26137,11 @@
                         "tailscale_webhook_endpoint_provider": "Provider",
                         "Value": "Subscriptions"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_endpoint_id": 0,
+                        "tailscale_webhook_endpoint_provider": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -26079,7 +26307,10 @@
                         "tailscale_webhook_event": "Event category",
                         "Value": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_event": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -26506,7 +26737,12 @@
                         "Value #A": "Last sync errored",
                         "Value #B": "Last sync age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_posture_provider": 0,
+                        "tailscale_posture_integration": 1,
+                        "Value #A": 2,
+                        "Value #B": 3
+                      }
                     }
                   }
                 }
@@ -27108,7 +27344,14 @@
                         "Value #D": "Tokens",
                         "Value #E": "Plugins"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_connector_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3,
+                        "Value #D": 4,
+                        "Value #E": 5
+                      }
                     }
                   }
                 }
@@ -27201,7 +27444,12 @@
                         "tailscale_pam_built_date": "Build date",
                         "Value": "Info"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_connector_name": 0,
+                        "tailscale_pam_version": 1,
+                        "tailscale_pam_built_date": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27280,7 +27528,11 @@
                         "tailscale_pam_service_type": "Type",
                         "Value": "Alive"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_service_name": 0,
+                        "tailscale_pam_service_type": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -27360,7 +27612,12 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_service_name": 0,
+                        "tailscale_pam_service_type": 1,
+                        "tailscale_pam_setting_name": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27440,7 +27697,12 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_policy_name": 0,
+                        "tailscale_pam_version": 1,
+                        "tailscale_pam_setting_name": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27518,7 +27780,10 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_setting_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -27596,7 +27861,10 @@
                         "tailscale_pam_plan": "Plan",
                         "Value": "Info"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_plan": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }

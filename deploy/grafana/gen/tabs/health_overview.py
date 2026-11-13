@@ -85,8 +85,7 @@ def tab_health_overview(scope):
                                          rename={"coordination_identity": "Pod identity",
                                                  "coordination_lease_name": "Lease",
                                                  "coordination_namespace": "Namespace",
-                                                 "coordination_state": "State",
-                                                 "Value": "Leader"})],
+                                                 "coordination_state": "State"})],
                novalue="No lease-coordination series. Requires coordination.mode: kubernetes.",
                desc="Current active-passive Lease holder and transition state. Leader=1; standby "
                     "or stepped-down=0, so an API-server renewal failure remains visible."), 8, 5),
@@ -104,7 +103,7 @@ def tab_health_overview(scope):
               [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds"),
                       instant=True, fmt="table")],
               unit="s",
-              transformations=[organize(exclude=TBL_NOISE,
+              transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                         rename={"tailscale_collector": "Collector", "Value": "Age"})],
               desc="Seconds since each collector's last scrape — a row aging past its configured "
                    "interval means that collector stopped running."),

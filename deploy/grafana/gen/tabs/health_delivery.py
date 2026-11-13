@@ -117,7 +117,7 @@ def tab_health_delivery(scope):
         (panel("PII filter status", "table",
                [prom_t("%s" % lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST), instant=True, fmt="table")],
                mappings=bool_map("REDACTED", "emitted", "red", "green"),
-               transformations=[organize(exclude=TBL_NOISE,
+               transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                          rename={"category": "Category", "Value": "State"})],
                desc="Compliance view: every category should read 'emitted' (==1) unless "
                     "redacted."), 12, 7),

@@ -277,7 +277,7 @@ def tab_health_collection(scope):
                [prom_t(lot("tailscale2otel_capability_scope_satisfied_ratio", WIN_SLOW), instant=True, fmt="table")],
                mappings=bool_map("NOT SATISFIED", "satisfied", "red", "green"),
                novalue=_CAP_EMPTY,
-               transformations=[organize(exclude=TBL_NOISE,
+               transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                          rename={"tailscale_capability": "Capability",
                                                  "Value": "Scopes"})],
                desc="Advisory startup preflight comparing configured OAuth scopes against "
