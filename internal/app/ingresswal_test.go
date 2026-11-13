@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -1531,4 +1532,62 @@ func TestIngressWALReadiness_FailingDeliverySurfacesRetrying(t *testing.T) {
 			t.Fatalf("readiness failure %q after recovery", reason)
 		}
 	})
+}
+
+func TestIngressWALAppend_TransientStorageErrorRecovers(t *testing.T) {
+	wal := &coordinatorWAL{appendErr: fmt.Errorf("append: %w", syscall.ENOSPC)}
+	coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appendBody := coordinator.appender("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+	if err := appendBody(context.Background(), []byte(`[]`), time.Unix(1, 0)); !errors.Is(err, errIngressWALAppend) {
+		t.Fatalf("append error=%v", err)
+	}
+	if got := coordinator.Health().State; got != ingressWALStateRetrying {
+		t.Fatalf("state=%s, want retrying", got)
+	}
+	wal.mu.Lock()
+	wal.appendErr = nil
+	wal.mu.Unlock()
+	if err := appendBody(context.Background(), []byte(`[]`), time.Unix(1, 0)); err != nil {
+		t.Fatal(err)
+	}
+	coordinator.wait = func(context.Context, <-chan struct{}, time.Duration) ingressWALWaitResult {
+		return ingressWALWaitCanceled
+	}
+	if err := coordinator.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := coordinator.Health().State; got != ingressWALStateReady {
+		t.Fatalf("state=%s, want ready", got)
+	}
+}
+
+func TestIngressWALAppend_PermanentFailureStaysClosed(t *testing.T) {
+	for _, permanent := range []error{ingresswal.ErrCorrupt, ingresswal.ErrIncompatible, ingresswal.ErrOwnership, ingresswal.ErrClosed, ingresswal.ErrUnsupported} {
+		t.Run(permanent.Error(), func(t *testing.T) {
+			wal := &coordinatorWAL{appendErr: fmt.Errorf("append: %w", permanent)}
+			coordinator, err := newIngressWALCoordinator(wal, []ingressWALRoute{testIngressRoute(t, "example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			appendBody := coordinator.appender("example.com", ingressWALSourceWebhook, ingressWALSignalWebhook)
+			if err := appendBody(context.Background(), []byte(`[]`), time.Unix(1, 0)); err == nil {
+				t.Fatal("permanent append acknowledged")
+			}
+			if got := coordinator.Health().State; got != ingressWALStateFailed {
+				t.Fatalf("state=%s", got)
+			}
+			wal.mu.Lock()
+			wal.appendErr = nil
+			wal.mu.Unlock()
+			if err := appendBody(context.Background(), []byte(`[]`), time.Unix(1, 0)); err == nil {
+				t.Fatal("failed WAL accepted later append")
+			}
+			if len(wal.appendCalls) != 1 {
+				t.Fatal("failed WAL was called again")
+			}
+		})
+	}
 }
