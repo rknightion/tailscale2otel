@@ -120,3 +120,21 @@ func canonicalURI(path string) string {
 	}
 	return path
 }
+
+// s3EscapePath applies SigV4 byte escaping to a decoded object path, preserving
+// separators and encoding every byte outside the RFC 3986 unreserved set.
+func s3EscapePath(path string) string {
+	const hexDigits = "0123456789ABCDEF"
+	var escaped strings.Builder
+	for i := 0; i < len(path); i++ {
+		c := path[i]
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.ContainsRune("-._~/", rune(c)) {
+			escaped.WriteByte(c)
+		} else {
+			escaped.WriteByte('%')
+			escaped.WriteByte(hexDigits[c>>4])
+			escaped.WriteByte(hexDigits[c&15])
+		}
+	}
+	return escaped.String()
+}

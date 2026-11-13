@@ -479,3 +479,45 @@ func TestRequest_RetrievesCredentialsPerRequest(t *testing.T) {
 type providerFunc func(context.Context) (Credentials, error)
 
 func (f providerFunc) Retrieve(ctx context.Context) (Credentials, error) { return f(ctx) }
+
+func TestClientSendsStrictlyEncodedPath(t *testing.T) {
+	for _, style := range []bool{true, false} {
+		t.Run(fmt.Sprint(style), func(t *testing.T) {
+			srv, got := serve(t, "payload", http.StatusOK)
+			c := newClient(t, srv.URL+"/storage", style)
+			c.hc = dialTo(srv.Listener.Addr().String())
+			for _, tc := range []struct{ key, path string }{
+				{"prefix/12:34:56.cast", "prefix/12%3A34%3A56.cast"},
+				{"dt=2026/a+b @x.ndjson", "dt%3D2026/a%2Bb%20%40x.ndjson"},
+				{"escaped%20/é", "escaped%2520/%C3%A9"},
+				{"safe/AZaz09-._~", "safe/AZaz09-._~"},
+			} {
+				body, err := c.Get(context.Background(), tc.key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := body.Close(); err != nil {
+					t.Fatal(err)
+				}
+				prefix := "/storage/"
+				if style {
+					prefix += "flows/"
+				}
+				if got.requestURI != prefix+tc.path {
+					t.Fatalf("request URI=%q, want %q", got.requestURI, prefix+tc.path)
+				}
+			}
+		})
+	}
+}
+
+func TestClientListEncodesSpacePrefix(t *testing.T) {
+	srv, got := serve(t, listOnePage, http.StatusOK)
+	c := newClient(t, srv.URL, true)
+	if _, err := c.List(context.Background(), "a b/", "", 0); err != nil {
+		t.Fatal(err)
+	}
+	if got.query != "list-type=2&prefix=a%20b%2F" {
+		t.Fatalf("query=%q", got.query)
+	}
+}
