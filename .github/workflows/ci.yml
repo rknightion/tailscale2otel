@@ -415,10 +415,6 @@ jobs:
     timeout-minutes: 15
     name: coverage (Codacy)
     runs-on: ubuntu-latest
-    env:
-      # Repo-scoped Codacy coverage token (Repository Settings > Coverage). Preferred over the
-      # account token so this job only carries coverage-upload scope for THIS repo.
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -431,17 +427,28 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # zizmor: ignore[cache-poisoning] - test-only job, does not publish artifacts
+          # zizmor: ignore[cache-poisoning] - no artifacts published or credentials held while cached or dependency code runs
           cache: true
 
       - name: go test (coverage profile)
         run: just coverage
 
+      - name: Check for a Codacy upload token
+        id: codacy
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: |
+          if [[ -n "$CODACY_PROJECT_TOKEN" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload coverage to Codacy
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
+        if: steps.codacy.outputs.present == 'true'
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
-          project-token: ${{ env.CODACY_PROJECT_TOKEN }}
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.out
           force-coverage-parser: go
 
