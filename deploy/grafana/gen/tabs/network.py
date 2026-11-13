@@ -278,13 +278,14 @@ def tab_network(scope):
     fl_pairs = [
         (panel("Top node-pair talkers (flow logs)", "table",
                [loki_t("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) "
-                       "(sum_over_time(%s | unwrap tailscale_tx_bytes [$__range])))" % loki_flow,
+                       "(sum_over_time(%s | tailscale_src_node != \"\" | tailscale_dst_node != \"\" | unwrap tailscale_tx_bytes [$__range])))" % loki_flow,
                         refid="A", instant=True)],
-               unit="bytes",
+               unit="bytes", options={"sortBy": [{"displayName": "TX bytes", "desc": True}]},
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_src_node": "Source",
                                                  "tailscale_dst_node": "Destination",
-                                                 "Value": "TX bytes"})],
+                                                 "Value #A": "TX bytes"},
+                                         index={"tailscale_src_node": 0, "tailscale_dst_node": 1, "Value #A": 2})],
                novalue="No flow-log records with both source and destination node identity in "
                        "the selected range.",
                desc="Top-N source/destination node pairs by total outbound bytes in the selected "

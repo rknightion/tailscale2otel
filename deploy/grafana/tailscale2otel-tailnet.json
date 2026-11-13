@@ -10876,7 +10876,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | tailscale_src_node != \"\" | tailscale_dst_node != \"\" | unwrap tailscale_tx_bytes [$__range])))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -10898,12 +10898,12 @@
                       "renameByName": {
                         "tailscale_src_node": "Source",
                         "tailscale_dst_node": "Destination",
-                        "Value": "TX bytes"
+                        "Value #A": "TX bytes"
                       },
                       "indexByName": {
                         "tailscale_src_node": 0,
                         "tailscale_dst_node": 1,
-                        "Value": 2
+                        "Value #A": 2
                       }
                     }
                   }
@@ -10916,7 +10916,14 @@
             "group": "table",
             "version": "12.1.0",
             "spec": {
-              "options": {},
+              "options": {
+                "sortBy": [
+                  {
+                    "displayName": "TX bytes",
+                    "desc": true
+                  }
+                ]
+              },
               "fieldConfig": {
                 "defaults": {
                   "noValue": "No flow-log records with both source and destination node identity in the selected range."
