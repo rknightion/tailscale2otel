@@ -198,9 +198,10 @@ def tab_health_delivery(scope):
 
     # --- Moved verbatim from tabs/health_internals.py (#526 dissolution).
     traces = [
-        (panel("Scrape → API trace waterfall", "traces",
+        (panel("Scrape → API traces", "table",
                [tempo_t('{ resource.service.name = "tailscale2otel" && name =~ "scrape.+" }')],
-               desc=_TRACE_DESC), 24, 9),
+               transformations=[],
+               desc=_TRACE_DESC + " Select a trace ID to open its waterfall."), 24, 9),
     ]
     traces2 = [
         (panel("Span class activity", "timeseries",

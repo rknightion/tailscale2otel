@@ -11764,8 +11764,8 @@
         "kind": "Panel",
         "spec": {
           "id": 124,
-          "title": "Scrape \u2192 API trace waterfall",
-          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
+          "title": "Scrape \u2192 API traces",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded. Select a trace ID to open its waterfall.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11798,7 +11798,7 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "traces",
+            "group": "table",
             "version": "12.1.0",
             "spec": {
               "options": {},
