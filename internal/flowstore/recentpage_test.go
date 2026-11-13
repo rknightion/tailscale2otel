@@ -1,6 +1,7 @@
 package flowstore_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -152,8 +153,9 @@ func TestMemory_RecentPageCursorPaginatesWithoutGapsOrDuplicates(t *testing.T) {
 
 	var got []int64
 	var cursor uint64
+	var cursorTime time.Time
 	for pages := 0; pages < 100; pages++ {
-		page := s.RecentPage(flowstore.RecentQuery{End: base.Add(time.Hour), Limit: 4, Cursor: cursor})
+		page := s.RecentPage(flowstore.RecentQuery{End: base.Add(time.Hour), Limit: 4, Cursor: cursor, CursorTime: cursorTime})
 		for _, r := range page.Rows {
 			got = append(got, r.Counts.TxBytes)
 		}
@@ -161,6 +163,7 @@ func TestMemory_RecentPageCursorPaginatesWithoutGapsOrDuplicates(t *testing.T) {
 			break
 		}
 		cursor = page.NextCursor
+		cursorTime = page.NextCursorTime
 	}
 
 	if len(got) != 25 {
@@ -338,5 +341,28 @@ func TestMemory_RecentPageWindowAndFilterCombine(t *testing.T) {
 	})
 	if len(page.Rows) != 1 || page.Rows[0].Counts.TxBytes != 2 {
 		t.Fatalf("window did not exclude the out-of-window match: %+v", page.Rows)
+	}
+}
+
+func TestRecentPageOutOfOrderInsertReturnsEveryRow(t *testing.T) {
+	s := newMemory(0)
+	for i, minutes := range []int{10, 20, 5, 10} {
+		s.Record(conn(base.Add(-time.Duration(minutes)*time.Minute), "a:1", "b:2", int64(i+1)))
+	}
+	q := flowstore.RecentQuery{End: base.Add(time.Hour), Limit: 2}
+	var got []int64
+	for range 5 {
+		page := s.RecentPage(q)
+		for _, row := range page.Rows {
+			got = append(got, row.Counts.TxBytes)
+		}
+		if page.NextCursor == 0 {
+			break
+		}
+		q.Cursor, q.CursorTime = page.NextCursor, page.NextCursorTime
+	}
+	want := []int64{3, 4, 1, 2}
+	if !slices.Equal(got, want) {
+		t.Fatalf("paged rows = %v, want %v", got, want)
 	}
 }

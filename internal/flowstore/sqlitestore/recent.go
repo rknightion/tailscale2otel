@@ -146,9 +146,9 @@ func (s *Store) RecentPage(q flowstore.RecentQuery) flowstore.RecentPage {
 
 	pageWhere := where
 	pageArgs := append([]any{}, args...)
-	if q.Cursor != 0 {
-		pageWhere += " AND seq < ?"
-		pageArgs = append(pageArgs, int64(q.Cursor)) //nolint:gosec // seq is a positive AUTOINCREMENT rowid
+	if q.Cursor != 0 && !q.CursorTime.IsZero() {
+		pageWhere += " AND (time < ? OR (time = ? AND seq < ?))"
+		pageArgs = append(pageArgs, timeToDB(q.CursorTime), timeToDB(q.CursorTime), int64(q.Cursor)) //nolint:gosec // seq is a positive AUTOINCREMENT rowid
 	}
 	// Fetch one extra row so "more remain beyond this page" is a length check
 	// against the SAME result set, rather than a second query that could
@@ -196,6 +196,7 @@ func (s *Store) RecentPage(q flowstore.RecentQuery) flowstore.RecentPage {
 	page.Rows = out
 	if haveMore && len(scanned) > 0 {
 		page.NextCursor = scanned[len(scanned)-1].seq
+		page.NextCursorTime = scanned[len(scanned)-1].rec.Time
 	}
 	return page
 }
