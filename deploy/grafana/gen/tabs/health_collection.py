@@ -168,7 +168,7 @@ def tab_health_collection(scope):
                        legend="{{tailscale_collector}}")],
                unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Time since each collector's last successful scrape."), 12, 7),
-        (panel("Scrape budget headroom", "bargauge",
+        (panel("Scrape budget used", "bargauge",
                [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_budget_ratio{tailscale_collector=~"$collector"})',
                        legend="{{tailscale_collector}}")],
                unit="percentunit", thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),

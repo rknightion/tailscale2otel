@@ -275,3 +275,12 @@ class NeutralConfigurationPresentationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ScrapeBudgetMeaningTest(unittest.TestCase):
+    def test_budget_panel_names_used_fraction(self):
+        p = panel(dashboard.build_family(), 'Scrape budget used')
+        defaults = p['vizConfig']['spec']['fieldConfig']['defaults']
+        self.assertEqual(defaults['unit'], 'percentunit')
+        self.assertEqual(defaults['thresholds']['steps'], [
+            {'color': 'green', 'value': None}, {'color': 'yellow', 'value': 0.8}, {'color': 'red', 'value': 1}])
+        self.assertIn('tailscale2otel_scrape_budget_ratio', queries(p)[0])
