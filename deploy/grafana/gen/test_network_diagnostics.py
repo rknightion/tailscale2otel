@@ -405,3 +405,20 @@ class SignalCoverageInventoryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ObservedBytesScaleTest(unittest.TestCase):
+    def test_flow_bytes_have_named_measures_on_a_zero_based_scale(self):
+        panel = panel_spec(dashboard.build_family(), 'Observed bytes (flow logs)')
+        fields = panel['vizConfig']['spec']['fieldConfig']['defaults']
+        self.assertEqual(fields.get('min'), 0)
+        self.assertNotIn('max', fields)
+        self.assertEqual(fields['unit'], 'bytes')
+        self.assertEqual(panel['data']['spec']['transformations'], [])
+        overrides = panel['vizConfig']['spec']['fieldConfig']['overrides']
+        self.assertEqual(overrides, [
+            {'matcher': {'id': 'byFrameRefID', 'options': 'A'},
+             'properties': [{'id': 'displayName', 'value': 'TX bytes'}]},
+            {'matcher': {'id': 'byFrameRefID', 'options': 'B'},
+             'properties': [{'id': 'displayName', 'value': 'RX bytes'}]},
+        ])
+        self.assertIn('Summed over the selected dashboard range.', panel['description'])

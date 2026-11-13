@@ -10745,7 +10745,7 @@
         "spec": {
           "id": 118,
           "title": "Observed bytes (flow logs)",
-          "description": "Bytes summed directly from raw flow-log records over the selected range, independent of the Prometheus rollup/raw metric mode. Empty means no matching log records; a populated zero is shown only when records carry zero bytes.",
+          "description": "Bytes summed directly from raw flow-log records over the selected range, independent of the Prometheus rollup/raw metric mode. Empty means no matching log records; a populated zero is shown only when records carry zero bytes. Summed over the selected dashboard range.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10818,9 +10818,35 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "bytes",
+                  "min": 0,
                   "noValue": "No matching flow-log records in the selected range."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byFrameRefID",
+                      "options": "A"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "TX bytes"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byFrameRefID",
+                      "options": "B"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "RX bytes"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
