@@ -151,9 +151,9 @@ def tab_health_overview(scope):
         # a healthy-looking answer out of "not applicable" (#385).
         (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes)")],
                unit="bytes", options=stat_opts(),
-               novalue="No checkpoint file — the store is not file-backed, or nothing has "
-                       "persisted yet.",
-               desc="On-disk size of the file-backed checkpoint store."), 4, 5),
+               novalue="No checkpoint file",
+               desc="On-disk size of the file-backed checkpoint store. When empty: "
+                    "No checkpoint file — the store is not file-backed, or nothing has persisted yet."), 4, 5),
         (panel("Process CPU (summary)", "timeseries",
                [prom_t("sum by (cpu_mode) (rate(process_cpu_time_seconds_total[%s]))" % RI, legend="{{cpu_mode}}")],
                unit="percentunit", custom=ts_custom(), options=ts_opts(),

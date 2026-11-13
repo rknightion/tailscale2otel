@@ -157,11 +157,12 @@ def tab_devices_inventory(scope):
         (panel("Organization tailnets", "stat",
                [prom_t("tailscale_organization_tailnets_count_ratio")],
                unit="short", options=stat_opts(),
-               novalue="No organization roster — configure tailscale.organization and a "
-                       "tailnets:read credential to enable alpha roster discovery.",
+               novalue="Not configured",
                desc="Tailnet IDs discovered from the configured alpha Organizations API roster. "
                     "This inventories the organization; collector runtimes still require "
-                    "explicit per-tailnet credentials."), 3, 5),
+                    "explicit per-tailnet credentials. When empty: "
+                    "No organization roster — configure tailscale.organization and a "
+                    "tailnets:read credential to enable alpha roster discovery."), 4, 5),
         # #392: the old expression grouped by os/authorized/external and then summed
         # the state labels straight back out, so an unauthorized macOS laptop was
         # indistinguishable from an authorized one. Keep the state in the legend.

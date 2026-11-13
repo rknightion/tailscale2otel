@@ -3576,7 +3576,7 @@
         "spec": {
           "id": 36,
           "title": "Organization tailnets",
-          "description": "Tailnet IDs discovered from the configured alpha Organizations API roster. This inventories the organization; collector runtimes still require explicit per-tailnet credentials.",
+          "description": "Tailnet IDs discovered from the configured alpha Organizations API roster. This inventories the organization; collector runtimes still require explicit per-tailnet credentials. When empty: No organization roster \u2014 configure tailscale.organization and a tailnets:read credential to enable alpha roster discovery.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3630,7 +3630,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "No organization roster \u2014 configure tailscale.organization and a tailnets:read credential to enable alpha roster discovery."
+                  "noValue": "Not configured"
                 },
                 "overrides": []
               }
@@ -29874,7 +29874,7 @@
                                           "spec": {
                                             "x": 15,
                                             "y": 0,
-                                            "width": 3,
+                                            "width": 4,
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",

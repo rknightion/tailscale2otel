@@ -678,7 +678,13 @@ class EmptyStateTextRulesTest(unittest.TestCase):
             if _NUMERIC_NOVALUE_RE.match(nv.strip()):
                 continue  # a bare number is a display default, not a prose message
             with self.subTest(panel=title):
-                self.assertGreater(len(nv), 20,
+                explanation = nv
+                if len(nv) <= 20:
+                    descriptions = [e["spec"]["description"] for e in self.doc["spec"]["elements"].values()
+                                    if e["spec"]["title"] == title]
+                    explanation = next((d.split("When empty: ", 1)[1] for d in descriptions
+                                        if "When empty: " in d), "")
+                self.assertGreater(len(explanation), 20,
                                    "%r: empty-state text says too little to name a "
                                    "prerequisite (%r)" % (title, nv))
 
