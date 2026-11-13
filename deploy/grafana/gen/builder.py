@@ -216,6 +216,16 @@ def merge():
     return {"kind": "Transformation", "group": "merge", "spec": {"options": {}}}
 
 
+def has_verdict_color(value):
+    """Whether a mapping declares a color beyond the neutral text/absence colors."""
+    if isinstance(value, dict):
+        return (value.get("color") not in (None, "gray", "text")
+                or any(has_verdict_color(v) for v in value.values()))
+    if isinstance(value, list):
+        return any(has_verdict_color(v) for v in value)
+    return False
+
+
 def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           mappings=None, thresholds=None, custom=None, options=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
@@ -231,6 +241,11 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         mappings = list(mappings or []) + [{"type": "special", "options": {
             "match": "null", "result": {"text": novalue if novalue is not None else "No data",
                                          "color": "gray"}}}]
+    options = dict(options or {})
+    if ptype == "stat" and not thresholds and not has_verdict_color(mappings) and options.get("colorMode") == "value":
+        options["colorMode"] = "none"
+    if ptype == "bargauge" and thresholds and options.get("displayMode") == "gradient":
+        options["displayMode"] = "basic"
     check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id

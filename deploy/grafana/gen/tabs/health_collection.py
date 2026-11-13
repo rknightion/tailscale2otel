@@ -36,7 +36,7 @@ only there), so they are declared fresh here at THIS tab's scope rather than ref
 exactly the same reasoning as has_nodemetrics above.
 """
 
-from builder import (bargauge_opts, heatmap_opts, hq, lot, organize, panel, prom_t,
+from builder import (vmap, bargauge_opts, heatmap_opts, hq, lot, organize, panel, prom_t,
                      raw_sentinel, RI, row, sentinel, state_timeline_opts, stat_opts,
                      TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, UP_MAP
@@ -297,7 +297,8 @@ def tab_health_collection(scope):
                [prom_t("max by (tailscale_collector, tailscale_api_state) "
                        "(tailscale2otel_capability_status_ratio == 1)",
                        legend="{{tailscale_collector}} / {{tailscale_api_state}}")],
-               unit="short", min_=0, max_=1, options=state_timeline_opts(),
+               unit="short", options=state_timeline_opts(),
+               mappings=vmap({"1": {"text": "active", "color": "text", "index": 0}}),
                novalue=_CAP_EMPTY,
                desc="Capability-state transitions by collector and state. The current-state "
                     "table remains the exact snapshot view."), 24, 8),
