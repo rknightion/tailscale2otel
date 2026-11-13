@@ -496,7 +496,8 @@ type Collector struct {
 	// nil-attr single-series gauges (devices.count totals, etc.) stay synchronous.
 	// A collector runs its Collect on a single goroutine, so the builder needs no
 	// synchronization.
-	gsb *telemetry.GaugeSnapshotBuilder
+	gsb       *telemetry.GaugeSnapshotBuilder
+	subGauges *telemetry.GaugeSnapshotBuilder
 }
 
 // Option configures optional Collector behavior.
@@ -844,7 +845,8 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 
 		ageBuckets: entityage.BucketsSeconds(),
 
-		gsb: telemetry.NewGaugeSnapshotBuilder(),
+		gsb:       telemetry.NewGaugeSnapshotBuilder(),
+		subGauges: telemetry.NewGaugeSnapshotBuilder(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -863,15 +865,47 @@ func (c *Collector) DefaultInterval() time.Duration {
 	return defaultInterval
 }
 
+const systemicStopAfter = 3
+
+// systemicSubrequestStop distinguishes a uniform credential denial from a
+// device-specific error. Any different result disarms the stop for this tick.
+type systemicSubrequestStop struct {
+	mu       sync.Mutex
+	state    apistate.State
+	count    int
+	disarmed bool
+}
+
+func (s *systemicSubrequestStop) allowed(ctx context.Context) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return ctx.Err() == nil && (s.disarmed || s.count < systemicStopAfter)
+}
+
+func (s *systemicSubrequestStop) observe(err error) {
+	state := apistate.Classify(err, apistate.Disposition{})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.disarmed || s.count >= systemicStopAfter {
+		return
+	}
+	if (state != apistate.StateCredentialRejected && state != apistate.StateScopeDenied) || (s.count > 0 && state != s.state) {
+		s.disarmed = true
+		return
+	}
+	s.state = state
+	s.count++
+}
+
 // fetchSubrequests runs the optional per-device calls through one bounded pool.
 // A job represents one device and keeps that device's posture call before its
 // invite call, matching the historical order. Results are indexed by device so
 // Collect can emit all telemetry and mutate all collector state serially after
 // the fetch phase. This keeps the API concurrency bounded without making the
 // OTEL emitter or the stateful posture/expiry maps concurrent.
-func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevice) []deviceSubrequestResult {
+func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevice) ([]deviceSubrequestResult, bool) {
 	if len(devs) == 0 || (!c.collectPosture && !c.collectDeviceInvites) {
-		return nil
+		return nil, true
 	}
 
 	workers := c.subrequestConcurrency
@@ -884,6 +918,7 @@ func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevic
 	results := make([]deviceSubrequestResult, len(devs))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
+	var postureStop, inviteStop systemicSubrequestStop
 	for range workers {
 		wg.Add(1)
 		go func() {
@@ -891,13 +926,15 @@ func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevic
 			for i := range jobs {
 				result := &results[i]
 				d := &devs[i]
-				if c.collectPosture {
+				if c.collectPosture && postureStop.allowed(ctx) {
 					result.postureAttempted = true
 					result.posture, result.postureErr = c.fetchPosture(ctx, d)
+					postureStop.observe(result.postureErr)
 				}
-				if c.collectDeviceInvites {
+				if c.collectDeviceInvites && inviteStop.allowed(ctx) {
 					result.inviteAttempted = true
 					result.invites, result.inviteErr = c.fetchDeviceInvites(ctx, d)
+					inviteStop.observe(result.inviteErr)
 				}
 			}
 		}()
@@ -909,12 +946,18 @@ func (c *Collector) fetchSubrequests(ctx context.Context, devs []tsapi.RichDevic
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
-			return results
+			return results, false
 		}
 	}
 	close(jobs)
 	wg.Wait()
-	return results
+	complete := ctx.Err() == nil
+	for _, result := range results {
+		if (c.collectPosture && !result.postureAttempted) || (c.collectDeviceInvites && !result.inviteAttempted) {
+			complete = false
+		}
+	}
+	return results, complete
 }
 
 // Collect lists devices, repopulates the cache, and emits metrics (and, when
@@ -1014,7 +1057,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	currentDeviceKeyExpiries := make(map[string]struct{})
 	currentAttributeExpiries := make(map[attributeExpiryKey]struct{})
 	postureResults := make([]postureResult, 0, len(devs))
-	subrequests := c.fetchSubrequests(ctx, devs)
+	subCtx, cancelSubrequests := context.WithTimeout(ctx, c.DefaultInterval())
+	subrequests, complete := c.fetchSubrequests(subCtx, devs)
+	cancelSubrequests()
+	sub := c.subGauges
+	if !complete {
+		sub = telemetry.NewGaugeSnapshotBuilder()
+	}
 
 	for i := range devs {
 		d := &devs[i]
@@ -1160,7 +1209,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					postureFirstErr = perr
 				}
 			} else if result.postureAttempted {
-				c.emitPosture(e, d, result.posture)
+				c.emitPosture(e, sub, d, result.posture)
 				postureResults = append(postureResults, postureResult{device: d, attributes: result.posture})
 			}
 		}
@@ -1349,9 +1398,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// per-device posture fetches rather than emitting opportunistically in that
 	// loop. That gives every successful fetch this tick an equal vote and keeps
 	// .attribute, .attribute.info and .attribute.expiry on the same key set.
-	droppedAttributeKeys := c.emitAttributes(e, postureResults, nowT, currentAttributeExpiries)
-	e.Gauge(docAttributesDropped.Name, docAttributesDropped.Unit, docAttributesDropped.Description,
-		float64(droppedAttributeKeys), nil)
+	droppedAttributeKeys := c.emitAttributes(e, sub, postureResults, nowT, currentAttributeExpiries)
+	if complete {
+		e.Gauge(docAttributesDropped.Name, docAttributesDropped.Unit, docAttributesDropped.Description,
+			float64(droppedAttributeKeys), nil)
+	}
 
 	// #61: prune lastPosture to the current tick's fleet so it does not retain
 	// entries for devices that have left the tailnet (it grows unbounded
@@ -1381,9 +1432,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			delete(c.deviceKeyExpiryState, id)
 		}
 	}
-	for id := range c.attributeExpiryState {
-		if _, ok := currentAttributeExpiries[id]; !ok {
-			delete(c.attributeExpiryState, id)
+	if complete {
+		for id := range c.attributeExpiryState {
+			if _, ok := currentAttributeExpiries[id]; !ok {
+				delete(c.attributeExpiryState, id)
+			}
 		}
 	}
 
@@ -1428,7 +1481,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	c.emitDistroRollup(byDistro)
-	c.emitPostureCompliance(e, postureResults)
+	if complete {
+		c.emitPostureCompliance(e, postureResults)
+	}
 
 	// B6 fleet-level version-skew gauges (emitted when upstream latest is known).
 	if haveLatest {
@@ -1440,7 +1495,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	if c.collectDeviceInvites {
 		for k, n := range inviteCounts {
-			c.gsb.Add(docDeviceInvites.Name, docDeviceInvites.Unit, docDeviceInvites.Description,
+			sub.Add(docDeviceInvites.Name, docDeviceInvites.Unit, docDeviceInvites.Description,
 				float64(n), telemetry.Attrs{
 					attrInviteAccepted:      k.accepted,
 					attrInviteAllowExitNode: k.allowExitNode,
@@ -1502,6 +1557,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// (#55). Reached only on the success path; a mid-Collect API error returned
 	// earlier, leaving the previous snapshot in place until the next good tick.
 	c.gsb.Flush(e)
+	if complete {
+		c.subGauges.Flush(e)
+	}
 
 	// #524: publish each per-device subrequest's aggregated availability, once
 	// per subrequest per tick. Emitted only when the subrequest was actually
@@ -1850,7 +1908,7 @@ func (c *Collector) fetchPosture(ctx context.Context, d *tsapi.RichDevice) (tsap
 // labels), and conditionally emits the full posture LOG event depending on the
 // configured posture log mode. The caller supplies a successful fetch result so
 // this stateful emission remains on the collector goroutine.
-func (c *Collector) emitPosture(e telemetry.Emitter, d *tsapi.RichDevice, da tsapi.DeviceAttributes) {
+func (c *Collector) emitPosture(e telemetry.Emitter, sub *telemetry.GaugeSnapshotBuilder, d *tsapi.RichDevice, da tsapi.DeviceAttributes) {
 	attrs := da.Attributes
 
 	// Info-gauge metric: always emitted (independent of log mode). Constant 1,
@@ -1864,7 +1922,7 @@ func (c *Collector) emitPosture(e telemetry.Emitter, d *tsapi.RichDevice, da tsa
 			metricAttrs[label] = fmt.Sprint(v)
 		}
 	}
-	c.gsb.Add(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
+	sub.Add(docPostureInfo.Name, docPostureInfo.Unit, docPostureInfo.Description, 1, metricAttrs)
 
 	// Decide whether to emit the LOG. The signature is computed over the FULL
 	// posture map so any posture change (not just curated keys) fires the log.
@@ -1911,7 +1969,7 @@ func (c *Collector) emitPosture(e telemetry.Emitter, d *tsapi.RichDevice, da tsa
 // then emits every promoted attribute family from that single selection. This
 // prevents an expiry or info metric from leaking a key the numeric attribute
 // metric dropped.
-func (c *Collector) emitAttributes(e telemetry.Emitter, results []postureResult, nowT time.Time, current map[attributeExpiryKey]struct{}) int {
+func (c *Collector) emitAttributes(e telemetry.Emitter, sub *telemetry.GaugeSnapshotBuilder, results []postureResult, nowT time.Time, current map[attributeExpiryKey]struct{}) int {
 	if !c.attrNamespaceWildcard && len(c.attrNamespaces) == 0 {
 		return 0
 	}
@@ -1971,18 +2029,18 @@ func (c *Collector) emitAttributes(e telemetry.Emitter, results []postureResult,
 			labels := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID, attrAttribute: key}
 			switch value := value.(type) {
 			case bool:
-				c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(value), labels)
+				sub.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, boolToFloat(value), labels)
 			case float64:
-				c.gsb.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, value, labels)
+				sub.Add(docAttribute.Name, docAttribute.Unit, docAttribute.Description, value, labels)
 			case string:
 				if !selectedValues[key][value] {
 					value = tagOther
 				}
 				labels[attrAttributeValue] = value
-				c.gsb.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
+				sub.Add(docAttributeInfo.Name, docAttributeInfo.Unit, docAttributeInfo.Description, 1, labels)
 			}
 		}
-		c.emitAttributeExpiries(e, d, result.attributes.Expiries, selected, nowT, current)
+		c.emitAttributeExpiries(e, sub, d, result.attributes.Expiries, selected, nowT, current)
 	}
 	return len(keyCounts) - len(selected)
 }
@@ -2060,13 +2118,13 @@ func rankedAttributeNames(counts map[string]int, limit int) []string {
 	return names
 }
 
-func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, d *tsapi.RichDevice, expiries map[string]time.Time, selected map[string]bool, nowT time.Time, current map[attributeExpiryKey]struct{}) {
+func (c *Collector) emitAttributeExpiries(e telemetry.Emitter, sub *telemetry.GaugeSnapshotBuilder, d *tsapi.RichDevice, expiries map[string]time.Time, selected map[string]bool, nowT time.Time, current map[attributeExpiryKey]struct{}) {
 	for key, expiry := range expiries {
 		if !selected[key] {
 			continue
 		}
 		labels := telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID, attrAttribute: key}
-		c.gsb.Add(docAttributeExpiry.Name, docAttributeExpiry.Unit, docAttributeExpiry.Description, float64(expiry.Unix()), labels)
+		sub.Add(docAttributeExpiry.Name, docAttributeExpiry.Unit, docAttributeExpiry.Description, float64(expiry.Unix()), labels)
 		days := expiry.Sub(nowT).Hours() / 24
 		if days > 0 && days <= keyExpiryWarnDays {
 			stateKey := attributeExpiryKey{deviceID: d.ID, attribute: key}
