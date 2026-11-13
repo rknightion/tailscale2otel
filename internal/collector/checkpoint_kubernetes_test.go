@@ -800,3 +800,76 @@ func (c *fakeKubernetesCheckpointClient) deadlines() []time.Time {
 	defer c.mu.Unlock()
 	return append([]time.Time(nil), c.writeDeadlines...)
 }
+
+func TestKubernetesCheckpointStore_ReloadAdoptsSharedState(t *testing.T) {
+	client := &fakeKubernetesCheckpointClient{}
+	ctx := context.Background()
+	active, err := NewKubernetesCheckpointStore(ctx, client, WithKubernetesCheckpointWriteDebounce(0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := active.Set("flowlogs", first); err != nil {
+		t.Fatal(err)
+	}
+	standby, err := NewKubernetesCheckpointStore(ctx, client, WithKubernetesCheckpointWriteDebounce(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloader, ok := standby.(interface{ Reload(context.Context) error })
+	if !ok {
+		t.Fatal("Kubernetes store cannot reload on promotion")
+	}
+	if err := standby.Set("flowlogs", first.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := standby.Set("auditlogs", first); err != nil {
+		t.Fatal(err)
+	}
+	advanced := first.Add(48 * time.Hour)
+	if err := active.Set("flowlogs", advanced); err != nil {
+		t.Fatal(err)
+	}
+	standby.(*kubernetesCheckpointStore).persistErr = errors.New("stale persist failure")
+	if err := reloader.Reload(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := standby.Get("flowlogs")
+	if !ok || !got.Equal(advanced) {
+		t.Fatalf("promoted cursor %v/%v", got, ok)
+	}
+	if _, ok := standby.Get("auditlogs"); ok {
+		t.Fatal("pending local shard survived reload")
+	}
+	s := standby.(*kubernetesCheckpointStore)
+	s.mu.Lock()
+	timer, dirty, persistErr := s.timer, len(s.dirty), s.persistErr
+	s.mu.Unlock()
+	if timer != nil || dirty != 0 || persistErr != nil {
+		t.Fatal("pending persist survived reload")
+	}
+	updates, creates := client.updates, client.creates
+	// Simulate an already queued callback after Reload stopped its timer.
+	s.persistDebounced()
+	if err := s.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	if updates != client.updates || creates != client.creates {
+		t.Fatal("reload or old callback wrote pending state")
+	}
+	next := advanced.Add(time.Hour)
+	if err := standby.Set("flowlogs", next); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Flush(); err != nil {
+		t.Fatalf("promoted write conflicts: %v", err)
+	}
+	reopened, err := NewKubernetesCheckpointStore(ctx, client)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok = reopened.Get("flowlogs")
+	if !ok || !got.Equal(next) {
+		t.Fatalf("shared cursor %v/%v", got, ok)
+	}
+}

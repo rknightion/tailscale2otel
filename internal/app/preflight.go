@@ -115,6 +115,9 @@ type CollectorRunResult struct {
 // ever invoking its collector, so a run that hits its deadline still reports
 // on every (tailnet, collector) pair rather than truncating the list.
 func (a *App) RunOnce(ctx context.Context) []CollectorRunResult {
+	if err := a.initializeCheckpointState(); err != nil {
+		return []CollectorRunResult{classifyResult("", "checkpoint", 0, err)}
+	}
 	var results []CollectorRunResult
 	for _, rt := range a.runtimes {
 		tailnet := a.runtimeConfiguredName(rt)

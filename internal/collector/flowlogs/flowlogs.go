@@ -540,3 +540,15 @@ func isForbidden(err error) bool {
 	code, ok := tsapi.StatusCode(err)
 	return ok && code == 403
 }
+
+// InitializeCheckpoints refreshes replay identities before the active lifecycle.
+// Constructor state may predate another leader's latest shared checkpoints.
+func (c *Collector) InitializeCheckpoints() error {
+	if !c.replayEnabled() {
+		return nil
+	}
+	clear(c.replaySeen)
+	c.pendingReplayDeletes = nil
+	c.loadReplayState()
+	return nil
+}

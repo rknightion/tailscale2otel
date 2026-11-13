@@ -93,11 +93,13 @@ type App struct {
 	lifecycle func(context.Context, telemetry.FlushReason) error
 	// runtimeSetupErr records a runtime whose provider could not take its
 	// scheduled rollup producer. New (via buildIngressWAL) refuses to start.
-	runtimeSetupErr error
-	restore         func()                    // restores the prior otel error handler
-	runtimeHist     *runtimeHistory           // short-term runtime/cardinality trends, for the status page
-	store           collector.CheckpointStore // poll-cursor store; read for window-collector state on the status page
-	evidenceStore   collector.CheckpointStore // restart-stable semantic evidence (ACL revision/audit provenance)
+	runtimeSetupErr   error
+	restore           func()          // restores the prior otel error handler
+	runtimeHist       *runtimeHistory // short-term runtime/cardinality trends, for the status page
+	checkpointInit    sync.Once
+	checkpointInitErr error
+	store             collector.CheckpointStore // poll-cursor store; read for window-collector state on the status page
+	evidenceStore     collector.CheckpointStore // restart-stable semantic evidence (ACL revision/audit provenance)
 	// checkpointEffective is the store kind actually in use ("file"|"memory"),
 	// which can differ from cfg.Checkpoint.Store after a fallback (unwritable path
 	// or a corrupt file). The status page and the checkpoint reporter use this, not
@@ -513,10 +515,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		a.flowDedup = a.runtimes[0].flowDedup
 		a.auditDedup = a.runtimes[0].auditDedup
 	}
-	// Reconcile checkpoint keys with the current namespacing shape (single<->multi
-	// transitions, tailnet renames) so window cursors survive instead of silently
-	// cold-starting and re-emitting the overlap window (#105).
-	a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
+
 	if a.runtimeSetupErr != nil {
 		return nil, a.runtimeSetupErr
 	}
@@ -847,6 +846,9 @@ func (a *App) Run(ctx context.Context) error {
 // receivers, WAL replay, rollup flusher and the Prometheus listener. The admin
 // listener is optionally already serving the standby status page.
 func (a *App) runActive(ctx context.Context, startAdmin bool) error {
+	if err := a.initializeCheckpointState(); err != nil {
+		return err
+	}
 	activeCtx, cancelActive := context.WithCancelCause(ctx)
 	defer cancelActive(nil)
 	ctx = activeCtx
