@@ -1636,7 +1636,7 @@
         "spec": {
           "id": 15,
           "title": "Checkpoint disk",
-          "description": "On-disk size of the file-backed checkpoint store.",
+          "description": "On-disk size of the file-backed checkpoint store. When empty: No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -1690,7 +1690,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "bytes",
-                  "noValue": "No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet."
+                  "noValue": "No checkpoint file"
                 },
                 "overrides": []
               }
@@ -5845,7 +5845,7 @@
         "spec": {
           "id": 65,
           "title": "Object-store age (cursor & newest object)",
-          "description": "End-to-end ingestion lag (now minus the last cycle's persisted timestamp) beside how fresh the EXPORT's own writes are, independent of what was ingested. -1 on the second series means the cycle listed no object with a usable timestamp, deliberately distinguishable from a fresh zero-second age.",
+          "description": "End-to-end ingestion lag (now minus the last cycle's persisted timestamp) beside how fresh the EXPORT's own writes are, independent of what was ingested. -1 on the second series means the cycle listed no object with a usable timestamp, deliberately distinguishable from a fresh zero-second age. When empty: No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5933,7 +5933,7 @@
                       }
                     }
                   ],
-                  "noValue": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled."
+                  "noValue": "No object-store feed"
                 },
                 "overrides": []
               }
