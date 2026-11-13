@@ -163,7 +163,7 @@ def tab_network(scope):
         (panel("Current flow share by transport", "piechart",
                [prom_t("sum by (network_transport) "
                        "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
-                       legend="{{network_transport}}", instant=True, fmt="table")],
+                       legend="{{network_transport}}")],
                unit="cps", options=pie_opts(),
                novalue="No flow records in the selected interval.",
                desc="Current flow-rate composition by transport. The Flow summary time series "
@@ -171,7 +171,7 @@ def tab_network(scope):
         (panel("Current flow share by traffic type", "piechart",
                [prom_t("sum by (tailscale_traffic_type) "
                        "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
-                       legend="{{tailscale_traffic_type}}", instant=True, fmt="table")],
+                       legend="{{tailscale_traffic_type}}")],
                unit="cps", options=pie_opts(),
                novalue="No flow records in the selected interval.",
                desc="Current flow-rate composition by traffic type. The Flow summary time "
@@ -205,7 +205,7 @@ def tab_network(scope):
     hygiene = [
         (panel("Rejected flow records/s", "timeseries",
                [prom_t("sum by (source, reason) (rate(tailscale_network_data_quality_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"source\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI), legend="{{source}} / {{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                thresholds=thr([(None, "green"), (0.01, "yellow")]),
@@ -216,7 +216,7 @@ def tab_network(scope):
         (panel("Dedup counter conflicts/s", "timeseries",
                [prom_t("sum by (scope, tailscale_traffic_type) "
                        "(rate(tailscale_network_dedup_conflicts_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"scope\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI),
                        legend="{{scope}} / {{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
@@ -228,7 +228,7 @@ def tab_network(scope):
                     "re-delivery."), 8, 7),
         (panel("Flow-view store drops/s", "timeseries",
                [prom_t("sum by (reason) (rate(tailscale_network_store_dropped_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"reason\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI), legend="{{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                desc="Flow observations rejected from the local in-memory flow view because "

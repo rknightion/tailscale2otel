@@ -360,7 +360,7 @@ def tab_health_collection(scope):
 
     rdns = [
         (panel("rDNS cache fill", "stat",
-               [prom_t("%s / clamp_min(%s, 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
+               [prom_t("max(%s) / clamp_min(max(%s), 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
                                                   lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
                unit="percentunit", options=stat_opts(),
                desc="rDNS cache entries as a fraction of configured capacity."), 6, 6),

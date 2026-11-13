@@ -270,7 +270,7 @@ class FlowVisualisationTest(unittest.TestCase):
             self.assertEqual(spec["vizConfig"]["spec"]["options"]["displayLabels"],
                              ["name", "percent"])
             query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]
-            self.assertTrue(query["instant"])
+            self.assertFalse(query["instant"])
             self.assertIn("sum by (%s)" % dimension, query["expr"])
             self.assertIn("tailscale_network_flows_total", query["expr"])
 

@@ -237,7 +237,7 @@ def tab_policy_integrations(scope):
                        % LOKI_TN, instant=True)],
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_webhook_event": "Event category",
-                                                 "Value": "Observations"})],
+                                                 "Value #A": "Observations"})],
                novalue="0",
                desc="One WARN per desired category that is uncovered or unrecognized. The body "
                     "names which of the two; the category label is bounded, reading `other` for "
