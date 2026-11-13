@@ -1786,6 +1786,23 @@ assert_rc0 "AC: coordinated replicas allow emptyDir state when persistence is di
 [[ "$(docs_of StatefulSet | yq '.spec | has("volumeClaimTemplates")')" == "false" ]] \
   && ok "AC: disabled persistence creates no claims" || bad "AC: disabled persistence created claims"
 
+# Pod label writes are restricted to the StatefulSet ordinals at the replica cap.
+assert_pod_label_names() {
+  local fullname="$1" rule
+  rule="$(docs_of Role | yq 'select(.metadata.name == "'"$fullname"'-pod-labels") | .rules')"
+  [[ "$(yq 'length' <<<"$rule")" == "1" &&
+     "$(yq -r '.[0].apiGroups | join(",")' <<<"$rule")" == "" &&
+     "$(yq -r '.[0].resources | join(",")' <<<"$rule")" == "pods" &&
+     "$(yq -r '.[0].verbs | join(",")' <<<"$rule")" == "get,patch" &&
+     "$(yq -r '.[0].resourceNames | join(",")' <<<"$rule")" == "$fullname-0,$fullname-1,$fullname-2" ]] \
+    && ok "AC: pod-label Role grants get/patch only on three StatefulSet names" \
+    || bad "AC: pod-label Role must be confined to three StatefulSet names"
+}
+assert_pod_label_names "$FULLNAME"
+render --set replicaCount=2 --set config.coordination.mode=kubernetes --set fullnameOverride=example-exporter
+assert_rc0 "AC: coordinated fullnameOverride renders"
+assert_pod_label_names "example-exporter"
+
 render --set replicaCount=2 --set config.coordination.mode=kubernetes --set persistence.existingClaim=old-state
 [[ $RENDER_RC -ne 0 ]] && grep -q 'per-replica claims replace it' <<<"$RENDER" \
   && ok "AC: coordinated existingClaim fails with the per-replica migration message" \
