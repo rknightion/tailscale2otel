@@ -6372,7 +6372,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6439,7 +6439,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6531,7 +6531,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6598,7 +6598,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6690,7 +6690,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
