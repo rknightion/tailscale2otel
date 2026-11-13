@@ -55,7 +55,7 @@ renders permanently hidden, which on screen is indistinguishable from a correctl
 empty row.
 """
 
-from builder import (BAR_NOISE, category_bar_opts, autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
+from builder import (joined, BAR_NOISE, category_bar_opts, autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
                      loki_t, lot, merge, organize, panel, PII, pie_opts, pii_sentinel, prom_t,
                      row, state_timeline_opts, stat_opts, thr, ts_custom, ts_opts, WIN_FAST,
                      WIN_SLOW)
@@ -395,11 +395,11 @@ def tab_devices_inventory(scope):
         # column carries its own polarity — blocks-incoming is protective, SSH is a
         # deliberate configuration either way, the other three are inverse risk.
         (panel("Device security flags (per device)", "table",
-               [prom_t(lot("tailscale_device_blocks_incoming_connections_ratio" + df), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_device_ssh_enabled_ratio" + df), instant=True, fmt="table", refid="B"),
-                prom_t(lot("tailscale_device_key_expiry_disabled_ratio" + df), instant=True, fmt="table", refid="C"),
-                prom_t(lot("tailscale_device_multiple_connections_ratio" + df), instant=True, fmt="table", refid="D"),
-                prom_t(lot("tailscale_device_posture_identity_disabled_ratio" + df), instant=True, fmt="table", refid="E")],
+               [prom_t(joined(lot("tailscale_device_blocks_incoming_connections_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(lot("tailscale_device_ssh_enabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="B"),
+                prom_t(joined(lot("tailscale_device_key_expiry_disabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="C"),
+                prom_t(joined(lot("tailscale_device_multiple_connections_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="D"),
+                prom_t(joined(lot("tailscale_device_posture_identity_disabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="E")],
                transformations=[merge(),
                                 organize(exclude=_infra,
                                          rename={"host_name": "Host", "os_type": "OS",

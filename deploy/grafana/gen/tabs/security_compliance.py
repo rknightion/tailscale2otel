@@ -34,7 +34,7 @@ all at DASHBOARD scope; a row gating on a sentinel nothing declares renders PERM
 and is indistinguishable on screen from a correctly-gated empty row.
 """
 
-from builder import (barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge, organize,
+from builder import (joined, barchart_opts, bargauge_opts, logs_opts, loki_t, lot, merge, organize,
                      panel, PII, pie_opts, pii_sentinel, prom_t, row, sentinel, stat_opts, thr,
                      WIN_FAST, WIN_SLOW)
 
@@ -90,10 +90,10 @@ def tab_security_compliance(scope):
                options=stat_opts(color="background"),
                desc="Fraction of possible-match devices that were actually matched by the integration."), 6, 5),
         (panel("Integration sync detail", "table",
-               [prom_t(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW), instant=True, fmt="table", refid="B"),
-                prom_t(lot("tailscale_posture_integration_provider_hosts_ratio", WIN_SLOW), instant=True, fmt="table", refid="C"),
-                prom_t("time() - %s" % lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), instant=True, fmt="table", refid="D")],
+               [prom_t(joined(lot("tailscale_posture_integration_matched_ratio", WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(lot("tailscale_posture_integration_possible_matched_ratio", WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']), instant=True, fmt="table", refid="B"),
+                prom_t(joined(lot("tailscale_posture_integration_provider_hosts_ratio", WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']), instant=True, fmt="table", refid="C"),
+                prom_t("time() - %s" % joined(lot("tailscale_posture_integration_last_sync_seconds", WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']), instant=True, fmt="table", refid="D")],
                transformations=[merge(),
                                 organize(exclude=_INFRA,
                                          rename={"tailscale_posture_provider": "Provider",

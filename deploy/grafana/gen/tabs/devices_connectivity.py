@@ -35,7 +35,7 @@ renders permanently hidden, which on screen is indistinguishable from a correctl
 empty row, so referencing without declaring is not an option.
 """
 
-from builder import (autogrid_row, bargauge_opts, barchart_opts, lot, merge, organize,
+from builder import (joined, autogrid_row, bargauge_opts, barchart_opts, lot, merge, organize,
                      panel, PII, pii_sentinel, prom_t, row, sentinel, stat_opts, thr,
                      ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import BOOL_HEALTHY_ON
@@ -159,13 +159,13 @@ def tab_devices_connectivity(scope):
     _cxdf = '{host_name=~"$host_name"}'
     connectivity_detail = [
         panel("Connectivity by device", "table",
-              [prom_t(lot("tailscale_device_connectivity_direct_capable_ratio" + _cxdf),
+              [prom_t(joined(lot("tailscale_device_connectivity_direct_capable_ratio" + _cxdf), ['host_name', 'host_id']),
                       instant=True, fmt="table", refid="A"),
-               prom_t(lot("tailscale_device_connectivity_udp_ratio" + _cxdf),
+               prom_t(joined(lot("tailscale_device_connectivity_udp_ratio" + _cxdf), ['host_name', 'host_id']),
                       instant=True, fmt="table", refid="B"),
-               prom_t(lot("tailscale_device_connectivity_ipv6_ratio" + _cxdf),
+               prom_t(joined(lot("tailscale_device_connectivity_ipv6_ratio" + _cxdf), ['host_name', 'host_id']),
                       instant=True, fmt="table", refid="C"),
-               prom_t(lot("tailscale_device_connectivity_endpoints_ratio" + _cxdf),
+               prom_t(joined(lot("tailscale_device_connectivity_endpoints_ratio" + _cxdf), ['host_name', 'host_id']),
                       instant=True, fmt="table", refid="D")],
               transformations=[merge(),
                                organize(exclude=_infra,
@@ -252,8 +252,8 @@ def tab_devices_connectivity(scope):
     # widths rather than AutoGrid.
     routes = [
         (panel("Subnet routes — advertised vs enabled", "table",
-               [prom_t(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}"), instant=True, fmt="table", refid="B")],
+               [prom_t(joined(lot("tailscale_device_routes_advertised{host_name=~\"$host_name\"}"), ['host_name', 'host_id']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(lot("tailscale_device_routes_enabled{host_name=~\"$host_name\"}"), ['host_name', 'host_id']), instant=True, fmt="table", refid="B")],
                unit="short", transformations=[merge(),
                                               organize(exclude=_infra,
                                                        rename={"host_name": "Host", "Value #A": "Advertised", "Value #B": "Enabled"})],

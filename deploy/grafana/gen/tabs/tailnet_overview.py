@@ -50,7 +50,7 @@ simply has no data — which is why `test_sentinel_registry` checks resolution p
 scope rather than merely that the name exists somewhere.
 """
 
-from builder import (acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
+from builder import (joined, acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
                      row, sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
@@ -381,12 +381,12 @@ def tab_tailnet_overview(scope):
                desc="Control-plane provider (tailscale, headscale) and its active series "
                     "count."), 18, 5),
         (panel("Tailnet scorecard", "table",
-               [prom_t('sum by (tailscale_tailnet) (tailscale_device_online_ratio{%s} == 1)' % _TN,
+               [prom_t(joined('sum by (tailscale_tailnet, tailscale2otel_provider) (tailscale_device_online_ratio{%s} == 1)' % _TN, []),
                        instant=True, fmt="table"),
-                prom_t('max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{%s})' % _TN,
+                prom_t(joined('max by (tailscale_tailnet, tailscale2otel_provider) (tailscale2otel_scrape_staleness_seconds{%s})' % _TN, []),
                        instant=True, fmt="table"),
-                prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total'
-                       '{http_response_status_code=~"4..|5..", %s}[%s]))' % (_TN, RI),
+                prom_t(joined('sum by (tailscale_tailnet, tailscale2otel_provider) (rate(tailscale2otel_api_requests_total'
+                       '{http_response_status_code=~"4..|5..", %s}[%s]))' % (_TN, RI), []),
                        instant=True, fmt="table")],
                transformations=[
                    merge(),

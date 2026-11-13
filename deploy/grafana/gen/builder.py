@@ -21,6 +21,8 @@ therefore use `last_over_time(<metric>[<window>])` so panels show the most recen
 known value regardless of poll cadence.
 """
 
+import re
+
 VERSION = "12.1.0"  # nominal panel-plugin version stamped into vizConfig
 
 # Datasource defaults. The *value* is the datasource UID; "grafanacloud-prom" / "grafanacloud-logs"
@@ -212,6 +214,30 @@ def organize(exclude=None, rename=None, index=None):
         "renameByName": rename or {}, "indexByName": index or {}}}}
 
 
+def joined(expr, by):
+    """Drop metric/replica labels while retaining the entity and tenant join keys."""
+    labels = list(by) + ["tailscale_tailnet", "tailscale2otel_provider"]
+    return "max by (%s) (%s)" % (", ".join(labels), expr)
+
+
+def check_merged_table(title, targets):
+    groups = []
+    for target in targets:
+        expr = target["spec"]["query"]["spec"].get("expr", "")
+        match = re.match(r"(?:time\(\) - )?max by \(([^)]+)\)", expr)
+        if match:
+            group = tuple(label.strip() for label in match[1].split(","))
+            if not {"tailscale_tailnet", "tailscale2otel_provider"}.issubset(group):
+                raise ValueError("merged table %r must retain tenant join keys" % title)
+            groups.append(group)
+        elif not re.search(r"\bby\s*\(", expr) and re.match(r"(?:count|sum|clamp_min)\(", expr):
+            groups.append(None)
+        else:
+            raise ValueError("merged table %r needs name-free grouped or scalar queries" % title)
+    if len(set(groups)) > 1:
+        raise ValueError("merged table %r has different join keys" % title)
+
+
 def merge():
     return {"kind": "Transformation", "group": "merge", "spec": {"options": {}}}
 
@@ -231,6 +257,8 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
           transformations=None, population="selected"):
     global _id
+    if ptype == "table" and any(t.get("group") == "merge" for t in transformations or []):
+        check_merged_table(title, targets)
     if population not in {"selected", "fleet"}:
         raise ValueError("unknown panel population: %s" % population)
     if ptype == "barchart" and "reduceOptions" in (options or {}):

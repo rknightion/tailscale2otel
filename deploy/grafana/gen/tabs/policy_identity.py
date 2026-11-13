@@ -29,7 +29,7 @@ Sentinels declared at TAB scope: has_users_pe, pii_usernames (both consumed by t
 DASHBOARD-scoped in policy.py and are consumed nowhere else in this dashboard.
 """
 
-from builder import (barchart_opts, bargauge_opts, loki_t, lot, merge, organize, panel, PII,
+from builder import (joined, barchart_opts, bargauge_opts, loki_t, lot, merge, organize, panel, PII,
                      pii_sentinel, prom_t, RI, row, sentinel, stat_opts, thr, ts_custom,
                      ts_opts, WIN_SLOW)
 
@@ -117,9 +117,9 @@ def tab_policy_identity(scope):
 
     users_pe = [
         (panel("Per-user detail", "table",
-               [prom_t(lot(sel("tailscale_user_connected_ratio"), WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t(lot(sel("tailscale_user_devices_ratio"), WIN_SLOW), instant=True, fmt="table", refid="B"),
-                prom_t("time() - %s" % lot(sel("tailscale_user_last_seen_seconds"), WIN_SLOW), instant=True, fmt="table", refid="C")],
+               [prom_t(joined(lot(sel("tailscale_user_connected_ratio"), WIN_SLOW), ['user_id', 'user_name']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(lot(sel("tailscale_user_devices_ratio"), WIN_SLOW), ['user_id', 'user_name']), instant=True, fmt="table", refid="B"),
+                prom_t("time() - %s" % joined(lot(sel("tailscale_user_last_seen_seconds"), WIN_SLOW), ['user_id', 'user_name']), instant=True, fmt="table", refid="C")],
                transformations=[merge(),
                                 organize(exclude=_INFRA_TBL + ["user_id"],
                                          rename={"user_name": "User", "Value #A": "Connected",
@@ -223,11 +223,11 @@ def tab_policy_identity(scope):
                     "timestamp. A single bounded histogram, not a per-app series — apps with no "
                     "created timestamp are omitted rather than recorded as age 0."), 10, 6),
         (panel("OAuth app scope & attribute counts", "table",
-               [prom_t(lot(sel("tailscale_oauth_app_scopes_ratio"), WIN_SLOW),
+               [prom_t(joined(lot(sel("tailscale_oauth_app_scopes_ratio"), WIN_SLOW), ['tailscale_oauth_app_id', 'tailscale_oauth_app_name']),
                        instant=True, fmt="table", refid="A"),
-                prom_t(lot(sel("tailscale_oauth_app_node_attributes_ratio"), WIN_SLOW),
+                prom_t(joined(lot(sel("tailscale_oauth_app_node_attributes_ratio"), WIN_SLOW), ['tailscale_oauth_app_id', 'tailscale_oauth_app_name']),
                        instant=True, fmt="table", refid="B"),
-                prom_t(lot(sel("tailscale_oauth_app_redirect_uris_ratio"), WIN_SLOW),
+                prom_t(joined(lot(sel("tailscale_oauth_app_redirect_uris_ratio"), WIN_SLOW), ['tailscale_oauth_app_id', 'tailscale_oauth_app_name']),
                        instant=True, fmt="table", refid="C")],
                transformations=[merge(),
                                 organize(exclude=_INFRA_TBL + ["tailscale_oauth_app_id"],

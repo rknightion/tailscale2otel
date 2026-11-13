@@ -31,7 +31,7 @@ nothing declares renders permanently hidden — on screen, identical to a correc
 empty row.
 """
 
-from builder import (autogrid_row, bargauge_opts, logs_opts, loki_t, lot, merge, organize, panel,
+from builder import (joined, autogrid_row, bargauge_opts, logs_opts, loki_t, lot, merge, organize, panel,
                      PII, pii_sentinel, prom_t, RI, row, sankey_opts, sentinel, stat_opts, thr,
                      ts_custom, ts_opts, WIN_SLOW)
 from maps import BOOL_HEALTHY_OFF, BOOL_HEALTHY_ON
@@ -68,6 +68,16 @@ def q_hist(quantile, metric):
 
 
 def tab_policy_integrations(scope):
+    service_keys = ["tailscale_service_name", "tailscale_service_display_name"]
+    host_keys = service_keys + ["tailscale_service_approval", "tailscale_service_configured"]
+    service_hosts = joined(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), host_keys)
+    service_ports = joined(lot(sel("tailscale_service_ports"), WIN_SLOW), service_keys)
+    service_match = ", ".join(service_keys + ["tailscale_tailnet", "tailscale2otel_provider"])
+    # A port count belongs to each host-status row. Keep port-only services visible
+    # when host collection is missing, without inventing any host measurement.
+    service_port_rows = "(%s * on (%s) group_right() (%s * 0 + 1)) or on (%s) %s" % (
+        service_ports, service_match, service_hosts, service_match, service_ports)
+
     sentinel("has_services", "tailscale_services_count_ratio", scope)
     sentinel("has_svc", "tailscale_service_ports", scope)
     # The host-info table carries host.name/host.id and must disappear when both
@@ -115,9 +125,8 @@ def tab_policy_integrations(scope):
                desc="Port rules exposed by each Service. Gated by cardinality.per_entity.service."), 24, 6),
         # Task 1H.8 — VIP service health (merged hosts + port-rules)
         (panel("VIP service health", "table",
-               [prom_t(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), instant=True, fmt="table", refid="A"),
-                prom_t("max by (tailscale_service_name, tailscale_service_display_name) (%s)"
-                       % lot(sel("tailscale_service_ports"), WIN_SLOW),
+               [prom_t(joined(lot(sel("tailscale_service_hosts_ratio"), WIN_SLOW), ['tailscale_service_name', 'tailscale_service_display_name', 'tailscale_service_approval', 'tailscale_service_configured']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(service_port_rows, ['tailscale_service_name', 'tailscale_service_display_name', 'tailscale_service_approval', 'tailscale_service_configured']),
                        instant=True, fmt="table", refid="B")],
                transformations=[merge(),
                                 organize(
@@ -304,10 +313,9 @@ def tab_policy_integrations(scope):
     # ------------------------------------------------------------------
     posture = [
         (panel("Posture integration last-sync errors", "table",
-               [prom_t(lot(sel("tailscale_posture_integration_error_ratio"), WIN_SLOW),
+               [prom_t(joined(lot(sel("tailscale_posture_integration_error_ratio"), WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']),
                        instant=True, fmt="table", refid="A"),
-                prom_t("time() - %s"
-                       % lot(sel("tailscale_posture_integration_last_sync_seconds"), WIN_SLOW),
+                prom_t("time() - %s" % joined(lot(sel("tailscale_posture_integration_last_sync_seconds"), WIN_SLOW), ['tailscale_posture_provider', 'tailscale_posture_integration']),
                        instant=True, fmt="table", refid="B")],
                mappings=BOOL_HEALTHY_OFF, thresholds=thr([(None, "green"), (1, "red")]),
                transformations=[merge(),
