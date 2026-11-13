@@ -2778,6 +2778,26 @@ func (c *Config) validateNoURLCredentials() error {
 			useFmt: "put the credential in otlp.grafana_cloud.instance_id + otlp.grafana_cloud.token, or in otlp.headers (values are Secret and redact themselves); the OTLP exporter does not authenticate from URL userinfo",
 		},
 		{
+			key:    "otlp.metrics.endpoint",
+			value:  c.OTLP.Metrics.Endpoint,
+			useFmt: "put the credential in otlp.metrics.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "otlp.logs.endpoint",
+			value:  c.OTLP.Logs.Endpoint,
+			useFmt: "put the credential in otlp.logs.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "otlp.traces.endpoint",
+			value:  c.OTLP.Traces.Endpoint,
+			useFmt: "put the credential in otlp.traces.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "enrichment.geoip.download.endpoint",
+			value:  c.Enrichment.GeoIP.Download.Endpoint,
+			useFmt: "use enrichment.geoip.download.account_id with license_key or license_key_file; the downloader authenticates from those",
+		},
+		{
 			key:    "profiling.pyroscope.server_address",
 			value:  c.Profiling.Pyroscope.ServerAddress,
 			useFmt: "use profiling.pyroscope.basic_auth_user + profiling.pyroscope.basic_auth_password (or basic_auth_password_file); the Pyroscope agent authenticates from those, not from URL userinfo",
