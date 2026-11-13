@@ -104,7 +104,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"crypto/subtle"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -1458,10 +1457,10 @@ func (s *Server) authorizedWithToken(r *http.Request, token string) bool {
 		return true
 	}
 	if _, pass, ok := r.BasicAuth(); ok {
-		return subtle.ConstantTimeCompare([]byte(pass), []byte(token)) == 1
+		return httpguard.TokenEqual(pass, token)
 	}
 	if fields := strings.Fields(r.Header.Get("Authorization")); len(fields) == 2 && strings.EqualFold(fields[0], authScheme) {
-		return subtle.ConstantTimeCompare([]byte(fields[1]), []byte(token)) == 1
+		return httpguard.TokenEqual(fields[1], token)
 	}
 	return false
 }
