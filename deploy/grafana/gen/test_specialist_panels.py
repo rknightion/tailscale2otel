@@ -71,9 +71,12 @@ class SpecialistOptionContracts(unittest.TestCase):
             builder.geomap_opts(),
             {"view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 1},
              "controls": {"showZoom": True, "showAttribution": True},
-             "layers": [{"type": "markers", "name": "Devices", "config": {
-                 "showLegend": True, "style": {"size": {"field": "Devices", "fixed": 5}},
-                 "location": {"mode": "lookup", "lookup": "lookup"}}}]},
+             "layers": [{"type": "markers", "name": "Devices",
+                         "location": {"mode": "lookup", "lookup": "lookup",
+                                      "gazetteer": "public/gazetteer/countries.json"},
+                         "config": {"showLegend": True,
+                                    "style": {"size": {"field": "Devices", "fixed": 5,
+                                                       "min": 4, "max": 20}}}}]},
         )
         self.assertEqual(
             builder.state_timeline_opts(),
@@ -128,7 +131,21 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
     def test_country_geomap_uses_iso_lookup_and_keeps_empty_state(self):
         spec = panel_spec(self.doc, "Devices by country")
         self.assertEqual(spec["vizConfig"]["group"], "geomap")
-        self.assertEqual(spec["vizConfig"]["spec"]["options"], builder.geomap_opts())
+        layer = spec["vizConfig"]["spec"]["options"]["layers"][0]
+        self.assertEqual(layer["type"], "markers")
+        self.assertEqual(layer.get("location"), {"mode": "lookup", "lookup": "lookup",
+                                              "gazetteer": "public/gazetteer/countries.json"})
+        for element in self.doc["spec"]["elements"].values():
+            viz = element["spec"]["vizConfig"]
+            if viz["group"] != "geomap":
+                continue
+            for layer in viz["spec"]["options"]["layers"]:
+                self.assertNotIn("location", layer.get("config", {}))
+                size = layer.get("config", {}).get("style", {}).get("size", {})
+                if layer["type"] == "markers" and size.get("field"):
+                    self.assertIsInstance(size.get("min"), (int, float))
+                    self.assertIsInstance(size.get("max"), (int, float))
+                    self.assertLess(size["min"], size["max"])
         self.assertIn("tailscale_devices_by_country_ratio",
                       spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"])
         transform = spec["data"]["spec"]["transformations"][0]["spec"]["options"]

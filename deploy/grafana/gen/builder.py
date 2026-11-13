@@ -322,9 +322,12 @@ def pie_opts():
 def geomap_opts(location_field="lookup"):
     return {"view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 1},
             "controls": {"showZoom": True, "showAttribution": True},
-            "layers": [{"type": "markers", "name": "Devices", "config": {
-                "showLegend": True, "style": {"size": {"field": "Devices", "fixed": 5}},
-                "location": {"mode": "lookup", "lookup": location_field}}}]}
+            "layers": [{"type": "markers", "name": "Devices",
+                        "location": {"mode": "lookup", "lookup": location_field,
+                                     "gazetteer": "public/gazetteer/countries.json"},
+                        "config": {"showLegend": True,
+                                   "style": {"size": {"field": "Devices", "fixed": 5,
+                                                      "min": 4, "max": 20}}}}]}
 
 
 def state_timeline_opts(per_page=None):
