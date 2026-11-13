@@ -302,10 +302,13 @@ def geomap_opts(location_field="lookup"):
                 "location": {"mode": "lookup", "lookup": location_field}}}]}
 
 
-def state_timeline_opts():
-    return {"mergeValues": True, "showValue": "auto", "alignValue": "left",
-            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-            "tooltip": {"mode": "single", "sort": "none"}}
+def state_timeline_opts(per_page=None):
+    options = {"mergeValues": True, "showValue": "auto", "alignValue": "left",
+               "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+               "tooltip": {"mode": "single", "sort": "none"}}
+    if per_page is not None:
+        options["perPage"] = per_page
+    return options
 
 
 def heatmap_opts():

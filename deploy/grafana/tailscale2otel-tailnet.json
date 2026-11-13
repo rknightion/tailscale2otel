@@ -5851,7 +5851,7 @@
         "spec": {
           "id": 63,
           "title": "Device online state by node",
-          "description": "Online/offline transitions for each device matching the current filters. Hidden when device identity redaction is active.",
+          "description": "Online/offline transitions for each device matching the current filters. Hidden when device identity redaction is active. Paged 15 devices at a time; use the host filter to find one device.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5901,7 +5901,8 @@
                 "tooltip": {
                   "mode": "single",
                   "sort": "none"
-                }
+                },
+                "perPage": 15
               },
               "fieldConfig": {
                 "defaults": {

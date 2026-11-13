@@ -437,10 +437,11 @@ def tab_devices_inventory(scope):
         (panel("Device online state by node", "state-timeline",
                [prom_t("tailscale_device_online_ratio%s" % df, legend="{{host_name}}")],
                mappings=bool_map("Offline", "Online", "red", "green"),
-               options=state_timeline_opts(),
+               options=state_timeline_opts(per_page=15),
                novalue="No per-device online series — needs cardinality.per_entity.device.",
                desc="Online/offline transitions for each device matching the current filters. "
-                    "Hidden when device identity redaction is active."), 24, 9),
+                    "Hidden when device identity redaction is active. "
+                    "Paged 15 devices at a time; use the host filter to find one device."), 24, 9),
     ]
 
     return [
