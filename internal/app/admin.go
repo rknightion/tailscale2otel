@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"crypto/tls"
 	"crypto/x509"
 	"io"
@@ -114,26 +112,15 @@ func pprofGuard(next http.HandlerFunc) http.HandlerFunc {
 
 // adminAuthorized reports whether r presents the configured admin token, either
 // as the HTTP Basic password or as an "Authorization: Bearer <token>" header.
-// The comparison is constant-time. This mirrors stream.Server.authorized so the
-// admin surface and the log-stream receiver verify shared secrets the same way.
+// Both this surface and the log-stream receiver use httpguard.TokenEqual.
 func adminAuthorized(r *http.Request, token string) bool {
 	if _, pass, ok := r.BasicAuth(); ok {
-		return constantTimeTokenEqual(pass, token)
+		return httpguard.TokenEqual(pass, token)
 	}
 	if fields := strings.Fields(r.Header.Get("Authorization")); len(fields) == 2 && strings.EqualFold(fields[0], "Bearer") {
-		return constantTimeTokenEqual(fields[1], token)
+		return httpguard.TokenEqual(fields[1], token)
 	}
 	return false
-}
-
-// constantTimeTokenEqual compares fixed-size digests so a wrong-length
-// credential follows the same ConstantTimeCompare path as an equal-length one.
-// The caller already knows the candidate length; hashing removes the configured
-// token length from the comparison primitive's early-return behavior.
-func constantTimeTokenEqual(candidate, token string) bool {
-	candidateHash := sha256.Sum256([]byte(candidate))
-	tokenHash := sha256.Sum256([]byte(token))
-	return subtle.ConstantTimeCompare(candidateHash[:], tokenHash[:]) == 1
 }
 
 // Additional admin auth-rejection reasons, in the same closed-set shape as the
