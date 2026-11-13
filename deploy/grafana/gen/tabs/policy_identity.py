@@ -147,6 +147,7 @@ def tab_policy_identity(scope):
                    exclude=_INFRA_TBL + ["tailscale_key_id"],
                    rename={"tailscale_key_description": "Description",
                            "tailscale_key_type": "Type",
+                           "tailscale_key_owner": "Owner",
                            "Value": "Scopes"})],
                novalue="No per-key scope series. Prerequisites: collectors.keys.enabled and "
                        "cardinality.per_entity.key. See " + CFG_DOC,

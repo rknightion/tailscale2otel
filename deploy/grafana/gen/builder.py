@@ -306,6 +306,9 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         defaults["thresholds"] = thresholds
     if novalue is not None:
         defaults["noValue"] = novalue
+        if ptype == "table":
+            overrides = [{"matcher": {"id": "byRegexp", "options": ".*"},
+                          "properties": [{"id": "noValue", "value": "-"}]}] + list(overrides or [])
     if custom:
         defaults["custom"] = custom
     if ptype == "table" and transformations is None:
