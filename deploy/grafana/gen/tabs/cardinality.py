@@ -9,7 +9,7 @@ duplicates of panels already on this tab, so nothing was added:
     viz options) to the two panels already in the "Cross-source dedup" row below — dropped,
     the existing row already charts both metrics.
   - "Active series by metric (top $topn)" was the same query, legend, unit and viz config as
-    the existing "Active series over time (top $topn)" panel in the "Series budget" row
+    the existing "Series cap utilization over time (top $topn)" panel in the "Series budget" row
     below (just a different title) — dropped as a duplicate. That existing panel was
     missing its `desc=` (a pre-existing gap predating #526); fixed here as part of this
     consolidation since it's the panel now doing double duty.
@@ -77,10 +77,10 @@ def tab_cardinality(scope):
                     "Total active series separately sums reporter series counts as a cost proxy."), 6, 5),
     ]
     budget = [
-        (panel("Active series over time (top $topn)", "timeseries",
+        (panel("Series cap utilization over time (top $topn)", "timeseries",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
                        "/ on() group_left() (max(tailscale2otel_series_limit) > 0))" + _CAPACITY_GUARD, legend="{{metric_name}}")],
-               unit="percentunit", min_=0, max_=1, custom=ts_custom(),
+               unit="percentunit", min_=0, max_=1, custom=dict(ts_custom(), axisLabel="share of series cap"),
                options=ts_opts(placement="right"), novalue=_NO_CAP,
                desc="Per-metric utilization of the configured series cap over time, top-N. "
                     "Watch the flow families. Observed reporters only; a visible reporter without a positive "
