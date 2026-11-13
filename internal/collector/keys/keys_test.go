@@ -3,6 +3,7 @@ package keys_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1239,4 +1240,101 @@ func TestCollect_KeyLifecycleSharedHorizon(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestKeyGaugesDropWhenKeyRemoved(t *testing.T) {
+	for _, perEntity := range []bool{true, false} {
+		t.Run(strconv.FormatBool(perEntity), func(t *testing.T) {
+			now := time.Unix(1700000000, 0)
+			api := &fakeLister{keys: []tsapi.Key{
+				{ID: "example-client", Type: "client", UserID: "example-owner", Scopes: []string{"all"}, AllowedTags: []string{"tag:example-web"}, Expires: now.Add(time.Hour)},
+				{ID: "example-auth", Type: "auth", Preauthorized: true, Expires: now.Add(time.Hour)},
+			}}
+			c := keys.New(api, 0, 0, func() time.Time { return now }, keys.WithPerEntity(perEntity))
+			rec := telemetrytest.New()
+			collect := func() {
+				t.Helper()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			collect()
+			names := []string{keys.MetricKeyExpiry, keys.MetricKeyScopes, keys.MetricKeyScopeClass, keys.MetricKeyTagScope, keys.MetricKeyAllowedTags, keys.MetricKeyPreauthorized, keys.MetricKeysCount, keys.MetricKeysByOwner}
+			before := make(map[string][]telemetrytest.MetricPoint)
+			for _, name := range names {
+				before[name] = rec.MetricPoints(name)
+			}
+			api.err = errors.New("synthetic list failure")
+			if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+				t.Fatal("expected list error")
+			}
+			for _, name := range names {
+				if got := rec.MetricPoints(name); !sameMetricPoints(got, before[name]) {
+					t.Errorf("%s changed on failed list", name)
+				}
+			}
+			api.err = nil
+			// Retain the auth key unchanged: its exact metadata and value must survive.
+			api.keys = api.keys[1:]
+			collect()
+			for _, name := range names {
+				for _, point := range rec.MetricPoints(name) {
+					if point.Attrs["tailscale.key.id"] == "example-client" || point.Attrs["tailscale.key.type"] == "client" {
+						t.Errorf("%s retains removed client: %v", name, point)
+					}
+					if point.Attrs["tailscale.key.id"] == "example-auth" {
+						found := false
+						for _, old := range before[name] {
+							if reflect.DeepEqual(old, point) {
+								found = true
+							}
+						}
+						if !found {
+							t.Errorf("%s changed surviving auth point: %v", name, point)
+						}
+					}
+				}
+			}
+			var count float64
+			for _, point := range rec.MetricPoints(keys.MetricKeysCount) {
+				count += point.Value
+			}
+			if count != 1 {
+				t.Errorf("remaining key count = %v, want 1", count)
+			}
+			api.keys[0].Invalid = true
+			api.keys[0].Revoked = now
+			collect()
+			if got := rec.MetricPoints(keys.MetricKeyExpiry); len(got) != 0 {
+				t.Errorf("revoked expiry remains: %v", got)
+			}
+			api.keys = nil
+			collect()
+			for _, name := range names {
+				if got := rec.MetricPoints(name); len(got) != 0 {
+					t.Errorf("%s retains removed keys/buckets: %v", name, got)
+				}
+			}
+		})
+	}
+}
+
+// sameMetricPoints compares snapshots without depending on SDK iteration order.
+func sameMetricPoints(a, b []telemetrytest.MetricPoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, point := range a {
+		found := false
+		for _, other := range b {
+			if reflect.DeepEqual(point, other) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
