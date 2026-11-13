@@ -26,7 +26,8 @@ refreshing the vendored OpenAPI spec.
   copy. Refreshing it is manual and is how you *acknowledge* a detected drift; `api-drift.yml`
   fetches the live spec to `/tmp` for comparison and never writes back. `internal/oas.ParseSpec`
   keeps **only** `get` operations and silently drops every other verb, so `Spec.Ops` never contains
-  a write.
+  a write. A workflow that branches on a Go tool's exit status must run a built binary, never
+  `go run`.
 - A clean local `actionlint` does NOT mean the actionlint CI lane will pass. actionlint shells out
   to whatever `shellcheck` is on PATH, and the runner's is OLDER and reports MORE - local shellcheck
   0.11.0 does not emit SC2015 (`A && B || C` is not if-then-else) at all, so a workflow edit can be

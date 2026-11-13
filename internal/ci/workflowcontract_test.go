@@ -1726,3 +1726,46 @@ func TestNonGatingCILanesDoNotRunOnPullRequests(t *testing.T) {
 		}
 	}
 }
+
+func readsGoRunExitStatus(script string) bool {
+	if !strings.Contains(script, "$?") {
+		return false
+	}
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "go run ") || strings.Contains(line, " go run ") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNoWorkflowReadsTheExitStatusOfGoRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         bool
+	}{
+		{"go run status", "go run -C tools/apidrift .\necho code=$?", true},
+		{"binary status", `"$RUNNER_TEMP/apidrift" -operations` + "\necho code=$?", false},
+		{"go run only", "go run -C tools/apidrift .", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := readsGoRunExitStatus(tc.script); got != tc.want {
+				t.Errorf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+	for _, name := range workflowFiles(t) {
+		for id, raw := range jobsOf(t, readWorkflow(t, name), name) {
+			job := raw.(map[string]any)
+			steps, _ := job["steps"].([]any)
+			for index, rawStep := range steps {
+				step := rawStep.(map[string]any)
+				script, _ := step["run"].(string)
+				if readsGoRunExitStatus(script) {
+					t.Errorf("%s job %s step %d reads go run's wrapper exit status", name, id, index)
+				}
+			}
+		}
+	}
+}
