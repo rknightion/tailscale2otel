@@ -1,6 +1,7 @@
 package pii
 
 import (
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -109,7 +110,19 @@ func (r *Redactor) redactKey(key string, value any) bool {
 		return r.anyIPOff && nonEmptyValue(value)
 	}
 	if cat, ok := keyCategory[key]; ok {
-		return r.disabled(cat)
+		if r.disabled(cat) {
+			return true
+		}
+		if urlValueKeys[key] {
+			if text, ok := value.(string); ok {
+				if parsed, err := url.Parse(text); err == nil {
+					if hostCat, ok := categoryForIPClass(classifyIP(parsed.Hostname())); ok {
+						return r.disabled(hostCat)
+					}
+				}
+			}
+		}
+		return false
 	}
 	if nonIdentifier[key] || geoNonIdentifier[key] {
 		return false
