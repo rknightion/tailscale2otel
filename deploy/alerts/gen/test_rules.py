@@ -372,6 +372,23 @@ class RuleShapeTest(unittest.TestCase):
         self.assertEqual(dict(actual), documented)
         self.assertEqual(len(alert_rules()), sum(documented.values()))
 
+    def test_readme_advisory_prose_counts_match_the_catalogue(self):
+        text = ALERT_README.read_text()
+        actual_severity = sum(rule["labels"]["severity"] == "advisory"
+                              for rule in alert_rules())
+        rules.rules_by_uid()
+        actual_policy = Counter(rules.POLICY_BY_UID.values())["advisory"]
+        for pattern, expected in [
+            (r"used as a severity by (\d+) rules", actual_severity),
+            (r"\*\*severity label\*\* above \((\d+) rules\)", actual_severity),
+            (r"POLICY table \((\d+) rules\)", actual_policy),
+            (r"most of the (\d+) do", actual_policy),
+        ]:
+            with self.subTest(pattern=pattern):
+                matches = re.findall(pattern, text)
+                self.assertTrue(matches, "missing advisory count in README prose")
+                self.assertEqual([expected] * len(matches), [int(n) for n in matches])
+
     def test_durations_are_go_style_strings(self):
         # `for` and relativeTimeRange are Go duration STRINGS in this API, not the
         # integer seconds the provisioning format used. "5m" alone is accepted by
