@@ -137,7 +137,7 @@ def tab_security_audit_trail(scope):
                     "from the established baseline to investigate a missing ingestion path."), 24, 8),
         (panel("Recent configuration changes", "logs",
                [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
-               options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
+               options=logs_opts(wrap=False), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
     ]
 
     # -----------------------------------------------------------------------
@@ -149,7 +149,7 @@ def tab_security_audit_trail(scope):
     logstream = [
         (panel("Log stream — $log_event", "logs",
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=~`$log_event` |~ `$log_filter`", maxlines=300)],
-               options=logs_opts(),
+               options=logs_opts(wrap=False),
                desc="Pick an event type with the Log event variable; filter with Log filter."), 16, 11),
         (panel("Log volume by event", "timeseries",
                [loki_t("sum by (event_name) (rate({service_name=\"tailscale2otel\"} | event_name != `` [$__auto]))",

@@ -380,8 +380,8 @@ def category_bar_opts(xfield):
     return opts
 
 
-def logs_opts():
-    return {"showTime": True, "showLabels": False, "wrapLogMessage": True,
+def logs_opts(wrap=True):
+    return {"showTime": True, "showLabels": False, "wrapLogMessage": wrap,
             "prettifyLogMessage": False, "enableLogDetails": True,
             "dedupStrategy": "none", "sortOrder": "Descending"}
 
