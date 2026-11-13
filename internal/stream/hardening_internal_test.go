@@ -1,13 +1,13 @@
 package stream
 
 import (
-	"context"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/audit"
@@ -67,57 +67,59 @@ func TestWithProcessDeadline_DerivesDeadlineContext(t *testing.T) {
 // sends a 503 while an already-started effect is still running. The raw-body
 // ingest callback is deliberately the first Phase-2 action; keeping it blocked
 // proves that the flow processor and the success ACK remain behind the same
-// cancellation boundary.
+// cancellation boundary. The synctest clock cannot expire before the callback starts.
 func TestHandler_ProcessDeadlineWaitsForInFlightCallback(t *testing.T) {
-	entered := make(chan struct{})
-	unblock := make(chan struct{})
-	callbackDone := make(chan struct{})
-	rec := telemetrytest.New()
-	s := New(Options{
-		Listen: "127.0.0.1:0",
-		OnIngest: func(_, _ string, _, _ int) {
-			close(entered)
-			<-unblock
-			close(callbackDone)
-		},
-	}, flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), audit.NewProcessor(), rec.Emitter(), nil)
-	s.processDeadline = 5 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		entered := make(chan struct{})
+		unblock := make(chan struct{})
+		callbackDone := make(chan struct{})
+		rec := telemetrytest.New()
+		s := New(Options{
+			Listen: "127.0.0.1:0",
+			OnIngest: func(_, _ string, _, _ int) {
+				close(entered)
+				<-unblock
+				close(callbackDone)
+			},
+		}, flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), audit.NewProcessor(), rec.Emitter(), nil)
+		s.processDeadline = 5 * time.Millisecond
 
-	response := make(chan *httptest.ResponseRecorder, 1)
-	go func() {
-		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, defaultPath,
-			strings.NewReader(`{"nodeId":"n1","virtualTraffic":[{"proto":6,"src":"100.64.0.1:443","dst":"100.64.0.2:51820","txBytes":1}]}`))
-		req.Host = "127.0.0.1:9099"
-		s.Handler().ServeHTTP(w, req)
-		response <- w
-	}()
+		response := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, defaultPath,
+				strings.NewReader(`{"nodeId":"n1","virtualTraffic":[{"proto":6,"src":"100.64.0.1:443","dst":"100.64.0.2:51820","txBytes":1}]}`))
+			req.Host = "127.0.0.1:9099"
+			s.Handler().ServeHTTP(w, req)
+			response <- w
+		}()
 
-	<-entered
-	deadline, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	select {
-	case w := <-response:
+		<-entered
+		time.Sleep(time.Second)
+		synctest.Wait()
+		select {
+		case w := <-response:
+			close(unblock)
+			<-callbackDone
+			t.Fatalf("response arrived with status %d while the in-flight callback was still blocked", w.Code)
+		default:
+		}
+		if logs := rec.LogRecords(); len(logs) != 0 {
+			close(unblock)
+			<-callbackDone
+			t.Fatalf("flow processor ran after cancellation while callback was blocked: %d logs", len(logs))
+		}
+
 		close(unblock)
 		<-callbackDone
-		t.Fatalf("response arrived with status %d while the in-flight callback was still blocked", w.Code)
-	case <-deadline.Done():
-	}
-	if logs := rec.LogRecords(); len(logs) != 0 {
-		close(unblock)
-		<-callbackDone
-		t.Fatalf("flow processor ran after cancellation while callback was blocked: %d logs", len(logs))
-	}
-
-	close(unblock)
-	<-callbackDone
-	w := <-response
-	if w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503 after the in-flight callback returned", w.Code)
-	}
-	if logs := rec.LogRecords(); len(logs) != 0 {
-		t.Fatalf("flow processor ran after the deadline: %d logs", len(logs))
-	}
+		w := <-response
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503 after the in-flight callback returned", w.Code)
+		}
+		if logs := rec.LogRecords(); len(logs) != 0 {
+			t.Fatalf("flow processor ran after the deadline: %d logs", len(logs))
+		}
+	})
 }
 
 // TestHandler_AppliesProcessDeadline guards that Handler() — not just Run() —
