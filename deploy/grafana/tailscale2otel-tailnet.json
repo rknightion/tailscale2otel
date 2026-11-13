@@ -28240,7 +28240,7 @@
                                 "spec": {
                                   "x": 0,
                                   "y": 0,
-                                  "width": 6,
+                                  "width": 5,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28251,9 +28251,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 6,
+                                  "x": 5,
                                   "y": 0,
-                                  "width": 4,
+                                  "width": 3,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28264,9 +28264,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 10,
+                                  "x": 8,
                                   "y": 0,
-                                  "width": 4,
+                                  "width": 3,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28277,7 +28277,7 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 14,
+                                  "x": 11,
                                   "y": 0,
                                   "width": 4,
                                   "height": 5,
@@ -28290,9 +28290,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 18,
+                                  "x": 15,
                                   "y": 0,
-                                  "width": 3,
+                                  "width": 6,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
