@@ -425,5 +425,16 @@ class DecimalsAndLegendConventionTest(unittest.TestCase):
         self.assertTrue(any(c for (_t, c) in fake))
 
 
+class FractionAxisBoundsTest(unittest.TestCase):
+    def test_fraction_series_with_a_minimum_have_a_maximum(self):
+        for element in dashboard.build_family()["spec"]["elements"].values():
+            panel = element["spec"]
+            defaults = panel["vizConfig"]["spec"]["fieldConfig"]["defaults"]
+            if panel["vizConfig"]["group"] == "timeseries" and defaults.get("unit") == "percentunit" and "min" in defaults:
+                self.assertIn("max", defaults, panel["title"])
+            if panel["title"] == "Delivery failure ratio by type":
+                self.assertEqual((defaults.get("unit"), defaults.get("min"), defaults.get("max")), ("percentunit", 0, 1))
+
+
 if __name__ == "__main__":
     unittest.main()
