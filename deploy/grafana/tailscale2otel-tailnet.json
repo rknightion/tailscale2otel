@@ -611,7 +611,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -782,7 +782,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -957,7 +957,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -2315,7 +2315,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3342,7 +3342,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3408,7 +3408,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3566,7 +3566,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3633,7 +3633,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3940,7 +3940,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -4103,7 +4103,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -4596,7 +4596,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6276,7 +6276,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6435,7 +6435,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6594,7 +6594,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8919,7 +8919,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8985,7 +8985,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9142,7 +9142,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9209,7 +9209,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9767,7 +9767,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9833,7 +9833,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9899,7 +9899,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -15785,7 +15785,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -17243,7 +17243,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -18777,7 +18777,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -18934,7 +18934,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22769,7 +22769,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22835,7 +22835,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23247,7 +23247,7 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
@@ -23521,7 +23521,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23604,7 +23604,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23670,7 +23670,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23736,7 +23736,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23802,7 +23802,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23885,7 +23885,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -24217,7 +24217,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -24544,7 +24544,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -25602,7 +25602,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -25669,7 +25669,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -26107,7 +26107,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -27245,7 +27245,7 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
@@ -27849,7 +27849,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -27980,7 +27980,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
