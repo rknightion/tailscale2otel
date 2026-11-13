@@ -100,3 +100,24 @@ headscale:
 		t.Error("explicit Headscale version_checks.devices.enabled = false, want true")
 	}
 }
+
+func TestTailnetSecretOverlayIsNotReportedUnknown(t *testing.T) {
+	const overlay = "TS2OTEL_TAILNET_FIXTURE__AUTH__OAUTH__CLIENT_SECRET"
+	const typo = "TS2OTEL_LOG_LEEVL"
+	t.Setenv(overlay, "synthetic-secret")
+	t.Setenv(typo, "debug")
+	cfg, err := config.Load(writeTemp(t, "tailnets:\n  - name: fixture\n    auth:\n      method: oauth\n      oauth:\n        client_id: synthetic\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Tailnets[0].Auth.OAuth.ClientSecret.Reveal() != "synthetic-secret" {
+		t.Fatal("overlay was not applied")
+	}
+	warnings := strings.Join(cfg.Warnings(), "\n")
+	if strings.Contains(warnings, overlay) {
+		t.Fatalf("applied overlay reported unknown: %s", warnings)
+	}
+	if !strings.Contains(warnings, typo) {
+		t.Fatal("ordinary unknown variable was not reported")
+	}
+}

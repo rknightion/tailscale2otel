@@ -648,7 +648,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -727,7 +727,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -813,7 +813,10 @@
                         "version": "Version",
                         "go_version": "Go version"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "version": 0,
+                        "go_version": 1
+                      }
                     }
                   }
                 }
@@ -892,10 +895,14 @@
                         "coordination_identity": "Pod identity",
                         "coordination_lease_name": "Lease",
                         "coordination_namespace": "Namespace",
-                        "coordination_state": "State",
-                        "Value": "Leader"
+                        "coordination_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "coordination_identity": 0,
+                        "coordination_lease_name": 1,
+                        "coordination_namespace": 2,
+                        "coordination_state": 3
+                      }
                     }
                   }
                 }
@@ -912,7 +919,20 @@
                 "defaults": {
                   "noValue": "No lease-coordination series. Requires coordination.mode: kubernetes."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -1045,14 +1065,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -1066,10 +1088,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -1594,7 +1627,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -1627,7 +1660,7 @@
         "spec": {
           "id": 15,
           "title": "Checkpoint disk",
-          "description": "On-disk size of the file-backed checkpoint store.",
+          "description": "On-disk size of the file-backed checkpoint store. When empty: No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -1673,7 +1706,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -1681,7 +1714,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "bytes",
-                  "noValue": "No checkpoint file \u2014 the store is not file-backed, or nothing has persisted yet."
+                  "noValue": "No checkpoint file"
                 },
                 "overrides": []
               }
@@ -2282,7 +2315,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -2430,7 +2463,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "noValue": "No skipped-history rate samples in the selected range.",
                   "custom": {
                     "drawStyle": "line",
@@ -2439,7 +2472,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []
@@ -2507,6 +2541,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2578,7 +2624,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -2666,6 +2712,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -2739,7 +2795,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -2808,7 +2864,10 @@
                         "tailscale_node": "Node",
                         "Value": "Up"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -3187,7 +3246,7 @@
         "spec": {
           "id": 35,
           "title": "Scrape duration distribution",
-          "description": "Distribution of scrape wall-clock duration across collectors. The p50/p95/p99 panel remains the per-collector trend view.",
+          "description": "Distribution of scrape wall-clock duration across collectors. The p50/p95/p99 panel remains the per-collector trend view. Colour is observations per second in each duration bucket.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3210,7 +3269,7 @@
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{le}}",
-                        "format": "time_series"
+                        "format": "heatmap"
                       }
                     }
                   }
@@ -3227,6 +3286,9 @@
             "spec": {
               "options": {
                 "calculate": false,
+                "cellValues": {
+                  "unit": "cps"
+                },
                 "yAxis": {
                   "axisPlacement": "left",
                   "unit": "s"
@@ -3241,7 +3303,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "cps",
                   "noValue": "No scrape-duration histogram buckets in the selected range."
                 },
                 "overrides": []
@@ -3304,7 +3366,10 @@
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -3318,10 +3383,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -3479,7 +3555,7 @@
         "kind": "Panel",
         "spec": {
           "id": 39,
-          "title": "Scrape budget headroom",
+          "title": "Scrape budget used",
           "description": "Last scrape duration as a fraction of the collector's poll interval; near or above 1 means the scrape risks overrunning its interval.",
           "links": [],
           "data": {
@@ -3527,12 +3603,24 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4180,7 +4268,7 @@
                         "expr": "sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "rate-limiter wait s/s",
+                        "legendFormat": "rate-limiter wait",
                         "format": "time_series"
                       }
                     }
@@ -4202,7 +4290,7 @@
                         "expr": "sum(rate(tailscale2otel_api_duration_seconds_sum{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "API request time s/s",
+                        "legendFormat": "API request time",
                         "format": "time_series"
                       }
                     }
@@ -4232,7 +4320,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -4240,7 +4328,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []
@@ -4310,6 +4399,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4389,7 +4490,11 @@
                         "tailscale_api_operation": "Operation",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_operation": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -4403,10 +4508,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4470,7 +4586,10 @@
                         "tailscale_collector": "Collector",
                         "tailscale_api_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_state": 1
+                      }
                     }
                   }
                 }
@@ -4487,7 +4606,20 @@
                 "defaults": {
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4544,14 +4676,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "tailscale_capability": "Capability",
                         "Value": "Scopes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_capability": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -4585,7 +4719,20 @@
                   ],
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4650,7 +4797,11 @@
                         "tailscale_api_operation": "Operation",
                         "tailscale_api_state": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "tailscale_api_operation": 1,
+                        "tailscale_api_state": 2
+                      }
                     }
                   }
                 }
@@ -4667,7 +4818,20 @@
                 "defaults": {
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4733,8 +4897,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "min": 0,
-                  "max": 1,
+                  "mappings": [
+                    {
+                      "type": "value",
+                      "options": {
+                        "1": {
+                          "text": "active",
+                          "color": "text",
+                          "index": 0
+                        }
+                      }
+                    }
+                  ],
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
                 "overrides": []
@@ -5074,7 +5248,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
-                  "noValue": "0",
+                  "noValue": "No Prometheus pull-endpoint series. Requires prometheus.enabled and at least one scrape against the exporter's /metrics endpoint.",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -5338,7 +5512,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_rdns_cache_entries_ratio[10m]) / clamp_min(last_over_time(tailscale_rdns_cache_capacity_ratio[10m]), 1)",
+                        "expr": "max(last_over_time(tailscale_rdns_cache_entries_ratio[10m])) / clamp_min(max(last_over_time(tailscale_rdns_cache_capacity_ratio[10m])), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -5365,7 +5539,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -5771,7 +5945,7 @@
         "spec": {
           "id": 65,
           "title": "Object-store age (cursor & newest object)",
-          "description": "End-to-end ingestion lag (now minus the last cycle's persisted timestamp) beside how fresh the EXPORT's own writes are, independent of what was ingested. -1 on the second series means the cycle listed no object with a usable timestamp, deliberately distinguishable from a fresh zero-second age.",
+          "description": "End-to-end ingestion lag (now minus the last cycle's persisted timestamp) beside how fresh the EXPORT's own writes are, independent of what was ingested. -1 on the second series means the cycle listed no object with a usable timestamp, deliberately distinguishable from a fresh zero-second age. When empty: No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5859,7 +6033,7 @@
                       }
                     }
                   ],
-                  "noValue": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled."
+                  "noValue": "No object-store feed"
                 },
                 "overrides": []
               }
@@ -5938,6 +6112,16 @@
                           "text": "CLEAN",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -6034,6 +6218,16 @@
                           "text": "truncated",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -6604,7 +6798,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])) or vector(0)",
+                        "expr": "sum(increase(tailscale2otel_objectstore_skipped_total{reason=\"undecodable_object\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__range])) or (0 * count(last_over_time(tailscale2otel_objectstore_gap_healthy_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -6639,6 +6833,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No object-store ingestion series. Requires collectors.flowlogs.objectstore (or collectors.auditlogs.objectstore) with the matching source: objectstore, and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7432,7 +7638,7 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
@@ -7440,6 +7646,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-entity subrequest series. Requires a collector that fans out per entity \u2014 devices posture attributes, device invites, or user invites \u2014 and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -8951,7 +9169,7 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
@@ -8959,6 +9177,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No processor-queue series. Requires self_observability.enabled and at least one log or trace export path active (the queue only exists once something is being batched for OTLP export).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -9242,6 +9472,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No auditlogs scrape reported. Prerequisites: collectors.auditlogs.enabled with collectors.auditlogs.source of poll or both. A stream, webhook or objectstore path reports no scrape here \u2014 read the ingestion-path panel. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -9316,7 +9556,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9381,7 +9621,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9889,6 +10129,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No enabled receivers.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10131,6 +10383,16 @@
                           "text": "degraded",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No Grafana annotation activity. Requires grafana_annotations.url to be configured.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -10624,14 +10886,16 @@
                         "service_namespace": true,
                         "deployment_environment_name": true,
                         "otel_scope_name": true,
-                        "otel_scope_version": true,
-                        "Value": true
+                        "otel_scope_version": true
                       },
                       "renameByName": {
                         "category": "Category",
                         "Value": "State"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "category": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -10728,7 +10992,11 @@
                         "tailscale_logstream_destination_type": "Destination",
                         "Value": "Configured"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_logstream_log_type": 0,
+                        "tailscale_logstream_destination_type": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -10743,10 +11011,34 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short",
                   "noValue": "No confirmed log-stream configuration. The endpoint may be unavailable or ambiguous."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Configured"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -10803,7 +11095,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -10889,6 +11181,16 @@
                           "text": "ERROR",
                           "color": "red",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No delivery status \u2014 no configured log stream has reported one.",
+                          "color": "gray"
                         }
                       }
                     }
@@ -11195,6 +11497,7 @@
                 "defaults": {
                   "unit": "percentunit",
                   "min": 0,
+                  "max": 1,
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -11435,7 +11738,10 @@
                         "tailscale_logstream_type": "Log type",
                         "Value": "Last activity age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_logstream_type": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11449,10 +11755,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Last activity age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11521,8 +11838,8 @@
         "kind": "Panel",
         "spec": {
           "id": 124,
-          "title": "Scrape \u2192 API trace waterfall",
-          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded.",
+          "title": "Scrape \u2192 API traces",
+          "description": "Trace panels are empty if tracing.enabled=false. All includes process-global spans such as release checks. Selecting a tailnet shows only that runtime's spans; process-global and PII-redacted ownership spans are excluded. Select a trace ID to open its waterfall.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -11555,7 +11872,7 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "traces",
+            "group": "table",
             "version": "12.1.0",
             "spec": {
               "options": {},
@@ -11622,6 +11939,7 @@
               },
               "fieldConfig": {
                 "defaults": {
+                  "unit": "cps",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -11765,6 +12083,7 @@
               },
               "fieldConfig": {
                 "defaults": {
+                  "unit": "cps",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -11923,7 +12242,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -12002,7 +12321,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -12081,7 +12400,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -12667,7 +12986,7 @@
               },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
+                  "unit": "none",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -12675,7 +12994,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "seconds per second"
                   }
                 },
                 "overrides": []
@@ -13322,7 +13642,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -13389,7 +13709,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -14231,6 +14551,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Overflow unknown \u2014 no overflow-labelled series observed; absence is not proof of zero overflow.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -14313,6 +14645,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -14389,7 +14733,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -14455,7 +14799,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -14474,7 +14818,7 @@
         "kind": "Panel",
         "spec": {
           "id": 162,
-          "title": "Active series over time (top $topn)",
+          "title": "Series cap utilization over time (top $topn)",
           "description": "Per-metric utilization of the configured series cap over time, top-N. Watch the flow families. Observed reporters only; a visible reporter without a positive limit makes capacity uncertain, and completely missing reporters cannot be detected.",
           "links": [],
           "data": {
@@ -14538,7 +14882,8 @@
                     "fillOpacity": 15,
                     "showPoints": "never",
                     "gradientMode": "opacity",
-                    "axisPlacement": "auto"
+                    "axisPlacement": "auto",
+                    "axisLabel": "share of series cap"
                   }
                 },
                 "overrides": []
@@ -14746,6 +15091,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15043,7 +15400,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -15118,6 +15475,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Overflow unknown \u2014 no reporter telemetry observed.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15192,7 +15561,10 @@
                         "metric_name": "Metric",
                         "Value": "Utilization"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "metric_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -15209,7 +15581,32 @@
                 "defaults": {
                   "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Utilization"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "percentunit"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -15268,7 +15665,9 @@
                       "renameByName": {
                         "__name__": "Metric"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "__name__": 0
+                      }
                     }
                   }
                 }
@@ -15285,7 +15684,20 @@
                 "defaults": {
                   "noValue": "No overflow-labelled families observed \u2014 overflow unknown, not proof all series are resolved."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -15344,7 +15756,9 @@
                       "renameByName": {
                         "metric_name": "Metric"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "metric_name": 0
+                      }
                     }
                   }
                 }
@@ -15361,7 +15775,20 @@
                 "defaults": {
                   "noValue": "No overflowing families observed \u2014 missing reporter coverage remains unknown; see Overflowing now for observed zero."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -15540,7 +15967,7 @@
         "spec": {
           "id": 175,
           "title": "Ingest vs export cost (per minute)",
-          "description": "Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
+          "description": "Exported datapoints, exported log records and per-source ingested records, all per minute. Rising DPM driven by a single source \u2192 check that group in 'Active series by group'.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15559,10 +15986,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_export_datapoints_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])*60",
+                        "expr": "sum(rate(tailscale2otel_export_datapoints_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "DPM (datapoints/min)",
+                        "legendFormat": "exported datapoints/min",
                         "format": "time_series"
                       }
                     }
@@ -15581,10 +16008,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "rate(tailscale2otel_export_log_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval])*60",
+                        "expr": "sum(rate(tailscale2otel_export_log_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "LPM (log rec/min)",
+                        "legendFormat": "exported log records/min",
                         "format": "time_series"
                       }
                     }
@@ -15603,10 +16030,10 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (source, signal) (rate(tailscale2otel_ingest_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))",
+                        "expr": "sum by (source, signal) (rate(tailscale2otel_ingest_records_total{tailscale_tailnet=~\"$tailnet\"}[$__rate_interval]))*60",
                         "instant": false,
                         "range": true,
-                        "legendFormat": "{{source}}/{{signal}} ingest rec/s",
+                        "legendFormat": "{{source}}/{{signal}} ingested records/min",
                         "format": "time_series"
                       }
                     }
@@ -15744,7 +16171,24 @@
                     "axisPlacement": "auto"
                   }
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "forwarded/uncataloged series active"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      },
+                      {
+                        "id": "custom.axisPlacement",
+                        "value": "right"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -15809,6 +16253,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No node-metrics name-budget series. Requires node_metrics.enabled with at least one target, and self_observability.enabled.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [

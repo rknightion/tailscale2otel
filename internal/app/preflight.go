@@ -2,19 +2,16 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.org/x/oauth2"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
-	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
-	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
 
 // PrepareConfig returns a COPY of cfg with every inbound listener and durable
@@ -118,6 +115,9 @@ type CollectorRunResult struct {
 // ever invoking its collector, so a run that hits its deadline still reports
 // on every (tailnet, collector) pair rather than truncating the list.
 func (a *App) RunOnce(ctx context.Context) []CollectorRunResult {
+	if err := a.initializeCheckpointState(); err != nil {
+		return []CollectorRunResult{classifyResult("", "checkpoint", 0, err)}
+	}
 	var results []CollectorRunResult
 	for _, rt := range a.runtimes {
 		tailnet := a.runtimeConfiguredName(rt)
@@ -192,33 +192,11 @@ func classifyResult(tailnet, collectorName string, d time.Duration, err error) C
 	}
 }
 
-// isAuthFailure reports whether err represents an unambiguous credential
-// rejection: an HTTP 401 from the Tailscale API (tsapi.StatusError, the only
-// sanctioned way to read a status code off an API error — see its doc
-// comment), or an OAuth token request rejected with 401 (which tsapi's own
-// transport surfaces as an *oauth2.RetrieveError rather than a StatusError,
-// since there is no API response to wrap — see tsapi/transport.go's
-// logFinal). 403 is deliberately excluded: this repo's collectors already
-// treat some 403s as "feature not enabled on this plan", a collector-level
-// outcome, not a credential problem.
+// isAuthFailure reports an unambiguous HTTP 401 credential rejection from any
+// supported provider error shape. Other statuses remain collector failures.
 func isAuthFailure(err error) bool {
-	if err == nil {
-		return false
-	}
-	if code, ok := tsapi.StatusCode(err); ok && code == http.StatusUnauthorized {
-		return true
-	}
-	// Headscale reaches the same verdict through its own status type. Both
-	// providers must classify, or the exit code silently means something
-	// different depending on which control plane an operator runs.
-	if code, ok := hsapi.StatusCode(err); ok && code == http.StatusUnauthorized {
-		return true
-	}
-	var re *oauth2.RetrieveError
-	if errors.As(err, &re) && re.Response != nil && re.Response.StatusCode == http.StatusUnauthorized {
-		return true
-	}
-	return false
+	code, ok := apistate.HTTPStatus(err)
+	return ok && code == http.StatusUnauthorized
 }
 
 // onceWindow computes a one-shot [from, to) window for a WindowCollector

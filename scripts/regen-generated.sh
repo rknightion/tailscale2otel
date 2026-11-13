@@ -45,6 +45,7 @@
 # A missing OR VERSION-MISMATCHED tool is a loud SKIP (not a failure) so the hook
 # never blocks a commit — CI's fail-on-diff checks remain the hard backstop. A
 # regeneration that actually errors (e.g. the code doesn't compile) DOES fail.
+# REGEN_REQUIRE_TOOLS=1 makes missing or off-pin Helm generators fail the check.
 #
 # ---------------------------------------------------------------------------
 # Why the helm tool versions are PINNED here (re-learn-proof)
@@ -139,7 +140,13 @@ regen_tools() {
 }
 
 regen_helm_docs() {
-  have_tool helm-docs "$HELM_DOCS_VERSION" tools || return 0
+  if ! have_tool helm-docs "$HELM_DOCS_VERSION" tools; then
+    if [ "${REGEN_REQUIRE_TOOLS:-0}" = 1 ]; then
+      echo "regen: REQUIRED tool unavailable, failing (REGEN_REQUIRE_TOOLS=1)" >&2
+      return 1
+    fi
+    return 0
+  fi
   note "chart README.md (helm-docs $HELM_DOCS_VERSION)"
   # Mirrors losisin/helm-docs-github-action@v2 defaults in helm.yml.
   helm-docs \
@@ -150,7 +157,13 @@ regen_helm_docs() {
 }
 
 regen_helm_schema() {
-  have_tool helm-values-schema-json "$HELM_SCHEMA_VERSION" tools || return 0
+  if ! have_tool helm-values-schema-json "$HELM_SCHEMA_VERSION" tools; then
+    if [ "${REGEN_REQUIRE_TOOLS:-0}" = 1 ]; then
+      echo "regen: REQUIRED tool unavailable, failing (REGEN_REQUIRE_TOOLS=1)" >&2
+      return 1
+    fi
+    return 0
+  fi
   note "values.schema.json (draft 7, helm-values-schema-json $HELM_SCHEMA_VERSION)"
   # Mirrors losisin/helm-values-schema-json-action in helm.yml (draft: 7,
   # additionalProperties: false). Keep the two in step: the schema-root flag has

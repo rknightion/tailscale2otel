@@ -3,6 +3,7 @@ package users_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -795,4 +796,82 @@ func TestUserInvitesRecordedUnderSubrequestNameNotOperationID(t *testing.T) {
 	if got, ok := states["user_invites"]; !ok || got != "supported" {
 		t.Errorf("user_invites availability = %q (present=%v), want supported", got, ok)
 	}
+}
+
+func TestUserGaugesDropWhenUserRemoved(t *testing.T) {
+	api := &fakeLister{users: sampleUsers()[:2], invites: []tsapi.UserInvite{{ID: "example-invite", Role: "member"}}}
+	c := users.New(api, 0)
+	rec := telemetrytest.New()
+	collect := func() {
+		t.Helper()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	collect()
+	names := []string{users.MetricUserDevices, users.MetricUserConn, users.MetricUserLastSeen, users.MetricUsersCount, users.MetricUserInvites}
+	before := make(map[string][]telemetrytest.MetricPoint)
+	for _, name := range names {
+		before[name] = rec.MetricPoints(name)
+		if len(before[name]) == 0 {
+			t.Fatalf("missing initial %s", name)
+		}
+	}
+	api.err = errors.New("synthetic user failure")
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("expected user error")
+	}
+	for _, name := range names {
+		if !sameMetricPoints(rec.MetricPoints(name), before[name]) {
+			t.Errorf("%s changed after failed list", name)
+		}
+	}
+	api.err = nil
+	api.users = api.users[:1]
+	api.invitesErr = errors.New("synthetic invite failure")
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("expected invite error")
+	}
+	for _, name := range names[:3] {
+		points := rec.MetricPoints(name)
+		if len(points) != 1 || points[0].Attrs["user.id"] != api.users[0].ID {
+			t.Errorf("%s did not publish surviving user: %v", name, points)
+		}
+	}
+	var count float64
+	for _, point := range rec.MetricPoints(users.MetricUsersCount) {
+		count += point.Value
+	}
+	if count != 1 {
+		t.Errorf("users count = %v, want 1", count)
+	}
+	if !sameMetricPoints(rec.MetricPoints(users.MetricUserInvites), before[users.MetricUserInvites]) {
+		t.Error("failed invites changed snapshot")
+	}
+	api.invitesErr = nil
+	api.invites = nil
+	collect()
+	if got := rec.MetricPoints(users.MetricUserInvites); len(got) != 0 {
+		t.Errorf("closed invites remain: %v", got)
+	}
+}
+
+// sameMetricPoints compares snapshots without depending on SDK iteration order.
+func sameMetricPoints(a, b []telemetrytest.MetricPoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, point := range a {
+		found := false
+		for _, other := range b {
+			if reflect.DeepEqual(point, other) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }

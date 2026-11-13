@@ -18,6 +18,9 @@ type StatusError struct {
 	Body   string
 }
 
+// HTTPStatus returns the response status without exposing response content.
+func (e *StatusError) HTTPStatus() int { return e.Code }
+
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("tsapi: %s %s: status %d", e.Method, redact.URLOrigin(e.URL), e.Code)
 }
@@ -25,11 +28,12 @@ func (e *StatusError) Error() string {
 // StatusCode returns the HTTP status carried by err, if any error in its chain
 // is a *StatusError.
 //
-// This is the ONLY sanctioned way to read a status code out of an API error
+// Availability classification resolves provider errors through apistate.HTTPStatus.
+// This accessor reads Tailscale helper errors for collector-specific decisions
 // (#420). Every collector used to hand-roll its own errors.As predicate, and
 // they disagreed — flowlogs read 403 as "premium feature off" while logstream
 // read any 4xx, a genuine 401 included, as "not configured". Routing every
-// caller through one accessor (and, above it, apistate.Classify) is what stops
+// caller through a status accessor (and, above it, apistate.Classify) is what stops
 // those readings from drifting apart again.
 //
 // Matching on the error TEXT is never acceptable. Body may retain up to 16KB

@@ -301,8 +301,10 @@ func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
 // request's) produces a native TraceID/SpanID on each one (#367).
 func (p *Processor) ProcessAllCtx(ctx context.Context, resp NetworkResponse, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
+	var tally connTally
+	defer flushTally(&tally, e)
 	for i := range resp.Logs {
-		p.process(ctx, resp.Logs[i], e, budget)
+		p.process(ctx, resp.Logs[i], e, budget, &tally)
 	}
 	p.flushDropped(budget, e)
 }
@@ -326,7 +328,9 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 // so a sampled span context produces a native TraceID/SpanID on them (#367).
 func (p *Processor) ProcessCtx(ctx context.Context, flow FlowLog, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
-	p.process(ctx, flow, e, budget)
+	var tally connTally
+	defer flushTally(&tally, e)
+	p.process(ctx, flow, e, budget, &tally)
 	p.flushDropped(budget, e)
 }
 
@@ -344,7 +348,7 @@ func (p *Processor) FlushRollup(e telemetry.Emitter) {
 // budget. Metrics are always emitted; only log records consume the budget. The
 // caller owns the budget (one per ProcessAll window, or one per standalone
 // Process call) and is responsible for flushing the dropped count.
-func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitter, budget *logBudget, tally *connTally) {
 	// Seed the UNVERIFIED tier from the identity the record embeds BEFORE
 	// resolving any of its connections, so a record enriches itself even when the
 	// devices collector is disabled or has not yet run. The embedded identity is
@@ -366,6 +370,11 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 		"consistency": reporter.consistency,
 	})
 
+	var refs nodeRefIndex
+	if p.logMode == logPerConnection || p.store != nil || p.identity || (p.rollup != nil && p.rollup.wantsIdentity()) {
+		refs = flow.refIndex()
+	}
+
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -376,7 +385,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 	var totalConns int
 	var totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts int64
 
-	for _, set := range sets {
+	for setIndex, set := range sets {
 		for i := range set.counts {
 			cc := set.counts[i]
 			// Cross-source de-duplication at CONNECTION granularity (matching the
@@ -393,7 +402,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 					continue
 				}
 			}
-			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget)
+			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget, tally, setIndex, refs)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -424,7 +433,7 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry. Metrics are always emitted; the per-connection log is
 // gated through budget so the volume guard never suppresses metrics.
-func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget, tally *connTally, setIndex int, refs nodeRefIndex) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitEndpoint(cc.Src)
 	dstAddr, dstPort := splitEndpoint(cc.Dst)
@@ -493,7 +502,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 		}
 		addPathAttrs(metricAttrs, metricPath, derpRegion)
 		if p.identity {
-			addIdentityAttrs(metricAttrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+			addIdentityAttrs(metricAttrs, refs.lookup(srcAddr), refs.lookup(dstAddr))
 		}
 		if p.geoDims {
 			// Country and continent only. The AS pair, and anything a City
@@ -533,9 +542,9 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 			derpRegion:  derpRegion,
 		}
 		// Resolving the node blocks is only worth it when the accumulator will
-		// actually key on identity — refByAddr walks the record's embedded blocks.
+		// actually key on identity, using the record's parsed address index.
 		if rollup.wantsIdentity() {
-			d.identity = identityOf(flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+			d.identity = identityOf(refs.lookup(srcAddr), refs.lookup(dstAddr))
 		}
 		d.geo = geoKey{
 			srcCountry:   srcGeo.CountryISO,
@@ -552,12 +561,12 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 		}
 	}
 
-	// MetricFlows: one flow observed (low cardinality; emitted in every mode).
-	e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, 1, telemetry.Attrs{
-		semconv.NetworkTransport: transport,
-		semconv.AttrTrafficType:  trafficType,
-	})
-	p.observeFieldCompleteness(e, trafficType, srcAddr, srcPort, dstAddr, dstPort, cc.protocolPresent())
+	// These fixed-cardinality families are emitted once at the call boundary.
+	if tally.flows == nil {
+		tally.flows = make(map[flowsKey]int)
+	}
+	tally.flows[flowsKey{transport, trafficType}]++
+	tally.observeFieldCompleteness(setIndex, srcAddr, srcPort, dstAddr, dstPort, cc.protocolPresent())
 
 	// Per-exit-node IO attribution (bounded by exit-node count; all metric modes).
 	if p.exitNode && trafficType == semconv.TrafficExit {
@@ -577,7 +586,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// describe, so it is fed from inside the dedup-guarded path and never from a
 	// second traversal.
 	if p.store != nil {
-		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter)
+		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter, refs)
 		if store, ok := p.store.(resultRecorder); ok {
 			switch store.RecordResult(observation) {
 			case flowstore.AdmissionExpired:
@@ -591,7 +600,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e)
+		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e, refs)
 	}
 }
 
@@ -611,12 +620,11 @@ func (p *Processor) observeStoreDrop(e telemetry.Emitter, reason string) {
 // therefore means one thing only: the record did not carry it.
 func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
 	transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string,
-	reporter reporterDiagnosis,
+	reporter reporterDiagnosis, refs nodeRefIndex,
 ) flowstore.Observation {
 	// Resolved once and used for both the identity fields and the policy
-	// evaluation below: refByAddr walks the record's embedded node blocks, so a
-	// second lookup per endpoint would be pure repeated work on the emit path.
-	srcRef, dstRef := flow.refByAddr(srcAddr), flow.refByAddr(dstAddr)
+	// evaluation below, using the index shared by this record's connections.
+	srcRef, dstRef := refs.lookup(srcAddr), refs.lookup(dstAddr)
 
 	verdict, rule, reversed, policyVersion := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
 
@@ -690,27 +698,43 @@ func (p *Processor) reporterDiagnosis(flow FlowLog) reporterDiagnosis {
 	return d
 }
 
-func (p *Processor) observeFieldCompleteness(e telemetry.Emitter, trafficType, srcAddr, srcPort, dstAddr, dstPort string, protoPresent bool) {
-	fields := [...]struct {
-		class   string
-		present bool
-	}{
-		{"source", srcAddr != ""},
-		{"destination", dstAddr != ""},
-		{"protocol", protoPresent},
-		{"source_port", srcPort != ""},
-		{"destination_port", dstPort != ""},
-	}
-	for _, field := range fields {
-		state := "missing"
-		if field.present {
-			state = "present"
+type flowsKey struct{ transport, trafficType string }
+type connTally struct {
+	fields [4][5][2]int
+	flows  map[flowsKey]int
+}
+
+func (t *connTally) observeFieldCompleteness(setIndex int, srcAddr, srcPort, dstAddr, dstPort string, protoPresent bool) {
+	present := [...]bool{srcAddr != "", dstAddr != "", protoPresent, srcPort != "", dstPort != ""}
+	for field, ok := range present {
+		state := 0
+		if !ok {
+			state = 1
 		}
-		e.Counter(docFieldObservations.Name, docFieldObservations.Unit, docFieldObservations.Description, 1, telemetry.Attrs{
-			semconv.AttrTrafficType: trafficType,
-			"field_class":           field.class,
-			"state":                 state,
+		t.fields[setIndex][field][state]++
+	}
+}
+
+func flushTally(t *connTally, e telemetry.Emitter) {
+	for key, count := range t.flows {
+		e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, float64(count), telemetry.Attrs{
+			semconv.NetworkTransport: key.transport, semconv.AttrTrafficType: key.trafficType,
 		})
+	}
+	trafficTypes := [...]string{semconv.TrafficVirtual, semconv.TrafficSubnet, semconv.TrafficExit, semconv.TrafficPhysical}
+	classes := [...]string{"source", "destination", "protocol", "source_port", "destination_port"}
+	states := [...]string{"present", "missing"}
+	for setIndex, fields := range t.fields {
+		for field, counts := range fields {
+			for state, count := range counts {
+				if count == 0 {
+					continue
+				}
+				e.Counter(docFieldObservations.Name, docFieldObservations.Unit, docFieldObservations.Description, float64(count), telemetry.Attrs{
+					semconv.AttrTrafficType: trafficTypes[setIndex], "field_class": classes[field], "state": states[state],
+				})
+			}
+		}
 	}
 }
 
@@ -1052,7 +1076,7 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter, refs nodeRefIndex) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
 		semconv.NetworkTransport:         transport,
@@ -1107,7 +1131,7 @@ func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType s
 	// full set (country, continent, AS, and city/region/coordinates when a City
 	// database is loaded) rides every flow log whenever geoip is on, and the
 	// GeoDims toggle governs only what reaches a metric.
-	addIdentityAttrs(attrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+	addIdentityAttrs(attrs, refs.lookup(srcAddr), refs.lookup(dstAddr))
 	addGeoLogAttrs(attrs, srcGeo, dstGeo)
 	e.LogEventCtx(ctx, telemetry.Event{
 		Name:              docFlowLog.Name,
@@ -1405,7 +1429,13 @@ func (p *Processor) WithDurableRollup(ctx context.Context) (context.Context, fun
 		accumulator = newRollupAccumulator(p.rollup.topN, p.rollup.nodes, p.rollup.identity, p.rollup.geo)
 	}
 	var once sync.Once
-	return context.WithValue(ctx, durableRollupContextKey{}, accumulator), func(e telemetry.Emitter) { once.Do(func() { accumulator.Flush(e) }) }
+	return context.WithValue(ctx, durableRollupContextKey{}, accumulator), func(e telemetry.Emitter) {
+		once.Do(func() {
+			if accumulator != nil {
+				accumulator.flush(e, p.rollup)
+			}
+		})
+	}
 }
 func (p *Processor) StageRollup() telemetry.CollectionStage { return p.rollup.Stage() }
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -134,4 +135,26 @@ func checkpointBasename(key string) string {
 		return key[i+1:]
 	}
 	return key
+}
+
+// initializeCheckpointState runs only after promotion, or on the one-shot path.
+func (a *App) initializeCheckpointState() error {
+	a.checkpointInit.Do(func() {
+		logger := a.logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+		a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
+		for _, rt := range a.runtimes {
+			for _, entry := range rt.registry.Entries() {
+				if initializer, ok := entry.Collector.(collector.CheckpointInitializer); ok {
+					if err := initializer.InitializeCheckpoints(); err != nil {
+						a.checkpointInitErr = fmt.Errorf("initialize %s checkpoints: %w", entry.Collector.Name(), err)
+						return
+					}
+				}
+			}
+		}
+	})
+	return a.checkpointInitErr
 }

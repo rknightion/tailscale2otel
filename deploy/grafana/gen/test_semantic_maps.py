@@ -231,7 +231,13 @@ class AbsentStateTest(unittest.TestCase):
                 self.assertTrue(novalue, "%s: no empty-state string" % title)
                 self.assertNotEqual(novalue.strip(), "0",
                                     "%s: '0' is not an empty state" % title)
-                self.assertGreater(len(novalue), 20, "%s: empty-state text says too little" % title)
+                explanation = novalue
+                if len(novalue) <= 20:
+                    descriptions = [e["spec"]["description"] for e in self.doc["spec"]["elements"].values()
+                                    if e["spec"]["title"] == title]
+                    explanation = next((d.split("When empty: ", 1)[1] for d in descriptions
+                                        if "When empty: " in d), "")
+                self.assertGreater(len(explanation), 20, "%s: empty-state text says too little" % title)
 
 
 if __name__ == "__main__":

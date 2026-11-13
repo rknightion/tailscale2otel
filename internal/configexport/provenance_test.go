@@ -111,12 +111,10 @@ func TestBuildWithProvenance_Deterministic(t *testing.T) {
 log_level: debug
 tailnets:
   - name: one
-    tailnet: one.example.com
     auth:
       method: apikey
       apikey: "tskey-one"
   - name: two
-    tailnet: two.example.com
     auth:
       method: apikey
       apikey: "tskey-two"

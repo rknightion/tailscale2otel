@@ -2,6 +2,9 @@ package postureintegrations
 
 import (
 	"context"
+	"errors"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -270,4 +273,69 @@ func TestNoAgeHistogram(t *testing.T) {
 			t.Errorf("emitted age metric %q, but the posture schema has no creation timestamp", name)
 		}
 	}
+}
+
+func TestIntegrationGaugesDropWhenIntegrationRemoved(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(disabled), func(t *testing.T) {
+			api := &fakeAPI{ints: []tsapi.PostureIntegration{{ID: "example-integration", Provider: "intune", Status: tsapi.PostureIntegrationStatus{LastSync: time.Unix(1700000000, 0), MatchedCount: 2, PossibleMatchedCount: 3, ProviderHostCount: 4, Error: "synthetic sync error"}}}}
+			c := New(api, 0)
+			rec := telemetrytest.New()
+			collect := func() {
+				t.Helper()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			collect()
+			names := []string{metricMatched, metricPossible, metricProviderHosts, metricLastSync, metricError}
+			before := map[string][]telemetrytest.MetricPoint{}
+			for _, name := range names {
+				before[name] = rec.MetricPoints(name)
+				if len(before[name]) != 1 {
+					t.Fatalf("missing initial %s", name)
+				}
+			}
+			api.err = errors.New("synthetic list failure")
+			if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+				t.Fatal("expected error")
+			}
+			for _, name := range names {
+				if !sameMetricPoints(rec.MetricPoints(name), before[name]) {
+					t.Errorf("%s changed after failure", name)
+				}
+			}
+			api.err = nil
+			api.ints = nil
+			if disabled {
+				api.err = &tsapi.StatusError{Code: 404}
+			}
+			collect()
+			for _, name := range names {
+				if got := rec.MetricPoints(name); len(got) != 0 {
+					t.Errorf("%s retains removed integration: %v", name, got)
+				}
+			}
+		})
+	}
+}
+
+// sameMetricPoints compares snapshots without depending on SDK iteration order.
+func sameMetricPoints(a, b []telemetrytest.MetricPoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, point := range a {
+		found := false
+		for _, other := range b {
+			if reflect.DeepEqual(point, other) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }

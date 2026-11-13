@@ -55,7 +55,7 @@ renders permanently hidden, which on screen is indistinguishable from a correctl
 empty row.
 """
 
-from builder import (autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
+from builder import (joined, BAR_NOISE, category_bar_opts, autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
                      loki_t, lot, merge, organize, panel, PII, pie_opts, pii_sentinel, prom_t,
                      row, state_timeline_opts, stat_opts, thr, ts_custom, ts_opts, WIN_FAST,
                      WIN_SLOW)
@@ -157,11 +157,12 @@ def tab_devices_inventory(scope):
         (panel("Organization tailnets", "stat",
                [prom_t("tailscale_organization_tailnets_count_ratio")],
                unit="short", options=stat_opts(),
-               novalue="No organization roster — configure tailscale.organization and a "
-                       "tailnets:read credential to enable alpha roster discovery.",
+               novalue="Not configured",
                desc="Tailnet IDs discovered from the configured alpha Organizations API roster. "
                     "This inventories the organization; collector runtimes still require "
-                    "explicit per-tailnet credentials."), 3, 5),
+                    "explicit per-tailnet credentials. When empty: "
+                    "No organization roster — configure tailscale.organization and a "
+                    "tailnets:read credential to enable alpha roster discovery."), 4, 5),
         # #392: the old expression grouped by os/authorized/external and then summed
         # the state labels straight back out, so an unauthorized macOS laptop was
         # indistinguishable from an authorized one. Keep the state in the legend.
@@ -306,13 +307,13 @@ def tab_devices_inventory(scope):
                transformations=[organize(exclude=["Time"])],
                desc="Fleet distribution by Tailscale client version."), 12, 7),
         (panel("Fleet tags (rollup)", "barchart",
-               [prom_t("sum by (tailscale_tag) (max by (tailscale_tag) (%s))"
+               [prom_t("topk($topn, sum by (tailscale_tag) (max by (tailscale_tag) (%s)))"
                        % lot("tailscale_devices_by_tag_ratio", WIN_SLOW),
                        instant=True, fmt="table")],
-               options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])],
+               options=category_bar_opts("tailscale_tag"),
+               transformations=[organize(exclude=BAR_NOISE)],
                desc="Device count per ACL tag across the fleet. Counts individual tags, so a "
-                    "device carrying two tags is counted under each."), 12, 7),
+                    "device carrying two tags is counted under each. Shows the top $topn tags; raise Top N to see more."), 12, 7),
         # #392: the fleet age distribution. Devices whose `created` the control plane
         # omits (every shared-in device) are skipped by the exporter, so this describes
         # the internal population only.
@@ -394,11 +395,11 @@ def tab_devices_inventory(scope):
         # column carries its own polarity — blocks-incoming is protective, SSH is a
         # deliberate configuration either way, the other three are inverse risk.
         (panel("Device security flags (per device)", "table",
-               [prom_t(lot("tailscale_device_blocks_incoming_connections_ratio" + df), instant=True, fmt="table", refid="A"),
-                prom_t(lot("tailscale_device_ssh_enabled_ratio" + df), instant=True, fmt="table", refid="B"),
-                prom_t(lot("tailscale_device_key_expiry_disabled_ratio" + df), instant=True, fmt="table", refid="C"),
-                prom_t(lot("tailscale_device_multiple_connections_ratio" + df), instant=True, fmt="table", refid="D"),
-                prom_t(lot("tailscale_device_posture_identity_disabled_ratio" + df), instant=True, fmt="table", refid="E")],
+               [prom_t(joined(lot("tailscale_device_blocks_incoming_connections_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="A"),
+                prom_t(joined(lot("tailscale_device_ssh_enabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="B"),
+                prom_t(joined(lot("tailscale_device_key_expiry_disabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="C"),
+                prom_t(joined(lot("tailscale_device_multiple_connections_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="D"),
+                prom_t(joined(lot("tailscale_device_posture_identity_disabled_ratio" + df), ['host_name', 'host_id', 'os_type', 'tailscale_user']), instant=True, fmt="table", refid="E")],
                transformations=[merge(),
                                 organize(exclude=_infra,
                                          rename={"host_name": "Host", "os_type": "OS",
@@ -437,10 +438,11 @@ def tab_devices_inventory(scope):
         (panel("Device online state by node", "state-timeline",
                [prom_t("tailscale_device_online_ratio%s" % df, legend="{{host_name}}")],
                mappings=bool_map("Offline", "Online", "red", "green"),
-               options=state_timeline_opts(),
+               options=state_timeline_opts(per_page=15),
                novalue="No per-device online series — needs cardinality.per_entity.device.",
                desc="Online/offline transitions for each device matching the current filters. "
-                    "Hidden when device identity redaction is active."), 24, 9),
+                    "Hidden when device identity redaction is active. "
+                    "Paged 15 devices at a time; use the host filter to find one device."), 24, 9),
     ]
 
     return [

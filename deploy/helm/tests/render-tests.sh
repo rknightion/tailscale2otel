@@ -606,8 +606,9 @@ else
   bad "N: rendered a Service for a disabled listener (rc=$RENDER_RC)"
 fi
 
-# The core contract from deploy/CLAUDE.md: never map a receiver port without its
-# credential. Each of the four, individually.
+# This chart's Service safety gate never maps a receiver port without its credential.
+# See deploy/AGENTS.md's Listeners, Services and credentials section for the fail-closed
+# rule. Exercise each of the four listeners individually.
 render --set config.prometheus.enabled=true --set service.prometheus.enabled=true
 [[ $RENDER_RC -ne 0 ]] && ok "N: prometheus Service without auth.token fails" \
   || bad "N: exposed prometheus with no token — it serves every series unauthenticated"
@@ -1785,6 +1786,23 @@ assert_rc0 "AC: coordinated replicas allow emptyDir state when persistence is di
   || bad "AC: coordinated non-persistent state is not emptyDir"
 [[ "$(docs_of StatefulSet | yq '.spec | has("volumeClaimTemplates")')" == "false" ]] \
   && ok "AC: disabled persistence creates no claims" || bad "AC: disabled persistence created claims"
+
+# Pod label writes are restricted to the StatefulSet ordinals at the replica cap.
+assert_pod_label_names() {
+  local fullname="$1" rule
+  rule="$(docs_of Role | yq 'select(.metadata.name == "'"$fullname"'-pod-labels") | .rules')"
+  [[ "$(yq 'length' <<<"$rule")" == "1" &&
+     "$(yq -r '.[0].apiGroups | join(",")' <<<"$rule")" == "" &&
+     "$(yq -r '.[0].resources | join(",")' <<<"$rule")" == "pods" &&
+     "$(yq -r '.[0].verbs | join(",")' <<<"$rule")" == "get,patch" &&
+     "$(yq -r '.[0].resourceNames | join(",")' <<<"$rule")" == "$fullname-0,$fullname-1,$fullname-2" ]] \
+    && ok "AC: pod-label Role grants get/patch only on three StatefulSet names" \
+    || bad "AC: pod-label Role must be confined to three StatefulSet names"
+}
+assert_pod_label_names "$FULLNAME"
+render --set replicaCount=2 --set config.coordination.mode=kubernetes --set fullnameOverride=example-exporter
+assert_rc0 "AC: coordinated fullnameOverride renders"
+assert_pod_label_names "example-exporter"
 
 render --set replicaCount=2 --set config.coordination.mode=kubernetes --set persistence.existingClaim=old-state
 [[ $RENDER_RC -ne 0 ]] && grep -q 'per-replica claims replace it' <<<"$RENDER" \

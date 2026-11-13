@@ -7,7 +7,6 @@ package flowlog
 import (
 	"encoding/json"
 	"net/netip"
-	"slices"
 	"strings"
 	"time"
 
@@ -109,23 +108,59 @@ func (f FlowLog) nodeRefs() []enrich.DeviceMeta {
 	return out
 }
 
-// refByAddr returns the embedded identity owning addr, if the record carries
-// one. Used to attach per-flow identity attributes to the connection's two
-// endpoints without a cache round-trip.
-func (f FlowLog) refByAddr(addr string) *NodeRef {
-	if addr == "" {
-		return nil
+// nodeRefIndex preserves source-first, then destination-order precedence.
+type nodeRefIndex struct {
+	entries []nodeRefEntry
+	byAddr  map[netip.Addr]*NodeRef
+}
+type nodeRefEntry struct {
+	addr netip.Addr
+	ref  *NodeRef
+}
+
+func (f FlowLog) refIndex() nodeRefIndex {
+	size := 0
+	if f.SrcNode != nil {
+		size += len(f.SrcNode.Addresses)
 	}
-	a, err := netip.ParseAddr(addr)
+	for i := range f.DstNodes {
+		size += len(f.DstNodes[i].Addresses)
+	}
+	ix := nodeRefIndex{entries: make([]nodeRefEntry, 0, size)}
+	add := func(ref *NodeRef) {
+		for _, raw := range ref.Addresses {
+			if addr, err := netip.ParseAddr(raw); err == nil {
+				ix.entries = append(ix.entries, nodeRefEntry{addr, ref})
+			}
+		}
+	}
+	if f.SrcNode != nil {
+		add(f.SrcNode)
+	}
+	for i := range f.DstNodes {
+		add(&f.DstNodes[i])
+	}
+	if len(ix.entries) > 32 {
+		ix.byAddr = make(map[netip.Addr]*NodeRef, len(ix.entries))
+		for _, entry := range ix.entries {
+			if _, exists := ix.byAddr[entry.addr]; !exists {
+				ix.byAddr[entry.addr] = entry.ref
+			}
+		}
+	}
+	return ix
+}
+func (ix nodeRefIndex) lookup(raw string) *NodeRef {
+	addr, err := netip.ParseAddr(raw)
 	if err != nil {
 		return nil
 	}
-	if f.SrcNode != nil && slices.Contains(f.SrcNode.Addrs(), a) {
-		return f.SrcNode
+	if ix.byAddr != nil {
+		return ix.byAddr[addr]
 	}
-	for i := range f.DstNodes {
-		if slices.Contains(f.DstNodes[i].Addrs(), a) {
-			return &f.DstNodes[i]
+	for _, entry := range ix.entries {
+		if entry.addr == addr {
+			return entry.ref
 		}
 	}
 	return nil

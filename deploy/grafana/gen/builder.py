@@ -21,6 +21,8 @@ therefore use `last_over_time(<metric>[<window>])` so panels show the most recen
 known value regardless of poll cadence.
 """
 
+import re
+
 VERSION = "12.1.0"  # nominal panel-plugin version stamped into vizConfig
 
 # Datasource defaults. The *value* is the datasource UID; "grafanacloud-prom" / "grafanacloud-logs"
@@ -41,6 +43,9 @@ WIN_SLOW = "2h"    # last_over_time window for slowly-scraped config series (acl
 TBL_NOISE = ["Time", "__name__", "job", "instance", "service_instance_id",
              "service_name", "service_namespace", "deployment_environment_name",
              "otel_scope_name", "otel_scope_version", "Value"]
+
+TBL_META = ["tailscale_tailnet", "tailscale2otel_provider", "deployment_environment_name",
+            "otel_scope_name", "otel_scope_version"]
 
 ELEMENTS = {}
 _id = 0
@@ -200,13 +205,51 @@ def check_bool_polarity(title, mappings, thresholds):
 
 
 def organize(exclude=None, rename=None, index=None):
+    if set(exclude or []).intersection(rename or {}):
+        raise ValueError("a renamed table column cannot also be excluded")
+    if index is None and rename:
+        index = {name: i for i, name in enumerate(rename)}
     return {"kind": "Transformation", "group": "organize", "spec": {"options": {
         "excludeByName": {k: True for k in (exclude or [])},
         "renameByName": rename or {}, "indexByName": index or {}}}}
 
 
+def joined(expr, by):
+    """Drop metric/replica labels while retaining the entity and tenant join keys."""
+    labels = list(by) + ["tailscale_tailnet", "tailscale2otel_provider"]
+    return "max by (%s) (%s)" % (", ".join(labels), expr)
+
+
+def check_merged_table(title, targets):
+    groups = []
+    for target in targets:
+        expr = target["spec"]["query"]["spec"].get("expr", "")
+        match = re.match(r"(?:time\(\) - )?max by \(([^)]+)\)", expr)
+        if match:
+            group = tuple(label.strip() for label in match[1].split(","))
+            if not {"tailscale_tailnet", "tailscale2otel_provider"}.issubset(group):
+                raise ValueError("merged table %r must retain tenant join keys" % title)
+            groups.append(group)
+        elif not re.search(r"\bby\s*\(", expr) and re.match(r"(?:count|sum|clamp_min)\(", expr):
+            groups.append(None)
+        else:
+            raise ValueError("merged table %r needs name-free grouped or scalar queries" % title)
+    if len(set(groups)) > 1:
+        raise ValueError("merged table %r has different join keys" % title)
+
+
 def merge():
     return {"kind": "Transformation", "group": "merge", "spec": {"options": {}}}
+
+
+def has_verdict_color(value):
+    """Whether a mapping declares a color beyond the neutral text/absence colors."""
+    if isinstance(value, dict):
+        return (value.get("color") not in (None, "gray", "text")
+                or any(has_verdict_color(v) for v in value.values()))
+    if isinstance(value, list):
+        return any(has_verdict_color(v) for v in value)
+    return False
 
 
 def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
@@ -214,8 +257,23 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
           transformations=None, population="selected"):
     global _id
+    if ptype == "table" and any(t.get("group") == "merge" for t in transformations or []):
+        check_merged_table(title, targets)
     if population not in {"selected", "fleet"}:
         raise ValueError("unknown panel population: %s" % population)
+    if ptype == "barchart" and "reduceOptions" in (options or {}):
+        raise ValueError("bar charts cannot use reducer options")
+    if ptype in {"stat", "gauge", "bargauge"} and thresholds and not any(
+            m.get("type") == "special" and m.get("options", {}).get("match") == "null"
+            for m in mappings or []):
+        mappings = list(mappings or []) + [{"type": "special", "options": {
+            "match": "null", "result": {"text": novalue if novalue is not None else "No data",
+                                         "color": "gray"}}}]
+    options = dict(options or {})
+    if ptype == "stat" and not thresholds and not has_verdict_color(mappings) and options.get("colorMode") == "value":
+        options["colorMode"] = "none"
+    if ptype == "bargauge" and thresholds and options.get("displayMode") == "gradient":
+        options["displayMode"] = "basic"
     check_bool_polarity(title, mappings, thresholds)
     _id += 1
     name = "panel-%d" % _id
@@ -223,7 +281,19 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         _t["spec"]["refId"] = chr(65 + i)
     defaults = {}
     if unit is not None:
-        defaults["unit"] = unit
+        if ptype == "table":
+            measures = []
+            for transform in transformations or []:
+                if transform.get("group") == "organize":
+                    for field, display in transform["spec"]["options"].get("renameByName", {}).items():
+                        if field == "Value" or field.startswith("Value #"):
+                            measures.append(display)
+            overrides = list(overrides or []) + [
+                {"matcher": {"id": "byName", "options": field},
+                 "properties": [{"id": "unit", "value": unit}]}
+                for field in measures or ["Value"]]
+        else:
+            defaults["unit"] = unit
     if decimals is not None:
         defaults["decimals"] = decimals
     if min_ is not None:
@@ -236,10 +306,13 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         defaults["thresholds"] = thresholds
     if novalue is not None:
         defaults["noValue"] = novalue
+        if ptype == "table":
+            overrides = [{"matcher": {"id": "byRegexp", "options": ".*"},
+                          "properties": [{"id": "noValue", "value": "-"}]}] + list(overrides or [])
     if custom:
         defaults["custom"] = custom
     if ptype == "table" and transformations is None:
-        transformations = [organize(exclude=TBL_NOISE)]
+        transformations = [organize(exclude=TBL_NOISE + TBL_META)]
     ELEMENTS[name] = {"kind": "Panel", "spec": {
         "id": _id, "title": title, "description": desc, "links": [],
         "data": {"kind": "QueryGroup", "spec": {
@@ -295,19 +368,25 @@ def pie_opts():
 def geomap_opts(location_field="lookup"):
     return {"view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 1},
             "controls": {"showZoom": True, "showAttribution": True},
-            "layers": [{"type": "markers", "name": "Devices", "config": {
-                "showLegend": True, "style": {"size": {"field": "Devices", "fixed": 5}},
-                "location": {"mode": "lookup", "lookup": location_field}}}]}
+            "layers": [{"type": "markers", "name": "Devices",
+                        "location": {"mode": "lookup", "lookup": location_field,
+                                     "gazetteer": "public/gazetteer/countries.json"},
+                        "config": {"showLegend": True,
+                                   "style": {"size": {"field": "Devices", "fixed": 5,
+                                                      "min": 4, "max": 20}}}}]}
 
 
-def state_timeline_opts():
-    return {"mergeValues": True, "showValue": "auto", "alignValue": "left",
-            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-            "tooltip": {"mode": "single", "sort": "none"}}
+def state_timeline_opts(per_page=None):
+    options = {"mergeValues": True, "showValue": "auto", "alignValue": "left",
+               "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
+               "tooltip": {"mode": "single", "sort": "none"}}
+    if per_page is not None:
+        options["perPage"] = per_page
+    return options
 
 
 def heatmap_opts():
-    return {"calculate": False, "yAxis": {"axisPlacement": "left", "unit": "s"},
+    return {"calculate": False, "cellValues": {"unit": "cps"}, "yAxis": {"axisPlacement": "left", "unit": "s"},
             "legend": {"show": True},
             "tooltip": {"show": True, "yHistogram": False}}
 
@@ -347,8 +426,8 @@ def category_bar_opts(xfield):
     return opts
 
 
-def logs_opts():
-    return {"showTime": True, "showLabels": False, "wrapLogMessage": True,
+def logs_opts(wrap=True):
+    return {"showTime": True, "showLabels": False, "wrapLogMessage": wrap,
             "prettifyLogMessage": False, "enableLogDetails": True,
             "dedupStrategy": "none", "sortOrder": "Descending"}
 

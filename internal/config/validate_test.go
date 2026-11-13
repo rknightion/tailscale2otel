@@ -1911,3 +1911,56 @@ func TestWarningsFlagsQueryBearingPublicURL(t *testing.T) {
 		t.Errorf("warning %q echoes the query value", found)
 	}
 }
+
+func TestValidateRejectsURLUserinfoOnSignalAndGeoIPEndpoints(t *testing.T) {
+	const username = "synthetic-user-marker"
+	const password = "synthetic-password-marker"
+	endpoint := "https://" + username + ":" + password + "@endpoint.example.invalid/otlp"
+	for _, tc := range []struct {
+		key, remedy string
+		set         func(*config.Config)
+	}{
+		{"otlp.metrics.endpoint", "otlp.metrics.headers", func(c *config.Config) {
+			disabled := false
+			c.OTLP.Metrics.Enabled = &disabled
+			c.OTLP.Metrics.Endpoint = endpoint
+		}},
+		{"otlp.logs.endpoint", "otlp.logs.headers", func(c *config.Config) {
+			disabled := false
+			c.OTLP.Logs.Enabled = &disabled
+			c.OTLP.Logs.Endpoint = endpoint
+		}},
+		{"otlp.traces.endpoint", "otlp.traces.headers", func(c *config.Config) {
+			disabled := false
+			c.OTLP.Traces.Enabled = &disabled
+			c.OTLP.Traces.Endpoint = endpoint
+		}},
+		{"enrichment.geoip.download.endpoint", "license_key", func(c *config.Config) {
+			c.Enrichment.GeoIP.Download.Enabled = false
+			c.Enrichment.GeoIP.Download.Endpoint = endpoint
+		}},
+	} {
+		t.Run(tc.key, func(t *testing.T) {
+			c := config.Default()
+			tc.set(c)
+			err := c.Validate()
+			if err == nil {
+				t.Fatal("userinfo accepted")
+			}
+			if !strings.Contains(err.Error(), tc.key) || !strings.Contains(err.Error(), tc.remedy) {
+				t.Fatalf("missing key/remediation: %v", err)
+			}
+			if strings.Contains(err.Error(), username) || strings.Contains(err.Error(), password) {
+				t.Fatal("error disclosed userinfo")
+			}
+		})
+	}
+	t.Run("bare grpc and unset", func(t *testing.T) {
+		c := config.Default()
+		c.OTLP.Metrics.Protocol = "grpc"
+		c.OTLP.Metrics.Endpoint = "collector.example.invalid:4317"
+		if err := c.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

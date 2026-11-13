@@ -678,7 +678,13 @@ class EmptyStateTextRulesTest(unittest.TestCase):
             if _NUMERIC_NOVALUE_RE.match(nv.strip()):
                 continue  # a bare number is a display default, not a prose message
             with self.subTest(panel=title):
-                self.assertGreater(len(nv), 20,
+                explanation = nv
+                if len(nv) <= 20:
+                    descriptions = [e["spec"]["description"] for e in self.doc["spec"]["elements"].values()
+                                    if e["spec"]["title"] == title]
+                    explanation = next((d.split("When empty: ", 1)[1] for d in descriptions
+                                        if "When empty: " in d), "")
+                self.assertGreater(len(explanation), 20,
                                    "%r: empty-state text says too little to name a "
                                    "prerequisite (%r)" % (title, nv))
 
@@ -700,6 +706,23 @@ class EmptyStateTextRulesTest(unittest.TestCase):
         # Guards the guard.
         sample = "this metric is off right now"
         self.assertTrue(any(p in sample for p in FORBIDDEN_CAUSE_PHRASES))
+
+
+class OptionalFeedAbsenceTest(unittest.TestCase):
+    def test_optional_feeds_do_not_invent_zero(self):
+        panels = {p["spec"]["title"]: p["spec"] for p in dashboard.build_family()["spec"]["elements"].values()}
+        panel = panels["Undecodable objects (broken feed)"]
+        expr = panel["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
+        self.assertNotIn("vector(0)", expr)
+        self.assertIn("0 * count(last_over_time(tailscale2otel_objectstore_gap_healthy_ratio{", expr)
+        anchor = expr.split("tailscale2otel_objectstore_gap_healthy_ratio", 1)[1]
+        self.assertIn('tailscale_tailnet=~"$tailnet"', anchor)
+        self.assertIn('tailscale2otel_provider=~"$provider"', anchor)
+        def no_value(title):
+            return panels[title]["vizConfig"]["spec"]["fieldConfig"]["defaults"]["noValue"]
+        self.assertEqual(no_value("Pull-endpoint gather errors/s"), no_value("Pull-endpoint requests in flight"))
+        self.assertNotEqual(no_value("Pull-endpoint gather errors/s"), "0")
+        self.assertEqual(no_value("API 429 / retries"), "0")
 
 
 if __name__ == "__main__":

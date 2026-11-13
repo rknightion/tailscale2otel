@@ -306,6 +306,9 @@ func (c *Config) validateWebhookCredentials() error {
 func (c *Config) Warnings() []string {
 	var w []string
 	w = append(w, c.logHorizonWarnings()...)
+	if c.Collectors.NodeMetrics.Discovery.InstanceSource == "hostname" && !c.PIIFilter.TailscaleIPs {
+		w = append(w, "collectors.node_metrics.discovery.instance_source=hostname embeds the node address in tailscale.node: with pii_filter.tailscale_ips=false the label is removed. Use instance_source: name for a unique label with no address.")
+	}
 	if c.Coordination.Mode == "kubernetes" &&
 		(c.Collectors.Flowlogs.Source == "both" || c.Collectors.Auditlogs.Source == "both") {
 		w = append(w, "coordination.mode=kubernetes with a flowlogs or auditlogs source=both: cross-source de-duplication is process-local and cannot suppress duplicates across replicas. Use one ingestion source per log type when deploying more than one replica.")
@@ -2776,6 +2779,26 @@ func (c *Config) validateNoURLCredentials() error {
 			key:    "otlp.endpoint",
 			value:  c.OTLP.Endpoint,
 			useFmt: "put the credential in otlp.grafana_cloud.instance_id + otlp.grafana_cloud.token, or in otlp.headers (values are Secret and redact themselves); the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "otlp.metrics.endpoint",
+			value:  c.OTLP.Metrics.Endpoint,
+			useFmt: "put the credential in otlp.metrics.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "otlp.logs.endpoint",
+			value:  c.OTLP.Logs.Endpoint,
+			useFmt: "put the credential in otlp.logs.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "otlp.traces.endpoint",
+			value:  c.OTLP.Traces.Endpoint,
+			useFmt: "put the credential in otlp.traces.headers (values are Secret and redact themselves) or in otlp.grafana_cloud; the OTLP exporter does not authenticate from URL userinfo",
+		},
+		{
+			key:    "enrichment.geoip.download.endpoint",
+			value:  c.Enrichment.GeoIP.Download.Endpoint,
+			useFmt: "use enrichment.geoip.download.account_id with license_key or license_key_file; the downloader authenticates from those",
 		},
 		{
 			key:    "profiling.pyroscope.server_address",

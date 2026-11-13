@@ -2,7 +2,10 @@ package logstream
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 	"time"
 
@@ -566,5 +569,106 @@ func TestErrorGaugeAndLog(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no tailscale.logstream.error log event emitted")
+	}
+}
+
+func TestLogStreamGaugesClearWhenUnconfigured(t *testing.T) {
+	at := time.Unix(1700000000, 0)
+	mode := "configured"
+	destination := "s3"
+	api := &fakeAPI{
+		configFn: func(lt string) (*tsapi.LogStreamConfiguration, error) {
+			if lt == "network" && mode == "absent" {
+				return nil, &tsapi.StatusError{Code: 404}
+			}
+			if lt == "network" && mode == "failed" {
+				return nil, errors.New("synthetic config failure")
+			}
+			return &tsapi.LogStreamConfiguration{LogType: lt, DestinationType: destination}, nil
+		},
+		fn: func(lt string) (*tsapi.LogStreamStatus, error) {
+			if lt == "network" {
+				switch mode {
+				case "absent":
+					return nil, &tsapi.StatusError{Code: 404}
+				case "empty":
+					return &tsapi.LogStreamStatus{}, nil
+				case "failed":
+					return nil, errors.New("synthetic status failure")
+				}
+			}
+			return sampleStatus(nil), nil
+		},
+	}
+	c := New(api, time.Second, WithProbeIntervals(time.Hour, time.Second))
+	c.now = func() time.Time { return at }
+	rec := telemetrytest.New()
+	collect := func() {
+		t.Helper()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	collect()
+	names := []string{metricDestinationConfigured, metricLastActivity, metricError}
+	snapshot := func(name string) map[string]telemetrytest.MetricPoint {
+		out := map[string]telemetrytest.MetricPoint{}
+		for _, point := range rec.MetricPoints(name) {
+			out[fmt.Sprint(point.Attrs)] = point
+		}
+		return out
+	}
+	before := map[string]map[string]telemetrytest.MetricPoint{}
+	for _, name := range names {
+		before[name] = snapshot(name)
+		if len(before[name]) != 2 {
+			t.Fatalf("initial %s = %v", name, before[name])
+		}
+	}
+	at = at.Add(time.Second)
+	mode = "failed"
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("expected error")
+	}
+	for _, name := range names {
+		if !reflect.DeepEqual(snapshot(name), before[name]) {
+			t.Errorf("%s changed for failed or not-due probe", name)
+		}
+	}
+	at = at.Add(time.Second)
+	mode = "configured"
+	destination = "splunk"
+	collect()
+	for _, point := range rec.MetricPoints(metricDestinationConfigured) {
+		if point.Attrs[attrLogType] == "network" && point.Attrs[attrDestinationType] != "splunk" {
+			t.Errorf("old destination remains: %v", point)
+		}
+	}
+	at = at.Add(time.Second)
+	mode = "absent"
+	collect()
+	for _, name := range names {
+		for _, point := range rec.MetricPoints(name) {
+			if point.Attrs[attrType] == "network" || point.Attrs[attrLogType] == "network" {
+				t.Errorf("%s retains absent network stream: %v", name, point)
+			}
+		}
+	}
+	if got := byType(rec.MetricPoints(metricConfigured))["network"]; got != 0 {
+		t.Errorf("configured = %v, want 0", got)
+	}
+	// An empty status is also authoritative absence for delivery health.
+	at = at.Add(time.Second)
+	mode = "configured"
+	collect()
+	at = at.Add(time.Second)
+	mode = "empty"
+	collect()
+	for _, name := range names[1:] {
+		for _, point := range rec.MetricPoints(name) {
+			if point.Attrs[attrType] == "network" {
+				t.Errorf("%s retains empty-status network stream", name)
+			}
+		}
 	}
 }

@@ -824,7 +824,7 @@ var DocSeriesByGroup = metricdoc.Metric{
 	Name:        MetricSeriesByGroup,
 	Unit:        semconv.UnitSeries,
 	Instrument:  metricdoc.Gauge,
-	Description: "Active time series emitted during the last export interval, summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**.",
+	Description: "Current tailscale2otel.series.active counts (lifetime for cumulative synchronous instruments, last interval for observable snapshots and delta instruments), summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**.",
 	Attributes:  []string{semconv.AttrMetricGroup},
 	Group:       GroupSelfObs,
 }

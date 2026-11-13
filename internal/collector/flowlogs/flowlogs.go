@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -98,11 +99,11 @@ type Collector struct {
 	now func() time.Time
 	// replayStore holds digest-only identities across a process restart. It is
 	// supplied already namespaced by the app for multi-tailnet isolation.
-	replayStore    collector.CheckpointStore
-	replayOverlap  time.Duration
-	replayCapacity int
-	replaySeen     map[string]time.Time // SHA-256 hex digest -> inclusive expiry
-	replayLoadErr  error
+	replayStore          collector.CheckpointStore
+	replayOverlap        time.Duration
+	replayCapacity       int
+	replaySeen           map[string]time.Time // SHA-256 hex digest -> inclusive expiry
+	pendingReplayDeletes []string
 }
 
 // Option configures optional Collector behavior.
@@ -227,8 +228,8 @@ func (c *Collector) ReplayOverlap() time.Duration {
 // Connections already seen on a previous tick (boundary overlap) are filtered
 // out before processing so their metrics are emitted only once.
 func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e telemetry.Emitter) (time.Time, error) {
-	if c.replayLoadErr != nil {
-		return time.Time{}, c.replayLoadErr
+	if err := c.retryReplayCleanup(); err != nil {
+		return time.Time{}, err
 	}
 	if c.featureCheck != nil {
 		enabled, err := c.featureCheck(ctx)
@@ -263,7 +264,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	// Expired durable identities must not suppress a late record. Deletions are
 	// held until after processing so a failed API request does not turn startup
 	// cleanup into a durable side effect.
-	stale := c.pruneExpiredReplay(c.now())
+	stale := c.pruneExpiredReplay(from)
 	resp = c.validRecords(resp, e)
 	deduped, additions := c.dedupe(resp, e)
 	c.proc.ProcessAllCtx(ctx, deduped, e)
@@ -283,6 +284,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalFlow, len(deduped.Logs), 0)
 	}
 	if err := c.persistReplay(additions, stale, to); err != nil {
+		collector.EmitCheckpointPersistError(e, c.Name())
 		// The processor has already emitted accepted data. Returning an error is
 		// intentional: the scheduler must not advance its high-water mark when
 		// the durable replay guard was not persisted.
@@ -378,14 +380,12 @@ func (c *Collector) replayContains(digest string) bool {
 }
 
 // loadReplayState restores only this collector's digest-only state, pruning
-// malformed, expired, and over-capacity entries deterministically. New cannot
-// return an error, so a cleanup failure is carried into CollectWindow where it
-// prevents a scheduler checkpoint advance.
+// malformed and over-capacity entries deterministically. Durable cleanup waits
+// for CollectWindow, where a transient failure can be returned and retried.
 func (c *Collector) loadReplayState() {
 	if !c.replayEnabled() {
 		return
 	}
-	now := c.now()
 	deletes := make([]string, 0)
 	for _, key := range c.replayStore.Keys() {
 		digest, ok := strings.CutPrefix(key, replayKeyPrefix)
@@ -393,7 +393,7 @@ func (c *Collector) loadReplayState() {
 			continue
 		}
 		expiry, exists := c.replayStore.Get(key)
-		if !exists || !validReplayDigest(digest) || expiry.Before(now) {
+		if !exists || !validReplayDigest(digest) {
 			deletes = append(deletes, key)
 			continue
 		}
@@ -402,12 +402,18 @@ func (c *Collector) loadReplayState() {
 	for _, digest := range c.trimReplayCapacity() {
 		deletes = append(deletes, replayKey(digest))
 	}
-	if len(deletes) == 0 {
-		return
+	c.pendingReplayDeletes = uniqueSorted(deletes)
+}
+
+func (c *Collector) retryReplayCleanup() error {
+	if len(c.pendingReplayDeletes) == 0 {
+		return nil
 	}
-	if err := collector.UpdateCheckpointBatch(c.replayStore, nil, uniqueSorted(deletes)); err != nil {
-		c.replayLoadErr = err
+	if err := collector.UpdateCheckpointBatch(c.replayStore, nil, c.pendingReplayDeletes); err != nil {
+		return fmt.Errorf("clean up flow replay checkpoints: %w", err)
 	}
+	c.pendingReplayDeletes = nil
+	return nil
 }
 
 func validReplayDigest(digest string) bool {
@@ -418,16 +424,15 @@ func validReplayDigest(digest string) bool {
 	return err == nil
 }
 
-// pruneExpiredReplay drops identities strictly after their inclusive expiry.
-// Equality remains valid so an overlap exactly at its configured horizon is
-// still protected.
-func (c *Collector) pruneExpiredReplay(now time.Time) []string {
+// pruneExpiredReplay drops identities only once the requested window starts
+// after their acceptance window. API bounds have inclusive second precision.
+func (c *Collector) pruneExpiredReplay(from time.Time) []string {
 	if !c.replayEnabled() {
 		return nil
 	}
 	deletes := make([]string, 0)
 	for digest, expiry := range c.replaySeen {
-		if expiry.Before(now) {
+		if expiry.Before(from.Truncate(time.Second).Add(c.replayOverlap)) {
 			delete(c.replaySeen, digest)
 			deletes = append(deletes, replayKey(digest))
 		}
@@ -445,9 +450,6 @@ func (c *Collector) persistReplay(additions map[string]struct{}, deletes []strin
 	updates := make(map[string]time.Time, len(additions))
 	expiry := to.Add(c.replayOverlap)
 	for digest := range additions {
-		if expiry.Before(c.now()) {
-			continue
-		}
 		c.replaySeen[digest] = expiry
 	}
 	for _, digest := range c.trimReplayCapacity() {
@@ -537,4 +539,16 @@ func (c *Collector) emitFeature(e telemetry.Emitter, enabled bool) {
 func isForbidden(err error) bool {
 	code, ok := tsapi.StatusCode(err)
 	return ok && code == 403
+}
+
+// InitializeCheckpoints refreshes replay identities before the active lifecycle.
+// Constructor state may predate another leader's latest shared checkpoints.
+func (c *Collector) InitializeCheckpoints() error {
+	if !c.replayEnabled() {
+		return nil
+	}
+	clear(c.replaySeen)
+	c.pendingReplayDeletes = nil
+	c.loadReplayState()
+	return nil
 }

@@ -186,6 +186,14 @@ def _exempt(expr):
     return is_count_wrapped(expr) or is_boolean_selection(expr) or "/" in expr
 
 
+def is_duration_rate(expr, metric):
+    """A direct rate of accumulated seconds is seconds per second, not duration."""
+    if "histogram_quantile" in expr or "/" in expr:
+        return False
+    return bool(re.search(r"\b(?:i?rate)\(\s*" + re.escape(metric)
+                          + r"(?:\{[^}]*\})?\s*\[", expr))
+
+
 SECONDS_RE = re.compile(r"_seconds(_bucket|_sum)?$")
 BYTES_RE = re.compile(r"_bytes(_bucket|_sum|_total)?$")
 DAYS_RE = re.compile(r"_days(_bucket|_sum)?$")
@@ -208,6 +216,10 @@ def find_family_violations(doc):
         if _exempt(expr):
             continue
         for metric in metrics_in_expr(expr):
+            if (SECONDS_RE.search(metric) or metric.endswith("_seconds_total")) and is_duration_rate(expr, metric):
+                if metric.endswith(("_seconds_sum", "_seconds_total")) and unit in SECONDS_UNITS:
+                    offenders.append((title, legend, metric, unit, "seconds per second"))
+                continue
             if SECONDS_RE.search(metric):
                 if unit not in SECONDS_UNITS:
                     offenders.append((title, legend, metric, unit, "seconds"))
@@ -324,6 +336,23 @@ class NegativeTestFiresTest(unittest.TestCase):
                 "expr": expr, "legendFormat": "x"}}}}]}},
         }}}}}
 
+    def test_seconds_rate_rejects_duration_units(self):
+        for fn in ("rate", "irate"):
+            doc = self._doc("Accumulated time rate", "timeseries", "s",
+                            "sum(%s(tailscale_synthetic_seconds_sum[5m]))" % fn)
+            self.assertEqual(find_family_violations(doc)[0][4], "seconds per second")
+            doc = self._doc("Accumulated time rate", "timeseries", "none",
+                            "sum(%s(tailscale_synthetic_seconds_sum[5m]))" % fn)
+            self.assertEqual(find_family_violations(doc), [])
+        self.assertFalse(is_duration_rate("histogram_quantile(0.9, rate(tailscale_synthetic_seconds_bucket[5m]))", "tailscale_synthetic_seconds_bucket"))
+        self.assertFalse(is_duration_rate("rate(tailscale_synthetic_seconds_sum[5m])/rate(tailscale_synthetic_seconds_count[5m])", "tailscale_synthetic_seconds_sum"))
+
+    def test_non_duration_rates_keep_their_unit_family_checks(self):
+        for metric, family in (("tailscale_synthetic_bytes_total", "bytes"),
+                               ("tailscale_synthetic_days", "days")):
+            doc = self._doc("Other rate", "timeseries", "s", "rate(%s[5m])" % metric)
+            self.assertEqual(find_family_violations(doc)[0][4], family)
+
     def test_seconds_family_gate_fires_on_a_raw_duration_rendered_short(self):
         doc = self._doc("Fake duration", "stat", "short", "max(tailscale_device_key_expiry_seconds)")
         offenders = find_family_violations(doc)
@@ -423,6 +452,17 @@ class DecimalsAndLegendConventionTest(unittest.TestCase):
     def test_the_legend_calc_check_can_fail(self):
         fake = [("Fake panel", ("mean",))]
         self.assertTrue(any(c for (_t, c) in fake))
+
+
+class FractionAxisBoundsTest(unittest.TestCase):
+    def test_fraction_series_with_a_minimum_have_a_maximum(self):
+        for element in dashboard.build_family()["spec"]["elements"].values():
+            panel = element["spec"]
+            defaults = panel["vizConfig"]["spec"]["fieldConfig"]["defaults"]
+            if panel["vizConfig"]["group"] == "timeseries" and defaults.get("unit") == "percentunit" and "min" in defaults:
+                self.assertIn("max", defaults, panel["title"])
+            if panel["title"] == "Delivery failure ratio by type":
+                self.assertEqual((defaults.get("unit"), defaults.get("min"), defaults.get("max")), ("percentunit", 0, 1))
 
 
 if __name__ == "__main__":

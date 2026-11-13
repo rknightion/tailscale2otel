@@ -383,11 +383,12 @@ helm-lint:
     helm template t {{ chart_dir }} > /dev/null
     deploy/helm/tests/render-tests.sh
 
-# regenerate the chart README + values.schema.json and fail on drift
+# regenerate chart artifacts; fail on drift or a missing or off-pin generator
 [group('check')]
 [script('bash')]
-helm-gen-check: gen-helm
+helm-gen-check:
     set -euo pipefail
+    REGEN_REQUIRE_TOOLS=1 just gen-helm
     if ! git diff --exit-code -- {{ chart_dir }}/README.md {{ chart_dir }}/values.schema.json; then
       echo "::error::chart README.md or values.schema.json is out of date — run 'just gen helm' and commit the result" >&2
       exit 1

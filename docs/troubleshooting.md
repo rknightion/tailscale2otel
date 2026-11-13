@@ -238,14 +238,20 @@ dimensions (`cardinality.flow.source_port` or `cardinality.flow.destination_port
 **Diagnosis.** Watch two self-observability signals:
 
 - `tailscale2otel_series_overflowing_ratio{metric_name="..."}` - `1` when the named metric hit the
-  cap during the last export interval.
+  cap. For cumulative synchronous instruments this remains `1` until process restart;
+  observable snapshots and delta instruments reflect the last interval.
 - `tailscale2otel_series_active{metric_name="..."}` - the active series count, which pins at the
   cap when exceeded.
 - A series with label `otel_metric_overflow="true"` appearing in your metrics store (e.g.
   `tailscale_network_io_bytes_total{otel_metric_overflow="true"}`) is the direct indicator.
 - `tailscale2otel_series_limit` shows the configured cap (emitted only when a positive limit is set).
 
-**Fix.** Either raise the cap or reduce cardinality:
+Cumulative synchronous instruments retain every distinct attribute set since process start,
+including during quiet intervals. Observable gauges count their current snapshot; delta
+instruments reset each interval.
+
+**Fix.** Either raise the cap or reduce cardinality. Restart after changing the configuration
+to clear cumulative series already retained by the SDK:
 
 ```yaml
 cardinality:

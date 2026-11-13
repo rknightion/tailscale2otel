@@ -93,7 +93,7 @@ def tab_health_runtime(scope):
                unit="cps", custom=ts_custom(), options=ts_opts(),
                desc="Completed garbage-collection cycles per second."), 8, 6),
         (panel("GC pause/s", "timeseries", [prom_t("sum(rate(tailscale2otel_runtime_gc_pause_time_seconds_total[%s]))" % RI, legend="pause s/s")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
+               unit="none", custom=dict(ts_custom(), axisLabel="seconds per second"), options=ts_opts(),
                desc="Cumulative stop-the-world GC pause time, as seconds of pause per second "
                     "of wall clock."), 8, 6),
         (panel("GC CPU fraction", "timeseries", [prom_t("max(tailscale2otel_runtime_gc_cpu_fraction_ratio)", legend="gc cpu")],

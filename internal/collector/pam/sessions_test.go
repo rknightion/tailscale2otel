@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -98,8 +100,18 @@ func TestSessionsCollectorReplayAcrossRestartEmitsNoSecondDelta(t *testing.T) {
 		t.Fatalf("first sessions delta = %v, want 1", got)
 	}
 	evidenceKeys := evidence.Keys()
-	if len(evidenceKeys) != 1 || !strings.HasPrefix(evidenceKeys[0], sessionEvidenceKeyPrefix) || strings.Contains(evidenceKeys[0], "stable-session") {
-		t.Fatalf("evidence keys = %v, want one digest-only key", evidenceKeys)
+	if len(evidenceKeys) != 2 {
+		t.Fatalf("evidence keys = %v, want acceptance and open-session digests", evidenceKeys)
+	}
+	for _, prefix := range []string{sessionEvidenceKeyPrefix, "pam/sessions/open/"} {
+		if _, ok := evidence.Get(prefix + sessionDigest("stable-session")); !ok {
+			t.Errorf("missing %s digest", prefix)
+		}
+	}
+	for _, key := range evidenceKeys {
+		if strings.Contains(key, "stable-session") {
+			t.Error("raw session identity persisted")
+		}
 	}
 
 	// Reopen both files to model a process restart rather than retaining the
@@ -471,8 +483,14 @@ func TestSessionsCollectorColdStartHorizon(t *testing.T) {
 			if got := sumMetric(rec, metricSessions); got != float64(tc.want) {
 				t.Errorf("session delta = %v, want %d", got, tc.want)
 			}
-			if got := len(evidence.Keys()); got != 3 {
-				t.Errorf("evidence count = %d, want 3 including old baseline", got)
+			evidenceCount := 0
+			for _, key := range evidence.Keys() {
+				if strings.HasPrefix(key, sessionEvidenceKeyPrefix) {
+					evidenceCount++
+				}
+			}
+			if evidenceCount != 3 {
+				t.Errorf("evidence count = %d, want 3 including old baseline", evidenceCount)
 			}
 			if got, ok := cursors.Get(sessionsCursorKey); !ok || !got.Equal(recent.StartTime) {
 				t.Errorf("cursor = %v, %v; want %v", got, ok, recent.StartTime)
@@ -488,6 +506,196 @@ func TestSessionsCollectorColdStartHorizon(t *testing.T) {
 				if got := sumMetric(replay, metricSessions); got != 0 {
 					t.Errorf("replay delta = %v, want 0", got)
 				}
+			}
+		})
+	}
+}
+
+func TestSessionFirstSeenOpenIsCompletedLater(t *testing.T) {
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprint(restart), func(t *testing.T) {
+			start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+			current := session("example-open-session", start, "ssh")
+			api := sessionAPIFunc(func(context.Context, ...b0api.PageOptions) (b0api.SessionPage, error) {
+				return sessionPage(0, current), nil
+			})
+			cursor, evidence := collector.NewMemoryStore(), collector.NewMemoryStore()
+			c := NewSessions(api, 0, cursor, evidence)
+			rec := telemetrytest.New()
+			if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+				t.Fatal(err)
+			}
+			if got := sumMetric(rec, metricSessions); got != 1 {
+				t.Fatalf("sessions = %v", got)
+			}
+			if len(rec.MetricPoints(metricSessionDuration)) != 0 {
+				t.Fatal("open session has duration")
+			}
+			if restart {
+				c = NewSessions(api, 0, cursor, evidence)
+			}
+			end := start.Add(20 * time.Minute)
+			current.EndTime = &end
+			current.Killed = true
+			for range 2 {
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			points := rec.MetricPoints(metricSessionDuration)
+			if len(points) != 1 || points[0].Count != 1 || points[0].Value != 1200 {
+				t.Errorf("completed duration = %v", points)
+			}
+			if got := sumMetric(rec, metricSessionsKilled); got != 1 {
+				t.Errorf("killed = %v, want 1", got)
+			}
+			if got := sumMetric(rec, metricSessions); got != 1 {
+				t.Errorf("completion recounted acceptance: %v", got)
+			}
+		})
+	}
+}
+
+func TestCompletionScanStopsAtOldestOpenSession(t *testing.T) {
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	oldest := session("example-oldest", start, "ssh")
+	newest := session("example-newest", start.Add(time.Hour), "ssh")
+	tick := 0
+	calls := []int{}
+	api := sessionAPIFunc(func(_ context.Context, opts ...b0api.PageOptions) (b0api.SessionPage, error) {
+		page := opts[0].Page
+		calls = append(calls, page)
+		if tick == 0 {
+			return sessionPage(0, newest, oldest), nil
+		}
+		switch page {
+		case 1:
+			return sessionPage(2, newest), nil
+		case 2:
+			end := start.Add(20 * time.Minute)
+			oldest.EndTime = &end
+			oldest.Killed = true
+			return sessionPage(3, oldest, session("example-older", start.Add(-time.Minute), "ssh")), nil
+		default:
+			t.Errorf("scanned past oldest open start: page %d", page)
+			return sessionPage(0), nil
+		}
+	})
+	c := NewSessions(api, 0, nil, nil)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	tick = 1
+	calls = nil
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []int{1, 2}) {
+		t.Errorf("completion pages = %v, want [1 2]", calls)
+	}
+	if got := sumMetric(rec, metricSessionsKilled); got != 1 {
+		t.Errorf("later-page kill = %v", got)
+	}
+	if got := sumMetric(rec, metricSessions); got != 2 {
+		t.Errorf("extended scan accepted old session: %v", got)
+	}
+}
+
+func TestOpenSessionStateIsBoundedAndExpires(t *testing.T) {
+	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	entries := []b0api.Session{session("example-new", now, "ssh"), session("example-middle", now.Add(-time.Minute), "ssh"), session("example-old", now.Add(-2*time.Minute), "ssh")}
+	api := sessionAPIFunc(func(context.Context, ...b0api.PageOptions) (b0api.SessionPage, error) {
+		return sessionPage(0, entries...), nil
+	})
+	evidence := collector.NewMemoryStore()
+	c := NewSessions(api, 0, nil, evidence, WithSessionEvidenceCapacity(2), WithSessionsLogMaxRecordAge(time.Hour), WithSessionsClock(func() time.Time { return now }))
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, key := range evidence.Keys() {
+		if strings.HasPrefix(key, "pam/sessions/open/") {
+			count++
+		}
+	}
+	if count != 2 {
+		t.Fatalf("durable open count = %d, want 2", count)
+	}
+	if _, ok := evidence.Get("pam/sessions/open/" + sessionDigest("example-old")); ok {
+		t.Error("oldest open session survived capacity trim")
+	}
+	now = now.Add(2 * time.Hour)
+	end := now
+	for i := range entries {
+		entries[i].EndTime = &end
+		entries[i].Killed = true
+	}
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range evidence.Keys() {
+		if strings.HasPrefix(key, "pam/sessions/open/") {
+			t.Error("expired open session remained durable")
+		}
+	}
+	if len(rec.MetricPoints(metricSessionDuration)) != 0 || sumMetric(rec, metricSessionsKilled) != 0 {
+		t.Error("expired session emitted completion")
+	}
+}
+
+func TestSessionCompletionRetriesAfterEvidenceWriteFailure(t *testing.T) {
+	start := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	current := session("example-retry", start, "ssh")
+	api := sessionAPIFunc(func(context.Context, ...b0api.PageOptions) (b0api.SessionPage, error) {
+		return sessionPage(0, current), nil
+	})
+	evidence := &failOnceDeleteStore{CheckpointStore: collector.NewMemoryStore()}
+	c := NewSessions(api, 0, nil, evidence)
+	rec := telemetrytest.New()
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	end := start.Add(time.Minute)
+	current.EndTime = &end
+	current.Killed = true
+	evidence.fail = true
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("expected completion persistence failure")
+	}
+	if _, ok := evidence.Get("pam/sessions/open/" + sessionDigest(current.SessionID)); !ok {
+		t.Fatal("failed completion lost durable open state")
+	}
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if points := rec.MetricPoints(metricSessionDuration); len(points) != 1 || points[0].Count != 2 {
+		t.Errorf("completion retry must be at-least-once: %v", points)
+	}
+	if got := sumMetric(rec, metricSessions); got != 1 {
+		t.Errorf("completion retry repeated acceptance: %v", got)
+	}
+	if _, ok := evidence.Get("pam/sessions/open/" + sessionDigest(current.SessionID)); ok {
+		t.Error("successful completion kept durable open state")
+	}
+}
+
+func TestUntrackableOpenSessionPreservesAcceptanceKill(t *testing.T) {
+	for _, entry := range []b0api.Session{
+		{StartTime: time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC), Killed: true, SessionType: "ssh"},
+		{SessionID: "example-no-start", Killed: true, SessionType: "ssh"},
+	} {
+		t.Run(entry.SessionID, func(t *testing.T) {
+			api := sessionAPIFunc(func(context.Context, ...b0api.PageOptions) (b0api.SessionPage, error) {
+				return sessionPage(0, entry), nil
+			})
+			rec := telemetrytest.New()
+			if err := NewSessions(api, 0, nil, nil).Collect(context.Background(), rec.Emitter()); err != nil {
+				t.Fatal(err)
+			}
+			if got := sumMetric(rec, metricSessionsKilled); got != 1 {
+				t.Errorf("untrackable session kill = %v, want existing acceptance behavior", got)
 			}
 		})
 	}

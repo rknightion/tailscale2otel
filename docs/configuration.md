@@ -1241,6 +1241,17 @@ polled or streamed one and reaches the same processor. The export additionally c
 publisher timestamp, which supplies the ingest freshness/lag view; the polled API carries a `type`
 field the export does not. Neither field is required.
 
+### `collectors.k8s_audit`
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `collectors.k8s_audit.enabled` | `false` | Collect Kubernetes audit events from object storage. |
+
+The keys under `collectors.k8s_audit.objectstore.*` are the same as
+`collectors.flowlogs.objectstore`, except that `layout` defaults to `recorder`.
+Object storage is the only source, so there is no `source` key. See
+[Kubernetes audit collection](kubernetes-audit.md) for setup.
+
 ### Snapshot collectors
 
 | Key | Default | Description |
@@ -1363,7 +1374,7 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 | `include_tags` | `[]` | If non-empty, only devices with one of these tags (e.g. `["tag:server"]`). |
 | `exclude_tags` | `[]` | Devices with any of these tags are skipped (wins over `include_tags`). |
 | `address_order` | `ipv4` | Preferred address family, `ipv4` \| `ipv6` (falls back to the other). |
-| `instance_source` | `name` | Identity-label source: `name` (MagicDNS short name - unique per tailnet **and** human-friendly; the default), `address` (Tailscale host:port - always unique), or `hostname` (OS hostname - **not** unique; collisions like `localhost` are auto-suffixed with the address + a WARN). |
+| `instance_source` | `name` | Identity-label source: `name` (MagicDNS short name - unique per tailnet **and** human-friendly; the default), `address` (Tailscale host:port - always unique), or `hostname` (OS hostname - every label is suffixed with `@<address>` to keep devices distinct, with the port before the suffix for multiple ports). The hostname form is removed when `pii_filter.tailscale_ips` is `false`; use `name` for a unique label without an address. |
 | `include_host_labels` | `true` | Attach `host.name`/`host.id` for joins with `tailscale.device.*`. |
 | `include_tags_label` | `true` | Attach `tailscale.tags`. |
 
@@ -1779,7 +1790,7 @@ Tailscale IPs, for example.
 | `pii_filter.service_addrs` | `true` | VIP service names and optional display names from the Tailscale Services collector. |
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability metrics and spans. The path embeds the tailnet name and device IDs, so `false` drops `url.full` and `tailscale.endpoint` from exported spans and scrubs the URL out of span status descriptions and error events. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
-| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical - they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
+| `pii_filter.tailnet_name` | `true` | The tailnet identifier (e.g. `example.com` or the numeric tailnet ID). Disabling it also omits the universal `tailscale.tailnet` attribute from every metric, log, and span. The configured name is also scrubbed out of surviving span attribute values. **On the OTLP push path** each tailnet stays distinct (its own `service.instance.id` target). **On the Prometheus `/metrics` pull path** `tailscale_tailnet` is the only per-tailnet distinguisher, so disabling it in multi-tailnet mode makes the per-tailnet series identical - they collapse to one (the scrape still returns 200; a startup warning flags the lost breakdown). |
 | `pii_filter.free_text_details` | `true` | Audit `old`/`new`/`details` payloads, target names, key descriptions, and posture values. Also governs **span status descriptions** - see the note below. |
 | `pii_filter.command_text` | `true` | The verbatim `kubectl exec` command line on Kubernetes-audit logs (`tailscale.k8s.command`). Separate from `free_text_details` because it is the only attribute a human types at a shell, so it can carry a pasted secret. Setting it to `false` **keeps** the bounded `tailscale.k8s.command_class` classification that the exec metrics are built on. |
 
@@ -2072,6 +2083,15 @@ Tailscale data. The pprof handlers mount on the admin server.
 | `profiling.pyroscope.server_address` | `""` | Pyroscope/Grafana Cloud Profiles URL. **Required when `pyroscope.enabled`.** |
 | `profiling.pyroscope.basic_auth_user` | `""` | Grafana Cloud: the profiles instance ID (Basic-auth user). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_USER`. |
 | `profiling.pyroscope.basic_auth_password` | `""` | Grafana Cloud: an access-policy token with `profiles:write` (Basic-auth password). Set via `TS2OTEL_PROFILING__PYROSCOPE__BASIC_AUTH_PASSWORD`. |
+| `profiling.pyroscope.basic_auth_password_file` | `""` | Read the password from a whitespace-trimmed file, for example a Docker secret. Set the value or the file, not both. |
+| `profiling.pyroscope.headers` | `{}` | Extra HTTP headers on profile uploads. Values are secrets and redact from status and logs; reserved authorization and tenant headers take precedence. |
+| `profiling.pyroscope.tls.insecure_skip_verify` | `false` | Skip server-certificate verification while retaining TLS. Prefer `ca_file`. |
+| `profiling.pyroscope.tls.ca_file` | `""` | PEM CA bundle trusted by the outbound profiles client. |
+| `profiling.pyroscope.tls.cert_file` | `""` | Client certificate for mutual TLS. Set together with `key_file`. |
+| `profiling.pyroscope.tls.key_file` | `""` | Client key for `profiling.pyroscope.tls.cert_file`. |
+| `profiling.pyroscope.span_profiles.enabled` | `false` | Correlate sampled CPU profiles with trace spans. Requires tracing and Pyroscope; other profile types cannot carry span identity. |
+| `profiling.pyroscope.credential_reload.enabled` | `false` | Run the background poller for password, header and TLS file rotation without restarting. |
+| `profiling.pyroscope.credential_reload.interval` | `30s` | Credential-file poll period, minimum `5s`. Ignored when reload is disabled. |
 | `profiling.pyroscope.tenant_id` | `""` | `X-Scope-OrgID` for multi-tenant servers (leave empty for Grafana Cloud). |
 | `profiling.pyroscope.upload_rate` | `60s` | How often profiles are flushed to the server. |
 | `profiling.pyroscope.tags` | `{}` | Extra static labels merged onto every profile, e.g. `{ env: prod }`. Must be set via YAML (map field). |

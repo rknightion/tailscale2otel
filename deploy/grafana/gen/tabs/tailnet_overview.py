@@ -50,7 +50,7 @@ simply has no data — which is why `test_sentinel_registry` checks resolution p
 scope rather than merely that the name exists somewhere.
 """
 
-from builder import (acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
+from builder import (joined, acl_change_evidence, autogrid_row, lot, merge, organize, panel, prom_t, raw_sentinel, RI,
                      row, sentinel, stat_opts, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, BOOL_HEALTHY_ON, UP_MAP
 
@@ -179,7 +179,7 @@ def tab_tailnet_overview(scope):
                unit="short", options=stat_opts(color="value"),
                novalue=FLEET_MISSING, mappings=missing_map(FLEET_MISSING),
                desc="Devices currently reporting online, the total the exporter can see, and "
-                    "the remainder offline (normal for laptops and phones)."), 6, 5),
+                    "the remainder offline (normal for laptops and phones)."), 5, 5),
         # No zero-fill: update availability is suppressed entirely when the control plane
         # does not report it (Headscale) or per-device metrics are off, and "0 updates
         # needed" is a different statement from "we were not told" (#385).
@@ -189,14 +189,14 @@ def tab_tailnet_overview(scope):
                options=stat_opts(color="value"),
                novalue="No device update data — needs the devices collector and a control plane "
                        "that reports update availability.",
-               desc="Devices with a Tailscale client update waiting."), 4, 5),
+               desc="Devices with a Tailscale client update waiting."), 3, 5),
         (panel("Users", "stat",
                [prom_t("sum(max by (tailscale_user_role, tailscale_user_status, tailscale_user_type) (%s)) or (%s)"
                        % (lot(sel("tailscale_users_count_ratio"), WIN_SLOW),
                           listing_zero("users", "listUsers", WIN_SLOW)))],
                unit="short", options=stat_opts(),
                novalue=USER_MISSING, mappings=missing_map(USER_MISSING),
-               desc="Users known to the tailnet, across every role, status and type."), 4, 5),
+               desc="Users known to the tailnet, across every role, status and type."), 3, 5),
         (panel("Device keys ≤7d", "stat",
                [prom_t("count((%s - time() < 7*86400) and (%s - time() > 0)) or %s"
                        % (lot(sel("tailscale_device_key_expiry_seconds"), WIN_SLOW),
@@ -214,7 +214,7 @@ def tab_tailnet_overview(scope):
                unit="s", options=stat_opts(graph="none"),
                desc="Prefers the configuration-audit event's source timestamp. Until one has "
                     "been observed, shows when this exporter first observed the current ETag; "
-                    "that approximation survives restart only with a durable checkpoint store."), 3, 5),
+                    "that approximation survives restart only with a durable checkpoint store."), 6, 5),
         (panel("Flow logging", "stat",
                [prom_t("max(%s)" % lot('tailscale_feature_enabled_ratio{tailscale_feature="network_flow_logging"}',
                                        WIN_SLOW))],
@@ -381,12 +381,12 @@ def tab_tailnet_overview(scope):
                desc="Control-plane provider (tailscale, headscale) and its active series "
                     "count."), 18, 5),
         (panel("Tailnet scorecard", "table",
-               [prom_t('sum by (tailscale_tailnet) (tailscale_device_online_ratio{%s} == 1)' % _TN,
+               [prom_t(joined('sum by (tailscale_tailnet, tailscale2otel_provider) (tailscale_device_online_ratio{%s} == 1)' % _TN, []),
                        instant=True, fmt="table"),
-                prom_t('max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{%s})' % _TN,
+                prom_t(joined('max by (tailscale_tailnet, tailscale2otel_provider) (tailscale2otel_scrape_staleness_seconds{%s})' % _TN, []),
                        instant=True, fmt="table"),
-                prom_t('sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total'
-                       '{http_response_status_code=~"4..|5..", %s}[%s]))' % (_TN, RI),
+                prom_t(joined('sum by (tailscale_tailnet, tailscale2otel_provider) (rate(tailscale2otel_api_requests_total'
+                       '{http_response_status_code=~"4..|5..", %s}[%s]))' % (_TN, RI), []),
                        instant=True, fmt="table")],
                transformations=[
                    merge(),

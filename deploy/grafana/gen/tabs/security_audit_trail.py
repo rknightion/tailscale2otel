@@ -70,7 +70,7 @@ def tab_security_audit_trail(scope):
     # -----------------------------------------------------------------------
     audit = [
         (panel("Audit actions over time", "timeseries",
-               [loki_t("sum by (tailscale_audit_action) (count_over_time(%s [$__auto]))" % AUD,
+               [loki_t("sum by (tailscale_audit_action) (rate(%s [$__auto]))" % AUD,
                        legend="{{tailscale_audit_action}}")],
                unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right"),
                desc="Config-audit events over time, by action (create/update/delete/...)."), 12, 7),
@@ -88,14 +88,14 @@ def tab_security_audit_trail(scope):
                desc="Audit events emitted at WARN (the event carried an error)."), 6, 7),
         (panel("Audit events by target type", "timeseries",
                [loki_t("sum by (tailscale_target_type) "
-                       "(count_over_time(%s | tailscale_target_type != `` [$__auto]))" % AUD,
+                       "(rate(%s | tailscale_target_type != `` [$__auto]))" % AUD,
                        legend="{{tailscale_target_type}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                desc="Config-audit events over time, by the kind of object changed."), 24, 7),
         # merged in from the former single-panel "Audit action breakdown" row.
         (panel("Audit action breakdown (logs)", "timeseries",
                [loki_t("sum by (tailscale_audit_action, tailscale_target_type) "
-                       "(count_over_time(%s [$__auto]))" % AUD,
+                       "(rate(%s [$__auto]))" % AUD,
                        legend="{{tailscale_audit_action}}/{{tailscale_target_type}}")],
                unit="cps", novalue="0", custom=ts_custom(stack="normal"), options=ts_opts(placement="right"),
                desc="Audit log action/target-type breakdown — no actor identity, safe to show when PII redaction is active."), 24, 7),
@@ -112,14 +112,14 @@ def tab_security_audit_trail(scope):
         # aggregation pattern here is the range timeseries (see "Log volume by event").
         (panel("Top $topn actors over time", "timeseries",
                [loki_t("topk($topn, sum by (user_name) "
-                       "(count_over_time(%s | user_name != `` [$__auto])))" % AUD,
+                       "(rate(%s | user_name != `` [$__auto])))" % AUD,
                        legend="{{user_name}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Top-N config-change actors by event count. Hidden on explicit PII redaction "
                     "of actor identity."), 12, 8),
         (panel("Top $topn targets over time", "timeseries",
                [loki_t("topk($topn, sum by (tailscale_target_name) "
-                       "(count_over_time(%s | tailscale_target_name != `` [$__auto])))" % AUD,
+                       "(rate(%s | tailscale_target_name != `` [$__auto])))" % AUD,
                        legend="{{tailscale_target_name}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Top-N config-change targets by event count. Hidden on explicit PII redaction "
@@ -137,7 +137,7 @@ def tab_security_audit_trail(scope):
                     "from the established baseline to investigate a missing ingestion path."), 24, 8),
         (panel("Recent configuration changes", "logs",
                [loki_t("%s |~ `$log_filter`" % AUD, maxlines=200)],
-               options=logs_opts(), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
+               options=logs_opts(wrap=False), desc="Live audit stream; filter with the Log filter variable."), 24, 10),
     ]
 
     # -----------------------------------------------------------------------
@@ -149,10 +149,10 @@ def tab_security_audit_trail(scope):
     logstream = [
         (panel("Log stream — $log_event", "logs",
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=~`$log_event` |~ `$log_filter`", maxlines=300)],
-               options=logs_opts(),
+               options=logs_opts(wrap=False),
                desc="Pick an event type with the Log event variable; filter with Log filter."), 16, 11),
         (panel("Log volume by event", "timeseries",
-               [loki_t("sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | event_name != `` [$__auto]))",
+               [loki_t("sum by (event_name) (rate({service_name=\"tailscale2otel\"} | event_name != `` [$__auto]))",
                        legend="{{event_name}}")],
                unit="cps", custom=ts_custom(stack="normal", fill=30), options=ts_opts(placement="right"),
                desc="Volume of every exporter log event by event_name — the denominator for the "

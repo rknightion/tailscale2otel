@@ -1,6 +1,7 @@
 package sqlitestore
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -152,9 +153,10 @@ func TestRecentPage_CursorPaginationWalksAllRowsOnceEach(t *testing.T) {
 
 	seen := map[time.Time]bool{}
 	var cursor uint64
+	var cursorTime time.Time
 	pages := 0
 	for {
-		page := s.RecentPage(flowstore.RecentQuery{Limit: 7, Cursor: cursor})
+		page := s.RecentPage(flowstore.RecentQuery{Limit: 7, Cursor: cursor, CursorTime: cursorTime})
 		if page.Matched != n {
 			t.Fatalf("page %d: Matched want %d, got %d", pages, n, page.Matched)
 		}
@@ -169,6 +171,7 @@ func TestRecentPage_CursorPaginationWalksAllRowsOnceEach(t *testing.T) {
 			break
 		}
 		cursor = page.NextCursor
+		cursorTime = page.NextCursorTime
 		if pages > n {
 			t.Fatalf("pagination did not terminate")
 		}
@@ -379,5 +382,29 @@ func TestRecentPage_FilterEscapesLikeWildcards(t *testing.T) {
 	underscorePage := s.RecentPage(flowstore.RecentQuery{Limit: 10, Filter: flowstore.RecentFilter{Device: "host_literal"}})
 	if underscorePage.Matched != 1 {
 		t.Fatalf("'_' filter: want exactly 1 literal match, got %d", underscorePage.Matched)
+	}
+}
+
+func TestRecentPageOutOfOrderInsertReturnsEveryRow(t *testing.T) {
+	s := openRecentTestStore(t, nil)
+	now := time.Now()
+	for i, minutes := range []int{10, 20, 5, 10} {
+		insertFlow(t, s, map[string]any{"time": timeToDB(now.Add(-time.Duration(minutes) * time.Minute)), "tx_bytes": i + 1})
+	}
+	q := flowstore.RecentQuery{End: now, Limit: 2}
+	var got []int64
+	for range 5 {
+		page := s.RecentPage(q)
+		for _, row := range page.Rows {
+			got = append(got, row.Counts.TxBytes)
+		}
+		if page.NextCursor == 0 {
+			break
+		}
+		q.Cursor, q.CursorTime = page.NextCursor, page.NextCursorTime
+	}
+	want := []int64{3, 4, 1, 2}
+	if !slices.Equal(got, want) {
+		t.Fatalf("paged rows = %v, want %v", got, want)
 	}
 }

@@ -37,6 +37,10 @@ runs:
         INPUTS_TITLE: ${{ inputs.title }}
       run: |
         set -euo pipefail
+        if ! gh api "repos/${GITHUB_REPOSITORY}/labels/${INPUTS_LANE_LABEL}" --silent; then
+          echo "::error title=report-drift::label ${INPUTS_LANE_LABEL} does not exist, so no tracking issue can be filed; create it with the command in .github/actions/report-drift/README.md"
+          exit 1
+        fi
         existing=$(gh issue list --label "${INPUTS_LANE_LABEL}" --state open --json number -q '.[0].number // empty')
         if [ -n "$existing" ]; then
           gh issue comment "$existing" --body-file "${INPUTS_REPORT_PATH}"

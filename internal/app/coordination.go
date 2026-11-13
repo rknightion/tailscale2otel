@@ -11,6 +11,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
@@ -77,7 +78,7 @@ func (a *App) runCoordinated(ctx context.Context) error {
 		return err
 	}
 	err = c.Run(ctx, func(activeCtx context.Context) error {
-		return a.runActive(activeCtx, false)
+		return a.runPromoted(activeCtx)
 	})
 	if errors.Is(err, coordination.ErrLeadershipLost) {
 		// Demotion is an expected, successful process exit. The active callback
@@ -169,4 +170,13 @@ func (a *App) markCoordinationSteppedDown() {
 	}
 	status.State = coordination.StateSteppedDown
 	a.observeCoordination(status)
+}
+
+func (a *App) runPromoted(ctx context.Context) error {
+	if reloader, ok := a.store.(collector.CheckpointReloader); ok {
+		if err := reloader.Reload(ctx); err != nil {
+			return fmt.Errorf("reload checkpoints on promotion: %w", err)
+		}
+	}
+	return a.runActive(ctx, false)
 }

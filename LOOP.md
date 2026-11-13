@@ -59,7 +59,8 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
   drops out.
 - A breaking change that cuts a new major needs `just bump-major` landed on `main` before the
   release PR merges; release-please does not maintain the module path.
-- Never hand-edit anything under `deploy/grafana` or `deploy/alerts`, or text between
+- Never hand-edit a generated dashboard or rule file under `deploy/grafana` or `deploy/alerts`
+  (the two `README.md` files and the `gen/` and `tests/` sources there are hand-maintained), or text between
   `<!-- BEGIN GENERATED -->` markers; run the matching `just gen-<family>`. Regenerating
   `internal/catalog/signal_dispositions.json` cannot turn a red coverage gate green.
 - OpenTelemetry modules (core, metric and trace SDKs, `sdk/log` at v1.x, and the 0.x log

@@ -130,12 +130,12 @@ def tab_health_ingestion(scope):
                 prom_t("max(%s)" % lot("tailscale2otel_objectstore_discovered_newest_age_seconds"), legend="newest object age", refid="B")],
                unit="s", options=stat_opts(graph="area"),
                mappings=vmap({"-1": {"text": "no timestamped object listed", "color": "orange", "index": 0}}),
-               novalue=_OBJ_EMPTY,
+               novalue="No object-store feed",
                desc="End-to-end ingestion lag (now minus the last cycle's persisted timestamp) "
                     "beside how fresh the EXPORT's own writes are, independent of what was "
                     "ingested. -1 on the second series means the cycle listed no object with a "
                     "usable timestamp, deliberately distinguishable from a fresh zero-second "
-                    "age."), 8, 6),
+                    "age. When empty: " + _OBJ_EMPTY), 8, 6),
         (panel("Object-store gaps clear", "stat",
                [prom_t("min(%s)" % lot("tailscale2otel_objectstore_gap_healthy_ratio"))],
                mappings=bool_map("GAPS", "CLEAN", "red", "green"),
@@ -203,7 +203,7 @@ def tab_health_ingestion(scope):
                     "and attempts stopped by a configured wire-byte/decompressed-byte/record-"
                     "count budget."), 12, 7),
         (panel("Undecodable objects (broken feed)", "stat",
-               [prom_t('sum(increase(tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}[$__range])) or vector(0)',
+               [prom_t('sum(increase(tailscale2otel_objectstore_skipped_total{reason="undecodable_object"}[$__range])) or (0 * count(last_over_time(tailscale2otel_objectstore_gap_healthy_ratio[10m])))',
                        instant=True)],
                unit="short", thresholds=thr([(None, "green"), (1, "red")]),
                options=stat_opts(color="background"), novalue=_OBJ_EMPTY,

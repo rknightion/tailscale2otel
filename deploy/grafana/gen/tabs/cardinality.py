@@ -9,7 +9,7 @@ duplicates of panels already on this tab, so nothing was added:
     viz options) to the two panels already in the "Cross-source dedup" row below — dropped,
     the existing row already charts both metrics.
   - "Active series by metric (top $topn)" was the same query, legend, unit and viz config as
-    the existing "Active series over time (top $topn)" panel in the "Series budget" row
+    the existing "Series cap utilization over time (top $topn)" panel in the "Series budget" row
     below (just a different title) — dropped as a duplicate. That existing panel was
     missing its `desc=` (a pre-existing gap predating #526); fixed here as part of this
     consolidation since it's the panel now doing double duty.
@@ -77,10 +77,10 @@ def tab_cardinality(scope):
                     "Total active series separately sums reporter series counts as a cost proxy."), 6, 5),
     ]
     budget = [
-        (panel("Active series over time (top $topn)", "timeseries",
+        (panel("Series cap utilization over time (top $topn)", "timeseries",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active) "
                        "/ on() group_left() (max(tailscale2otel_series_limit) > 0))" + _CAPACITY_GUARD, legend="{{metric_name}}")],
-               unit="percentunit", min_=0, max_=1, custom=ts_custom(),
+               unit="percentunit", min_=0, max_=1, custom=dict(ts_custom(), axisLabel="share of series cap"),
                options=ts_opts(placement="right"), novalue=_NO_CAP,
                desc="Per-metric utilization of the configured series cap over time, top-N. "
                     "Watch the flow families. Observed reporters only; a visible reporter without a positive "
@@ -148,7 +148,7 @@ def tab_cardinality(scope):
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],
                    rename={"metric_name": "Metric", "Value": "Utilization"})],
-               novalue=_NO_CAP,
+               unit="percentunit", novalue=_NO_CAP,
                desc="Per-metric active-series count divided by the series limit — utilization as a fraction. "
                     "1.0 = at cap relative to the maximum observed positive limit. Uses / on() group_left() "
                     "for the aggregate limit. Observed reporters only: a visible reporter without a positive "
@@ -212,12 +212,12 @@ def tab_cardinality(scope):
     # New row: ingest vs export cost (Task 1.8 Step 3 + 1H.3)
     cost = [
         (panel("Ingest vs export cost (per minute)", "timeseries",
-               [prom_t("rate(tailscale2otel_export_datapoints_total[%s])*60" % RI, legend="DPM (datapoints/min)"),
-                prom_t("rate(tailscale2otel_export_log_records_total[%s])*60" % RI, legend="LPM (log rec/min)"),
-                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))" % RI,
-                       legend="{{source}}/{{signal}} ingest rec/s")],
+               [prom_t("sum(rate(tailscale2otel_export_datapoints_total[%s]))*60" % RI, legend="exported datapoints/min"),
+                prom_t("sum(rate(tailscale2otel_export_log_records_total[%s]))*60" % RI, legend="exported log records/min"),
+                prom_t("sum by (source, signal) (rate(tailscale2otel_ingest_records_total[%s]))*60" % RI,
+                       legend="{{source}}/{{signal}} ingested records/min")],
                unit="short", custom=ts_custom(), options=ts_opts(placement="right"),
-               desc="Export datapoints/min and log records/min (ingest cost) alongside per-source ingest rate. "
+               desc="Exported datapoints, exported log records and per-source ingested records, all per minute. "
                     "Rising DPM driven by a single source → check that group in 'Active series by group'."), 24, 8),
     ]
 
@@ -237,6 +237,9 @@ def tab_cardinality(scope):
                 prom_t("sum(last_over_time(tailscale2otel_series_by_group{metric_group=\"other\"}[%s]))" % WIN_FAST,
                        legend="forwarded/uncataloged series active", refid="B")],
                unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
+               overrides=[{"matcher": {"id": "byName", "options": "forwarded/uncataloged series active"},
+                           "properties": [{"id": "unit", "value": "short"},
+                                          {"id": "custom.axisPlacement", "value": "right"}]}],
                novalue="No node-metrics name-budget series. Requires node_metrics.enabled with at "
                        "least one target, and self_observability.enabled.",
                desc="Samples dropped because their metric NAME had not been seen before and the "

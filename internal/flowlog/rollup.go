@@ -18,8 +18,9 @@ const (
 )
 
 // defaultRollupTopN bounds the number of busiest src/dst node pairs kept per
-// flush when RollupTopN is unset (<= 0). Comfortably under the per-instrument
-// cardinality cap (cardinality.metric_limit, default 10000).
+// flush when RollupTopN is unset (<= 0). This bounds each flush, not lifetime
+// series: cumulative instruments retain changing pairs across flushes and can
+// still reach cardinality.metric_limit (default 10000).
 const defaultRollupTopN = 500
 
 // Insert-time safety caps on the live accumulator maps. Unlike topN (which is
@@ -108,10 +109,11 @@ type rollupAccumulator struct {
 	identity bool
 	geo      bool
 
-	mu       sync.Mutex
-	entries  map[rollupKey]*rollupEntry
-	dstPeers map[string]map[string]struct{} // srcNode -> distinct dstNode set
-	dstPorts map[string]map[string]struct{} // srcNode -> distinct dstPort set
+	uniquePublished bool // guarded by mu; an idle interval clears the previous snapshot
+	mu              sync.Mutex
+	entries         map[rollupKey]*rollupEntry
+	dstPeers        map[string]map[string]struct{} // srcNode -> distinct dstNode set
+	dstPorts        map[string]map[string]struct{} // srcNode -> distinct dstPort set
 }
 
 // newRollupAccumulator returns an accumulator keeping the busiest topN node pairs
@@ -287,17 +289,42 @@ func (a *rollupAccumulator) Flush(e telemetry.Emitter) {
 	if a == nil {
 		return
 	}
+	a.flush(e, nil)
+}
+
+// flush transfers request-local unique sets to the shared interval when merge
+// is set. Only the shared accumulator owns whole-family snapshot publication.
+func (a *rollupAccumulator) flush(e telemetry.Emitter, merge *rollupAccumulator) {
 	a.mu.Lock()
-	entries := a.entries
-	dstPeers := a.dstPeers
-	dstPorts := a.dstPorts
+	entries, dstPeers, dstPorts := a.entries, a.dstPeers, a.dstPorts
+	clear := a.uniquePublished
+	a.uniquePublished = len(dstPeers) != 0 || len(dstPorts) != 0
+	publish := a.uniquePublished || clear
 	a.entries = map[rollupKey]*rollupEntry{}
 	a.dstPeers = map[string]map[string]struct{}{}
 	a.dstPorts = map[string]map[string]struct{}{}
 	a.mu.Unlock()
-
 	a.flushCounters(e, entries)
-	a.flushUnique(e, dstPeers, dstPorts)
+	if merge != nil {
+		merge.mergeUnique(dstPeers, dstPorts)
+	} else if publish {
+		a.flushUnique(e, dstPeers, dstPorts)
+	}
+}
+
+func (a *rollupAccumulator) mergeUnique(dstPeers, dstPorts map[string]map[string]struct{}) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for src, peers := range dstPeers {
+		for peer := range peers {
+			addToSet(a.dstPeers, src, peer)
+		}
+	}
+	for src, ports := range dstPorts {
+		for port := range ports {
+			addToSet(a.dstPorts, src, port)
+		}
+	}
 }
 
 // keyedEntry pairs a rollupKey with its accumulated entry for sorting.
@@ -389,14 +416,16 @@ func (a *rollupAccumulator) emitEntry(e telemetry.Emitter, k rollupKey, en *roll
 // flushUnique emits one gauge per source node for the distinct destination-peer
 // and destination-port counts observed this interval.
 func (a *rollupAccumulator) flushUnique(e telemetry.Emitter, dstPeers, dstPorts map[string]map[string]struct{}) {
+	peers := make([]telemetry.GaugePoint, 0, len(dstPeers))
 	for src, set := range dstPeers {
-		e.Gauge(docUniqueDstPeers.Name, docUniqueDstPeers.Unit, docUniqueDstPeers.Description,
-			float64(len(set)), telemetry.Attrs{semconv.AttrSrcNode: src})
+		peers = append(peers, telemetry.GaugePoint{Value: float64(len(set)), Attrs: telemetry.Attrs{semconv.AttrSrcNode: src}})
 	}
+	ports := make([]telemetry.GaugePoint, 0, len(dstPorts))
 	for src, set := range dstPorts {
-		e.Gauge(docUniqueDstPorts.Name, docUniqueDstPorts.Unit, docUniqueDstPorts.Description,
-			float64(len(set)), telemetry.Attrs{semconv.AttrSrcNode: src})
+		ports = append(ports, telemetry.GaugePoint{Value: float64(len(set)), Attrs: telemetry.Attrs{semconv.AttrSrcNode: src}})
 	}
+	e.GaugeSnapshot(docUniqueDstPeers.Name, docUniqueDstPeers.Unit, docUniqueDstPeers.Description, peers)
+	e.GaugeSnapshot(docUniqueDstPorts.Name, docUniqueDstPorts.Unit, docUniqueDstPorts.Description, ports)
 }
 
 // attrs builds the base metric attribute set for a key, omitting empty dimensions.
@@ -479,12 +508,14 @@ func (a *rollupAccumulator) Stage() telemetry.CollectionStage {
 		return nil
 	}
 	a.mu.Lock()
-	if len(a.entries) == 0 && len(a.dstPeers) == 0 && len(a.dstPorts) == 0 {
+	if len(a.entries) == 0 && len(a.dstPeers) == 0 && len(a.dstPorts) == 0 && !a.uniquePublished {
 		a.mu.Unlock()
 		return nil
 	}
 	detached := newRollupAccumulator(a.topN, a.nodes, a.identity, a.geo)
 	detached.entries, detached.dstPeers, detached.dstPorts = a.entries, a.dstPeers, a.dstPorts
+	detached.uniquePublished = a.uniquePublished
+	a.uniquePublished = len(a.dstPeers) != 0 || len(a.dstPorts) != 0
 	a.entries = map[rollupKey]*rollupEntry{}
 	a.dstPeers = map[string]map[string]struct{}{}
 	a.dstPorts = map[string]map[string]struct{}{}

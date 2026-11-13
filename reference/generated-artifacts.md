@@ -17,6 +17,8 @@ names use the spaced spelling.
   `losisin/helm-docs-github-action` or `losisin/helm-values-schema-json-action` in
   `.github/workflows/helm.yml`, re-derive the justfile pins. The generation script verifies the
   installed version against the pin and SKIPs loudly rather than writing a wrong file.
+  `just helm-gen-check` fails when a generator is missing or off its pin; run `just setup` or
+  `just gen-tools` to repair it.
 - A plain `go install .../helm-docs@<ver>` yields a binary that reports **no version**, because
   helm-docs reads its version from a build-time ldflag rather than Go build info. The chart README
   template guards its version footer with `{{ if .HelmDocsVersion }}`, so that binary silently drops

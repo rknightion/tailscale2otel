@@ -55,3 +55,23 @@ class LokiMacroTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class AuditRateUnitsTest(unittest.TestCase):
+    def test_audit_rates_do_not_label_step_counts_as_per_second(self):
+        names = {'Audit actions over time', 'Audit events by target type', 'Audit action breakdown (logs)',
+                 'Top $topn actors over time', 'Top $topn targets over time', 'Log volume by event'}
+        seen = set()
+        for element in build.build_family()['spec']['elements'].values():
+            panel = element['spec']
+            unit = panel['vizConfig']['spec']['fieldConfig']['defaults'].get('unit')
+            for query in panel['data']['spec']['queries']:
+                spec = query['spec']['query']['spec']
+                expr = spec.get('expr', '')
+                if unit == 'cps' and '$__auto' in expr:
+                    self.assertNotIn('count_over_time(', expr, panel['title'])
+                if panel['title'] in names:
+                    self.assertIn('rate(', expr)
+                    self.assertIn('$__auto', expr)
+                    self.assertEqual(unit, 'cps')
+                    seen.add(panel['title'])
+        self.assertEqual(seen, names)

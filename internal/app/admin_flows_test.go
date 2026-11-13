@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -598,11 +599,12 @@ func TestFlowsJSON_MalformedCursorFallsBackToNewest(t *testing.T) {
 // indirectly through the whole handler.
 func TestFlowsCursor_RoundTrips(t *testing.T) {
 	for _, seq := range []uint64{1, 42, 999999999} {
-		wire := encodeFlowsCursor(seq)
+		at := time.Unix(123, 456)
+		wire := encodeFlowsCursor(seq, at)
 		if wire == "" {
 			t.Fatalf("seq %d encoded to empty string", seq)
 		}
-		if got := decodeFlowsCursor(wire); got != seq {
+		if got, stamp := decodeFlowsCursor(wire); got != seq || !stamp.Equal(at) {
 			t.Errorf("decodeFlowsCursor(encodeFlowsCursor(%d)) = %d", seq, got)
 		}
 	}
@@ -613,8 +615,8 @@ func TestFlowsCursor_RoundTrips(t *testing.T) {
 // newest" — so a page whose NextCursor is 0 produces a URL the page can
 // simply omit ?cursor= from rather than round-tripping a sentinel value.
 func TestFlowsCursor_ZeroEncodesToEmpty(t *testing.T) {
-	if got := encodeFlowsCursor(0); got != "" {
-		t.Errorf("encodeFlowsCursor(0) = %q, want empty", got)
+	if got := encodeFlowsCursor(0, time.Time{}); got != "" {
+		t.Errorf("encodeFlowsCursor(0,time.Time{}) = %q, want empty", got)
 	}
 }
 
@@ -622,8 +624,8 @@ func TestFlowsCursor_ZeroEncodesToEmpty(t *testing.T) {
 // (fail safe to "from the newest"), not parsed anyway — protects a future
 // format change from having to keep parsing the old shape forever.
 func TestFlowsCursor_RejectsAnUnknownVersion(t *testing.T) {
-	wire := base64.RawURLEncoding.EncodeToString([]byte("v2:42"))
-	if got := decodeFlowsCursor(wire); got != 0 {
+	wire := base64.RawURLEncoding.EncodeToString([]byte("v1:42"))
+	if got, _ := decodeFlowsCursor(wire); got != 0 {
 		t.Errorf("decodeFlowsCursor with an unknown version = %d, want 0 (ignored, not parsed)", got)
 	}
 }
@@ -711,5 +713,44 @@ func TestStatusJSON_FlowStoreLimitsAreWired(t *testing.T) {
 	}
 	if got.Flows.EstimatedBytes <= 0 {
 		t.Errorf("flow_store.estimated_bytes = %d, want a positive planning estimate", got.Flows.EstimatedBytes)
+	}
+}
+
+func TestFlowsJSON_OutOfOrderPagingMatchesExport(t *testing.T) {
+	a := flowsTestApp(t, nil)
+	now := time.Now()
+	for i, minutes := range []int{10, 20, 5, 10} {
+		a.runtimes[0].flowStore.Record(flowstore.Observation{Time: now.Add(-time.Duration(minutes) * time.Minute), SrcNode: "paged", DstNode: "other", Counts: flowstore.Counts{Flows: 1, TxBytes: int64(i + 1)}})
+	}
+	var got []int64
+	cursor := ""
+	for range 5 {
+		w, page := getFlows(t, a, "?window=1h&recent=2&device=paged&cursor="+cursor)
+		if w.Code != http.StatusOK {
+			t.Fatalf("page status=%d", w.Code)
+		}
+		for _, row := range page.Recent {
+			got = append(got, row.Counts.TxBytes)
+		}
+		if page.NextCursor == "" {
+			break
+		}
+		cursor = page.NextCursor
+	}
+	w := httptest.NewRecorder()
+	a.handleFlowsExportJSON(w, exportReq(http.MethodGet, "/api/flows/export.json?window=1h&device=paged"))
+	if w.Code != http.StatusOK {
+		t.Fatalf("export status=%d", w.Code)
+	}
+	var exported flowsExportEnvelope
+	if err := json.Unmarshal(w.Body.Bytes(), &exported); err != nil {
+		t.Fatal(err)
+	}
+	var want []int64
+	for _, row := range exported.Rows {
+		want = append(want, row.Counts.TxBytes)
+	}
+	if !slices.Equal(got, want) || len(got) != 4 {
+		t.Fatalf("paged=%v export=%v", got, want)
 	}
 }

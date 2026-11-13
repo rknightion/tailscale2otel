@@ -415,10 +415,6 @@ jobs:
     timeout-minutes: 15
     name: coverage (Codacy)
     runs-on: ubuntu-latest
-    env:
-      # Repo-scoped Codacy coverage token (Repository Settings > Coverage). Preferred over the
-      # account token so this job only carries coverage-upload scope for THIS repo.
-      CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -431,17 +427,28 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          # zizmor: ignore[cache-poisoning] - test-only job, does not publish artifacts
+          # zizmor: ignore[cache-poisoning] - no artifacts published or credentials held while cached or dependency code runs
           cache: true
 
       - name: go test (coverage profile)
         run: just coverage
 
+      - name: Check for a Codacy upload token
+        id: codacy
+        env:
+          CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        run: |
+          if [[ -n "$CODACY_PROJECT_TOKEN" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload coverage to Codacy
-        if: ${{ env.CODACY_PROJECT_TOKEN != '' }}   # skip on fork PRs (secret unavailable)
+        if: steps.codacy.outputs.present == 'true'
         uses: codacy/codacy-coverage-reporter-action@89d6c85cfafaec52c72b6c5e8b2878d33104c699 # v1.3.0
         with:
-          project-token: ${{ env.CODACY_PROJECT_TOKEN }}
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
           coverage-reports: coverage.out
           force-coverage-parser: go
 
@@ -616,7 +623,7 @@ jobs:
 
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside helm.yml's `helm-success`), so CI legs can be added or renamed without re-touching
-  # protection. Fails if any leg failed or was cancelled. Renovate's automerge waits for this to go green.
+  # protection. Fails if any leg failed, was cancelled or was skipped. Renovate's automerge waits for this to go green.
   ci-success:
     timeout-minutes: 5
     name: ci-success
@@ -624,24 +631,20 @@ jobs:
     if: always()
     needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze, zizmor]
     steps:
-      - name: Fail if any required job did not pass
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+      - name: Fail unless every required job succeeded
+        id: gate
         env:
-          RESULTS: ${{ join(needs.*.result, ', ') }}
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          echo "A required job failed or was cancelled: ${RESULTS}"
-          exit 1
-      # A skipped job reports success, so on a pull request the pull request checks must have
-      # actually run and passed. Off a pull request they are skipped by design.
-      - name: Fail if a pull request check did not run
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          AC_EVIDENCE: ${{ needs.ac-evidence.result }}
-          PRIVACY_SWEEP: ${{ needs.privacy-sweep.result }}
-          BACKLOG_FREEZE: ${{ needs.backlog-freeze.result }}
-        run: |
-          if [[ "$AC_EVIDENCE" != "success" || "$PRIVACY_SWEEP" != "success" || "$BACKLOG_FREEZE" != "success" ]]; then
-            echo "ac-evidence: ${AC_EVIDENCE}, privacy-sweep: ${PRIVACY_SWEEP}, backlog-freeze: ${BACKLOG_FREEZE}; all must pass on a pull request"
+          set -euo pipefail
+          failures=$(jq -r --arg event "$EVENT_NAME" '
+            to_entries[]
+            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "ac-evidence" and .key != "privacy-sweep" and .key != "backlog-freeze")))
+            | "\(.key)=\(.value.result)"
+          ' <<< "$NEEDS_JSON")
+          if [[ -n "$failures" ]]; then
+            printf '%s\n' "$failures"
             exit 1
           fi
       - name: All required jobs passed

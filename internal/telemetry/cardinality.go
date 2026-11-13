@@ -40,19 +40,21 @@ type labelValueSet struct {
 	capped bool
 }
 
-// seriesSet is the distinct fingerprint set for one source metric within the
-// current export interval. capped records whether the per-metric cap was hit so
-// the reported value can be pinned at the cap. labels holds the bounded distinct
-// VALUES seen per attribute key for that metric (nil when label capture is off).
+// seriesSet holds bounded interval fingerprints and label samples. Cumulative
+// synchronous instruments also retain life fingerprints and lifeCapped across
+// reports; observable snapshots and delta instruments use only interval state.
 type seriesSet struct {
-	fps    map[uint64]struct{}
-	capped bool
-	labels map[string]*labelValueSet
+	fps        map[uint64]struct{}
+	capped     bool
+	labels     map[string]*labelValueSet
+	life       map[uint64]struct{}
+	lifeCapped bool
+	sync       bool
 }
 
-// SeriesCount is the distinct active-series count for one source metric during
-// the last completed export interval. Capped is true when the per-metric cap was
-// hit, in which case Count is pinned at defaultSeriesCap.
+// SeriesCount is the latest distinct-series count for one source metric.
+// Cumulative synchronous counts include the process lifetime. Capped is true
+// when the per-metric cap was hit, in which case Count is pinned at that cap.
 type SeriesCount struct {
 	Metric string
 	Count  int
@@ -71,15 +73,16 @@ type LabelStat struct {
 }
 
 // CardinalityTracker counts the EXACT number of distinct attribute combinations
-// (time series) emitted per source metric within an export interval. Observe is
-// called from the emit hot path for every metric data point; Report snapshots
-// the per-metric distinct counts, resets the sets, and emits the
+// (time series) emitted per source metric. Providers select lifetime tracking
+// for cumulative synchronous instruments; constructors otherwise use interval
+// tracking. Observe runs on the emit hot path; Report emits the
 // tailscale2otel.series.active gauge once per source metric. The same per-metric
 // counts are retained for the most recent interval and exposed via Snapshot for
 // in-process introspection (e.g. the admin status page).
 //
 // All methods are safe for concurrent use and are no-ops on a nil receiver.
 type CardinalityTracker struct {
+	lifetime        bool // synchronous instruments retain attribute sets under cumulative temporality
 	mu              sync.Mutex
 	sets            map[string]*seriesSet
 	seriesCap       int           // per-source-metric distinct-series cap (pins the reported count)
@@ -133,6 +136,15 @@ func NewCardinalityTrackerWithLimits(seriesCap, labelValueCap int) *CardinalityT
 // recursion). Once a metric reaches the tracker's per-metric cap, further
 // distinct combinations are dropped (the metric is marked capped).
 func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
+	t.observe(name, attrs, true)
+}
+
+// ObserveSnapshot records a current observable-gauge point without retaining lifetime state.
+func (t *CardinalityTracker) ObserveSnapshot(name string, attrs Attrs) {
+	t.observe(name, attrs, false)
+}
+
+func (t *CardinalityTracker) observe(name string, attrs Attrs, synchronous bool) {
 	if t == nil || strings.HasPrefix(name, seriesSelfPrefix) {
 		return
 	}
@@ -143,6 +155,23 @@ func (t *CardinalityTracker) Observe(name string, attrs Attrs) {
 	if s == nil {
 		s = &seriesSet{fps: make(map[uint64]struct{})}
 		t.sets[name] = s
+	}
+
+	if synchronous {
+		s.sync = true
+		if t.lifetime {
+			if s.life == nil {
+				s.life = make(map[uint64]struct{})
+			}
+			if len(s.life) < t.seriesCap {
+				s.life[fp] = struct{}{}
+			}
+			// The SDK reserves one slot for overflow, so the cap-th distinct set
+			// already represents the overflow point rather than another ordinary series.
+			if len(s.life) >= t.seriesCap {
+				s.lifeCapped = true
+			}
+		}
 	}
 	// Label-value capture is independent of the per-metric series cap: even once a
 	// metric stops counting new series, its already-seen labels' value sets keep
@@ -191,37 +220,10 @@ func (t *CardinalityTracker) observeLabels(s *seriesSet, attrs Attrs) {
 	}
 }
 
-// Report emits one tailscale2otel.series.active gauge per source metric observed
-// since the previous Report, carrying the EXACT distinct-series count (pinned at
-// defaultSeriesCap when the cap was hit), then resets all sets so the next
-// interval measures active-per-interval cardinality afresh.
-//
-// NOTE (#55): the "resets so a metric that stops emitting drops out" behavior is
-// about THIS tracker's own measurement (series.active/series.overflowing, which
-// are keyed by a fixed low-cardinality metric.name set), NOT about the exported
-// per-entity gauges themselves. Those are a separate mechanism, and this comment
-// used to describe it wrongly — corrected by #383:
-//
-// A SYNCHRONOUS gauge (Emitter.Gauge) really does ghost. Under the project's
-// forced cumulative temporality the SDK's cumulativeLastValue aggregation keeps
-// every attribute set it has ever seen and re-exports its last value forever
-// (upstream otel-go #3006).
-//
-// An OBSERVABLE gauge does NOT, and the previous claim that "switching to
-// observable gauges does not change this" was WRONG. In pinned otel-go v1.44 an
-// ObservableGauge routes to PrecomputedLastValue, whose cumulative collect
-// CLEARS stale sets each cycle, so it reports only what was observed in the
-// current collection. That is exactly why Emitter.GaugeSnapshot exists and why
-// every churning per-entity gauge in the devices, nodemetrics and dns collectors
-// now uses it (via GaugeSnapshotBuilder) — a series absent from a later snapshot
-// drops out instead of ghosting. So the ghost-series problem this comment
-// described as unfixable is fixed, and the fix shipped.
-//
-// The one deliberate exception is nodemetrics' forwarded passthrough samples
-// (dynamic names + monotonic counters, where snapshot semantics do not fit),
-// documented for operators in docs/metrics.md.
-//
-// It is a no-op on a nil tracker.
+// Report emits the distinct-series count and overflow state for each metric.
+// Cumulative synchronous instruments retain lifetime membership; observable
+// snapshots and delta instruments report interval membership. Label samples
+// always reset each interval. A nil tracker is a no-op.
 func (t *CardinalityTracker) Report(e Emitter) {
 	if t == nil {
 		return
@@ -230,17 +232,22 @@ func (t *CardinalityTracker) Report(e Emitter) {
 	t.mu.Lock()
 	limit := t.configuredLimit
 	last := make([]SeriesCount, 0, len(t.sets))
+	next := make(map[string]*seriesSet)
 	var labels []LabelStat
 	for name, s := range t.sets {
-		last = append(last, SeriesCount{Metric: name, Count: len(s.fps), Capped: s.capped})
+		count, capped := len(s.fps), s.capped
+		if t.lifetime && s.sync {
+			count, capped = len(s.life), s.lifeCapped
+			next[name] = &seriesSet{fps: make(map[uint64]struct{}), life: s.life, lifeCapped: s.lifeCapped, sync: true}
+		}
+		last = append(last, SeriesCount{Metric: name, Count: count, Capped: capped})
 		for key, lv := range s.labels {
 			labels = append(labels, labelStat(name, key, lv))
 		}
 	}
-	// Replace (rather than clear) so the next interval starts empty and metrics
-	// that stopped emitting are dropped. This resets label state too, since the
-	// value sets live inside seriesSet.
-	t.sets = map[string]*seriesSet{}
+	// Interval observations and label samples reset; cumulative synchronous
+	// membership survives quiet intervals because the SDK still exports it.
+	t.sets = next
 	// Stable presentation order: highest distinct first, then metric, then label.
 	sort.Slice(labels, func(i, j int) bool {
 		if labels[i].Distinct != labels[j].Distinct {

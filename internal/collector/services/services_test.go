@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -390,22 +391,18 @@ func TestServiceHostErrorNonFatal(t *testing.T) {
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect should not fail on a per-service host error: %v", err)
 	}
-	// argocd hosts skipped; grpc hosts present; count+ports still emitted.
+	// A partial host pass is non-fatal, but cannot publish an incomplete
+	// snapshot. List-derived counts and ports are still current.
 	if cnt := rec.MetricPoints("tailscale.services.count"); len(cnt) != 1 || cnt[0].Value != 2 {
 		t.Fatalf("count = %+v, want 2", cnt)
 	}
-	var grpc bool
-	for _, p := range rec.MetricPoints("tailscale.service.hosts") {
-		if p.Attrs["tailscale.service.name"] == "svc:argocd" {
-			t.Errorf("argocd hosts should be skipped on host error")
-		}
-		if p.Attrs["tailscale.service.name"] == "svc:grpc" {
-			grpc = true
-		}
+	if points := rec.MetricPoints("tailscale.service.ports"); len(points) != 2 {
+		t.Errorf("port points = %v, want both services", points)
 	}
-	if !grpc {
-		t.Errorf("svc:grpc hosts missing")
+	if points := rec.MetricPoints("tailscale.service.hosts"); len(points) != 0 {
+		t.Errorf("partial first pass published host points: %v", points)
 	}
+
 }
 
 func TestCollectPropagatesServicesError(t *testing.T) {
@@ -716,5 +713,72 @@ func TestAvailabilityTrackerAndClock(t *testing.T) {
 	lp := rec.MetricPoints(apistate.MetricLastProbe)
 	if len(lp) != 1 || lp[0].Value != float64(probe.Unix()) {
 		t.Fatalf("last_probe = %+v, want one point at %v", lp, probe.Unix())
+	}
+}
+
+type observingHostsAPI struct {
+	*fakeAPI
+	beforeHosts func()
+}
+
+func (a *observingHostsAPI) ServiceHosts(ctx context.Context, name string) ([]tsapi.ServiceHost, error) {
+	if a.beforeHosts != nil {
+		a.beforeHosts()
+	}
+	return a.fakeAPI.ServiceHosts(ctx, name)
+}
+
+func TestServiceGaugesDropWhenServiceOrBucketRemoved(t *testing.T) {
+	api := &observingHostsAPI{fakeAPI: &fakeAPI{svcs: []tsapi.VIPService{{Name: "svc:example-a", Ports: []string{"tcp:443"}, Tags: []string{"tag:example-a"}}, {Name: "svc:example-b", Ports: []string{"tcp:80"}, Tags: []string{"tag:example-b"}}}, hosts: map[string][]tsapi.ServiceHost{"svc:example-a": {{ApprovalLevel: "approved", Configured: "true"}}, "svc:example-b": {{ApprovalLevel: "approved", Configured: "true"}}}, hostErr: map[string]error{}}}
+	c := New(api, 0, WithCollectHosts(true))
+	rec := telemetrytest.New()
+	collect := func() {
+		t.Helper()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	api.beforeHosts = func() {
+		if got := rec.MetricPoints(docPorts.Name); len(got) != len(api.svcs) {
+			t.Errorf("port snapshot not published before host call: %v", got)
+		}
+		if got := rec.MetricPoints(docByTag.Name); len(got) != len(api.svcs) {
+			t.Errorf("tag snapshot not published before host call: %v", got)
+		}
+	}
+	collect()
+	api.svcs = api.svcs[1:]
+	api.hosts["svc:example-b"][0].ApprovalLevel = "pending"
+	collect()
+	for _, name := range []string{docPorts.Name, docHosts.Name, docByTag.Name} {
+		points := rec.MetricPoints(name)
+		if len(points) != 1 || points[0].Value != 1 {
+			t.Errorf("remaining %s = %v", name, points)
+		}
+	}
+	before := rec.MetricPoints(docHosts.Name)
+	if len(before) != 1 || before[0].Attrs[attrApproval] != "pending" {
+		t.Errorf("host bucket = %v, want pending only", before)
+	}
+	api.hostErr["svc:example-b"] = fmt.Errorf("synthetic host failure")
+	collect()
+	if !reflect.DeepEqual(rec.MetricPoints(docHosts.Name), before) {
+		t.Error("failed host pass replaced snapshot")
+	}
+	api.hostErr = nil
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := c.Collect(ctx, rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(rec.MetricPoints(docHosts.Name), before) {
+		t.Error("canceled host pass replaced snapshot")
+	}
+	api.svcs = nil
+	collect()
+	for _, name := range []string{docPorts.Name, docHosts.Name, docByTag.Name} {
+		if got := rec.MetricPoints(name); len(got) != 0 {
+			t.Errorf("%s retains departed service: %v", name, got)
+		}
 	}
 }

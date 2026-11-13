@@ -87,7 +87,7 @@ func (s *Store) run() {
 		if len(batch) == 0 {
 			return
 		}
-		_ = s.flush(batch) // errors are recorded via s.fail; nothing more to do here
+		s.flushAndAccount(batch)
 		batch = batch[:0]
 	}
 
@@ -206,6 +206,7 @@ func (s *Store) flush(batch []flowstore.Observation) error {
 		s.fail(err)
 		return err
 	}
+	s.recovered()
 	// Checkpoint after a committed batch so the WAL sidecar does not grow
 	// without bound during a quiet period, and so Stats can report a real
 	// last-successful-checkpoint time even when the sweep cadence is long.
@@ -224,9 +225,13 @@ func (s *Store) maintain(ctx context.Context, sweep, reclaim bool) {
 	if sweep {
 		_ = s.sweep(ctx)
 	}
-	_ = s.checkpoint(ctx)
+	checkpointCtx, checkpointCancel := s.queryCtx()
+	_ = s.checkpoint(checkpointCtx)
+	checkpointCancel()
 	if reclaim {
-		_ = s.incrementalVacuum(ctx)
+		vacuumCtx, vacuumCancel := s.queryCtx()
+		_ = s.incrementalVacuum(vacuumCtx)
+		vacuumCancel()
 	}
 }
 
@@ -245,6 +250,7 @@ func (s *Store) checkpoint(ctx context.Context) error {
 
 	s.mu.Lock()
 	s.lastCheckpointAt = time.Now().UTC()
+	s.failure = nil
 	s.mu.Unlock()
 	return nil
 }
@@ -274,26 +280,80 @@ func (s *Store) incrementalVacuum(ctx context.Context) error {
 // disk even when a traffic flood would keep every row inside the retention
 // window (see schema.go's migration comment on why seq is the stable
 // oldest-first tiebreaker).
-func (s *Store) sweep(ctx context.Context) error {
+func (s *Store) sweep(ctx context.Context) (err error) {
+	defer func() {
+		if err == nil {
+			s.recovered()
+		}
+	}()
 	cutoff := timeToDB(s.opts.Now().Add(-s.opts.Retention))
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM flows WHERE time < ?", cutoff); err != nil {
-		s.fail(err)
-		return err
+	for batch := 0; batch < maxSweepBatches; batch++ {
+		if err := ctx.Err(); err != nil {
+			if batch > 0 {
+				return nil
+			}
+			s.fail(err)
+			return err
+		}
+		result, err := s.db.ExecContext(ctx, "DELETE FROM flows WHERE seq IN (SELECT seq FROM flows WHERE time < ? ORDER BY time ASC, seq ASC LIMIT ?)", cutoff, s.opts.SweepBatchRows)
+		if err != nil {
+			if batch > 0 && ctx.Err() != nil {
+				return nil
+			}
+			s.fail(err)
+			return err
+		}
+		removed, err := result.RowsAffected()
+		if err != nil {
+			s.fail(err)
+			return err
+		}
+		if s.afterSweepChunk != nil {
+			s.afterSweepChunk(removed)
+		}
+		if removed < int64(s.opts.SweepBatchRows) {
+			break
+		}
+	}
+
+	if ctx.Err() != nil {
+		return nil
 	}
 
 	if s.opts.MaxRows > 0 {
 		var count int64
 		if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM flows").Scan(&count); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
 			s.fail(err)
 			return err
 		}
-		if excess := count - s.opts.MaxRows; excess > 0 {
-			if _, err := s.db.ExecContext(ctx,
-				"DELETE FROM flows WHERE seq IN (SELECT seq FROM flows ORDER BY time ASC, seq ASC LIMIT ?)",
-				excess,
-			); err != nil {
+		for excess := count - s.opts.MaxRows; excess > 0; {
+			if ctx.Err() != nil {
+				return nil
+			}
+			chunk := min(excess, int64(s.opts.SweepBatchRows))
+			result, err := s.db.ExecContext(ctx,
+				"DELETE FROM flows WHERE seq IN (SELECT seq FROM flows ORDER BY time ASC, seq ASC LIMIT ?)", chunk)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				s.fail(err)
 				return err
+			}
+			removed, err := result.RowsAffected()
+			if err != nil {
+				s.fail(err)
+				return err
+			}
+			if s.afterSweepChunk != nil {
+				s.afterSweepChunk(removed)
+			}
+			excess -= removed
+			if removed < chunk {
+				break
 			}
 		}
 	}
@@ -306,6 +366,9 @@ func (s *Store) sweep(ctx context.Context) error {
 func (s *Store) Stats() flowstore.Stats {
 	s.mu.Lock()
 	recorded, drops, failure := s.recorded, s.drops, s.failure
+	if failure == nil {
+		failure = s.setupFailure
+	}
 	s.mu.Unlock()
 
 	backend := flowstore.Backend{
@@ -365,4 +428,13 @@ func (s *Store) Stats() flowstore.Stats {
 
 	st.Backend = backend
 	return st
+}
+
+func (s *Store) flushAndAccount(batch []flowstore.Observation) {
+	if err := s.flush(batch); err != nil {
+		s.mu.Lock()
+		s.drops += int64(len(batch))
+		s.recorded -= int64(len(batch))
+		s.mu.Unlock()
+	}
 }

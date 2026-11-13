@@ -124,7 +124,7 @@ series disappears entirely you get a `DatasourceNoData` alert rather than silenc
 
 **First step.** **Scrape success by collector** and **Last scrape age** on the **Collection** tab of
 `tailscale2otel-health` identify which collector. Then **Scrape errors/s by collector / type** gives the
-error class, and **Scrape budget headroom** tells you whether it is erroring or simply too slow. Cross-check
+error class, and **Scrape budget used** tells you whether it is erroring or simply too slow. Cross-check
 [Tailscale API health](#tailscale-api-health) - a single collector failing with a scope error is an
 API permission problem, not a collector bug.
 

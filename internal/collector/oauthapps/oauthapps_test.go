@@ -3,6 +3,7 @@ package oauthapps_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -418,4 +419,71 @@ func TestAvailabilityNilTrackerIsNoop(t *testing.T) {
 	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
 		t.Fatalf("Collect: %v", err)
 	}
+}
+
+func TestOAuthAppGaugesDropWhenAppRemoved(t *testing.T) {
+	api := &fakeLister{apps: []tsapi.OAuthApp{{ID: "example-app", Scopes: []string{"all"}, AllowedNodeAttributes: []string{"example-attribute"}, RedirectURIs: []string{"https://example.com/callback"}}}}
+	c := oauthapps.New(api, 0)
+	rec := telemetrytest.New()
+	collect := func() {
+		t.Helper()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	collect()
+	names := []string{oauthapps.MetricAppScopes, oauthapps.MetricAppNodeAttributes, oauthapps.MetricAppRedirectURIs, oauthapps.MetricAppScopeClass}
+	before := make(map[string][]telemetrytest.MetricPoint)
+	for _, name := range names {
+		before[name] = rec.MetricPoints(name)
+		if len(before[name]) == 0 {
+			t.Fatalf("missing initial %s", name)
+		}
+	}
+	api.err = errors.New("synthetic list failure")
+	if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+		t.Fatal("expected error")
+	}
+	for _, name := range names {
+		if !sameMetricPoints(rec.MetricPoints(name), before[name]) {
+			t.Errorf("%s changed after failure", name)
+		}
+	}
+	for _, status := range []int{403, 404} {
+		api.err = &tsapi.StatusError{Code: status}
+		collect()
+		for _, name := range names {
+			if !sameMetricPoints(rec.MetricPoints(name), before[name]) {
+				t.Errorf("%s changed after ambiguous feature-off", name)
+			}
+		}
+	}
+	api.err = nil
+	api.apps = nil
+	collect()
+	for _, name := range names {
+		if got := rec.MetricPoints(name); len(got) != 0 {
+			t.Errorf("%s retains removed app: %v", name, got)
+		}
+	}
+}
+
+// sameMetricPoints compares snapshots without depending on SDK iteration order.
+func sameMetricPoints(a, b []telemetrytest.MetricPoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, point := range a {
+		found := false
+		for _, other := range b {
+			if reflect.DeepEqual(point, other) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }

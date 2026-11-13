@@ -611,7 +611,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -698,6 +698,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -770,7 +782,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -945,7 +957,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -1031,6 +1043,16 @@
                           "text": "on",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
                         }
                       }
                     }
@@ -1128,6 +1150,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -1209,6 +1241,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1284,6 +1328,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -1363,6 +1419,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "cps",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2085,7 +2153,10 @@
                         "tailscale_collector": "Collector",
                         "Value": "Age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_collector": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -2099,10 +2170,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -2233,7 +2315,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -2302,7 +2384,10 @@
                         "tailscale2otel_provider": "Provider",
                         "Value": "Series"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale2otel_provider": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -2347,7 +2432,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1)",
+                        "expr": "max by (tailscale_tailnet, tailscale2otel_provider) (sum by (tailscale_tailnet, tailscale2otel_provider) (tailscale_device_online_ratio{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"} == 1))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2369,7 +2454,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_tailnet) (tailscale2otel_scrape_staleness_seconds{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"})",
+                        "expr": "max by (tailscale_tailnet, tailscale2otel_provider) (max by (tailscale_tailnet, tailscale2otel_provider) (tailscale2otel_scrape_staleness_seconds{tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2391,7 +2476,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tailnet) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval]))",
+                        "expr": "max by (tailscale_tailnet, tailscale2otel_provider) (sum by (tailscale_tailnet, tailscale2otel_provider) (rate(tailscale2otel_api_requests_total{http_response_status_code=~\"4..|5..\", tailscale_tailnet!=\"\", tailscale_tailnet!=\"-\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -2430,7 +2515,12 @@
                         "Value #B": "Max staleness (s)",
                         "Value #C": "API errors/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_tailnet": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -2597,6 +2687,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2676,6 +2778,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2759,6 +2873,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No subnet-route data \u2014 needs the devices collector (collectors.devices) and a control plane that reports approved routes.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2839,6 +2965,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device-tag data \u2014 needs the devices collector (collectors.devices) and a control plane that reports device tags.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -2923,6 +3061,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device-invite data \u2014 needs the devices collector (collectors.devices.collect_device_invites).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3018,6 +3168,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -3099,6 +3259,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3170,7 +3342,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3236,7 +3408,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3310,6 +3482,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3382,7 +3566,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3403,7 +3587,7 @@
         "spec": {
           "id": 36,
           "title": "Organization tailnets",
-          "description": "Tailnet IDs discovered from the configured alpha Organizations API roster. This inventories the organization; collector runtimes still require explicit per-tailnet credentials.",
+          "description": "Tailnet IDs discovered from the configured alpha Organizations API roster. This inventories the organization; collector runtimes still require explicit per-tailnet credentials. When empty: No organization roster \u2014 configure tailscale.organization and a tailnets:read credential to enable alpha roster discovery.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -3449,7 +3633,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3457,7 +3641,7 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
-                  "noValue": "No organization roster \u2014 configure tailscale.organization and a tailnets:read credential to enable alpha roster discovery."
+                  "noValue": "Not configured"
                 },
                 "overrides": []
               }
@@ -3756,7 +3940,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -3831,6 +4015,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device inventory \u2014 needs the devices collector (collectors.devices) reporting tailscale.devices.count.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -3907,7 +4103,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -4222,6 +4418,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4301,6 +4509,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4376,7 +4596,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -4450,6 +4670,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No fleet version comparison \u2014 enable version_checks.devices (and the upstream latest version must be reachable).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -4544,6 +4776,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No self update-check data \u2014 enable version_checks.self (dev builds never report).",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -4622,7 +4864,9 @@
                       "renameByName": {
                         "tailscale_client_version": "Version"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_client_version": 0
+                      }
                     }
                   }
                 }
@@ -4727,7 +4971,7 @@
         "spec": {
           "id": 53,
           "title": "Fleet tags (rollup)",
-          "description": "Device count per ACL tag across the fleet. Counts individual tags, so a device carrying two tags is counted under each.",
+          "description": "Device count per ACL tag across the fleet. Counts individual tags, so a device carrying two tags is counted under each. Shows the top $topn tags; raise Top N to see more.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -4746,7 +4990,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "topk($topn, sum by (tailscale_tag) (max by (tailscale_tag) (last_over_time(tailscale_devices_by_tag_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -4764,7 +5008,15 @@
                   "spec": {
                     "options": {
                       "excludeByName": {
-                        "Time": true
+                        "Time": true,
+                        "__name__": true,
+                        "job": true,
+                        "instance": true,
+                        "service_instance_id": true,
+                        "service_name": true,
+                        "service_namespace": true,
+                        "tailscale_tailnet": true,
+                        "tailscale2otel_provider": true
                       },
                       "renameByName": {},
                       "indexByName": {}
@@ -4791,7 +5043,8 @@
                 "tooltip": {
                   "mode": "single",
                   "sort": "none"
-                }
+                },
+                "xField": "tailscale_tag"
               },
               "fieldConfig": {
                 "defaults": {},
@@ -5138,17 +5391,20 @@
                   {
                     "type": "markers",
                     "name": "Devices",
+                    "location": {
+                      "mode": "lookup",
+                      "lookup": "lookup",
+                      "gazetteer": "public/gazetteer/countries.json"
+                    },
                     "config": {
                       "showLegend": true,
                       "style": {
                         "size": {
                           "field": "Devices",
-                          "fixed": 5
+                          "fixed": 5,
+                          "min": 4,
+                          "max": 20
                         }
-                      },
-                      "location": {
-                        "mode": "lookup",
-                        "lookup": "lookup"
                       }
                     }
                   }
@@ -5223,7 +5479,12 @@
                         "os_version": "OS version",
                         "tailscale_user": "User"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "os_type": 1,
+                        "os_version": 2,
+                        "tailscale_user": 3
+                      }
                     }
                   }
                 }
@@ -5319,7 +5580,11 @@
                         "tailscale_user": "User",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_user": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -5333,10 +5598,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -5398,7 +5674,11 @@
                         "tailscale_user": "User",
                         "Value": "Last seen"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_user": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -5412,10 +5692,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Last seen"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -5445,7 +5736,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, os_type, tailscale_user, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5467,7 +5758,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, os_type, tailscale_user, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5489,7 +5780,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, os_type, tailscale_user, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5511,7 +5802,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, os_type, tailscale_user, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5533,7 +5824,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, os_type, tailscale_user, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -5577,7 +5868,16 @@
                         "Value #D": "Multiple connections",
                         "Value #E": "Posture identity disabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "os_type": 1,
+                        "tailscale_user": 2,
+                        "Value #A": 3,
+                        "Value #B": 4,
+                        "Value #C": 5,
+                        "Value #D": 6,
+                        "Value #E": 7
+                      }
                     }
                   }
                 }
@@ -5595,6 +5895,18 @@
                   "noValue": "No per-device series \u2014 needs cardinality.per_entity.device, and a control plane that reports this field."
                 },
                 "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
                   {
                     "matcher": {
                       "id": "byName",
@@ -5814,7 +6126,10 @@
                         "host_name": "Host",
                         "Value": "Minors behind"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -5831,7 +6146,20 @@
                 "defaults": {
                   "noValue": "No per-device version-skew series \u2014 needs version_checks.devices and cardinality.per_entity.device, and the upstream latest version must be reachable."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -5842,7 +6170,7 @@
         "spec": {
           "id": 63,
           "title": "Device online state by node",
-          "description": "Online/offline transitions for each device matching the current filters. Hidden when device identity redaction is active.",
+          "description": "Online/offline transitions for each device matching the current filters. Hidden when device identity redaction is active. Paged 15 devices at a time; use the host filter to find one device.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -5892,7 +6220,8 @@
                 "tooltip": {
                   "mode": "single",
                   "sort": "none"
-                }
+                },
+                "perPage": 15
               },
               "fieldConfig": {
                 "defaults": {
@@ -5972,7 +6301,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6047,6 +6376,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Not reported \u2014 needs a control plane that reports node-key expiry state, and the devices collector.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6092,7 +6433,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_ssh_enabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6119,7 +6460,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6159,7 +6500,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_key_expiry_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6194,6 +6535,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "Not reported \u2014 needs a control plane that reports node-key expiry state, and the devices collector.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6239,7 +6592,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_blocks_incoming_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6266,7 +6619,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -6306,7 +6659,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_multiple_connections_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6341,6 +6694,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device series \u2014 needs cardinality.per_entity.device, and a control plane that reports this field.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6386,7 +6751,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1)",
+                        "expr": "count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]) == 1) or (0 * count(last_over_time(tailscale_device_posture_identity_disabled_ratio{os_type=~\"$os_type\", host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])))",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",
@@ -6421,6 +6786,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device series \u2014 needs cardinality.per_entity.device, and a control plane that reports this field.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6501,6 +6878,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -6580,6 +6969,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7114,6 +7515,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7390,6 +7803,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7473,6 +7898,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7637,6 +8074,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7723,6 +8172,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -7807,6 +8268,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -8103,7 +8576,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_direct_capable_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_connectivity_direct_capable_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8125,7 +8598,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_udp_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_connectivity_udp_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8147,7 +8620,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_ipv6_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_connectivity_ipv6_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8169,7 +8642,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_connectivity_endpoints_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_connectivity_endpoints_ratio{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8210,7 +8683,13 @@
                         "Value #C": "IPv6",
                         "Value #D": "Endpoints"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3,
+                        "Value #D": 4
+                      }
                     }
                   }
                 }
@@ -8228,6 +8707,18 @@
                   "noValue": "No per-device connectivity series \u2014 needs collect_connectivity and cardinality.per_entity.device."
                 },
                 "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
                   {
                     "matcher": {
                       "id": "byName",
@@ -8391,7 +8882,9 @@
                       "renameByName": {
                         "host_name": "Host"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0
+                      }
                     }
                   }
                 }
@@ -8463,7 +8956,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8529,7 +9022,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8603,6 +9096,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -8674,7 +9179,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8741,7 +9246,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -8813,7 +9318,10 @@
                         "host_name": "Host",
                         "tailscale_exit_node_enabled": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_exit_node_enabled": 1
+                      }
                     }
                   }
                 }
@@ -8858,7 +9366,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_routes_advertised{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8880,7 +9388,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m])",
+                        "expr": "max by (host_name, host_id, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_device_routes_enabled{host_name=~\"$host_name\", tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -8919,7 +9427,11 @@
                         "Value #A": "Advertised",
                         "Value #B": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2
+                      }
                     }
                   }
                 }
@@ -8933,9 +9445,7 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
+                "defaults": {},
                 "overrides": [
                   {
                     "matcher": {
@@ -8952,6 +9462,30 @@
                             "targetBlank": false
                           }
                         ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Advertised"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Enabled"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
                       }
                     ]
                   }
@@ -9097,7 +9631,12 @@
                         "tailscale_derp_preferred": "Preferred",
                         "Value": "Latency"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "tailscale_derp_region": 1,
+                        "tailscale_derp_preferred": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -9111,9 +9650,7 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
+                "defaults": {},
                 "overrides": [
                   {
                     "matcher": {
@@ -9130,6 +9667,18 @@
                             "targetBlank": false
                           }
                         ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Latency"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
                       }
                     ]
                   }
@@ -9255,7 +9804,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9321,7 +9870,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9387,7 +9936,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "area",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -9583,10 +10132,10 @@
                       },
                       "spec": {
                         "expr": "sum by (network_transport) (rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{network_transport}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
@@ -9648,10 +10197,10 @@
                       },
                       "spec": {
                         "expr": "sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{tailscale_traffic_type}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
@@ -9866,7 +10415,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"source\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{source}} / {{reason}}",
@@ -9957,7 +10506,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"scope\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{scope}} / {{tailscale_traffic_type}}",
@@ -10031,7 +10580,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"reason\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{reason}}",
@@ -10233,7 +10782,7 @@
         "spec": {
           "id": 118,
           "title": "Observed bytes (flow logs)",
-          "description": "Bytes summed directly from raw flow-log records over the selected range, independent of the Prometheus rollup/raw metric mode. Empty means no matching log records; a populated zero is shown only when records carry zero bytes.",
+          "description": "Bytes summed directly from raw flow-log records over the selected range, independent of the Prometheus rollup/raw metric mode. Empty means no matching log records; a populated zero is shown only when records carry zero bytes. Summed over the selected dashboard range.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -10306,9 +10855,35 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "bytes",
+                  "min": 0,
                   "noValue": "No matching flow-log records in the selected range."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byFrameRefID",
+                      "options": "A"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "TX bytes"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byFrameRefID",
+                      "options": "B"
+                    },
+                    "properties": [
+                      {
+                        "id": "displayName",
+                        "value": "RX bytes"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -10338,7 +10913,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | unwrap tailscale_tx_bytes [$__range])))",
+                        "expr": "topk($topn, sum by (tailscale_src_node, tailscale_dst_node) (sum_over_time({service_name=\"tailscale2otel\"} | network_transport=~\"$net_transport\" | tailscale_traffic_type=~\"$traffic_type\" | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.network.flow` | tailscale_src_node != \"\" | tailscale_dst_node != \"\" | unwrap tailscale_tx_bytes [$__range])))",
                         "queryType": "instant",
                         "maxLines": 200,
                         "legendFormat": ""
@@ -10360,9 +10935,13 @@
                       "renameByName": {
                         "tailscale_src_node": "Source",
                         "tailscale_dst_node": "Destination",
-                        "Value": "TX bytes"
+                        "Value #A": "TX bytes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "tailscale_dst_node": 1,
+                        "Value #A": 2
+                      }
                     }
                   }
                 }
@@ -10374,13 +10953,44 @@
             "group": "table",
             "version": "12.1.0",
             "spec": {
-              "options": {},
+              "options": {
+                "sortBy": [
+                  {
+                    "displayName": "TX bytes",
+                    "desc": true
+                  }
+                ]
+              },
               "fieldConfig": {
                 "defaults": {
-                  "unit": "bytes",
                   "noValue": "No flow-log records with both source and destination node identity in the selected range."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "TX bytes"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "bytes"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -10679,6 +11289,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10918,6 +11540,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -10998,7 +11632,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11091,7 +11728,10 @@
                         "tailscale_dst_node": "Destination node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11184,7 +11824,10 @@
                         "tailscale_dst_service": "Destination service",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_service": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11275,7 +11918,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Unique peers"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11289,10 +11935,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Unique peers"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11352,7 +12009,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Unique ports"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11366,10 +12026,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Unique ports"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11665,7 +12336,10 @@
                         "tailscale_src_node": "Source node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_src_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11758,7 +12432,10 @@
                         "tailscale_dst_node": "Destination node",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -11851,7 +12528,10 @@
                         "tailscale_dst_service": "Destination service",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dst_service": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12119,7 +12799,7 @@
               "options": {
                 "showTime": true,
                 "showLabels": false,
-                "wrapLogMessage": true,
+                "wrapLogMessage": false,
                 "prettifyLogMessage": false,
                 "enableLogDetails": true,
                 "dedupStrategy": "none",
@@ -12194,6 +12874,18 @@
                   "unit": "percentunit",
                   "min": 0,
                   "max": 1,
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No node-metrics target series. Enable node_metrics and discover at least one target.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -12290,6 +12982,16 @@
                           "text": "UP",
                           "color": "green",
                           "index": 1
+                        }
+                      }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
                         }
                       }
                     }
@@ -12741,7 +13443,10 @@
                         "tailscale_node": "Node",
                         "Value": "Advertised"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12755,10 +13460,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Advertised"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -12821,7 +13537,10 @@
                         "tailscale_node": "Node",
                         "Value": "Approved"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12835,10 +13554,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Approved"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -12901,7 +13631,10 @@
                         "tailscale_node": "Node",
                         "Value": "Messages"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12915,10 +13648,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Messages"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -12981,7 +13725,10 @@
                         "tailscale_node": "Node",
                         "Value": "Region ID"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -12995,10 +13742,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Region ID"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13061,7 +13819,10 @@
                         "tailscale_node": "Node",
                         "Value": "Endpoints"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13075,10 +13836,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Endpoints"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13297,6 +14069,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -13377,7 +14161,10 @@
                         "path": "Path",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "path": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13895,7 +14682,10 @@
                         "tailscale_path": "Path",
                         "Value": "Bytes/s"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_path": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -13986,7 +14776,10 @@
                         "tailscale_node": "Node",
                         "Value": "Home region ID"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_node": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -14000,10 +14793,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Home region ID"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -14960,7 +15764,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}"
@@ -15063,7 +15867,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -15137,6 +15941,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "0",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15182,7 +15998,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
+                        "expr": "sum by (tailscale_target_type) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_type != `` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_type}}"
@@ -15259,7 +16075,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
+                        "expr": "sum by (tailscale_audit_action, tailscale_target_type) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_audit_action}}/{{tailscale_target_type}}"
@@ -15337,7 +16153,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (user_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (user_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | user_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{user_name}}"
@@ -15410,7 +16226,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "topk($topn, sum by (tailscale_target_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
+                        "expr": "topk($topn, sum by (tailscale_target_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=`tailscale.config.audit` | tailscale_target_name != `` [$__auto])))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{tailscale_target_name}}"
@@ -15600,7 +16416,7 @@
               "options": {
                 "showTime": true,
                 "showLabels": false,
-                "wrapLogMessage": true,
+                "wrapLogMessage": false,
                 "prettifyLogMessage": false,
                 "enableLogDetails": true,
                 "dedupStrategy": "none",
@@ -15659,7 +16475,7 @@
               "options": {
                 "showTime": true,
                 "showLabels": false,
-                "wrapLogMessage": true,
+                "wrapLogMessage": false,
                 "prettifyLogMessage": false,
                 "enableLogDetails": true,
                 "dedupStrategy": "none",
@@ -15697,7 +16513,7 @@
                         "name": "${ds_loki}"
                       },
                       "spec": {
-                        "expr": "sum by (event_name) (count_over_time({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` [$__auto]))",
+                        "expr": "sum by (event_name) (rate({service_name=\"tailscale2otel\"} | tailscale_tailnet=~\"$tailnet\" | tailscale2otel_provider=~\"$provider\" | event_name=~`$log_event` [$__auto]))",
                         "queryType": "range",
                         "maxLines": 200,
                         "legendFormat": "{{event_name}}"
@@ -15874,6 +16690,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -15953,6 +16781,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16047,6 +16887,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -16093,7 +16943,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or on() label_replace(0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"tailscale_acl_autoapprover_kind\", \"none\", \"\", \"\")",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_acl_autoapprover_kind}}",
@@ -16333,6 +17183,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16463,7 +17325,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -16602,6 +17464,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No posture integration has reported a sync yet.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16686,6 +17560,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "percentunit",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -16734,7 +17620,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16756,7 +17642,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_possible_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_possible_matched_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16778,7 +17664,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_provider_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_provider_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16800,7 +17686,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "time() - max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -16844,7 +17730,14 @@
                         "Value #C": "Provider hosts",
                         "Value #D": "Last sync age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_posture_provider": 0,
+                        "tailscale_posture_integration": 1,
+                        "Value #A": 2,
+                        "Value #B": 3,
+                        "Value #C": 4,
+                        "Value #D": 5
+                      }
                     }
                   }
                 }
@@ -16987,7 +17880,11 @@
                         "Value #B": "Reporting",
                         "Value #C": "Unknown / unsupported"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "Value #A": 0,
+                        "Value #B": 1,
+                        "Value #C": 2
+                      }
                     }
                   }
                 }
@@ -17033,31 +17930,17 @@
                       },
                       "spec": {
                         "expr": "count by (attribute, value) (last_over_time(tailscale_device_attribute_info_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{attribute}} = {{value}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": [
-                {
-                  "kind": "Transformation",
-                  "group": "organize",
-                  "spec": {
-                    "options": {
-                      "excludeByName": {
-                        "Time": true
-                      },
-                      "renameByName": {},
-                      "indexByName": {}
-                    }
-                  }
-                }
-              ]
+              "transformations": []
             }
           },
           "vizConfig": {
@@ -17144,7 +18027,11 @@
                         "attribute": "Attribute",
                         "Value": "Value"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "attribute": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -17224,7 +18111,12 @@
                         "attribute": "Attribute",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "host_name": 0,
+                        "host_id": 1,
+                        "attribute": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -17239,7 +18131,6 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17259,7 +18150,32 @@
                   },
                   "noValue": "No posture-attribute expiry series. Only attributes explicitly set WITH an expiry appear here \u2014 most posture attributes never carry one, so an empty panel is the normal reading, not a fault. Needs the devices collector with collect_posture, and the attribute inside the attribute_namespaces allow-list."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -17456,7 +18372,12 @@
                         "Value #C": "Reporting",
                         "Value #D": "Unknown / unsupported"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "Value #A": 0,
+                        "Value #B": 1,
+                        "Value #C": 2,
+                        "Value #D": 3
+                      }
                     }
                   }
                 }
@@ -17536,6 +18457,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No device update data \u2014 needs the devices collector and a control plane that reports update availability.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17837,6 +18770,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17912,7 +18857,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -17986,6 +18931,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -18057,7 +19014,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -18471,6 +19428,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -18549,7 +19518,13 @@
                         "tailscale_key_type": "Type",
                         "Value": "Allowed tags"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_owner": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_type": 3,
+                        "Value": 4
+                      }
                     }
                   }
                 }
@@ -18566,7 +19541,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -18630,7 +19618,13 @@
                         "tailscale_key_owner": "Owner",
                         "tailscale_key_scope_class": "Privilege class"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_owner": 3,
+                        "tailscale_key_scope_class": 4
+                      }
                     }
                   }
                 }
@@ -18647,7 +19641,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -18711,7 +19718,13 @@
                         "tailscale_key_owner": "Owner",
                         "tailscale_key_tag_scope": "Tag scope"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "tailscale_key_owner": 3,
+                        "tailscale_key_tag_scope": 4
+                      }
                     }
                   }
                 }
@@ -18728,7 +19741,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -19084,6 +20110,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No contact data \u2014 enable the contacts collector (collectors.contacts).",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -19238,6 +20276,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -19317,6 +20367,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -21388,6 +22450,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "0",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -21814,7 +22888,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -21880,7 +22954,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -21984,7 +23058,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or on() label_replace(0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"tailscale_acl_autoapprover_kind\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_acl_autoapprover_kind}}",
@@ -22163,6 +23237,16 @@
                           "index": 1
                         }
                       }
+                    },
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No validation result. Prerequisites: collectors.acl.enabled with collectors.acl.validate, and a credential carrying the policy_file:read scope. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
+                        }
+                      }
                     }
                   ],
                   "thresholds": {
@@ -22282,12 +23366,24 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -22353,9 +23449,12 @@
                       },
                       "renameByName": {
                         "tailscale_acl_validation_kind": "Kind",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_acl_validation_kind": 0,
+                        "Value #A": 1
+                      }
                     }
                   }
                 }
@@ -22372,7 +23471,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -22541,7 +23653,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22624,7 +23736,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22690,7 +23802,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22756,7 +23868,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22822,7 +23934,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -22905,7 +24017,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23060,7 +24172,11 @@
                         "tailscale_dns_resolver_kind": "Kind",
                         "tailscale_dns_resolver_use_with_exit_node": "ExitNode"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_dns_resolver_address": 0,
+                        "tailscale_dns_resolver_kind": 1,
+                        "tailscale_dns_resolver_use_with_exit_node": 2
+                      }
                     }
                   }
                 }
@@ -23077,7 +24193,20 @@
                 "defaults": {
                   "noValue": "No resolver series. Prerequisites: collectors.dns.enabled and a tailnet with at least one global or split-DNS resolver configured. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -23140,7 +24269,10 @@
                         "tailscale_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -23230,7 +24362,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23302,7 +24434,10 @@
                         "tailscale_feature": "Feature",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_feature": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -23398,7 +24533,9 @@
                       "renameByName": {
                         "tailscale_setting_role": "Role"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_role": 0
+                      }
                     }
                   }
                 }
@@ -23476,7 +24613,9 @@
                       "renameByName": {
                         "tailscale_setting_route_selection": "Mode"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_setting_route_selection": 0
+                      }
                     }
                   }
                 }
@@ -23493,7 +24632,20 @@
                 "defaults": {
                   "noValue": "No route-selection observations in the last two hours \u2014 needs the settings collector, feature_settings:read scope, and a provider exposing routeSelection."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -23550,7 +24702,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -23743,6 +24895,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No per-user data \u2014 needs the users collector and cardinality.per_entity.user.",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -24097,7 +25261,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_user_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (user_id, user_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_user_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24119,7 +25283,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_user_devices_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (user_id, user_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_user_devices_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24141,7 +25305,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_user_last_seen_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "time() - max by (user_id, user_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_user_last_seen_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24184,7 +25348,12 @@
                         "Value #B": "Devices",
                         "Value #C": "Last seen"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "user_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -24340,9 +25509,15 @@
                       "renameByName": {
                         "tailscale_key_description": "Description",
                         "tailscale_key_type": "Type",
+                        "tailscale_key_owner": "Owner",
                         "Value": "Scopes"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_description": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_owner": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -24359,7 +25534,20 @@
                 "defaults": {
                   "noValue": "No per-key scope series. Prerequisites: collectors.keys.enabled and cardinality.per_entity.key. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -24410,9 +25598,12 @@
                       },
                       "renameByName": {
                         "tailscale_key_scope_values": "Scopes",
-                        "Value": "Keys"
+                        "Value #A": "Keys"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_scope_values": 0,
+                        "Value #A": 1
+                      }
                     }
                   }
                 }
@@ -24429,7 +25620,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -24494,7 +25698,12 @@
                         "tailscale_key_description": "Description",
                         "Value": "Expires in"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_key_id": 0,
+                        "tailscale_key_type": 1,
+                        "tailscale_key_description": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -24508,10 +25717,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -24568,7 +25788,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -24635,7 +25855,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -24836,7 +26056,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_oauth_app_scopes_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_oauth_app_id, tailscale_oauth_app_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_oauth_app_scopes_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24858,7 +26078,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_oauth_app_node_attributes_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_oauth_app_id, tailscale_oauth_app_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_oauth_app_node_attributes_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24880,7 +26100,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_oauth_app_redirect_uris_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_oauth_app_id, tailscale_oauth_app_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_oauth_app_redirect_uris_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -24923,7 +26143,12 @@
                         "Value #B": "Node attributes",
                         "Value #C": "Redirect targets"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_oauth_app_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3
+                      }
                     }
                   }
                 }
@@ -24989,9 +26214,12 @@
                       },
                       "renameByName": {
                         "tailscale_oauth_app_scope_values": "Granted scopes",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_oauth_app_scope_values": 0,
+                        "Value #A": 1
+                      }
                     }
                   }
                 }
@@ -25008,7 +26236,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25065,7 +26306,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -25140,7 +26381,13 @@
                         "tailscale_service_configured": "Configured",
                         "Value": "Hosts"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_service_approval": 2,
+                        "tailscale_service_configured": 3,
+                        "Value": 4
+                      }
                     }
                   }
                 }
@@ -25154,10 +26401,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Hosts"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25203,7 +26461,7 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "barchart",
+            "group": "bargauge",
             "version": "12.1.0",
             "spec": {
               "options": {
@@ -25318,7 +26576,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_service_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_service_name, tailscale_service_display_name, tailscale_service_approval, tailscale_service_configured, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_service_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -25340,7 +26598,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "max by (tailscale_service_name, tailscale_service_display_name) (last_over_time(tailscale_service_ports{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
+                        "expr": "max by (tailscale_service_name, tailscale_service_display_name, tailscale_service_approval, tailscale_service_configured, tailscale_tailnet, tailscale2otel_provider) ((max by (tailscale_service_name, tailscale_service_display_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_service_ports{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) * on (tailscale_service_name, tailscale_service_display_name, tailscale_tailnet, tailscale2otel_provider) group_right() (max by (tailscale_service_name, tailscale_service_display_name, tailscale_service_approval, tailscale_service_configured, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_service_hosts_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) * 0 + 1)) or on (tailscale_service_name, tailscale_service_display_name, tailscale_tailnet, tailscale2otel_provider) max by (tailscale_service_name, tailscale_service_display_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_service_ports{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -25384,7 +26642,14 @@
                         "Value #A": "Hosts",
                         "Value #B": "Port rules"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_service_approval": 2,
+                        "tailscale_service_configured": 3,
+                        "Value #A": 4,
+                        "Value #B": 5
+                      }
                     }
                   }
                 }
@@ -25472,7 +26737,20 @@
                         "tailscale_service_configured": "Configured",
                         "Value": "Backing host"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_service_name": 0,
+                        "tailscale_service_display_name": 1,
+                        "tailscale_node_id": 2,
+                        "host_name": 3,
+                        "host_id": 4,
+                        "os_type": 5,
+                        "os_version": 6,
+                        "tailscale_user": 7,
+                        "tailscale_tags": 8,
+                        "tailscale_service_approval": 9,
+                        "tailscale_service_configured": 10,
+                        "Value": 11
+                      }
                     }
                   }
                 }
@@ -25489,7 +26767,20 @@
                 "defaults": {
                   "noValue": "No backing-host identity series. Prerequisites: collectors.services.collect_hosts, cardinality.per_entity.service, and a service with at least one backing host. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25648,7 +26939,10 @@
                         "tailscale_webhook_event": "Event category",
                         "Value": "Covered"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_event": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -25695,7 +26989,20 @@
                   },
                   "noValue": "No desired-event expectation. Prerequisites: collectors.webhooks.enabled and a non-empty collectors.webhooks.desired_events list. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25760,6 +27067,18 @@
               "fieldConfig": {
                 "defaults": {
                   "unit": "short",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No data",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -25903,7 +27222,11 @@
                         "tailscale_webhook_endpoint_provider": "Provider",
                         "Value": "Subscriptions"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_endpoint_id": 0,
+                        "tailscale_webhook_endpoint_provider": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -25920,7 +27243,20 @@
                 "defaults": {
                   "noValue": "No per-endpoint data. Prerequisites: collectors.webhooks.enabled and cardinality.per_entity.webhook. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26067,9 +27403,12 @@
                       },
                       "renameByName": {
                         "tailscale_webhook_event": "Event category",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_webhook_event": 0,
+                        "Value #A": 1
+                      }
                     }
                   }
                 }
@@ -26086,7 +27425,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26144,12 +27496,24 @@
                   "values": false
                 },
                 "orientation": "horizontal",
-                "displayMode": "gradient",
+                "displayMode": "basic",
                 "showUnfilled": true
               },
               "fieldConfig": {
                 "defaults": {
                   "unit": "s",
+                  "mappings": [
+                    {
+                      "type": "special",
+                      "options": {
+                        "match": "null",
+                        "result": {
+                          "text": "No GeoIP series. Prerequisites: enrichment.geoip.enabled with a country or ASN database on disk, and self_observability.enabled. See https://m7kni.io/tailscale2otel/configuration/",
+                          "color": "gray"
+                        }
+                      }
+                    }
+                  ],
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -26432,7 +27796,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_posture_integration_error_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_error_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -26454,7 +27818,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "time() - last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "time() - max by (tailscale_posture_provider, tailscale_posture_integration, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_posture_integration_last_sync_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -26496,7 +27860,12 @@
                         "Value #A": "Last sync errored",
                         "Value #B": "Last sync age"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_posture_provider": 0,
+                        "tailscale_posture_integration": 1,
+                        "Value #A": 2,
+                        "Value #B": 3
+                      }
                     }
                   }
                 }
@@ -26544,6 +27913,18 @@
                   "noValue": "No posture-integration series. Prerequisites: collectors.posture_integrations.enabled and a credential that can read device-posture integrations. See https://m7kni.io/tailscale2otel/configuration/"
                 },
                 "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
                   {
                     "matcher": {
                       "id": "byName",
@@ -26731,7 +28112,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -26862,7 +28243,7 @@
                   "fields": "",
                   "values": false
                 },
-                "colorMode": "value",
+                "colorMode": "none",
                 "graphMode": "none",
                 "textMode": "auto",
                 "justifyMode": "auto"
@@ -26966,7 +28347,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_pam_connector_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_pam_connector_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_pam_connector_connected_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -26988,7 +28369,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_pam_connector_last_seen_age_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_pam_connector_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_pam_connector_last_seen_age_seconds{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -27010,7 +28391,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_pam_connector_sockets_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_pam_connector_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_pam_connector_sockets_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -27032,7 +28413,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_pam_connector_tokens_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_pam_connector_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_pam_connector_tokens_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -27054,7 +28435,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_pam_connector_plugins_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])",
+                        "expr": "max by (tailscale_pam_connector_name, tailscale_tailnet, tailscale2otel_provider) (last_over_time(tailscale_pam_connector_plugins_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h]))",
                         "instant": true,
                         "range": false,
                         "legendFormat": "",
@@ -27098,7 +28479,14 @@
                         "Value #D": "Tokens",
                         "Value #E": "Plugins"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_connector_name": 0,
+                        "Value #A": 1,
+                        "Value #B": 2,
+                        "Value #C": 3,
+                        "Value #D": 4,
+                        "Value #E": 5
+                      }
                     }
                   }
                 }
@@ -27191,7 +28579,12 @@
                         "tailscale_pam_built_date": "Build date",
                         "Value": "Info"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_connector_name": 0,
+                        "tailscale_pam_version": 1,
+                        "tailscale_pam_built_date": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27270,7 +28663,11 @@
                         "tailscale_pam_service_type": "Type",
                         "Value": "Alive"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_service_name": 0,
+                        "tailscale_pam_service_type": 1,
+                        "Value": 2
+                      }
                     }
                   }
                 }
@@ -27350,7 +28747,12 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_service_name": 0,
+                        "tailscale_pam_service_type": 1,
+                        "tailscale_pam_setting_name": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27430,7 +28832,12 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_policy_name": 0,
+                        "tailscale_pam_version": 1,
+                        "tailscale_pam_setting_name": 2,
+                        "Value": 3
+                      }
                     }
                   }
                 }
@@ -27508,7 +28915,10 @@
                         "tailscale_pam_setting_name": "Setting",
                         "Value": "Enabled"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_setting_name": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -27586,7 +28996,10 @@
                         "tailscale_pam_plan": "Plan",
                         "Value": "Info"
                       },
-                      "indexByName": {}
+                      "indexByName": {
+                        "tailscale_pam_plan": 0,
+                        "Value": 1
+                      }
                     }
                   }
                 }
@@ -28230,7 +29643,7 @@
                                 "spec": {
                                   "x": 0,
                                   "y": 0,
-                                  "width": 6,
+                                  "width": 5,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28241,9 +29654,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 6,
+                                  "x": 5,
                                   "y": 0,
-                                  "width": 4,
+                                  "width": 3,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28254,9 +29667,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 10,
+                                  "x": 8,
                                   "y": 0,
-                                  "width": 4,
+                                  "width": 3,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28267,7 +29680,7 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 14,
+                                  "x": 11,
                                   "y": 0,
                                   "width": 4,
                                   "height": 5,
@@ -28280,9 +29693,9 @@
                               {
                                 "kind": "GridLayoutItem",
                                 "spec": {
-                                  "x": 18,
+                                  "x": 15,
                                   "y": 0,
-                                  "width": 3,
+                                  "width": 6,
                                   "height": 5,
                                   "element": {
                                     "kind": "ElementReference",
@@ -28926,7 +30339,7 @@
                                           "spec": {
                                             "x": 15,
                                             "y": 0,
-                                            "width": 3,
+                                            "width": 4,
                                             "height": 5,
                                             "element": {
                                               "kind": "ElementReference",

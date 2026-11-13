@@ -44,7 +44,7 @@ class RuntimePresenceTest(unittest.TestCase):
                 self.assertEqual(defaults.get("mappings"), [{"type": "special", "options": {
                     "match": "null", "result": {"text": MISSING, "color": "gray"}}}])
 
-    def test_present_numeric_units_process_scope_and_polarity_are_unchanged(self):
+    def test_present_numeric_units_process_scope_and_neutral_color(self):
         for title, (unit, expr, graph) in RUNTIME_TILES.items():
             with self.subTest(title=title):
                 p = self.panels[title]
@@ -55,7 +55,7 @@ class RuntimePresenceTest(unittest.TestCase):
                 self.assertEqual(viz["fieldConfig"]["defaults"]["unit"], unit)
                 self.assertNotIn("thresholds", viz["fieldConfig"]["defaults"])
                 self.assertEqual(viz["fieldConfig"]["overrides"], [])
-                self.assertEqual(viz["options"]["colorMode"], "value")
+                self.assertEqual(viz["options"]["colorMode"], "none")
                 self.assertEqual(viz["options"]["graphMode"], graph)
                 self.assertEqual(viz["options"]["reduceOptions"],
                                  {"calcs": ["lastNotNull"], "fields": "", "values": False})

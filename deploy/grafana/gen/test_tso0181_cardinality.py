@@ -38,7 +38,7 @@ class ConsolidatedCardinalityTest(unittest.TestCase):
                        q["spec"]["query"]["spec"].get("expr") == query["expr"]
                        for q in p["data"]["spec"]["queries"])]
         self.assertEqual([p["title"] for p in same], [current["title"]])
-        self.assertTrue(self.query("Active series over time (top $topn)")["range"])
+        self.assertTrue(self.query("Series cap utilization over time (top $topn)")["range"])
         self.assertIn("Busiest metric — % of cap", self.panels)
 
     def test_overflow_sources_share_one_visible_diagnostic_row(self):

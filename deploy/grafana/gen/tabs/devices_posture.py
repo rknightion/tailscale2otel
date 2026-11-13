@@ -22,7 +22,7 @@ forbids only the dashboard+tab mix.
 from builder import (LOKI_TN, loki_t, autogrid_row, barchart_opts, hq, lot, organize, panel, PII,
                      pii_sentinel, prom_t, row, sentinel, stat_opts, thr, ts_custom,
                      ts_opts, WIN_SLOW)
-from tabs._devices_common import NO_PER_DEVICE, TP
+from tabs._devices_common import NO_PER_DEVICE, TP, count_flag
 
 # Tailnet/provider selectors (#392). Both are real per-series metric LABELS (not resource
 # attributes), so a panel filters them straight in the selector — see the note in builder.py.
@@ -78,28 +78,28 @@ def tab_devices_posture(scope):
               desc="Devices whose node key never expires. These are invisible to every "
                    "key-expiry panel on this tab, so this is the only place they show up."),
         panel("Tailscale SSH enabled (devices)", "stat",
-              [prom_t("count(%s == 1)" % lot("tailscale_device_ssh_enabled_ratio" + df))],
+              [prom_t(count_flag(lot("tailscale_device_ssh_enabled_ratio" + df)))],
               unit="short", options=stat_opts(color="value"), novalue=_NO_SSH_STATE,
               desc="Same count derived from the per-device gauge, so it honours the tab's "
                    "OS/host/user/tag filters. Diverging from the fleet roll-up means the filters bite."),
         panel("Key expiry disabled (devices)", "stat",
-              [prom_t("count(%s == 1)" % lot("tailscale_device_key_expiry_disabled_ratio" + df))],
+              [prom_t(count_flag(lot("tailscale_device_key_expiry_disabled_ratio" + df)))],
               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
               options=stat_opts(color="background"), novalue=_NO_KEY_EXPIRY_STATE,
               desc="Per-device view of never-expiring node keys, filterable to a host or tag."),
         panel("Blocking incoming connections", "stat",
-              [prom_t("count(%s == 1)" % lot("tailscale_device_blocks_incoming_connections_ratio" + df))],
+              [prom_t(count_flag(lot("tailscale_device_blocks_incoming_connections_ratio" + df)))],
               unit="short", options=stat_opts(color="value"), novalue=NO_PER_DEVICE,
               desc="Devices refusing inbound tailnet connections. Protective, but it also makes a "
                    "device unreachable for admin access — read it as configuration, not as a fault."),
         panel("Multiple simultaneous connections", "stat",
-              [prom_t("count(%s == 1)" % lot("tailscale_device_multiple_connections_ratio" + df))],
+              [prom_t(count_flag(lot("tailscale_device_multiple_connections_ratio" + df)))],
               unit="short", thresholds=thr([(None, "green"), (1, "red")]),
               options=stat_opts(color="background"), novalue=NO_PER_DEVICE,
               desc="Devices whose identity is in use by more than one client at once — a duplicated "
                    "node key or a cloned state store."),
         panel("Posture identity disabled", "stat",
-              [prom_t("count(%s == 1)" % lot("tailscale_device_posture_identity_disabled_ratio" + df))],
+              [prom_t(count_flag(lot("tailscale_device_posture_identity_disabled_ratio" + df)))],
               unit="short", thresholds=thr([(None, "green"), (1, "yellow")]),
               options=stat_opts(color="background"), novalue=NO_PER_DEVICE,
               desc="Devices exempted from posture-identity collection, so posture-gated ACL rules "

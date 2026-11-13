@@ -403,9 +403,9 @@ def panel_ref(title):
 # `severity` is the routing key an operator keys their notification policy on, so
 # a typo routes nowhere and fails silent. Closed set, enforced in alert() below.
 #
-# `advisory` is a REAL fourth tier here, not a mistake, and 9 rules ship it.
+# `advisory` is a real fourth tier here, not a mistake.
 # Do not confuse it with the `advisory` EVALUATION POLICY in the POLICY table
-# above, which is a different axis carried by 23 rules: policy sets
+# above, which is a different axis: policy sets
 # noDataState/execErrState (Ok/Ok), severity is what an operator routes on, and
 # most policy="advisory" rules report severity="warning". A count of one is not
 # a count of the other. It was absent from
@@ -1103,7 +1103,7 @@ def groups():
               "tailscale2otel_scrape_budget_ratio > 1 for {{ $labels.tailscale_collector }} — the scrape is "
               "taking longer than its interval, so it cannot keep up. Increase the interval or reduce work.",
               domain="observability", paused=True,
-              policy="core", runbook="collector-scrape-health", panel="Scrape budget headroom"),
+              policy="core", runbook="collector-scrape-health", panel="Scrape budget used"),
         alert("ts2o-config-warnings", "Config warnings present",
               "max(tailscale2otel_config_warnings_ratio)", "gt", 0, "15m", "info",
               "tailscale2otel has configuration warnings",

@@ -8,10 +8,15 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/audit"
 	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
@@ -665,5 +670,58 @@ func TestHandler_DurableObserversApplyOnlyToDurableApplication(t *testing.T) {
 	if durableCalls == 0 || len(ingestCalls) != ingestBefore || len(accepted) != acceptedBefore {
 		t.Fatalf("durable application observers: durable=%d OnIngest=%d->%d OnAccepted=%d->%d, want durable observers only",
 			durableCalls, ingestBefore, len(ingestCalls), acceptedBefore, len(accepted))
+	}
+}
+
+func TestDurableAppendSpanAttributes(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(strconv.FormatBool(fail), func(t *testing.T) {
+			sr := tracetest.NewSpanRecorder()
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr))
+			t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
+			rec := telemetrytest.New()
+			calls := 0
+			body := captureFlowRecord + "\n" + captureAuditRecord + "\n" + `{"future":"record"}`
+			s := stream.New(stream.Options{Token: testToken}, flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{}), audit.NewProcessor(), rec.Emitter(), nil,
+				stream.WithTracer(tp.Tracer("test")), stream.WithDurableAppend(func(context.Context, []byte, time.Time) error {
+					calls++
+					if fail {
+						return errors.New("injected append failure")
+					}
+					return nil
+				}))
+			response := post(t, s.Handler(), http.MethodPost, "/services/collector/event", authHeader(), strings.NewReader(body))
+			wantStatus := http.StatusOK
+			if fail {
+				wantStatus = http.StatusServiceUnavailable
+			}
+			if response.Code != wantStatus || calls != 1 {
+				t.Fatalf("status=%d calls=%d", response.Code, calls)
+			}
+			if len(rec.LogRecords()) != 0 || len(rec.MetricPoints(flowlog.MetricFlows)) != 0 || len(rec.MetricPoints(audit.MetricAuditEvents)) != 0 {
+				t.Fatal("durable admission applied records inline")
+			}
+			spans := sr.Ended()
+			if len(spans) != 1 || spans[0].Name() != "stream.receive" {
+				t.Fatalf("receive spans = %v", spans)
+			}
+			attrs := make(map[string]int64)
+			for _, attr := range spans[0].Attributes() {
+				attrs[string(attr.Key)] = attr.Value.AsInt64()
+			}
+			for key, want := range map[string]int64{"tailscale.stream.flows": 1, "tailscale.stream.audits": 1, "tailscale.stream.skipped": 1, "http.request.body.size": int64(len(body))} {
+				got, ok := attrs[key]
+				if fail {
+					if ok {
+						t.Errorf("failed append sets %s", key)
+					}
+				} else if !ok || got != want {
+					t.Errorf("%s=%d present=%v, want %d", key, got, ok, want)
+				}
+			}
+			if fail && spans[0].Status().Code != codes.Error {
+				t.Fatal("failed append span is not Error")
+			}
+		})
 	}
 }

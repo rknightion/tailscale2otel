@@ -5,8 +5,11 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
 	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
@@ -177,5 +180,85 @@ func TestProcess_ReporterTrustByNodeIDAndUnconfigured(t *testing.T) {
 				t.Errorf("consistency = %q, want %q", got, tc.check)
 			}
 		})
+	}
+}
+
+// counterCallEmitter measures work at the emitter boundary while retaining the
+// real SDK's aggregation, so batching must preserve both cost and values.
+type counterCallEmitter struct {
+	telemetry.Emitter
+	calls map[string]int
+}
+
+func (e *counterCallEmitter) Counter(name, unit, desc string, value float64, attrs telemetry.Attrs) {
+	e.calls[name]++
+	e.Emitter.Counter(name, unit, desc, value, attrs)
+}
+
+func TestProcessAllBatchesFixedCardinalityCounters(t *testing.T) {
+	rec := telemetrytest.New()
+	e := &counterCallEmitter{Emitter: rec.Emitter(), calls: make(map[string]int)}
+	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{FlowMetricsMode: "rollup", LogMode: "off"})
+	conn := flowlog.ConnectionCounts{Proto: protoTCP, Src: "100.64.0.1:12345", Dst: "100.64.0.2:443", TxBytes: 1}
+	resp := flowlog.NetworkResponse{Logs: make([]flowlog.FlowLog, 100)}
+	for i := range resp.Logs {
+		resp.Logs[i].VirtualTraffic = make([]flowlog.ConnectionCounts, 10)
+		for j := range resp.Logs[i].VirtualTraffic {
+			resp.Logs[i].VirtualTraffic[j] = conn
+		}
+	}
+	p.ProcessAll(resp, e)
+	if calls := e.calls[flowlog.MetricFlows] + e.calls[flowlog.MetricFieldObservations]; calls > 6 {
+		t.Fatalf("fixed-cardinality calls = %d, want at most 6", calls)
+	}
+	for _, name := range []string{flowlog.MetricFlows, flowlog.MetricFieldObservations} {
+		points := rec.MetricPoints(name)
+		want := 1
+		if name == flowlog.MetricFieldObservations {
+			want = 5
+		}
+		if len(points) != want {
+			t.Fatalf("%s points = %+v", name, points)
+		}
+		for _, point := range points {
+			if point.Value != 1000 {
+				t.Errorf("%s %+v = %v, want 1000", name, point.Attrs, point.Value)
+			}
+		}
+	}
+}
+
+func TestProcessAllBatchesFixedCardinalityCountersMixedAndDedup(t *testing.T) {
+	rec := telemetrytest.New()
+	e := &counterCallEmitter{Emitter: rec.Emitter(), calls: make(map[string]int)}
+	p := flowlog.NewProcessor(enrich.NewDeviceCache(), flowlog.Options{FlowMetricsMode: "rollup", LogMode: "off", Dedup: dedup.New(0)})
+	full := flowlog.ConnectionCounts{Proto: protoTCP, Src: "100.64.0.1:12345", Dst: "100.64.0.2:443", TxBytes: 1}
+	resp := flowlog.NetworkResponse{Logs: []flowlog.FlowLog{{VirtualTraffic: []flowlog.ConnectionCounts{full}, ExitTraffic: []flowlog.ConnectionCounts{{Proto: protoUDP}}}}}
+	p.ProcessAll(resp, e)
+	p.ProcessAll(resp, e)
+	flows := rec.MetricPoints(flowlog.MetricFlows)
+	if len(flows) != 2 {
+		t.Fatalf("flow points = %+v", flows)
+	}
+	for _, point := range flows {
+		if point.Value != 1 {
+			t.Fatalf("flow %+v = %v, want 1", point.Attrs, point.Value)
+		}
+	}
+	fields := rec.MetricPoints(flowlog.MetricFieldObservations)
+	if len(fields) != 10 {
+		t.Fatalf("field points = %+v", fields)
+	}
+	for _, point := range fields {
+		wantState := "present"
+		if point.Attrs[semconv.AttrTrafficType] == semconv.TrafficExit && point.Attrs["field_class"] != "protocol" {
+			wantState = "missing"
+		}
+		if point.Value != 1 || point.Attrs["state"] != wantState {
+			t.Errorf("field = %+v, want count 1 state %s", point, wantState)
+		}
+	}
+	if e.calls[flowlog.MetricFlows] != 2 || e.calls[flowlog.MetricFieldObservations] != 10 {
+		t.Fatalf("duplicate or zero tally emitted: %+v", e.calls)
 	}
 }

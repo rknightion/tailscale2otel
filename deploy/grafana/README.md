@@ -12,11 +12,8 @@ import-path, datasource, and OTLP-to-Prometheus naming contracts; read
 [docs/dashboards.md](../../docs/dashboards.md) before importing them.
 
 Both dashboards are generated from `gen/build.py` and `gen/dashboards.py`. Edit the generator, not
-the JSON. Regenerate both committed resources from this directory with:
-
-```sh
-python3 gen/build.py --out-dir .
-```
+the JSON. From the repository root, run `just gen-dashboards`. It rebuilds both dashboards
+and then the alert rules, which resolve each panel by title.
 
 For a focused preview of one dashboard or tab:
 

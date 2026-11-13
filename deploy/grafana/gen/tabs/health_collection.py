@@ -36,7 +36,7 @@ only there), so they are declared fresh here at THIS tab's scope rather than ref
 exactly the same reasoning as has_nodemetrics above.
 """
 
-from builder import (bargauge_opts, heatmap_opts, hq, lot, organize, panel, prom_t,
+from builder import (vmap, bargauge_opts, heatmap_opts, hq, lot, organize, panel, prom_t,
                      raw_sentinel, RI, row, sentinel, state_timeline_opts, stat_opts,
                      TBL_NOISE, thr, ts_custom, ts_opts, WIN_FAST, WIN_SLOW)
 from maps import bool_map, UP_MAP
@@ -144,11 +144,12 @@ def tab_health_collection(scope):
         (panel("Scrape duration distribution", "heatmap",
                [prom_t("sum by (le) (rate("
                        "tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s]))"
-                       % (cf, RI), legend="{{le}}")],
-               unit="s", options=heatmap_opts(),
+                       % (cf, RI), legend="{{le}}", fmt="heatmap")],
+               unit="cps", options=heatmap_opts(),
                novalue="No scrape-duration histogram buckets in the selected range.",
                desc="Distribution of scrape wall-clock duration across collectors. The "
-                    "p50/p95/p99 panel remains the per-collector trend view."), 12, 8),
+                    "p50/p95/p99 panel remains the per-collector trend view. "
+                    "Colour is observations per second in each duration bucket."), 12, 8),
         (panel("Last scrape age", "table",
                [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds" + cf), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",
@@ -168,7 +169,7 @@ def tab_health_collection(scope):
                        legend="{{tailscale_collector}}")],
                unit="s", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Time since each collector's last successful scrape."), 12, 7),
-        (panel("Scrape budget headroom", "bargauge",
+        (panel("Scrape budget used", "bargauge",
                [prom_t('max by (tailscale_collector) (tailscale2otel_scrape_budget_ratio{tailscale_collector=~"$collector"})',
                        legend="{{tailscale_collector}}")],
                unit="percentunit", thresholds=thr([(None, "green"), (0.8, "yellow"), (1, "red")]),
@@ -235,9 +236,9 @@ def tab_health_collection(scope):
                desc="Time a request spent blocked on the client-side rate limiter "
                     "(tailscale.http.rate_limit) before its first attempt."), 12, 7),
         (panel("Time waiting vs time on the wire", "timeseries",
-               [prom_t("sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum[%s]))" % RI, legend="rate-limiter wait s/s"),
-                prom_t("sum(rate(tailscale2otel_api_duration_seconds_sum[%s]))" % RI, legend="API request time s/s", refid="B")],
-               unit="s", custom=ts_custom(), options=ts_opts(),
+               [prom_t("sum(rate(tailscale2otel_api_rate_limit_wait_seconds_sum[%s]))" % RI, legend="rate-limiter wait"),
+                prom_t("sum(rate(tailscale2otel_api_duration_seconds_sum[%s]))" % RI, legend="API request time", refid="B")],
+               unit="none", custom=dict(ts_custom(), axisLabel="seconds per second"), options=ts_opts(),
                desc="Seconds spent per second waiting on the client limiter versus actually "
                     "on the wire to the Tailscale API."), 6, 7),
         (panel("Requests delayed by the rate limiter", "stat",
@@ -277,7 +278,7 @@ def tab_health_collection(scope):
                [prom_t(lot("tailscale2otel_capability_scope_satisfied_ratio", WIN_SLOW), instant=True, fmt="table")],
                mappings=bool_map("NOT SATISFIED", "satisfied", "red", "green"),
                novalue=_CAP_EMPTY,
-               transformations=[organize(exclude=TBL_NOISE,
+               transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                          rename={"tailscale_capability": "Capability",
                                                  "Value": "Scopes"})],
                desc="Advisory startup preflight comparing configured OAuth scopes against "
@@ -296,7 +297,8 @@ def tab_health_collection(scope):
                [prom_t("max by (tailscale_collector, tailscale_api_state) "
                        "(tailscale2otel_capability_status_ratio == 1)",
                        legend="{{tailscale_collector}} / {{tailscale_api_state}}")],
-               unit="short", min_=0, max_=1, options=state_timeline_opts(),
+               unit="short", options=state_timeline_opts(),
+               mappings=vmap({"1": {"text": "active", "color": "text", "index": 0}}),
                novalue=_CAP_EMPTY,
                desc="Capability-state transitions by collector and state. The current-state "
                     "table remains the exact snapshot view."), 24, 8),
@@ -333,7 +335,7 @@ def tab_health_collection(scope):
                     "slow."), 8, 6),
         (panel("Pull-endpoint gather errors/s", "timeseries",
                [prom_t("sum(rate(tailscale2otel_metrics_scrape_gather_errors_total[%s]))" % RI, legend="gather errors/s")],
-               unit="cps", novalue="0", custom=ts_custom(), options=ts_opts(),
+               unit="cps", novalue=_PULL_EMPTY, custom=ts_custom(), options=ts_opts(),
                desc="Prometheus registry Gather errors hit while serving /metrics; the handler "
                     "continues on error and returns 200 with the remaining series, so a "
                     "non-zero rate means series are silently being dropped from every "
@@ -358,7 +360,7 @@ def tab_health_collection(scope):
 
     rdns = [
         (panel("rDNS cache fill", "stat",
-               [prom_t("%s / clamp_min(%s, 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
+               [prom_t("max(%s) / clamp_min(max(%s), 1)" % (lot("tailscale_rdns_cache_entries_ratio", WIN_FAST),
                                                   lot("tailscale_rdns_cache_capacity_ratio", WIN_FAST)))],
                unit="percentunit", options=stat_opts(),
                desc="rDNS cache entries as a fraction of configured capacity."), 6, 6),

@@ -163,7 +163,7 @@ def tab_network(scope):
         (panel("Current flow share by transport", "piechart",
                [prom_t("sum by (network_transport) "
                        "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
-                       legend="{{network_transport}}", instant=True, fmt="table")],
+                       legend="{{network_transport}}")],
                unit="cps", options=pie_opts(),
                novalue="No flow records in the selected interval.",
                desc="Current flow-rate composition by transport. The Flow summary time series "
@@ -171,7 +171,7 @@ def tab_network(scope):
         (panel("Current flow share by traffic type", "piechart",
                [prom_t("sum by (tailscale_traffic_type) "
                        "(rate(tailscale_network_flows_total%s[%s]))" % (tf, RI),
-                       legend="{{tailscale_traffic_type}}", instant=True, fmt="table")],
+                       legend="{{tailscale_traffic_type}}")],
                unit="cps", options=pie_opts(),
                novalue="No flow records in the selected interval.",
                desc="Current flow-rate composition by traffic type. The Flow summary time "
@@ -205,7 +205,7 @@ def tab_network(scope):
     hygiene = [
         (panel("Rejected flow records/s", "timeseries",
                [prom_t("sum by (source, reason) (rate(tailscale_network_data_quality_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"source\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI), legend="{{source}} / {{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                thresholds=thr([(None, "green"), (0.01, "yellow")]),
@@ -216,7 +216,7 @@ def tab_network(scope):
         (panel("Dedup counter conflicts/s", "timeseries",
                [prom_t("sum by (scope, tailscale_traffic_type) "
                        "(rate(tailscale_network_dedup_conflicts_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"scope\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI),
                        legend="{{scope}} / {{tailscale_traffic_type}}")],
                unit="cps", custom=ts_custom(), options=ts_opts(),
@@ -228,7 +228,7 @@ def tab_network(scope):
                     "re-delivery."), 8, 7),
         (panel("Flow-view store drops/s", "timeseries",
                [prom_t("sum by (reason) (rate(tailscale_network_store_dropped_total%s[%s])) "
-                       "or (0 * sum(rate(tailscale_network_flows_total%s[%s])))"
+                       "or on() label_replace(0 * sum(rate(tailscale_network_flows_total%s[%s])), \"reason\", \"none\", \"\", \"\")"
                        % (sf, RI, sf, RI), legend="{{reason}}")],
                unit="cps", custom=ts_custom(stack="normal"), options=ts_opts(),
                desc="Flow observations rejected from the local in-memory flow view because "
@@ -264,24 +264,28 @@ def tab_network(scope):
                        % loki_flow, refid="A", legend="tx", instant=True),
                 loki_t("sum(sum_over_time(%s | unwrap tailscale_rx_bytes [$__range]))"
                        % loki_flow, refid="B", legend="rx", instant=True)],
-               unit="bytes", options=bargauge_opts(),
+               unit="bytes", min_=0, options=bargauge_opts(),
+               overrides=[{"matcher": {"id": "byFrameRefID", "options": ref},
+                           "properties": [{"id": "displayName", "value": label}]}
+                          for ref, label in (("A", "TX bytes"), ("B", "RX bytes"))],
                novalue="No matching flow-log records in the selected range.",
                desc="Bytes summed directly from raw flow-log records over the selected range, "
                     "independent of the Prometheus rollup/raw metric mode. Empty means no "
                     "matching log records; a populated zero is shown only when records carry "
-                    "zero bytes."), 24, 8),
+                    "zero bytes. Summed over the selected dashboard range."), 24, 8),
     ]
     # Top node-pair talkers from flow logs — node identity; gate pii_node.
     fl_pairs = [
         (panel("Top node-pair talkers (flow logs)", "table",
                [loki_t("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) "
-                       "(sum_over_time(%s | unwrap tailscale_tx_bytes [$__range])))" % loki_flow,
+                       "(sum_over_time(%s | tailscale_src_node != \"\" | tailscale_dst_node != \"\" | unwrap tailscale_tx_bytes [$__range])))" % loki_flow,
                         refid="A", instant=True)],
-               unit="bytes",
+               unit="bytes", options={"sortBy": [{"displayName": "TX bytes", "desc": True}]},
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_src_node": "Source",
                                                  "tailscale_dst_node": "Destination",
-                                                 "Value": "TX bytes"})],
+                                                 "Value #A": "TX bytes"},
+                                         index={"tailscale_src_node": 0, "tailscale_dst_node": 1, "Value #A": 2})],
                novalue="No flow-log records with both source and destination node identity in "
                        "the selected range.",
                desc="Top-N source/destination node pairs by total outbound bytes in the selected "
@@ -411,7 +415,7 @@ def tab_network(scope):
         (panel("Flow log stream", "logs",
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` "
                        "|~ `$log_filter`", maxlines=300)],
-               options=logs_opts(),
+               options=logs_opts(wrap=False),
                desc="Raw flow-log lines as received, newest first; narrow them with the Log "
                     "filter control. This is the unaggregated record behind the rollup and raw "
                     "panels above."), 24, 10),
