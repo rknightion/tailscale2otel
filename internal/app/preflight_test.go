@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
+	tsclient "tailscale.com/client/tailscale/v2"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
@@ -501,5 +502,20 @@ func TestPrepareConfig_PreflightSuppressesTheOneNonGETRequest(t *testing.T) {
 	}
 	if !cfg.Collectors.Acl.Validate {
 		t.Error("PrepareConfig mutated the caller's cfg in place")
+	}
+}
+
+func TestIsAuthFailureUsesSharedResolver(t *testing.T) {
+	for _, code := range []int{400, 401, 403, 404, 429, 500} {
+		for name, err := range map[string]error{
+			"tailscale": &tsapi.StatusError{Code: code}, "headscale": &hsapi.StatusError{Code: code},
+			"client": tsclient.APIError{Status: code}, "oauth": &oauth2.RetrieveError{Response: &http.Response{StatusCode: code}},
+		} {
+			t.Run(fmt.Sprintf("%s/%d", name, code), func(t *testing.T) {
+				if got := isAuthFailure(fmt.Errorf("wrapped: %w", err)); got != (code == 401) {
+					t.Fatalf("auth failure=%v", got)
+				}
+			})
+		}
 	}
 }

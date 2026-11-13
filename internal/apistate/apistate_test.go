@@ -5,11 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/url"
 	"slices"
 	"testing"
 	"time"
 
+	"golang.org/x/oauth2"
+	tsclient "tailscale.com/client/tailscale/v2"
+
 	"github.com/rknightion/tailscale2otel/v5/internal/apistate"
+	"github.com/rknightion/tailscale2otel/v5/internal/hsapi"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
@@ -290,5 +296,37 @@ func TestTransientFailureStillCoversRetryables(t *testing.T) {
 		if got := apistate.Classify(err, apistate.Disposition{}); got != apistate.StateTransientFailure {
 			t.Errorf("Classify(%d) = %q, want %q", code, got, apistate.StateTransientFailure)
 		}
+	}
+}
+
+func TestClassifyResolvesEveryProviderErrorShape(t *testing.T) {
+	for _, code := range []int{401, 403, 404, 429, 500} {
+		for name, err := range map[string]error{
+			"tailscale": &tsapi.StatusError{Code: code}, "headscale": &hsapi.StatusError{Code: code},
+			"client": tsclient.APIError{Status: code}, "oauth": &oauth2.RetrieveError{Response: &http.Response{StatusCode: code}},
+		} {
+			t.Run(fmt.Sprintf("%s/%d", name, code), func(t *testing.T) {
+				want := apistate.Classify(&tsapi.StatusError{Code: code}, apistate.Disposition{})
+				if name == "oauth" {
+					want = apistate.StateTransientFailure
+					if code == 401 || code == 403 {
+						want = apistate.StateCredentialRejected
+					}
+				}
+				wrapped := &url.Error{Op: "Get", URL: "https://api.example.invalid", Err: fmt.Errorf("wrapped: %w", err)}
+				if got := apistate.Classify(wrapped, apistate.Disposition{}); got != want {
+					t.Fatalf("state=%s, want %s", got, want)
+				}
+			})
+		}
+	}
+	for _, code := range []string{"invalid_client", "unauthorized_client", "invalid_grant"} {
+		err := &oauth2.RetrieveError{ErrorCode: code, Response: &http.Response{StatusCode: 400}}
+		if got := apistate.Classify(err, apistate.Disposition{DisabledOn: []int{400}}); got != apistate.StateCredentialRejected {
+			t.Errorf("%s: %s", code, got)
+		}
+	}
+	if got := apistate.Classify(&oauth2.RetrieveError{}, apistate.Disposition{}); got != apistate.StateTransientFailure {
+		t.Errorf("missing response: %s", got)
 	}
 }
