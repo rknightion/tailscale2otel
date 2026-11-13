@@ -174,3 +174,24 @@ func TestHandler_NodeAuthorizedAliasDedup(t *testing.T) {
 		t.Fatalf("log records = %d, want 1 (nodeAuthorized alias of nodeApproved)", got)
 	}
 }
+
+func TestCrossDedupAuditAfterWebhookStillSuppressed(t *testing.T) {
+	set := dedup.New(16)
+	webhookRec := telemetrytest.New()
+	s := New(Options{}, webhookRec.Emitter(), discard(), WithDedup(set))
+	s.emit(context.Background(), nodeCreatedEvent("example-node"))
+	if got := len(webhookRec.LogRecords()); got != 1 {
+		t.Fatalf("initial webhook logs = %d", got)
+	}
+	rec := telemetrytest.New()
+	p := audit.NewProcessor(audit.WithDedup(dedup.New(16)), audit.WithCrossDedup(set))
+	p.Process(audit.Event{EventTime: time.Date(2024, 6, 6, 15, 25, 26, 0, time.UTC), Action: "CREATE", Target: audit.Target{ID: "example-node", Type: "NODE"}}, rec.Emitter())
+	if got := len(rec.LogRecords()); got != 0 {
+		t.Errorf("duplicate audit logs = %d", got)
+	}
+	for _, point := range rec.MetricPoints(audit.MetricAuditEvents) {
+		if point.Value != 0 {
+			t.Errorf("duplicate audit counter = %v", point.Value)
+		}
+	}
+}

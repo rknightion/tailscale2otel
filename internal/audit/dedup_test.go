@@ -1,6 +1,7 @@
 package audit_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -168,5 +169,32 @@ func TestDedupKeyFormula(t *testing.T) {
 	noGroup.Target.ID = "n9"
 	if got, want := audit.DedupKey(noGroup), t1+"|UPDATE|n9"; got != want {
 		t.Errorf("DedupKey(noGroup) = %q, want %q", got, want)
+	}
+}
+
+func TestCrossDedupKeepsSecondAuditEventOfOneOperation(t *testing.T) {
+	for _, shared := range []bool{false, true} {
+		t.Run(fmt.Sprint(shared), func(t *testing.T) {
+			rec := telemetrytest.New()
+			options := []audit.Option{audit.WithDedup(dedup.New(16))}
+			if shared {
+				options = append(options, audit.WithCrossDedup(dedup.New(16)))
+			}
+			p := audit.NewProcessor(options...)
+			a := sampleEvent()
+			a.Action = "UPDATE"
+			a.Target.Property = "ALLOWED_IPS"
+			b := a
+			b.Target.Property = "ACL_TAGS"
+			p.Process(a, rec.Emitter())
+			p.Process(b, rec.Emitter())
+			p.Process(b, rec.Emitter())
+			if got := len(rec.LogRecords()); got != 2 {
+				t.Errorf("audit logs = %d, want both properties exactly once", got)
+			}
+			if got := counterTotal(rec); got != 2 {
+				t.Errorf("audit counter = %v, want 2", got)
+			}
+		})
 	}
 }

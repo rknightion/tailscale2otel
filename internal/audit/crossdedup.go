@@ -13,6 +13,13 @@ import (
 // events before cross-source dedup suppresses reliably. See internal/webhook.
 const crossKeyBucket = time.Second
 
+// CrossSourceAudit and CrossSourceWebhook identify the first observer of a
+// cross-source key, preserving distinct audit properties within one operation.
+const (
+	CrossSourceAudit   = "audit"
+	CrossSourceWebhook = "webhook"
+)
+
 // NormalizedCrossKey is the SINGLE HOME for the normalized cross-source
 // de-duplication key shared by the audit Processor and the webhook Server. A
 // webhook event carries no eventGroupID, so the two sources are reconciled on a

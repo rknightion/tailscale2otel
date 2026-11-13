@@ -121,9 +121,10 @@ func WithDedup(set *dedup.Set) Option {
 }
 
 // WithCrossDedup attaches a cross-SOURCE de-duplication set shared with the
-// webhook receiver. When set is non-nil, Process drops any event whose
-// CrossSourceKey has already been recorded in set (e.g. the same change already
-// emitted via a webhook). This is BEST-EFFORT and SEPARATE from WithDedup's
+// webhook receiver. When set is non-nil, Process drops an event only when
+// its CrossSourceKey was first recorded by the webhook receiver. A key first
+// seen in audit does not suppress other audit properties of the same change.
+// This is BEST-EFFORT and SEPARATE from WithDedup's
 // eventGroupID-keyed poll<->stream dedup: it reconciles audit and webhook events
 // on a normalized (verb, subject, time-bucket) key (see NormalizedCrossKey).
 // First-seen-wins, so the surviving copy depends on arrival order. Passing a nil
@@ -248,9 +249,8 @@ func (p *Processor) ProcessCtx(ctx context.Context, ev Event, e telemetry.Emitte
 		return
 	}
 	if p.crossDedup != nil {
-		if key, ok := CrossSourceKey(ev); ok && !p.crossDedup.Add(key) {
-			// The same change was already emitted via the webhook receiver (or a
-			// prior audit event mapping to it): emit nothing.
+		if key, ok := CrossSourceKey(ev); ok && p.crossDedup.CompareAndAdd(key, CrossSourceAudit) == dedup.ResultConflict {
+			// The same change was first recorded by the webhook receiver: emit nothing.
 			return
 		}
 	}
