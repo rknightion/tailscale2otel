@@ -215,7 +215,7 @@ func (c *Client) List(ctx context.Context, prefix, startAfter string, limit int)
 		}
 
 		var page listResponse
-		if err := c.listPage(ctx, q.Encode(), &page); err != nil {
+		if err := c.listPage(ctx, strings.ReplaceAll(q.Encode(), "+", "%20"), &page); err != nil {
 			return ListResult{}, err
 		}
 		for _, o := range page.Contents {
@@ -336,7 +336,7 @@ func (c *Client) request(ctx context.Context, path, rawQuery string) (*http.Requ
 	// The signature covers the ENCODED path, and Go re-derives RawPath from Path
 	// only when they differ, so setting both keeps what is signed identical to
 	// what is sent for keys containing characters that need escaping.
-	u.RawPath = u.EscapedPath()
+	u.RawPath = s3EscapePath(u.Path)
 	u.RawQuery = rawQuery
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)

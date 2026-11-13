@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"testing"
@@ -164,5 +165,30 @@ func TestSign_NoTokenHeaderWithStaticCredentials(t *testing.T) {
 	}
 	if strings.Contains(field(req.Header.Get("Authorization"), "SignedHeaders="), "security-token") {
 		t.Error("an absent security token was signed")
+	}
+}
+
+func TestSigV4EncodesReservedPathCharacters(t *testing.T) {
+	c := newClient(t, "https://bucket.example.invalid", true)
+	c.now = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+	for _, tc := range []struct{ path, query, escaped string }{
+		{"/prefix/12:34:56", "", "/flows/prefix/12%3A34%3A56"},
+		{"/a=b+c @x", "", "/flows/a%3Db%2Bc%20%40x"},
+		{"/plain/AZaz09-._~", "", "/flows/plain/AZaz09-._~"},
+		{"/", "list-type=2&prefix=a%20b%2F", "/flows/"},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req, err := c.request(context.Background(), tc.path, tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Del("Authorization")
+			headers, signed := canonicalHeaders(req)
+			got := strings.Join([]string{req.Method, canonicalURI(req.URL.EscapedPath()), req.URL.RawQuery, headers, signed, emptyPayloadHash}, "\n")
+			want := "GET\n" + tc.escaped + "\n" + tc.query + "\nhost:bucket.example.invalid\nx-amz-content-sha256:" + emptyPayloadHash + "\nx-amz-date:20260102T030405Z\n\nhost;x-amz-content-sha256;x-amz-date\n" + emptyPayloadHash
+			if got != want {
+				t.Fatalf("canonical request:\n%s\nwant:\n%s", got, want)
+			}
+		})
 	}
 }
