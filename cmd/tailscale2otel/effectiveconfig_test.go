@@ -158,12 +158,10 @@ func TestRun_PrintEffectiveConfigMultiTailnet(t *testing.T) {
 	const y = `
 tailnets:
   - name: "one"
-    tailnet: "one.example.com"
     auth:
       method: apikey
       apikey: "tskey-one"
   - name: "two"
-    tailnet: "two.example.com"
     auth:
       method: apikey
       apikey: "tskey-two"
