@@ -3538,7 +3538,7 @@
         "kind": "Panel",
         "spec": {
           "id": 39,
-          "title": "Scrape budget headroom",
+          "title": "Scrape budget used",
           "description": "Last scrape duration as a fraction of the collector's poll interval; near or above 1 means the scrape risks overrunning its interval.",
           "links": [],
           "data": {

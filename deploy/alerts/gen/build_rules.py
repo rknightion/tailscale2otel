@@ -1103,7 +1103,7 @@ def groups():
               "tailscale2otel_scrape_budget_ratio > 1 for {{ $labels.tailscale_collector }} — the scrape is "
               "taking longer than its interval, so it cannot keep up. Increase the interval or reduce work.",
               domain="observability", paused=True,
-              policy="core", runbook="collector-scrape-health", panel="Scrape budget headroom"),
+              policy="core", runbook="collector-scrape-health", panel="Scrape budget used"),
         alert("ts2o-config-warnings", "Config warnings present",
               "max(tailscale2otel_config_warnings_ratio)", "gt", 0, "15m", "info",
               "tailscale2otel has configuration warnings",
