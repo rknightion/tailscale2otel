@@ -422,3 +422,14 @@ class ObservedBytesScaleTest(unittest.TestCase):
              'properties': [{'id': 'displayName', 'value': 'RX bytes'}]},
         ])
         self.assertIn('Summed over the selected dashboard range.', panel['description'])
+
+class NodePairRankingTest(unittest.TestCase):
+    def test_ranked_pairs_have_identity_and_named_sorted_bytes(self):
+        panel = panel_spec(dashboard.build_family(), 'Top node-pair talkers (flow logs)')
+        expr = panel['data']['spec']['queries'][0]['spec']['query']['spec']['expr']
+        for label in ('tailscale_src_node', 'tailscale_dst_node'):
+            self.assertIn('| ' + label + ' != ""', expr)
+        opts = panel['data']['spec']['transformations'][0]['spec']['options']
+        self.assertEqual(opts['renameByName'], {'tailscale_src_node': 'Source', 'tailscale_dst_node': 'Destination', 'Value #A': 'TX bytes'})
+        self.assertEqual(opts['indexByName'], {'tailscale_src_node': 0, 'tailscale_dst_node': 1, 'Value #A': 2})
+        self.assertEqual(panel['vizConfig']['spec']['options']['sortBy'], [{'displayName': 'TX bytes', 'desc': True}])
