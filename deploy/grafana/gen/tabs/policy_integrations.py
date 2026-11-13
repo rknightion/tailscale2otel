@@ -92,7 +92,7 @@ def tab_policy_integrations(scope):
                                                                "Value": "Hosts"})],
                desc="Backing-host count per Service, bucketed by approval + configured state. "
                     "Gated by collect_hosts + cardinality.per_entity.service."), 18, 6),
-        (panel("Service tags (rollup)", "barchart",
+        (panel("Service tags (rollup)", "bargauge",
                [prom_t("sum by (tailscale_tag) (%s)" % lot(sel("tailscale_services_by_tag_ratio"), WIN_SLOW),
                        legend="{{tailscale_tag}}")],
                unit="short", options=bargauge_opts(),

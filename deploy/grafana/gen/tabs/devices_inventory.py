@@ -55,7 +55,7 @@ renders permanently hidden, which on screen is indistinguishable from a correctl
 empty row.
 """
 
-from builder import (autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
+from builder import (BAR_NOISE, category_bar_opts, autogrid_row, barchart_opts, bargauge_opts, geomap_opts, hq, logs_opts,
                      loki_t, lot, merge, organize, panel, PII, pie_opts, pii_sentinel, prom_t,
                      row, state_timeline_opts, stat_opts, thr, ts_custom, ts_opts, WIN_FAST,
                      WIN_SLOW)
@@ -306,13 +306,13 @@ def tab_devices_inventory(scope):
                transformations=[organize(exclude=["Time"])],
                desc="Fleet distribution by Tailscale client version."), 12, 7),
         (panel("Fleet tags (rollup)", "barchart",
-               [prom_t("sum by (tailscale_tag) (max by (tailscale_tag) (%s))"
+               [prom_t("topk($topn, sum by (tailscale_tag) (max by (tailscale_tag) (%s)))"
                        % lot("tailscale_devices_by_tag_ratio", WIN_SLOW),
                        instant=True, fmt="table")],
-               options=barchart_opts(),
-               transformations=[organize(exclude=["Time"])],
+               options=category_bar_opts("tailscale_tag"),
+               transformations=[organize(exclude=BAR_NOISE)],
                desc="Device count per ACL tag across the fleet. Counts individual tags, so a "
-                    "device carrying two tags is counted under each."), 12, 7),
+                    "device carrying two tags is counted under each. Shows the top $topn tags; raise Top N to see more."), 12, 7),
         # #392: the fleet age distribution. Devices whose `created` the control plane
         # omits (every shared-in device) are skipped by the exporter, so this describes
         # the internal population only.
