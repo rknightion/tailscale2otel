@@ -98,6 +98,14 @@ func (r *Redactor) redactKey(key string, value any) bool {
 			}
 			return false
 		}
+		// Discovery disambiguates hostname identities as hostname[:port]@address.
+		// Either component can be disabled; keep the hostname fallback even when
+		// the address category is enabled. Never strip the suffix and merge nodes.
+		if at := strings.LastIndexByte(s, '@'); at >= 0 {
+			if cat, ok := categoryForIPClass(classifyIP(s[at+1:])); ok && r.disabled(cat) {
+				return true
+			}
+		}
 		if fb, ok := ipKeyFallback[key]; ok {
 			return r.disabled(fb)
 		}
