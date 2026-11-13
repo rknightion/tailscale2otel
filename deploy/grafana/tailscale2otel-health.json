@@ -1075,10 +1075,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -3355,10 +3366,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4468,10 +4490,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -10911,10 +10944,22 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short",
                   "noValue": "No confirmed log-stream configuration. The endpoint may be unavailable or ambiguous."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Configured"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11630,10 +11675,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Last activity age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11803,6 +11859,7 @@
               },
               "fieldConfig": {
                 "defaults": {
+                  "unit": "cps",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -11946,6 +12003,7 @@
               },
               "fieldConfig": {
                 "defaults": {
+                  "unit": "cps",
                   "custom": {
                     "drawStyle": "line",
                     "lineInterpolation": "smooth",
@@ -15441,7 +15499,20 @@
                 "defaults": {
                   "noValue": "Capacity uncertain \u2014 missing limit or reporter telemetry; absence cannot establish unlimited capacity."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Utilization"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "percentunit"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }

@@ -207,7 +207,7 @@ def tab_health_delivery(scope):
                [tempo_t('{resource.service.name = "tailscale2otel" && '
                         'name =~ "scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|'
                         'stream.receive|webhook.receive|release.check .+"} | rate() by (name)')],
-               custom=ts_custom(), options=ts_opts(placement="right"),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Bounded discovery rate for every span class emitted by the exporter: "
                     "scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP "
                     "scrapes, stream and webhook receivers, and release checks. An absent class "
@@ -219,7 +219,7 @@ def tab_health_delivery(scope):
                unit="s", custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
         (panel("Scrape cadence by collector (traces)", "timeseries",
                [tempo_t('{name =~ "scrape.+" && resource.service.name = "tailscale2otel"} | rate() by (name)')],
-               custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
         (panel("stream.receive batch size (traces)", "timeseries",
                [tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
                    '| avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)'),
