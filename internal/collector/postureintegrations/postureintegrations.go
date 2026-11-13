@@ -80,6 +80,7 @@ type Collector struct {
 	// tracker records per-operation availability for the admin status page
 	// (#420). A nil *apistate.Tracker is a no-op.
 	tracker *apistate.Tracker
+	gauges  *telemetry.GaugeSnapshotBuilder
 	// now is the clock, injectable from tests.
 	now               func() time.Time
 	snapshotEnabled   bool
@@ -130,6 +131,7 @@ func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
 		api:               a,
+		gauges:            telemetry.NewGaugeSnapshotBuilder(),
 		interval:          interval,
 		now:               time.Now,
 		snapshotHeartbeat: defaultSnapshotHeartbeat,
@@ -167,6 +169,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if err != nil {
 		if state == apistate.StateDisabled {
 			e.Gauge(docCount.Name, docCount.Unit, docCount.Description, 0, nil)
+			c.gauges.Flush(e)
 			return nil
 		}
 		return err
@@ -184,11 +187,11 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	for i := range ints {
 		in := &ints[i]
 		attrs := telemetry.Attrs{attrProvider: in.Provider, attrIntegration: in.ID}
-		e.Gauge(docMatched.Name, docMatched.Unit, docMatched.Description,
+		c.gauges.Add(docMatched.Name, docMatched.Unit, docMatched.Description,
 			float64(in.Status.MatchedCount), attrs)
-		e.Gauge(docPossible.Name, docPossible.Unit, docPossible.Description,
+		c.gauges.Add(docPossible.Name, docPossible.Unit, docPossible.Description,
 			float64(in.Status.PossibleMatchedCount), attrs)
-		e.Gauge(docProviderHosts.Name, docProviderHosts.Unit, docProviderHosts.Description,
+		c.gauges.Add(docProviderHosts.Name, docProviderHosts.Unit, docProviderHosts.Description,
 			float64(in.Status.ProviderHostCount), attrs)
 		// 0/1 error gauge: LastSync tracks the last sync ATTEMPT (not success), so a
 		// failing integration keeps advancing it — this is the only failure signal.
@@ -197,12 +200,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if in.Status.Error != "" {
 			errVal = 1.0
 		}
-		e.Gauge(docError.Name, docError.Unit, docError.Description, errVal, attrs)
+		c.gauges.Add(docError.Name, docError.Unit, docError.Description, errVal, attrs)
 		if !in.Status.LastSync.IsZero() {
-			e.Gauge(docLastSync.Name, docLastSync.Unit, docLastSync.Description,
+			c.gauges.Add(docLastSync.Name, docLastSync.Unit, docLastSync.Description,
 				float64(in.Status.LastSync.Unix()), attrs)
 		}
 	}
+	c.gauges.Flush(e)
 	return nil
 }
 
