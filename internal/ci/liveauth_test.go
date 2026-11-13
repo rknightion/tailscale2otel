@@ -14,6 +14,7 @@ package ci_test
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -38,26 +39,23 @@ func liveWorkflowSource(t *testing.T) string {
 // what this asserts on, not the client ID.
 func TestLiveLaneStoresNoLongLivedTailscaleSecret(t *testing.T) {
 	src := liveWorkflowSource(t)
-
-	for _, banned := range []string{
-		"secrets.TS_OAUTH_CLIENT_SECRET",
-		"secrets.TS_API_KEY",
-		"secrets.TAILSCALE_AUTHKEY",
-	} {
-		if strings.Contains(src, banned) {
-			t.Errorf("live-contract.yml references %s. The lane authenticates by exchanging a "+
-				"GitHub OIDC token for a short-lived API token, so no long-lived Tailscale "+
-				"credential should be stored in GitHub at all (#355). Possession of a client "+
-				"secret or auth key is sufficient to use it; possession of the federated "+
-				"identity's client ID is not.", banned)
+	doc := readWorkflow(t, "live-contract.yml")
+	script := workflowScript(requiredSteps(t, requiredJob(t, doc, "live")))
+	if problems := liveAuthProblems(script, src); len(problems) > 0 {
+		t.Errorf("%v", problems)
+	}
+	t.Run("exchange removed from scripts", func(t *testing.T) {
+		mutated := strings.ReplaceAll(script, "oauth/token-exchange", "other-token")
+		if problems := liveAuthProblems(mutated, src); len(problems) == 0 {
+			t.Fatal("exchange mutation escaped guard")
 		}
-	}
+	})
+	t.Run("extra stored secret", func(t *testing.T) {
+		if problems := liveAuthProblems(script, src+"\n${{ secrets.EXTRA_CREDENTIAL }}"); len(problems) == 0 {
+			t.Fatal("secret mutation escaped guard")
+		}
+	})
 
-	if !strings.Contains(src, "oauth/token-exchange") {
-		t.Error("live-contract.yml no longer POSTs to /api/v2/oauth/token-exchange. That endpoint " +
-			"IS the workload-identity path; without it the lane must be authenticating some " +
-			"other way, which is what this test exists to catch.")
-	}
 }
 
 // TestLiveLaneRequestsAnOIDCToken keeps the two halves of the OIDC path together.
@@ -116,4 +114,24 @@ func TestLiveLaneKeepsTheNegativeExchangeCase(t *testing.T) {
 			"body. Tailscale returns an identical opaque 400 for every failure mode, so the " +
 			"absence of an access_token is the half of the assertion that carries real weight.")
 	}
+}
+
+func liveAuthProblems(script, source string) []string {
+	var problems []string
+	exchanges := 0
+	for _, line := range strings.Split(script, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") && strings.Contains(line, "oauth/token-exchange") {
+			exchanges++
+		}
+	}
+	if exchanges < 2 {
+		problems = append(problems, "missing two token-exchange script lines")
+	}
+	allowed := map[string]bool{"TS_WIF_CLIENT_ID": true, "TS_WIF_AUDIENCE": true, "ANTHROPIC_API_KEY": true, "CLAUDE_CODE_OAUTH_TOKEN": true}
+	for _, match := range regexp.MustCompile(`secrets\.([A-Za-z_][A-Za-z0-9_]*)`).FindAllStringSubmatch(source, -1) {
+		if !allowed[match[1]] {
+			problems = append(problems, "unexpected secrets."+match[1])
+		}
+	}
+	return problems
 }
