@@ -38,11 +38,12 @@
       "enabled": false
     },
     {
-      "description": "Update indirect deps in the tools/* modules. They pull the whole build list in transitively via replace ../.., so every dep except the self-module is indirect there - and Renovate skips indirect deps by default. A root bump of a shared dep would otherwise leave tools/*/go.mod pinned to the old version, and Go then refuses to build them ('updates to go.mod needed'). Enabling this puts both sides of the bump in the same PR.",
+      "description": "Update indirect dependencies in the root and tool modules together so the shipped binary does not trail its tools. Renovate skips indirect dependencies by default; including both sides keeps shared dependency bumps in one PR.",
       "matchManagers": [
         "gomod"
       ],
       "matchFileNames": [
+        "go.mod",
         "tools/**/go.mod"
       ],
       "matchDepTypes": [
@@ -56,6 +57,7 @@
         "gomod"
       ],
       "matchFileNames": [
+        "go.mod",
         "tools/**/go.mod"
       ],
       "matchDepTypes": [
@@ -65,16 +67,6 @@
         "major"
       ],
       "enabled": false
-    },
-    {
-      "description": "gRPC-Go v1.84.0 is CVE-2026-84445 (HIGH, DoS via malformed RPC requests) and container-publish's Trivy gate blocks CRITICAL,HIGH -- so Renovate bumping to it on 2026-09-18 stopped every image publishing while release-please kept cutting GitHub releases. rkps-awsinfra's Renovate follows those releases, deployed a tag with no image, and took tailscale2otel down for hours. Upstream's fixed versions are 1.82.2, 1.83.2 and 1.85.0; 1.85.0 is not released yet, so 1.83.2 is the ceiling. REMOVE THIS RULE once google.golang.org/grpc v1.85.0 ships.",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchPackageNames": [
-        "google.golang.org/grpc"
-      ],
-      "allowedVersions": "<1.84.0 || >=1.85.0"
     }
   ]
 }
