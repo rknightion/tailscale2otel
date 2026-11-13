@@ -2,6 +2,9 @@ package webhooks
 
 import (
 	"context"
+	"errors"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -486,4 +489,61 @@ func TestEndpointAgeSkippedEntirelyWhenNoneKnown(t *testing.T) {
 	if pts := rec.MetricPoints("tailscale.webhook_endpoint.age"); len(pts) != 0 {
 		t.Fatalf("age points = %d, want 0 when no endpoint reports a Created", len(pts))
 	}
+}
+
+func TestWebhookEndpointGaugeDropsWhenEndpointRemoved(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(strconv.FormatBool(disabled), func(t *testing.T) {
+			api := &fakeAPI{hooks: sampleHooks()}
+			c := New(api, 0)
+			rec := telemetrytest.New()
+			collect := func() {
+				t.Helper()
+				if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			collect()
+			before := rec.MetricPoints(docEndpointSubs.Name)
+			if len(before) != 2 {
+				t.Fatalf("initial endpoint points = %v", before)
+			}
+			api.err = errors.New("synthetic list failure")
+			if err := c.Collect(context.Background(), rec.Emitter()); err == nil {
+				t.Fatal("expected error")
+			}
+			if !sameMetricPoints(rec.MetricPoints(docEndpointSubs.Name), before) {
+				t.Fatal("failed list changed subscriptions")
+			}
+			api.err = nil
+			api.hooks = nil
+			if disabled {
+				api.err = &tsapi.StatusError{Code: 404}
+			}
+			collect()
+			if got := rec.MetricPoints(docEndpointSubs.Name); len(got) != 0 {
+				t.Errorf("removed endpoint points = %v", got)
+			}
+		})
+	}
+}
+
+// sameMetricPoints compares snapshots without depending on SDK iteration order.
+func sameMetricPoints(a, b []telemetrytest.MetricPoint) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, point := range a {
+		found := false
+		for _, other := range b {
+			if reflect.DeepEqual(point, other) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
