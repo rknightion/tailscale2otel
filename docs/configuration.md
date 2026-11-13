@@ -1374,7 +1374,7 @@ Discover scrape targets dynamically from the Tailscale devices API (keys below a
 | `include_tags` | `[]` | If non-empty, only devices with one of these tags (e.g. `["tag:server"]`). |
 | `exclude_tags` | `[]` | Devices with any of these tags are skipped (wins over `include_tags`). |
 | `address_order` | `ipv4` | Preferred address family, `ipv4` \| `ipv6` (falls back to the other). |
-| `instance_source` | `name` | Identity-label source: `name` (MagicDNS short name - unique per tailnet **and** human-friendly; the default), `address` (Tailscale host:port - always unique), or `hostname` (OS hostname - **not** unique; collisions like `localhost` are auto-suffixed with the address + a WARN). |
+| `instance_source` | `name` | Identity-label source: `name` (MagicDNS short name - unique per tailnet **and** human-friendly; the default), `address` (Tailscale host:port - always unique), or `hostname` (OS hostname - every label is suffixed with `@<address>` to keep devices distinct, with the port before the suffix for multiple ports). The hostname form is removed when `pii_filter.tailscale_ips` is `false`; use `name` for a unique label without an address. |
 | `include_host_labels` | `true` | Attach `host.name`/`host.id` for joins with `tailscale.device.*`. |
 | `include_tags_label` | `true` | Attach `tailscale.tags`. |
 

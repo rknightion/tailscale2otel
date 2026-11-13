@@ -306,6 +306,9 @@ func (c *Config) validateWebhookCredentials() error {
 func (c *Config) Warnings() []string {
 	var w []string
 	w = append(w, c.logHorizonWarnings()...)
+	if c.Collectors.NodeMetrics.Discovery.InstanceSource == "hostname" && !c.PIIFilter.TailscaleIPs {
+		w = append(w, "collectors.node_metrics.discovery.instance_source=hostname embeds the node address in tailscale.node: with pii_filter.tailscale_ips=false the label is removed. Use instance_source: name for a unique label with no address.")
+	}
 	if c.Coordination.Mode == "kubernetes" &&
 		(c.Collectors.Flowlogs.Source == "both" || c.Collectors.Auditlogs.Source == "both") {
 		w = append(w, "coordination.mode=kubernetes with a flowlogs or auditlogs source=both: cross-source de-duplication is process-local and cannot suppress duplicates across replicas. Use one ingestion source per log type when deploying more than one replica.")
