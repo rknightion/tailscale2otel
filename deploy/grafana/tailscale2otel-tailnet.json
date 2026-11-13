@@ -2170,10 +2170,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Age"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -5584,10 +5595,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -5667,10 +5689,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Last seen"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -9372,9 +9405,7 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
+                "defaults": {},
                 "overrides": [
                   {
                     "matcher": {
@@ -9391,6 +9422,30 @@
                             "targetBlank": false
                           }
                         ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Advertised"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Enabled"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
                       }
                     ]
                   }
@@ -9555,9 +9610,7 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
+                "defaults": {},
                 "overrides": [
                   {
                     "matcher": {
@@ -9574,6 +9627,18 @@
                             "targetBlank": false
                           }
                         ]
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Latency"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
                       }
                     ]
                   }
@@ -10825,10 +10890,22 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "bytes",
                   "noValue": "No flow-log records with both source and destination node identity in the selected range."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "TX bytes"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "bytes"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11773,10 +11850,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Unique peers"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -11853,10 +11941,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Unique ports"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13276,10 +13375,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Advertised"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13359,10 +13469,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Approved"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13442,10 +13563,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Messages"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13525,10 +13657,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Region ID"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -13608,10 +13751,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Endpoints"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -14554,10 +14708,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Home region ID"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -17895,7 +18060,6 @@
               "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "s",
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
@@ -17915,7 +18079,20 @@
                   },
                   "noValue": "No posture-attribute expiry series. Only attributes explicitly set WITH an expiry appear here \u2014 most posture attributes never carry one, so an empty panel is the normal reading, not a fault. Needs the devices collector with collect_posture, and the attribute inside the attribute_namespaces allow-list."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25351,10 +25528,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "s"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Expires in"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "s"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26011,10 +26199,21 @@
             "spec": {
               "options": {},
               "fieldConfig": {
-                "defaults": {
-                  "unit": "short"
-                },
-                "overrides": []
+                "defaults": {},
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Hosts"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }

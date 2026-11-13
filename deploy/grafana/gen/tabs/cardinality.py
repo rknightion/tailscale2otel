@@ -148,7 +148,7 @@ def tab_cardinality(scope):
                transformations=[organize(
                    exclude=["Time", "job", "instance", "service_instance_id", "service_name", "service_namespace"],
                    rename={"metric_name": "Metric", "Value": "Utilization"})],
-               novalue=_NO_CAP,
+               unit="percentunit", novalue=_NO_CAP,
                desc="Per-metric active-series count divided by the series limit — utilization as a fraction. "
                     "1.0 = at cap relative to the maximum observed positive limit. Uses / on() group_left() "
                     "for the aggregate limit. Observed reporters only: a visible reporter without a positive "

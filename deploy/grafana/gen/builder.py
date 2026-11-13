@@ -238,7 +238,19 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
         _t["spec"]["refId"] = chr(65 + i)
     defaults = {}
     if unit is not None:
-        defaults["unit"] = unit
+        if ptype == "table":
+            measures = []
+            for transform in transformations or []:
+                if transform.get("group") == "organize":
+                    for field, display in transform["spec"]["options"].get("renameByName", {}).items():
+                        if field == "Value" or field.startswith("Value #"):
+                            measures.append(display)
+            overrides = list(overrides or []) + [
+                {"matcher": {"id": "byName", "options": field},
+                 "properties": [{"id": "unit", "value": unit}]}
+                for field in measures or ["Value"]]
+        else:
+            defaults["unit"] = unit
     if decimals is not None:
         defaults["decimals"] = decimals
     if min_ is not None:
