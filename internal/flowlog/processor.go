@@ -370,6 +370,11 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 		"consistency": reporter.consistency,
 	})
 
+	var refs nodeRefIndex
+	if p.logMode == logPerConnection || p.store != nil || p.identity || (p.rollup != nil && p.rollup.wantsIdentity()) {
+		refs = flow.refIndex()
+	}
+
 	sets := [...]trafficSet{
 		{semconv.TrafficVirtual, flow.VirtualTraffic},
 		{semconv.TrafficSubnet, flow.SubnetTraffic},
@@ -397,7 +402,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 					continue
 				}
 			}
-			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget, tally, setIndex)
+			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget, tally, setIndex, refs)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -428,7 +433,7 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry. Metrics are always emitted; the per-connection log is
 // gated through budget so the volume guard never suppresses metrics.
-func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget, tally *connTally, setIndex int) {
+func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget, tally *connTally, setIndex int, refs nodeRefIndex) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitEndpoint(cc.Src)
 	dstAddr, dstPort := splitEndpoint(cc.Dst)
@@ -497,7 +502,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 		}
 		addPathAttrs(metricAttrs, metricPath, derpRegion)
 		if p.identity {
-			addIdentityAttrs(metricAttrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+			addIdentityAttrs(metricAttrs, refs.lookup(srcAddr), refs.lookup(dstAddr))
 		}
 		if p.geoDims {
 			// Country and continent only. The AS pair, and anything a City
@@ -537,9 +542,9 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 			derpRegion:  derpRegion,
 		}
 		// Resolving the node blocks is only worth it when the accumulator will
-		// actually key on identity — refByAddr walks the record's embedded blocks.
+		// actually key on identity, using the record's parsed address index.
 		if rollup.wantsIdentity() {
-			d.identity = identityOf(flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+			d.identity = identityOf(refs.lookup(srcAddr), refs.lookup(dstAddr))
 		}
 		d.geo = geoKey{
 			srcCountry:   srcGeo.CountryISO,
@@ -581,7 +586,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	// describe, so it is fed from inside the dedup-guarded path and never from a
 	// second traversal.
 	if p.store != nil {
-		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter)
+		observation := p.observation(flow, trafficType, cc, transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, reporter, refs)
 		if store, ok := p.store.(resultRecorder); ok {
 			switch store.RecordResult(observation) {
 			case flowstore.AdmissionExpired:
@@ -595,7 +600,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 	}
 
 	if p.logMode == logPerConnection && budget.allow() {
-		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e)
+		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e, refs)
 	}
 }
 
@@ -615,12 +620,11 @@ func (p *Processor) observeStoreDrop(e telemetry.Emitter, reason string) {
 // therefore means one thing only: the record did not carry it.
 func (p *Processor) observation(flow FlowLog, trafficType string, cc ConnectionCounts,
 	transport, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string,
-	reporter reporterDiagnosis,
+	reporter reporterDiagnosis, refs nodeRefIndex,
 ) flowstore.Observation {
 	// Resolved once and used for both the identity fields and the policy
-	// evaluation below: refByAddr walks the record's embedded node blocks, so a
-	// second lookup per endpoint would be pure repeated work on the emit path.
-	srcRef, dstRef := flow.refByAddr(srcAddr), flow.refByAddr(dstAddr)
+	// evaluation below, using the index shared by this record's connections.
+	srcRef, dstRef := refs.lookup(srcAddr), refs.lookup(dstAddr)
 
 	verdict, rule, reversed, policyVersion := p.reconcile(trafficType, transport, srcRef, dstRef, srcAddr, srcPort, dstAddr, dstPort)
 
@@ -1072,7 +1076,7 @@ func dirAttrs(base telemetry.Attrs, direction string) telemetry.Attrs {
 }
 
 // emitConnLog emits one per-connection flow log event.
-func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter) {
+func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService string, srcGeo, dstGeo geoip.Result, reporter reporterDiagnosis, e telemetry.Emitter, refs nodeRefIndex) {
 	body := fmt.Sprintf("%s %s %s -> %s tx=%dB rx=%dB", transport, trafficType, cc.Src, cc.Dst, cc.TxBytes, cc.RxBytes)
 	attrs := telemetry.Attrs{
 		semconv.NetworkTransport:         transport,
@@ -1127,7 +1131,7 @@ func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType s
 	// full set (country, continent, AS, and city/region/coordinates when a City
 	// database is loaded) rides every flow log whenever geoip is on, and the
 	// GeoDims toggle governs only what reaches a metric.
-	addIdentityAttrs(attrs, flow.refByAddr(srcAddr), flow.refByAddr(dstAddr))
+	addIdentityAttrs(attrs, refs.lookup(srcAddr), refs.lookup(dstAddr))
 	addGeoLogAttrs(attrs, srcGeo, dstGeo)
 	e.LogEventCtx(ctx, telemetry.Event{
 		Name:              docFlowLog.Name,
