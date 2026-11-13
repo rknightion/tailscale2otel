@@ -411,7 +411,7 @@ def tab_network(scope):
         (panel("Flow log stream", "logs",
                [loki_t("{service_name=\"tailscale2otel\"} | event_name=`tailscale.network.flow` "
                        "|~ `$log_filter`", maxlines=300)],
-               options=logs_opts(),
+               options=logs_opts(wrap=False),
                desc="Raw flow-log lines as received, newest first; narrow them with the Log "
                     "filter control. This is the unaggregated record behind the rollup and raw "
                     "panels above."), 24, 10),
