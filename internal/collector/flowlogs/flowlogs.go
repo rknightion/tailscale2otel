@@ -283,6 +283,7 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 		c.onIngest(semconv.IngestSourcePoll, semconv.IngestSignalFlow, len(deduped.Logs), 0)
 	}
 	if err := c.persistReplay(additions, stale, to); err != nil {
+		collector.EmitCheckpointPersistError(e, c.Name())
 		// The processor has already emitted accepted data. Returning an error is
 		// intentional: the scheduler must not advance its high-water mark when
 		// the durable replay guard was not persisted.

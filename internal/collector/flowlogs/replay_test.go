@@ -167,6 +167,10 @@ func TestCollectWindow_ReplayPersistenceFailureDoesNotAdvanceAfterEmission(t *te
 	if !hwm.IsZero() {
 		t.Fatalf("CollectWindow() high-water mark = %v, want zero after persistence failure", hwm)
 	}
+	points := rec.MetricPoints("tailscale2otel.checkpoint.persist.errors")
+	if len(points) != 1 || points[0].Value != 1 || points[0].Attrs["tailscale.collector"] != "flowlogs" {
+		t.Fatalf("persist error counter = %+v", points)
+	}
 	if got, want := sumIO(rec), float64(1800); got != want {
 		t.Fatalf("io total = %v, want %v (accepted data remains emitted)", got, want)
 	}

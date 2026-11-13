@@ -13,6 +13,7 @@ import (
 
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 )
 
@@ -410,5 +411,39 @@ func TestAppFlushCheckpointStoresPersistsDebouncedCursor(t *testing.T) {
 	}
 	if got, ok := reopened.Get("devices"); !ok || !got.Equal(want) {
 		t.Fatalf("reopened devices = %v, %v; want %v, true", got, ok, want)
+	}
+}
+
+func TestCheckpointStore_OversizeFileDegrades(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "checkpoint.json")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(path, safefile.MaxCheckpointBytes+1); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{}
+	cfg.Checkpoint.Store = "file"
+	cfg.Checkpoint.FilePath = path
+	store, outcome, err := checkpointStore(cfg, discardLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Kind != "file" || !strings.Contains(outcome.Reason, "read limit") {
+		t.Fatalf("outcome=%+v", outcome)
+	}
+	if _, err := os.Stat(path + ".oversize"); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := store.Set("cursor", when); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := collector.NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := reopened.Get("cursor"); !ok || !got.Equal(when) {
+		t.Fatal("cold-start store did not persist")
 	}
 }

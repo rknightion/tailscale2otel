@@ -1,14 +1,18 @@
 package collector_test
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 )
 
 // TestFileStore_CorruptFileReportsSentinel pins #69: a checkpoint file that fails
@@ -370,5 +374,78 @@ func TestNamespaced_EmptyIsAPassThrough(t *testing.T) {
 	base := collector.NewMemoryStore()
 	if got := collector.Namespaced(base, ""); got != base {
 		t.Error("an empty namespace wrapped the store; existing keys would stop resolving")
+	}
+}
+
+func TestFileStore_RefusesOversizeWrite(t *testing.T) {
+	for _, debounce := range []time.Duration{0, time.Hour} {
+		t.Run(debounce.String(), func(t *testing.T) {
+			var logs bytes.Buffer
+			previous := slog.Default()
+			slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+			t.Cleanup(func() { slog.SetDefault(previous) })
+			path := filepath.Join(t.TempDir(), "checkpoint.json")
+			store, err := collector.NewFileStore(path, collector.WithWriteDebounce(debounce))
+			if err != nil {
+				t.Fatal(err)
+			}
+			flush := func() error { return store.(collector.CheckpointFlusher).Flush() }
+			when := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			if err := store.Set("cursor", when); err != nil {
+				t.Fatal(err)
+			}
+			if err := flush(); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			huge := strings.Repeat("x", int(safefile.MaxCheckpointBytes))
+			for i := 0; i < 2; i++ {
+				err := store.Set(huge, when)
+				if debounce > 0 {
+					err = flush()
+				}
+				if !errors.Is(err, collector.ErrCheckpointTooLarge) {
+					t.Fatalf("want ErrCheckpointTooLarge, got %v", err)
+				}
+			}
+			if got, ok := store.Get(huge); !ok || !got.Equal(when) {
+				t.Fatal("refused value missing from memory")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatal("oversize persist replaced readable checkpoint")
+			}
+			if n := strings.Count(logs.String(), "level=WARN"); n != 1 {
+				t.Fatalf("warnings=%d, want 1", n)
+			}
+			if err := store.Delete(huge); err != nil {
+				t.Fatal(err)
+			}
+			if err := flush(); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Set("cursor", when.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if err := flush(); err != nil {
+				t.Fatal(err)
+			}
+			if n := strings.Count(logs.String(), "checkpoint file persistence recovered"); n != 1 {
+				t.Fatalf("recovery logs=%d, want 1", n)
+			}
+			reopened, err := collector.NewFileStore(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := reopened.Get("cursor"); !ok || !got.Equal(when.Add(time.Minute)) {
+				t.Fatal("recovered file did not retain cursor")
+			}
+		})
 	}
 }
