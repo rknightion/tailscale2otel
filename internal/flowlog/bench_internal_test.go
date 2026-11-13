@@ -186,3 +186,23 @@ func BenchmarkRollupAccumulator_Record(b *testing.B) {
 		a.observeUnique(node, "peer", "443")
 	}
 }
+
+func BenchmarkProcessAll_RollupManyConnections(b *testing.B) {
+	fl := benchDecodeLiveRecord(b)
+	conn := fl.VirtualTraffic[0]
+	fl.VirtualTraffic = make([]ConnectionCounts, 10)
+	for i := range fl.VirtualTraffic {
+		fl.VirtualTraffic[i] = conn
+	}
+	resp := NetworkResponse{Logs: make([]FlowLog, 100)}
+	for i := range resp.Logs {
+		resp.Logs[i] = fl
+	}
+	p := NewProcessor(enrich.NewDeviceCache(), Options{FlowMetricsMode: flowModeRollup, LogMode: "off"})
+	e := telemetrytest.New().Emitter()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		p.ProcessAll(resp, e)
+	}
+}

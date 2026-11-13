@@ -301,8 +301,10 @@ func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
 // request's) produces a native TraceID/SpanID on each one (#367).
 func (p *Processor) ProcessAllCtx(ctx context.Context, resp NetworkResponse, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
+	var tally connTally
+	defer flushTally(&tally, e)
 	for i := range resp.Logs {
-		p.process(ctx, resp.Logs[i], e, budget)
+		p.process(ctx, resp.Logs[i], e, budget, &tally)
 	}
 	p.flushDropped(budget, e)
 }
@@ -326,7 +328,9 @@ func (p *Processor) Process(flow FlowLog, e telemetry.Emitter) {
 // so a sampled span context produces a native TraceID/SpanID on them (#367).
 func (p *Processor) ProcessCtx(ctx context.Context, flow FlowLog, e telemetry.Emitter) {
 	budget := newLogBudget(p.maxLogs)
-	p.process(ctx, flow, e, budget)
+	var tally connTally
+	defer flushTally(&tally, e)
+	p.process(ctx, flow, e, budget, &tally)
 	p.flushDropped(budget, e)
 }
 
@@ -344,7 +348,7 @@ func (p *Processor) FlushRollup(e telemetry.Emitter) {
 // budget. Metrics are always emitted; only log records consume the budget. The
 // caller owns the budget (one per ProcessAll window, or one per standalone
 // Process call) and is responsible for flushing the dropped count.
-func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitter, budget *logBudget, tally *connTally) {
 	// Seed the UNVERIFIED tier from the identity the record embeds BEFORE
 	// resolving any of its connections, so a record enriches itself even when the
 	// devices collector is disabled or has not yet run. The embedded identity is
@@ -376,7 +380,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 	var totalConns int
 	var totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts int64
 
-	for _, set := range sets {
+	for setIndex, set := range sets {
 		for i := range set.counts {
 			cc := set.counts[i]
 			// Cross-source de-duplication at CONNECTION granularity (matching the
@@ -393,7 +397,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 					continue
 				}
 			}
-			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget)
+			p.processConn(ctx, flow, set.typ, cc, reporter, e, budget, tally, setIndex)
 
 			totalConns++
 			totalTxBytes += cc.TxBytes
@@ -424,7 +428,7 @@ func (p *Processor) flushDropped(budget *logBudget, e telemetry.Emitter) {
 // processConn emits metrics (and, in per_connection mode, a log) for one
 // ConnectionCounts entry. Metrics are always emitted; the per-connection log is
 // gated through budget so the volume guard never suppresses metrics.
-func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget) {
+func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType string, cc ConnectionCounts, reporter reporterDiagnosis, e telemetry.Emitter, budget *logBudget, tally *connTally, setIndex int) {
 	transport := transportName(cc.Proto)
 	srcAddr, srcPort := splitEndpoint(cc.Src)
 	dstAddr, dstPort := splitEndpoint(cc.Dst)
@@ -552,12 +556,12 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 		}
 	}
 
-	// MetricFlows: one flow observed (low cardinality; emitted in every mode).
-	e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, 1, telemetry.Attrs{
-		semconv.NetworkTransport: transport,
-		semconv.AttrTrafficType:  trafficType,
-	})
-	p.observeFieldCompleteness(e, trafficType, srcAddr, srcPort, dstAddr, dstPort, cc.protocolPresent())
+	// These fixed-cardinality families are emitted once at the call boundary.
+	if tally.flows == nil {
+		tally.flows = make(map[flowsKey]int)
+	}
+	tally.flows[flowsKey{transport, trafficType}]++
+	tally.observeFieldCompleteness(setIndex, srcAddr, srcPort, dstAddr, dstPort, cc.protocolPresent())
 
 	// Per-exit-node IO attribution (bounded by exit-node count; all metric modes).
 	if p.exitNode && trafficType == semconv.TrafficExit {
@@ -690,27 +694,43 @@ func (p *Processor) reporterDiagnosis(flow FlowLog) reporterDiagnosis {
 	return d
 }
 
-func (p *Processor) observeFieldCompleteness(e telemetry.Emitter, trafficType, srcAddr, srcPort, dstAddr, dstPort string, protoPresent bool) {
-	fields := [...]struct {
-		class   string
-		present bool
-	}{
-		{"source", srcAddr != ""},
-		{"destination", dstAddr != ""},
-		{"protocol", protoPresent},
-		{"source_port", srcPort != ""},
-		{"destination_port", dstPort != ""},
-	}
-	for _, field := range fields {
-		state := "missing"
-		if field.present {
-			state = "present"
+type flowsKey struct{ transport, trafficType string }
+type connTally struct {
+	fields [4][5][2]int
+	flows  map[flowsKey]int
+}
+
+func (t *connTally) observeFieldCompleteness(setIndex int, srcAddr, srcPort, dstAddr, dstPort string, protoPresent bool) {
+	present := [...]bool{srcAddr != "", dstAddr != "", protoPresent, srcPort != "", dstPort != ""}
+	for field, ok := range present {
+		state := 0
+		if !ok {
+			state = 1
 		}
-		e.Counter(docFieldObservations.Name, docFieldObservations.Unit, docFieldObservations.Description, 1, telemetry.Attrs{
-			semconv.AttrTrafficType: trafficType,
-			"field_class":           field.class,
-			"state":                 state,
+		t.fields[setIndex][field][state]++
+	}
+}
+
+func flushTally(t *connTally, e telemetry.Emitter) {
+	for key, count := range t.flows {
+		e.Counter(docFlows.Name, docFlows.Unit, docFlows.Description, float64(count), telemetry.Attrs{
+			semconv.NetworkTransport: key.transport, semconv.AttrTrafficType: key.trafficType,
 		})
+	}
+	trafficTypes := [...]string{semconv.TrafficVirtual, semconv.TrafficSubnet, semconv.TrafficExit, semconv.TrafficPhysical}
+	classes := [...]string{"source", "destination", "protocol", "source_port", "destination_port"}
+	states := [...]string{"present", "missing"}
+	for setIndex, fields := range t.fields {
+		for field, counts := range fields {
+			for state, count := range counts {
+				if count == 0 {
+					continue
+				}
+				e.Counter(docFieldObservations.Name, docFieldObservations.Unit, docFieldObservations.Description, float64(count), telemetry.Attrs{
+					semconv.AttrTrafficType: trafficTypes[setIndex], "field_class": classes[field], "state": states[state],
+				})
+			}
+		}
 	}
 }
 
