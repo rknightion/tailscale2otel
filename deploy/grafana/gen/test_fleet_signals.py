@@ -496,5 +496,19 @@ class SelectorAndDrilldownTest(unittest.TestCase):
             self.assertIn("var-host_name=", url)
 
 
+class OnlineTimelinePagingTest(unittest.TestCase):
+    def test_only_device_online_timeline_is_paged(self):
+        timelines = [e["spec"] for e in dashboard.build_family()["spec"]["elements"].values()
+                     if e["spec"]["vizConfig"]["group"] == "state-timeline"]
+        self.assertGreater(len(timelines), 1)
+        for panel in timelines:
+            options = panel["vizConfig"]["spec"]["options"]
+            if panel["title"] == "Device online state by node":
+                self.assertEqual(options.get("perPage"), 15)
+                self.assertIn("15 devices", panel["description"])
+            else:
+                self.assertNotIn("perPage", options)
+
+
 if __name__ == "__main__":
     unittest.main()
