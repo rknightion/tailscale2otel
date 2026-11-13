@@ -10095,10 +10095,10 @@
                       },
                       "spec": {
                         "expr": "sum by (network_transport) (rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{network_transport}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
@@ -10160,10 +10160,10 @@
                       },
                       "spec": {
                         "expr": "sum by (tailscale_traffic_type) (rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{tailscale_traffic_type}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
@@ -10378,7 +10378,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (source, reason) (rate(tailscale_network_data_quality_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"source\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{source}} / {{reason}}",
@@ -10469,7 +10469,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (scope, tailscale_traffic_type) (rate(tailscale_network_dedup_conflicts_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"scope\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{scope}} / {{tailscale_traffic_type}}",
@@ -10543,7 +10543,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or (0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])))",
+                        "expr": "sum by (reason) (rate(tailscale_network_store_dropped_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[$__rate_interval])) or on() label_replace(0 * sum(rate(tailscale_network_flows_total{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\", network_transport=~\"$net_transport\", tailscale_traffic_type=~\"$traffic_type\"}[$__rate_interval])), \"reason\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{reason}}",
@@ -16894,7 +16894,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or on() label_replace(0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"tailscale_acl_autoapprover_kind\", \"none\", \"\", \"\")",
                         "instant": true,
                         "range": false,
                         "legendFormat": "{{tailscale_acl_autoapprover_kind}}",
@@ -17881,31 +17881,17 @@
                       },
                       "spec": {
                         "expr": "count by (attribute, value) (last_over_time(tailscale_device_attribute_info_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[10m]))",
-                        "instant": true,
-                        "range": false,
+                        "instant": false,
+                        "range": true,
                         "legendFormat": "{{attribute}} = {{value}}",
-                        "format": "table"
+                        "format": "time_series"
                       }
                     }
                   }
                 }
               ],
               "queryOptions": {},
-              "transformations": [
-                {
-                  "kind": "Transformation",
-                  "group": "organize",
-                  "spec": {
-                    "options": {
-                      "excludeByName": {
-                        "Time": true
-                      },
-                      "renameByName": {},
-                      "indexByName": {}
-                    }
-                  }
-                }
-              ]
+              "transformations": []
             }
           },
           "vizConfig": {
@@ -22972,7 +22958,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or (0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])))",
+                        "expr": "sum by (tailscale_acl_autoapprover_kind) (last_over_time(tailscale_acl_autoapprovers_ratio{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])) or on() label_replace(0 * count(last_over_time(tailscale_acl_size_bytes{tailscale_tailnet=~\"$tailnet\", tailscale2otel_provider=~\"$provider\"}[2h])), \"tailscale_acl_autoapprover_kind\", \"none\", \"\", \"\")",
                         "instant": false,
                         "range": true,
                         "legendFormat": "{{tailscale_acl_autoapprover_kind}}",
@@ -23363,11 +23349,11 @@
                       },
                       "renameByName": {
                         "tailscale_acl_validation_kind": "Kind",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
                       "indexByName": {
                         "tailscale_acl_validation_kind": 0,
-                        "Value": 1
+                        "Value #A": 1
                       }
                     }
                   }
@@ -25458,11 +25444,11 @@
                       },
                       "renameByName": {
                         "tailscale_key_scope_values": "Scopes",
-                        "Value": "Keys"
+                        "Value #A": "Keys"
                       },
                       "indexByName": {
                         "tailscale_key_scope_values": 0,
-                        "Value": 1
+                        "Value #A": 1
                       }
                     }
                   }
@@ -26061,11 +26047,11 @@
                       },
                       "renameByName": {
                         "tailscale_oauth_app_scope_values": "Granted scopes",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
                       "indexByName": {
                         "tailscale_oauth_app_scope_values": 0,
-                        "Value": 1
+                        "Value #A": 1
                       }
                     }
                   }
@@ -27198,11 +27184,11 @@
                       },
                       "renameByName": {
                         "tailscale_webhook_event": "Event category",
-                        "Value": "Observations"
+                        "Value #A": "Observations"
                       },
                       "indexByName": {
                         "tailscale_webhook_event": 0,
-                        "Value": 1
+                        "Value #A": 1
                       }
                     }
                   }

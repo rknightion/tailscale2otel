@@ -131,9 +131,8 @@ def tab_security_compliance(scope):
         (panel("Compliance distribution", "piechart",
                [prom_t("count by (attribute, value) (%s)"
                        % lot('tailscale_device_attribute_info_ratio', WIN_FAST),
-                       legend="{{attribute}} = {{value}}", instant=True, fmt="table")],
+                       legend="{{attribute}} = {{value}}")],
                unit="short", options=pie_opts(),
-               transformations=[organize(exclude=["Time"])],
                desc="Distribution of attribute values for the selected posture attribute."), 18, 6),
     ]
 

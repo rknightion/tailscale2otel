@@ -5460,7 +5460,7 @@
                         "name": "${ds_prometheus}"
                       },
                       "spec": {
-                        "expr": "last_over_time(tailscale_rdns_cache_entries_ratio[10m]) / clamp_min(last_over_time(tailscale_rdns_cache_capacity_ratio[10m]), 1)",
+                        "expr": "max(last_over_time(tailscale_rdns_cache_entries_ratio[10m])) / clamp_min(max(last_over_time(tailscale_rdns_cache_capacity_ratio[10m])), 1)",
                         "instant": false,
                         "range": true,
                         "legendFormat": "",

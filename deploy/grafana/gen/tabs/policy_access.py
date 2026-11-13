@@ -63,7 +63,7 @@ def tab_policy_access(scope):
                     "tagOwners, ...). Structure of the policy, not a verdict on it."), 12, 5),
         # Task 1H.9 — ACL inventory counts (risk stats live on Security & Audit)
         (panel("Auto-approvers (inventory)", "bargauge",
-               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s) or (0 * count(%s))"
+               [prom_t("sum by (tailscale_acl_autoapprover_kind) (%s) or on() label_replace(0 * count(%s), \"tailscale_acl_autoapprover_kind\", \"none\", \"\", \"\")"
                        % (lot(sel("tailscale_acl_autoapprovers_ratio"), WIN_SLOW),
                           lot(sel("tailscale_acl_size_bytes"), WIN_SLOW)),
                        legend="{{tailscale_acl_autoapprover_kind}}")],
@@ -114,7 +114,7 @@ def tab_policy_access(scope):
                        instant=True)],
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_acl_validation_kind": "Kind",
-                                                 "Value": "Observations"})],
+                                                 "Value #A": "Observations"})],
                novalue="0",
                desc="One WARN per non-zero issue kind (error / warning / test_failure) per check. "
                     "The validator's free-text messages carry rule text, user names and addresses "

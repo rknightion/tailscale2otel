@@ -161,7 +161,7 @@ def tab_policy_identity(scope):
                    instant=True)],
                transformations=[organize(
                    exclude=["Time"],
-                   rename={"tailscale_key_scope_values": "Scopes", "Value": "Keys"})],
+                   rename={"tailscale_key_scope_values": "Scopes", "Value #A": "Keys"})],
                novalue="0",
                desc="Credential scope values observed in key.scopes log events over the "
                     "dashboard time range. Counts observations, not keys: one key re-logged "
@@ -245,7 +245,7 @@ def tab_policy_identity(scope):
                        instant=True)],
                transformations=[organize(exclude=["Time"],
                                          rename={"tailscale_oauth_app_scope_values": "Granted scopes",
-                                                 "Value": "Observations"})],
+                                                 "Value #A": "Observations"})],
                novalue="0",
                desc="Granted scope sets observed on the oauth_app.info inventory log, over the "
                     "dashboard time range. Counts observations, not applications: one app "
