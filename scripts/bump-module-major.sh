@@ -96,7 +96,8 @@ while IFS= read -r f; do
   # LC_ALL=C + a temp file keeps this identical on BSD (macOS) and GNU sed,
   # whose -i flags are incompatible.
   LC_ALL=C sed "s|${OLD}|${NEW}|g" "$f" >"$f.tmp"
-  mv "$f.tmp" "$f"
+  cat "$f.tmp" >"$f"
+  rm -f "$f.tmp"
 done <"$FILELIST"
 
 # The tool modules pin the root module by version as well as by path. The
@@ -106,7 +107,8 @@ done <"$FILELIST"
 for m in tools/*/go.mod; do
   [ -f "$m" ] || continue
   LC_ALL=C sed -E "s|(${NEW//./\\.}) v${FROM}\.[0-9]+\.[0-9]+|\1 v${TO}.0.0|" "$m" >"$m.tmp"
-  mv "$m.tmp" "$m"
+  cat "$m.tmp" >"$m"
+  rm -f "$m.tmp"
 done
 
 echo "==> go mod tidy (all modules)"
