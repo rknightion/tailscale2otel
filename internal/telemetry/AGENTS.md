@@ -79,7 +79,9 @@ gauges hold **absolute epoch timestamps**; dashboards subtract `time()`.
 
 `CardinalityTracker.Observe(name, attrs)` runs on the emit hot path for every data point (gated by
 self-obs; a nil tracker is a no-op). `Report(e)` runs once per export interval, emits one gauge per
-source metric, then **resets** the sets, so each interval measures active-per-interval cardinality.
+source metric. Cumulative synchronous instruments retain bounded lifetime sets and overflow
+state until restart, matching the SDK. `ObserveSnapshot` counts observable gauges per interval;
+delta instruments also reset each interval. Label samples always reset each interval.
 When editing it, preserve:
 
 - **Self-exclusion.** The tracker never measures `series.active` itself, both to avoid skew and to
