@@ -198,3 +198,15 @@ func TestAttestationVerifyIsDocumentedWithSignerRepo(t *testing.T) {
 		}
 	}
 }
+
+func TestInstallDocHasNoLiteralReleaseVersion(t *testing.T) {
+	raw, err := os.ReadFile(installDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pattern := range []string{`(?m)^\s*VERSION=\d`, `tailscale2otel:\d+\.\d+\.\d+`} {
+		if match := regexp.MustCompile(pattern).Find(raw); match != nil {
+			t.Errorf("release verification hard-codes a version: %s", match)
+		}
+	}
+}
