@@ -264,7 +264,7 @@ func Open(opts Options) (*Store, error) {
 		// A failed full VACUUM leaves the original database usable. Do not let a
 		// one-time space optimization disable its explorer; retain the failure in
 		// the existing backend status and retry the conversion on the next start.
-		s.fail(conversionErr)
+		s.setupFailure = conversionErr
 	}
 
 	s.wg.Add(1)

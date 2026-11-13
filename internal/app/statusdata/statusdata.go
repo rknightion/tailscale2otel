@@ -486,7 +486,7 @@ type FlowStoreBackend struct {
 	// Queued is observations waiting to be written, summed across tailnets.
 	Queued int `json:"queued,omitempty"`
 	// QueueDrops counts observations lost because the write-behind queue was
-	// full. Non-zero means the view is missing traffic that OTLP still carries,
+	// full or lost to a failed flush. Non-zero means the view is missing traffic that OTLP still carries,
 	// which is a different failure from Truncated above.
 	QueueDrops int64 `json:"queue_drops,omitempty"`
 	// Rows retained and SizeBytes on disk, summed across every tailnet's file.

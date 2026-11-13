@@ -87,7 +87,7 @@ func (s *Store) run() {
 		if len(batch) == 0 {
 			return
 		}
-		_ = s.flush(batch) // errors are recorded via s.fail; nothing more to do here
+		s.flushAndAccount(batch)
 		batch = batch[:0]
 	}
 
@@ -206,6 +206,7 @@ func (s *Store) flush(batch []flowstore.Observation) error {
 		s.fail(err)
 		return err
 	}
+	s.recovered()
 	// Checkpoint after a committed batch so the WAL sidecar does not grow
 	// without bound during a quiet period, and so Stats can report a real
 	// last-successful-checkpoint time even when the sweep cadence is long.
@@ -245,6 +246,7 @@ func (s *Store) checkpoint(ctx context.Context) error {
 
 	s.mu.Lock()
 	s.lastCheckpointAt = time.Now().UTC()
+	s.failure = nil
 	s.mu.Unlock()
 	return nil
 }
@@ -274,7 +276,12 @@ func (s *Store) incrementalVacuum(ctx context.Context) error {
 // disk even when a traffic flood would keep every row inside the retention
 // window (see schema.go's migration comment on why seq is the stable
 // oldest-first tiebreaker).
-func (s *Store) sweep(ctx context.Context) error {
+func (s *Store) sweep(ctx context.Context) (err error) {
+	defer func() {
+		if err == nil {
+			s.recovered()
+		}
+	}()
 	cutoff := timeToDB(s.opts.Now().Add(-s.opts.Retention))
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM flows WHERE time < ?", cutoff); err != nil {
 		s.fail(err)
@@ -306,6 +313,9 @@ func (s *Store) sweep(ctx context.Context) error {
 func (s *Store) Stats() flowstore.Stats {
 	s.mu.Lock()
 	recorded, drops, failure := s.recorded, s.drops, s.failure
+	if failure == nil {
+		failure = s.setupFailure
+	}
 	s.mu.Unlock()
 
 	backend := flowstore.Backend{
@@ -365,4 +375,13 @@ func (s *Store) Stats() flowstore.Stats {
 
 	st.Backend = backend
 	return st
+}
+
+func (s *Store) flushAndAccount(batch []flowstore.Observation) {
+	if err := s.flush(batch); err != nil {
+		s.mu.Lock()
+		s.drops += int64(len(batch))
+		s.recorded -= int64(len(batch))
+		s.mu.Unlock()
+	}
 }
