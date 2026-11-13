@@ -1,6 +1,7 @@
 package flowlog_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -334,5 +335,91 @@ func TestRollupSkipsZeroDirection(t *testing.T) {
 	}
 	if got := len(pointsDir(io, semconv.DirectionReceive)); got != 0 {
 		t.Fatalf("io.rollup receive points = %d, want 0 (zero skipped)", got)
+	}
+}
+
+func TestRollupUniqueGaugesClearForIdleSource(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{FlowMetricsMode: "rollup", NodeDims: true, LogMode: "off"})
+	flow := httpsFlow()
+	flow.VirtualTraffic = append(flow.VirtualTraffic, flowlog.ConnectionCounts{Proto: protoTCP, Src: "100.64.0.1:9", Dst: "100.64.0.3:8443"})
+	p.Process(flow, rec.Emitter())
+	p.FlushRollup(rec.Emitter())
+	for _, metric := range []string{flowlog.MetricUniqueDstPeers, flowlog.MetricUniqueDstPorts} {
+		if len(rec.MetricPoints(metric)) == 0 {
+			t.Fatalf("no %s points after traffic", metric)
+		}
+	}
+	p.Process(httpsFlow(), rec.Emitter())
+	p.FlushRollup(rec.Emitter())
+	for _, metric := range []string{flowlog.MetricUniqueDstPeers, flowlog.MetricUniqueDstPorts} {
+		points := rec.MetricPoints(metric)
+		if len(points) != 1 || points[0].Value != 1 {
+			t.Fatalf("next interval %s = %+v, want one distinct destination", metric, points)
+		}
+	}
+	p.FlushRollup(rec.Emitter())
+	for _, metric := range []string{flowlog.MetricUniqueDstPeers, flowlog.MetricUniqueDstPorts} {
+		if points := rec.MetricPoints(metric); len(points) != 0 {
+			t.Errorf("idle %s retains %+v", metric, points)
+		}
+	}
+}
+
+func TestRollupStageClearsUniqueAfterIdleInterval(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{FlowMetricsMode: "rollup", NodeDims: true, LogMode: "off"})
+	p.Process(httpsFlow(), rec.Emitter())
+	stage := p.StageRollup()
+	if stage == nil {
+		t.Fatal("missing active stage")
+	}
+	if err := stage.EmitOnce(rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	stage.CommitCollected()
+	stage = p.StageRollup()
+	if stage == nil {
+		t.Fatal("missing clearing stage after idle interval")
+	}
+	if err := stage.EmitOnce(rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	stage.CommitCollected()
+	for _, metric := range []string{flowlog.MetricUniqueDstPeers, flowlog.MetricUniqueDstPorts} {
+		if points := rec.MetricPoints(metric); len(points) != 0 {
+			t.Errorf("idle stage %s retains %+v", metric, points)
+		}
+	}
+	if p.StageRollup() != nil {
+		t.Fatal("repeated idle stage should be empty")
+	}
+}
+
+func TestDurableRollupMergesUniqueIntoSharedInterval(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{FlowMetricsMode: "rollup", NodeDims: true, LogMode: "off"})
+	p.Process(httpsFlow(), rec.Emitter())
+	flow := httpsFlow()
+	flow.VirtualTraffic[0].Src = "100.64.0.2:9"
+	flow.VirtualTraffic[0].Dst = "100.64.0.1:8443"
+	ctx, finalize := p.WithDurableRollup(context.Background())
+	p.ProcessCtx(ctx, flow, rec.Emitter())
+	finalize(rec.Emitter())
+	finalize(rec.Emitter())
+	if points := rec.MetricPoints(flowlog.MetricUniqueDstPeers); len(points) != 0 {
+		t.Fatalf("request published unique snapshot prematurely: %+v", points)
+	}
+	p.FlushRollup(rec.Emitter())
+	for _, metric := range []string{flowlog.MetricUniqueDstPeers, flowlog.MetricUniqueDstPorts} {
+		points := rec.MetricPoints(metric)
+		if len(points) != 2 {
+			t.Fatalf("shared %s = %+v, want both sources", metric, points)
+		}
+		for _, point := range points {
+			if point.Value != 1 {
+				t.Errorf("shared %s = %+v, want one destination each", metric, points)
+			}
+		}
 	}
 }

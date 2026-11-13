@@ -1425,7 +1425,13 @@ func (p *Processor) WithDurableRollup(ctx context.Context) (context.Context, fun
 		accumulator = newRollupAccumulator(p.rollup.topN, p.rollup.nodes, p.rollup.identity, p.rollup.geo)
 	}
 	var once sync.Once
-	return context.WithValue(ctx, durableRollupContextKey{}, accumulator), func(e telemetry.Emitter) { once.Do(func() { accumulator.Flush(e) }) }
+	return context.WithValue(ctx, durableRollupContextKey{}, accumulator), func(e telemetry.Emitter) {
+		once.Do(func() {
+			if accumulator != nil {
+				accumulator.flush(e, p.rollup)
+			}
+		})
+	}
 }
 func (p *Processor) StageRollup() telemetry.CollectionStage { return p.rollup.Stage() }
 
