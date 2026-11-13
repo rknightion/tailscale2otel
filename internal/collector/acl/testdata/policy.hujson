@@ -1,0 +1,263 @@
+{
+  // Entirely synthetic policy for collector contract tests.
+  /* Comments and trailing commas exercise HuJSON standardization. */
+  "acls": [
+    {
+      "action": "accept",
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db:443"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db:443"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db:443"
+      ]
+    },
+    {
+      "action": "accept",
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db:443"
+      ]
+    }
+  ],
+  "grants": [
+    {
+      "src": [
+        "*"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "*"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "*"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "*"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "*"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "*"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "*"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    },
+    {
+      "src": [
+        "tag:example-web"
+      ],
+      "dst": [
+        "tag:example-db"
+      ]
+    }
+  ],
+  "ssh": [
+    {
+      "src": [
+        "user@example.com"
+      ],
+      "dst": [
+        "tag:example-web"
+      ],
+      "users": [
+        "example-user"
+      ]
+    }
+  ],
+  "postures": {},
+  "autoApprovers": {
+    "routes": {
+      "192.0.2.1/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.2/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.3/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.4/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.5/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.6/32": [
+        "tag:example-web"
+      ],
+      "192.0.2.7/32": [
+        "tag:example-web"
+      ]
+    },
+    "exitNode": [
+      "tag:example-web",
+      "tag:example-db"
+    ],
+    "services": {
+      "svc:example": [
+        "tag:example-web"
+      ]
+    }
+  },
+  "tagOwners": {
+    "tag:example-0": [
+      "user@example.com"
+    ],
+    "tag:example-1": [
+      "user@example.com"
+    ],
+    "tag:example-2": [
+      "user@example.com"
+    ],
+    "tag:example-3": [
+      "user@example.com"
+    ],
+    "tag:example-4": [
+      "user@example.com"
+    ],
+    "tag:example-5": [
+      "user@example.com"
+    ],
+    "tag:example-6": [
+      "user@example.com"
+    ],
+    "tag:example-7": [
+      "user@example.com"
+    ],
+    "tag:example-8": [
+      "user@example.com"
+    ],
+    "tag:example-9": [
+      "user@example.com"
+    ],
+    "tag:example-10": [
+      "user@example.com"
+    ]
+  },
+  "hosts": {
+    "example-host": "198.51.100.1"
+  },
+  "groups": {},
+  "nodeAttrs": [
+    {
+      "target": [
+        "tag:example-web"
+      ],
+      "attr": [
+        "example-attribute"
+      ]
+    },
+    {
+      "target": [
+        "tag:example-web"
+      ],
+      "attr": [
+        "example-attribute"
+      ]
+    }
+  ],
+  "ipsets": [],
+  "randomizeClientPort": true,
+}
