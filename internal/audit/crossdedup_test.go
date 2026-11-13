@@ -56,11 +56,10 @@ func TestCrossSourceKey(t *testing.T) {
 	}
 }
 
-// TestWithCrossDedupSuppressesSameChange confirms that with a cross-source dedup
-// set, a second audit event mapping to the same cross-key is suppressed even
-// though it has a DIFFERENT eventGroupID (so the existing eventGroupID dedup
-// would not have caught it).
-func TestWithCrossDedupSuppressesSameChange(t *testing.T) {
+// TestWithCrossDedupKeepsSameSourceChanges confirms that with a cross-source dedup
+// set, a second audit event mapping to the same cross-key is retained when
+// it has a different eventGroupID. The cross-source set must not thin audit.
+func TestWithCrossDedupKeepsSameSourceChanges(t *testing.T) {
 	rec := telemetrytest.New()
 	set := dedup.New(0)
 	p := audit.NewProcessor(audit.WithCrossDedup(set))
@@ -68,16 +67,16 @@ func TestWithCrossDedupSuppressesSameChange(t *testing.T) {
 	a := sampleEvent()
 	a.EventGroupID = "g-a"
 	b := sampleEvent()
-	b.EventGroupID = "g-b" // distinct group: only the cross-key collapses them
+	b.EventGroupID = "g-b" // distinct group: cross-source dedup must preserve it
 
 	p.Process(a, rec.Emitter())
 	p.Process(b, rec.Emitter())
 
-	if got := len(rec.LogRecords()); got != 1 {
-		t.Fatalf("log records = %d, want 1 (cross-dedup)", got)
+	if got := len(rec.LogRecords()); got != 2 {
+		t.Fatalf("log records = %d, want 2 (same-source audit events)", got)
 	}
-	if got := counterTotal(rec); got != 1 {
-		t.Fatalf("counter total = %v, want 1 (cross-dedup)", got)
+	if got := counterTotal(rec); got != 2 {
+		t.Fatalf("counter total = %v, want 2 (same-source audit events)", got)
 	}
 }
 
