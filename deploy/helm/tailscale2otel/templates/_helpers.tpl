@@ -482,8 +482,9 @@ because the port is always the final colon-separated field.
 {{/*
 Per-listener Service safety gate (#344).
 
-deploy/CLAUDE.md's standing rule for this chart: a Service may "never map a
-receiver port without its credential". Publishing a listener is the one action
+This chart's Service safety gate never maps a receiver port without its credential,
+as required by the fail-closed rule in deploy/AGENTS.md's Listeners, Services and
+credentials section. Publishing a listener is the one action
 that turns a local-only misconfiguration into a network-reachable one, so the
 two failure modes below are rejected at render time rather than warned about:
 
@@ -512,7 +513,8 @@ Args: (dict "ctx" $ "name" "prometheus" "enabled" <bool> "cred" <string> "credFi
 {{/*
 Ingress safety gate for the two RECEIVER listeners, streaming and webhook,
 opt-in per #346. Admin and Prometheus never get an Ingress at ANY value — see
-templates/ingress.yaml and deploy/CLAUDE.md's "No Kubernetes Service" note.
+templates/ingress.yaml and deploy/AGENTS.md's Listeners, Services and credentials
+section, which permits Ingress and HTTPRoute for streaming and webhook only.
 They are introspection/scrape surfaces; publishing either to the internet is
 never the right default, so the chart does not offer that as a one-line
 mistake.

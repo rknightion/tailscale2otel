@@ -606,8 +606,9 @@ else
   bad "N: rendered a Service for a disabled listener (rc=$RENDER_RC)"
 fi
 
-# The core contract from deploy/CLAUDE.md: never map a receiver port without its
-# credential. Each of the four, individually.
+# This chart's Service safety gate never maps a receiver port without its credential.
+# See deploy/AGENTS.md's Listeners, Services and credentials section for the fail-closed
+# rule. Exercise each of the four listeners individually.
 render --set config.prometheus.enabled=true --set service.prometheus.enabled=true
 [[ $RENDER_RC -ne 0 ]] && ok "N: prometheus Service without auth.token fails" \
   || bad "N: exposed prometheus with no token — it serves every series unauthenticated"

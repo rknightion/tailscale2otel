@@ -3,9 +3,8 @@ Per-listener Services, every one default-off (#344).
 
 The chart shipped no Service at all on purpose: tailscale2otel's normal traffic
 is outbound, and every inbound listener is opt-in, so the safe default is to
-expose nothing. deploy/CLAUDE.md left the door open for exactly this design —
-"a future opt-in, per-listener service.enabled block ... must default off and
-never map a receiver port without its credential".
+expose nothing. deploy/AGENTS.md's Listeners, Services and credentials section
+requires per-listener Services, every one default off, never an aggregate.
 
 Discrete Services, one per listener, never an aggregate: an aggregate would map
 ports whose listeners have different credentials and different exposure needs,

@@ -7,14 +7,15 @@ INGRESS is the half this chart can get portably right: one rule per
 enabled listener/consumer, derived from the SAME per-listener enablement
 templates/service.yaml already uses, so a listener that is off — or a
 Service/PodMonitor/ServiceMonitor that never got created — can never gain a
-matching hole (deploy/CLAUDE.md's "never map a receiver port without its
-credential" carries over here as "never open ingress for a receiver with
-nothing consuming it").
+matching hole. This chart's Service safety gate never maps a receiver port without
+its credential, following the fail-closed rule in deploy/AGENTS.md's Listeners,
+Services and credentials section; here it also refuses ingress for an unused receiver.
 
 Two of the four rules below have no portable `from` peer at all, and that is
 deliberate, not an oversight:
   - admin: the kubelet reaches the admin port DIRECTLY (no Service in the
-    path — see deploy/CLAUDE.md's "No Kubernetes Service"), so this rule
+    path, per deploy/AGENTS.md's Listeners, Services and credentials section,
+    where liveness and readiness use the admin port directly), so this rule
     tracks whether ANY probe is enabled, not service.admin.enabled. A kubelet
     probe has no podSelector/namespaceSelector NetworkPolicy can express, so
     the rule is left with no `from` (matches any peer) when open at all.
