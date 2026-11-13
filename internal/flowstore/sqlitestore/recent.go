@@ -121,14 +121,14 @@ func (s *Store) RecentPage(q flowstore.RecentQuery) flowstore.RecentPage {
 	var page flowstore.RecentPage
 
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM flows").Scan(&page.Retained); err != nil {
-		s.fail(err)
+		s.failRead(ctx, err)
 		return flowstore.RecentPage{}
 	}
 	page.Truncated = int64(page.Retained) >= s.opts.MaxRows
 
 	matchedSQL := "SELECT COUNT(*) FROM flows WHERE " + where
 	if err := s.db.QueryRowContext(ctx, matchedSQL, args...).Scan(&page.Matched); err != nil {
-		s.fail(err)
+		s.failRead(ctx, err)
 		return flowstore.RecentPage{}
 	}
 
@@ -166,7 +166,7 @@ func (s *Store) RecentPage(q flowstore.RecentQuery) flowstore.RecentPage {
 
 	rows, err := s.db.QueryContext(ctx, pageSQL, pageArgs...)
 	if err != nil {
-		s.fail(err)
+		s.failRead(ctx, err)
 		return page
 	}
 	defer func() { _ = rows.Close() }()
@@ -175,13 +175,13 @@ func (s *Store) RecentPage(q flowstore.RecentQuery) flowstore.RecentPage {
 	for rows.Next() {
 		r, seq, err := scanRecent(rows)
 		if err != nil {
-			s.fail(err)
+			s.failRead(ctx, err)
 			return page
 		}
 		scanned = append(scanned, scannedRecent{rec: r, seq: seq})
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(err)
+		s.failRead(ctx, err)
 		return page
 	}
 

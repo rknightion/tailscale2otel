@@ -35,6 +35,7 @@
 package sqlitestore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sync"
@@ -187,10 +188,11 @@ type Store struct {
 	done  chan struct{}
 	wg    sync.WaitGroup
 
-	mu       sync.Mutex
-	recorded int64
-	drops    int64
-	failure  error
+	mu           sync.Mutex
+	recorded     int64
+	drops        int64
+	failure      error
+	setupFailure error
 	// lastCheckpointAt is guarded by mu with the counters above. It is kept in
 	// process memory rather than SQLite metadata: the timestamp describes this
 	// process's observed maintenance, not data carried across a restart.
@@ -247,4 +249,13 @@ func (s *Store) admit(o *flowstore.Observation) flowstore.Admission {
 // String makes failures legible in logs.
 func (s *Store) String() string {
 	return fmt.Sprintf("sqlitestore(%s, retention=%s)", s.path, s.opts.Retention)
+}
+
+// recovered records successful writer progress without clearing setup failures.
+func (s *Store) recovered() { s.mu.Lock(); s.failure = nil; s.mu.Unlock() }
+
+func (s *Store) failRead(ctx context.Context, err error) {
+	if ctx.Err() == nil {
+		s.fail(err)
+	}
 }

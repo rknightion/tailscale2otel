@@ -179,7 +179,7 @@ func (s *Store) queryTotals(ctx context.Context, w window) (c flowstore.Counts, 
 	err := s.db.QueryRowContext(ctx, query, args...).
 		Scan(&c.TxBytes, &c.RxBytes, &c.TxPkts, &c.RxPkts, &c.Flows, &minNS, &maxNS)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query totals: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query totals: %w", err))
 		return flowstore.Counts{}, time.Time{}, time.Time{}, false
 	}
 	if minNS.Valid {
@@ -205,7 +205,7 @@ func (s *Store) querySeries(ctx context.Context, w window) []flowstore.Point {
 	query := "SELECT (time / ?) AS bucket, " + sumExpr + " FROM flows WHERE " + whereSQL + " GROUP BY bucket" //nolint:gosec // G201/G202: SQL built from fixed internal column-name literals and query shapes; every value is a bound '?' param, never interpolated
 	rows, err := s.db.QueryContext(ctx, query, append([]any{stepNS}, args...)...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query series: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query series: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -215,13 +215,13 @@ func (s *Store) querySeries(ctx context.Context, w window) []flowstore.Point {
 		var bucket int64
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &bucket); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan series: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan series: %w", err))
 			return nil
 		}
 		out = append(out, flowstore.Point{Time: time.Unix(0, bucket*stepNS).UTC(), Counts: c})
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: series rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: series rows: %w", err))
 		return nil
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
@@ -237,7 +237,7 @@ func (s *Store) queryPairs(ctx context.Context, w window) []flowstore.PairStat {
 	query := `SELECT src_node, dst_node, traffic_type, ` + sumExpr + ` FROM flows WHERE ` + whereSQL + ` AND src_node <> '' AND dst_node <> '' GROUP BY src_node, dst_node, traffic_type` //nolint:gosec // G202: built from fixed internal literals and the window's own WHERE fragment; every value is a bound '?' param
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query pairs: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query pairs: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -246,13 +246,13 @@ func (s *Store) queryPairs(ctx context.Context, w window) []flowstore.PairStat {
 	for rows.Next() {
 		var p flowstore.PairStat
 		if err := scanCounts(rows, &p.Counts, &p.Src, &p.Dst, &p.TrafficType); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan pairs: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan pairs: %w", err))
 			return nil
 		}
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: pairs rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: pairs rows: %w", err))
 		return nil
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -319,7 +319,7 @@ func (s *Store) queryNodeCounts(ctx context.Context, col, whereSQL string, args 
 	query := fmt.Sprintf(`SELECT %s, %s FROM flows WHERE %s AND %s <> '' GROUP BY %s`, col, sumExpr, whereSQL, col, col) //nolint:gosec // G201: col is a fixed internal literal ("src_node"/"dst_node"), never external input
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query nodes (%s): %w", col, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query nodes (%s): %w", col, err))
 		return nil, false
 	}
 	defer rows.Close()
@@ -329,7 +329,7 @@ func (s *Store) queryNodeCounts(ctx context.Context, col, whereSQL string, args 
 		var node string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &node); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan nodes (%s): %w", col, err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan nodes (%s): %w", col, err))
 			return nil, false
 		}
 		if mirror {
@@ -338,7 +338,7 @@ func (s *Store) queryNodeCounts(ctx context.Context, col, whereSQL string, args 
 		out[node] = c
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: nodes rows (%s): %w", col, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: nodes rows (%s): %w", col, err))
 		return nil, false
 	}
 	return out, true
@@ -352,7 +352,7 @@ func (s *Store) queryPorts(ctx context.Context, w window) []flowstore.PortStat {
 	query := `SELECT dst_port, transport, dst_service, ` + sumExpr + ` FROM flows WHERE ` + whereSQL + ` AND dst_port <> '' AND traffic_type <> ? GROUP BY dst_port, transport, dst_service` //nolint:gosec // G202: built from fixed internal literals and the window's own WHERE fragment; every value is a bound '?' param
 	rows, err := s.db.QueryContext(ctx, query, append(append([]any{}, args...), flowstore.TrafficPhysical)...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query ports: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query ports: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -361,13 +361,13 @@ func (s *Store) queryPorts(ctx context.Context, w window) []flowstore.PortStat {
 	for rows.Next() {
 		var p flowstore.PortStat
 		if err := scanCounts(rows, &p.Counts, &p.Port, &p.Transport, &p.Service); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan ports: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan ports: %w", err))
 			return nil
 		}
 		out = append(out, p)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: ports rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: ports rows: %w", err))
 		return nil
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -392,7 +392,7 @@ func (s *Store) queryLabel(ctx context.Context, w window, col, extraWhere string
 		col, sumExpr, whereSQL, col, extraWhere, col)
 	rows, err := s.db.QueryContext(ctx, query, append(args, extraArgs...)...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query %s: %w", col, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query %s: %w", col, err))
 		return nil
 	}
 	defer rows.Close()
@@ -401,13 +401,13 @@ func (s *Store) queryLabel(ctx context.Context, w window, col, extraWhere string
 	for rows.Next() {
 		var ls flowstore.LabelStat
 		if err := scanCounts(rows, &ls.Counts, &ls.Label); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan %s: %w", col, err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan %s: %w", col, err))
 			return nil
 		}
 		out = append(out, ls)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: %s rows: %w", col, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: %s rows: %w", col, err))
 		return nil
 	}
 	sortLabels(out)
@@ -450,7 +450,7 @@ func (s *Store) queryDualEndpointLabels(ctx context.Context, w window, srcCol, d
 func (s *Store) accumulateLabelSums(ctx context.Context, query string, args []any, dst map[string]flowstore.Counts) bool {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query label sums: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query label sums: %w", err))
 		return false
 	}
 	defer rows.Close()
@@ -458,7 +458,7 @@ func (s *Store) accumulateLabelSums(ctx context.Context, query string, args []an
 		var label string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &label); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan label sums: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan label sums: %w", err))
 			return false
 		}
 		e := dst[label]
@@ -466,7 +466,7 @@ func (s *Store) accumulateLabelSums(ctx context.Context, query string, args []an
 		dst[label] = e
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: label sums rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: label sums rows: %w", err))
 		return false
 	}
 	return true
@@ -515,7 +515,7 @@ func (s *Store) queryTagLabels(ctx context.Context, w window) []flowstore.LabelS
 		sumExpr, whereSQL)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query tags: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query tags: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -525,7 +525,7 @@ func (s *Store) queryTagLabels(ctx context.Context, w window) []flowstore.LabelS
 		var srcTags, dstTags string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &srcTags, &dstTags); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan tags: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan tags: %w", err))
 			return nil
 		}
 		src := splitTagsLocal(srcTags)
@@ -545,7 +545,7 @@ func (s *Store) queryTagLabels(ctx context.Context, w window) []flowstore.LabelS
 		}
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: tags rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: tags rows: %w", err))
 		return nil
 	}
 
@@ -570,7 +570,7 @@ func (s *Store) queryTagMatrix(ctx context.Context, w window) []flowstore.Matrix
 		sumExpr, whereSQL)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query tag matrix: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query tag matrix: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -580,7 +580,7 @@ func (s *Store) queryTagMatrix(ctx context.Context, w window) []flowstore.Matrix
 		var srcTags, dstTags string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &srcTags, &dstTags); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan tag matrix: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan tag matrix: %w", err))
 			return nil
 		}
 		for _, sv := range splitTagsLocal(srcTags) {
@@ -593,7 +593,7 @@ func (s *Store) queryTagMatrix(ctx context.Context, w window) []flowstore.Matrix
 		}
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: tag matrix rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: tag matrix rows: %w", err))
 		return nil
 	}
 	return rankMatrix(cells)
@@ -610,7 +610,7 @@ func (s *Store) querySimpleMatrix(ctx context.Context, w window, srcCol, dstCol 
 		srcCol, dstCol, sumExpr, whereSQL, srcCol, dstCol, srcCol, dstCol)
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query %s/%s matrix: %w", srcCol, dstCol, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query %s/%s matrix: %w", srcCol, dstCol, err))
 		return nil
 	}
 	defer rows.Close()
@@ -619,13 +619,13 @@ func (s *Store) querySimpleMatrix(ctx context.Context, w window, srcCol, dstCol 
 	for rows.Next() {
 		var cell flowstore.MatrixCell
 		if err := scanCounts(rows, &cell.Counts, &cell.Src, &cell.Dst); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan %s/%s matrix: %w", srcCol, dstCol, err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan %s/%s matrix: %w", srcCol, dstCol, err))
 			return nil
 		}
 		out = append(out, cell)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: %s/%s matrix rows: %w", srcCol, dstCol, err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: %s/%s matrix rows: %w", srcCol, dstCol, err))
 		return nil
 	}
 	sortMatrixCells(out)
@@ -676,7 +676,7 @@ func (s *Store) queryVerdicts(ctx context.Context, w window) []flowstore.LabelSt
 	fullArgs := append([]any{flowstore.VerdictPermitted, flowstore.VerdictPermittedReverse}, args...)
 	rows, err := s.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query verdicts: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query verdicts: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -685,13 +685,13 @@ func (s *Store) queryVerdicts(ctx context.Context, w window) []flowstore.LabelSt
 	for rows.Next() {
 		var ls flowstore.LabelStat
 		if err := scanCounts(rows, &ls.Counts, &ls.Label); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan verdicts: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan verdicts: %w", err))
 			return nil
 		}
 		out = append(out, ls)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: verdicts rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: verdicts rows: %w", err))
 		return nil
 	}
 	sortLabels(out)
@@ -746,7 +746,7 @@ func (s *Store) queryUnexplained(ctx context.Context, w window) []flowstore.Unex
 	fullArgs := append(append([]any{}, args...), flowstore.VerdictNoRule)
 	rows, err := s.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query unexplained: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query unexplained: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -758,7 +758,7 @@ func (s *Store) queryUnexplained(ctx context.Context, w window) []flowstore.Unex
 		var transport, dstPort string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &srcTags, &srcUser, &srcNode, &srcAddr, &dstTags, &dstUser, &dstNode, &dstAddr, &transport, &dstPort); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan unexplained: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan unexplained: %w", err))
 			return nil
 		}
 		k := flowstore.UnexplainedKey{
@@ -772,7 +772,7 @@ func (s *Store) queryUnexplained(ctx context.Context, w window) []flowstore.Unex
 		cells[k] = e
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: unexplained rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: unexplained rows: %w", err))
 		return nil
 	}
 
@@ -809,7 +809,7 @@ func (s *Store) queryRules(ctx context.Context, w window) []flowstore.RuleStat {
 	fullArgs := append(append([]any{}, args...), flowstore.VerdictPermitted)
 	rows, err := s.db.QueryContext(ctx, query, fullArgs...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query rules: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query rules: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -818,13 +818,13 @@ func (s *Store) queryRules(ctx context.Context, w window) []flowstore.RuleStat {
 	for rows.Next() {
 		var rs flowstore.RuleStat
 		if err := scanCounts(rows, &rs.Counts, &rs.PolicyVersion, &rs.Rule); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan rules: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan rules: %w", err))
 			return nil
 		}
 		out = append(out, rs)
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: rules rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: rules rows: %w", err))
 		return nil
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -863,7 +863,7 @@ func (s *Store) queryPeerPaths(ctx context.Context, w window) []flowstore.PeerPa
 	query := `SELECT src_node, src_addr, path, ` + sumExpr + ` FROM flows WHERE ` + whereSQL + ` AND path <> '' GROUP BY src_node, src_addr, path` //nolint:gosec // G202: built from fixed internal literals and the window's own WHERE fragment; every value is a bound '?' param
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		s.fail(fmt.Errorf("sqlitestore: query peer paths: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: query peer paths: %w", err))
 		return nil
 	}
 	defer rows.Close()
@@ -873,7 +873,7 @@ func (s *Store) queryPeerPaths(ctx context.Context, w window) []flowstore.PeerPa
 		var srcNode, srcAddr, path string
 		var c flowstore.Counts
 		if err := scanCounts(rows, &c, &srcNode, &srcAddr, &path); err != nil {
-			s.fail(fmt.Errorf("sqlitestore: scan peer paths: %w", err))
+			s.failRead(ctx, fmt.Errorf("sqlitestore: scan peer paths: %w", err))
 			return nil
 		}
 		peer := peerIdentityLocal(srcNode, srcAddr)
@@ -889,7 +889,7 @@ func (s *Store) queryPeerPaths(ctx context.Context, w window) []flowstore.PeerPa
 		}
 	}
 	if err := rows.Err(); err != nil {
-		s.fail(fmt.Errorf("sqlitestore: peer paths rows: %w", err))
+		s.failRead(ctx, fmt.Errorf("sqlitestore: peer paths rows: %w", err))
 		return nil
 	}
 
