@@ -144,11 +144,12 @@ def tab_health_collection(scope):
         (panel("Scrape duration distribution", "heatmap",
                [prom_t("sum by (le) (rate("
                        "tailscale2otel_scrape_duration_histogram_seconds_bucket%s[%s]))"
-                       % (cf, RI), legend="{{le}}")],
-               unit="s", options=heatmap_opts(),
+                       % (cf, RI), legend="{{le}}", fmt="heatmap")],
+               unit="cps", options=heatmap_opts(),
                novalue="No scrape-duration histogram buckets in the selected range.",
                desc="Distribution of scrape wall-clock duration across collectors. The "
-                    "p50/p95/p99 panel remains the per-collector trend view."), 12, 8),
+                    "p50/p95/p99 panel remains the per-collector trend view. "
+                    "Colour is observations per second in each duration bucket."), 12, 8),
         (panel("Last scrape age", "table",
                [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds" + cf), instant=True, fmt="table")],
                unit="s", transformations=[organize(exclude=["Time", "__name__", "job", "instance",

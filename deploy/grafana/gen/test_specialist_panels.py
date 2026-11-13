@@ -86,7 +86,7 @@ class SpecialistOptionContracts(unittest.TestCase):
         )
         self.assertEqual(
             builder.heatmap_opts(),
-            {"calculate": False, "yAxis": {"axisPlacement": "left", "unit": "s"},
+            {"calculate": False, "cellValues": {"unit": "cps"}, "yAxis": {"axisPlacement": "left", "unit": "s"},
              "legend": {"show": True}, "tooltip": {"show": True, "yHistogram": False}},
         )
         self.assertEqual(builder.sankey_opts("Bytes/s"), {
@@ -248,6 +248,16 @@ class HealthAndCostPanelContracts(unittest.TestCase):
         self.assertIn("tailscale2otel_scrape_duration_histogram_seconds_bucket", expr)
         self.assertIn("sum by (le)", expr)
         self.assertIn("rate(", expr)
+
+    def test_scrape_heatmap_distinguishes_bucket_duration_from_frequency(self):
+        spec = panel_spec(self.doc, "Scrape duration distribution")
+        query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]
+        self.assertEqual(query["format"], "heatmap")
+        viz = spec["vizConfig"]["spec"]
+        self.assertEqual(viz["fieldConfig"]["defaults"]["unit"], "cps")
+        self.assertEqual(viz["options"]["cellValues"]["unit"], "cps")
+        self.assertEqual(viz["options"]["yAxis"]["unit"], "s")
+        self.assertIn("observations per second in each duration bucket", spec["description"])
 
     def test_active_series_treemap_is_bounded_and_keeps_plugin_identity(self):
         spec = panel_spec(self.doc, "Active series by metric family")
