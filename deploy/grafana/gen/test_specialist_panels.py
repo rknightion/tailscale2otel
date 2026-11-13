@@ -96,9 +96,9 @@ class SpecialistOptionContracts(unittest.TestCase):
             "groupBy": "Group", "tiling": "squarify", "separator": "",
         })
 
-    def test_ordered_organize_keeps_legacy_defaults(self):
+    def test_ordered_organize_defaults_to_declared_columns(self):
         legacy = builder.organize(exclude=["Time"], rename={"Value": "Count"})
-        self.assertEqual(legacy["spec"]["options"]["indexByName"], {})
+        self.assertEqual(legacy["spec"]["options"]["indexByName"], {"Value": 0})
 
         ordered = builder.organize(
             exclude=["Time"], rename={"src": "Source", "dst": "Destination", "Value": "Bytes/s"},

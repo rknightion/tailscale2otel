@@ -42,6 +42,9 @@ TBL_NOISE = ["Time", "__name__", "job", "instance", "service_instance_id",
              "service_name", "service_namespace", "deployment_environment_name",
              "otel_scope_name", "otel_scope_version", "Value"]
 
+TBL_META = ["tailscale_tailnet", "tailscale2otel_provider", "deployment_environment_name",
+            "otel_scope_name", "otel_scope_version"]
+
 ELEMENTS = {}
 _id = 0
 
@@ -200,6 +203,10 @@ def check_bool_polarity(title, mappings, thresholds):
 
 
 def organize(exclude=None, rename=None, index=None):
+    if set(exclude or []).intersection(rename or {}):
+        raise ValueError("a renamed table column cannot also be excluded")
+    if index is None and rename:
+        index = {name: i for i, name in enumerate(rename)}
     return {"kind": "Transformation", "group": "organize", "spec": {"options": {
         "excludeByName": {k: True for k in (exclude or [])},
         "renameByName": rename or {}, "indexByName": index or {}}}}
@@ -241,7 +248,7 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
     if custom:
         defaults["custom"] = custom
     if ptype == "table" and transformations is None:
-        transformations = [organize(exclude=TBL_NOISE)]
+        transformations = [organize(exclude=TBL_NOISE + TBL_META)]
     ELEMENTS[name] = {"kind": "Panel", "spec": {
         "id": _id, "title": title, "description": desc, "links": [],
         "data": {"kind": "QueryGroup", "spec": {
