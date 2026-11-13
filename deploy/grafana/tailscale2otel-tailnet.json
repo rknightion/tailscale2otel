@@ -5897,6 +5897,18 @@
                 "overrides": [
                   {
                     "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
                       "id": "byName",
                       "options": "Host"
                     },
@@ -6134,7 +6146,20 @@
                 "defaults": {
                   "noValue": "No per-device version-skew series \u2014 needs version_checks.devices and cardinality.per_entity.device, and the upstream latest version must be reachable."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -8684,6 +8709,18 @@
                 "overrides": [
                   {
                     "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
                       "id": "byName",
                       "options": "Host"
                     },
@@ -10929,6 +10966,18 @@
                   "noValue": "No flow-log records with both source and destination node identity in the selected range."
                 },
                 "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
                   {
                     "matcher": {
                       "id": "byName",
@@ -18104,6 +18153,18 @@
                 "overrides": [
                   {
                     "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
                       "id": "byName",
                       "options": "Expires in"
                     },
@@ -19480,7 +19541,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -19567,7 +19641,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -19654,7 +19741,20 @@
                 "defaults": {
                   "noValue": "No per-credential key series \u2014 needs the keys collector (collectors.keys) and cardinality.per_entity.key."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -23371,7 +23471,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -24080,7 +24193,20 @@
                 "defaults": {
                   "noValue": "No resolver series. Prerequisites: collectors.dns.enabled and a tailnet with at least one global or split-DNS resolver configured. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -24506,7 +24632,20 @@
                 "defaults": {
                   "noValue": "No route-selection observations in the last two hours \u2014 needs the settings collector, feature_settings:read scope, and a provider exposing routeSelection."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25370,12 +25509,14 @@
                       "renameByName": {
                         "tailscale_key_description": "Description",
                         "tailscale_key_type": "Type",
+                        "tailscale_key_owner": "Owner",
                         "Value": "Scopes"
                       },
                       "indexByName": {
                         "tailscale_key_description": 0,
                         "tailscale_key_type": 1,
-                        "Value": 2
+                        "tailscale_key_owner": 2,
+                        "Value": 3
                       }
                     }
                   }
@@ -25393,7 +25534,20 @@
                 "defaults": {
                   "noValue": "No per-key scope series. Prerequisites: collectors.keys.enabled and cardinality.per_entity.key. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -25466,7 +25620,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26069,7 +26236,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26587,7 +26767,20 @@
                 "defaults": {
                   "noValue": "No backing-host identity series. Prerequisites: collectors.services.collect_hosts, cardinality.per_entity.service, and a service with at least one backing host. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26796,7 +26989,20 @@
                   },
                   "noValue": "No desired-event expectation. Prerequisites: collectors.webhooks.enabled and a non-empty collectors.webhooks.desired_events list. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -27037,7 +27243,20 @@
                 "defaults": {
                   "noValue": "No per-endpoint data. Prerequisites: collectors.webhooks.enabled and cardinality.per_entity.webhook. See https://m7kni.io/tailscale2otel/configuration/"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -27206,7 +27425,20 @@
                 "defaults": {
                   "noValue": "0"
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -27681,6 +27913,18 @@
                   "noValue": "No posture-integration series. Prerequisites: collectors.posture_integrations.enabled and a credential that can read device-posture integrations. See https://m7kni.io/tailscale2otel/configuration/"
                 },
                 "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
                   {
                     "matcher": {
                       "id": "byName",

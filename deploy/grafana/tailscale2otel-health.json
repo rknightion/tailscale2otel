@@ -919,7 +919,20 @@
                 "defaults": {
                   "noValue": "No lease-coordination series. Requires coordination.mode: kubernetes."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4593,7 +4606,20 @@
                 "defaults": {
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4693,7 +4719,20 @@
                   ],
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -4779,7 +4818,20 @@
                 "defaults": {
                   "noValue": "No capability-preflight series. Requires self_observability.enabled; the scope preflight additionally requires tailscale.auth.method: oauth, as an API key carries no scope list to compare against."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -10964,6 +11016,18 @@
                 "overrides": [
                   {
                     "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
                       "id": "byName",
                       "options": "Configured"
                     },
@@ -15520,6 +15584,18 @@
                 "overrides": [
                   {
                     "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
                       "id": "byName",
                       "options": "Utilization"
                     },
@@ -15608,7 +15684,20 @@
                 "defaults": {
                   "noValue": "No overflow-labelled families observed \u2014 overflow unknown, not proof all series are resolved."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -15686,7 +15775,20 @@
                 "defaults": {
                   "noValue": "No overflowing families observed \u2014 missing reporter coverage remains unknown; see Overflowing now for observed zero."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
