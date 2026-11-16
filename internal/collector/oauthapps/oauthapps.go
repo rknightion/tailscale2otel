@@ -84,6 +84,7 @@ type Collector struct {
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
+	gauges  *telemetry.GaugeSnapshotBuilder
 }
 
 // Option configures optional Collector behavior.
@@ -104,7 +105,7 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 // the package DefaultInterval (300s) via (*Collector).DefaultInterval,
 // mirroring webhooks.New/logstream.New.
 func New(api lister, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: api, interval: interval, now: time.Now}
+	c := &Collector{api: api, interval: interval, now: time.Now, gauges: telemetry.NewGaugeSnapshotBuilder()}
 	for _, o := range opts {
 		o(c)
 	}
@@ -162,16 +163,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		attrs := telemetry.Attrs{attrID: a.ID, attrName: a.Name}
 
 		if len(a.Scopes) > 0 {
-			e.Gauge(docAppScopes.Name, docAppScopes.Unit, docAppScopes.Description, float64(len(a.Scopes)), attrs)
+			c.gauges.Add(docAppScopes.Name, docAppScopes.Unit, docAppScopes.Description, float64(len(a.Scopes)), attrs)
 		}
 		if len(a.AllowedNodeAttributes) > 0 {
-			e.Gauge(docAppNodeAttributes.Name, docAppNodeAttributes.Unit, docAppNodeAttributes.Description,
+			c.gauges.Add(docAppNodeAttributes.Name, docAppNodeAttributes.Unit, docAppNodeAttributes.Description,
 				float64(len(a.AllowedNodeAttributes)), attrs)
 		}
 		// Redirect-URI COUNT only (#419) — the URI values themselves never
 		// reach telemetry, on this metric or anywhere else.
 		if len(a.RedirectURIs) > 0 {
-			e.Gauge(docAppRedirectURIs.Name, docAppRedirectURIs.Unit, docAppRedirectURIs.Description,
+			c.gauges.Add(docAppRedirectURIs.Name, docAppRedirectURIs.Unit, docAppRedirectURIs.Description,
 				float64(len(a.RedirectURIs)), attrs)
 		}
 
@@ -180,7 +181,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// including one with no scopes at all (ClassNone is itself a
 		// meaningful posture value here, unlike the count-based
 		// tailscale.oauth_app.scopes gauge above).
-		emitScopeClass(e, a)
+		emitScopeClass(c.gauges, a)
 
 		e.LogEvent(telemetry.Event{
 			Name:     docAppInfo.Name,
@@ -195,6 +196,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		})
 	}
 
+	c.gauges.Flush(e)
 	// tailscale.oauth_apps.age (#426): a single bounded fleet age-distribution
 	// histogram, not a per-entity series. Apps with no Created timestamp are
 	// skipped (entityage.Seconds ok=false) rather than reported as age 0.
@@ -211,14 +213,14 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 // emitScopeClass zero-seeds a's privilege class across every tsscope.Class
 // (mirrors the keys collector's emitScopeClass / apistate.EmitAvailability):
 // one series holds value 1 (the current class), the rest hold 0.
-func emitScopeClass(e telemetry.Emitter, a *tsapi.OAuthApp) {
+func emitScopeClass(gauges *telemetry.GaugeSnapshotBuilder, a *tsapi.OAuthApp) {
 	class := tsscope.Classify(a.Scopes)
 	for _, want := range tsscope.Classes() {
 		v := 0.0
 		if want == class {
 			v = 1
 		}
-		e.Gauge(docAppScopeClass.Name, docAppScopeClass.Unit, docAppScopeClass.Description, v, telemetry.Attrs{
+		gauges.Add(docAppScopeClass.Name, docAppScopeClass.Unit, docAppScopeClass.Description, v, telemetry.Attrs{
 			attrID:         a.ID,
 			attrName:       a.Name,
 			attrScopeClass: string(want),

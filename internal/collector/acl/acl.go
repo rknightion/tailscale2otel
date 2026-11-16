@@ -105,6 +105,7 @@ type Collector struct {
 	// admin status page and the configuration-to-capability matrix (#430). A nil
 	// tracker is a no-op, so the collector still works without one.
 	tracker *apistate.Tracker
+	gauges  *telemetry.GaugeSnapshotBuilder
 
 	// snapshot is opt-in because policy bodies contain tailnet identity data.
 	snapshotEnabled   bool
@@ -121,7 +122,7 @@ func New(a api, interval time.Duration, now func() time.Time, opts ...Option) *C
 	if now == nil {
 		now = time.Now
 	}
-	c := &Collector{api: a, interval: interval, now: now, validate: true}
+	c := &Collector{api: a, interval: interval, now: now, validate: true, gauges: telemetry.NewGaugeSnapshotBuilder()}
 	for _, o := range opts {
 		o(c)
 	}
@@ -228,8 +229,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if !ok {
 		return nil
 	}
-	c.emitRuleCounts(e, top)
+	c.emitRuleCounts(top)
 	c.emitRiskScores(e, top, changed)
+	c.gauges.Flush(e)
 
 	c.collectValidation(ctx, e, raw.HuJSON)
 
@@ -338,7 +340,7 @@ func standardizeTop(hujsonDoc string) (map[string]json.RawMessage, bool) {
 // present in the parsed policy. A section's value is the element count when it
 // is a JSON array, or the key count when it is a JSON object. Sections that are
 // absent or encoded as a scalar are skipped.
-func (c *Collector) emitRuleCounts(e telemetry.Emitter, top map[string]json.RawMessage) {
+func (c *Collector) emitRuleCounts(top map[string]json.RawMessage) {
 	for _, section := range recognizedSections {
 		raw, ok := top[section]
 		if !ok {
@@ -348,7 +350,7 @@ func (c *Collector) emitRuleCounts(e telemetry.Emitter, top map[string]json.RawM
 		if !ok {
 			continue
 		}
-		e.Gauge(docACLRules.Name, docACLRules.Unit, docACLRules.Description,
+		c.gauges.Add(docACLRules.Name, docACLRules.Unit, docACLRules.Description,
 			float64(size), telemetry.Attrs{attrSection: section})
 	}
 }

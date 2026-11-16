@@ -45,7 +45,7 @@ func spanAttrMap(t *testing.T, s tracetest.SpanStub) map[string]attribute.Value 
 func TestPIISpanExporterDropsDisabledEndpointPaths(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(
-		newPIISpanExporter(exp, pii.Categories{pii.CatEndpointPaths: false}),
+		newPIISpanExporter(exp, pii.Categories{pii.CatEndpointPaths: false}, ""),
 	))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
@@ -88,7 +88,7 @@ func TestPIISpanExporterAllCategoriesEnabledKeepsEverything(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			exp := tracetest.NewInMemoryExporter()
-			tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(newPIISpanExporter(exp, tc.cats)))
+			tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(newPIISpanExporter(exp, tc.cats, "")))
 			defer func() { _ = tp.Shutdown(context.Background()) }()
 
 			want := apiSpanAttrs()
@@ -124,7 +124,7 @@ func TestPIISpanExporterAllCategoriesEnabledKeepsEverything(t *testing.T) {
 func TestPIISpanExporterHonorsUnrelatedCategory(t *testing.T) {
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(
-		newPIISpanExporter(exp, pii.Categories{pii.CatHostnames: false}),
+		newPIISpanExporter(exp, pii.Categories{pii.CatHostnames: false}, ""),
 	))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 
@@ -156,7 +156,7 @@ func TestPIISpanExporterScrubsStatusAndEvents(t *testing.T) {
 	const url = "https://api.tailscale.com/api/v2/tailnet/example.com/devices"
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(
-		newPIISpanExporter(exp, pii.Categories{pii.CatEndpointPaths: false}),
+		newPIISpanExporter(exp, pii.Categories{pii.CatEndpointPaths: false}, ""),
 	))
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 

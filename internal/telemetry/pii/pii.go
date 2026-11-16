@@ -1,6 +1,7 @@
 package pii
 
 import (
+	"net/url"
 	"slices"
 	"strings"
 )
@@ -97,6 +98,14 @@ func (r *Redactor) redactKey(key string, value any) bool {
 			}
 			return false
 		}
+		// Discovery disambiguates hostname identities as hostname[:port]@address.
+		// Either component can be disabled; keep the hostname fallback even when
+		// the address category is enabled. Never strip the suffix and merge nodes.
+		if at := strings.LastIndexByte(s, '@'); at >= 0 {
+			if cat, ok := categoryForIPClass(classifyIP(s[at+1:])); ok && r.disabled(cat) {
+				return true
+			}
+		}
 		if fb, ok := ipKeyFallback[key]; ok {
 			return r.disabled(fb)
 		}
@@ -109,7 +118,19 @@ func (r *Redactor) redactKey(key string, value any) bool {
 		return r.anyIPOff && nonEmptyValue(value)
 	}
 	if cat, ok := keyCategory[key]; ok {
-		return r.disabled(cat)
+		if r.disabled(cat) {
+			return true
+		}
+		if urlValueKeys[key] {
+			if text, ok := value.(string); ok {
+				if parsed, err := url.Parse(text); err == nil {
+					if hostCat, ok := categoryForIPClass(classifyIP(parsed.Hostname())); ok {
+						return r.disabled(hostCat)
+					}
+				}
+			}
+		}
+		return false
 	}
 	if nonIdentifier[key] || geoNonIdentifier[key] {
 		return false

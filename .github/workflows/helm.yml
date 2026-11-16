@@ -139,7 +139,7 @@ jobs:
   # Single required status check for this workflow. Branch protection on `main` requires this
   # (alongside ci.yml's `ci-success`), so helm legs can be added or renamed without re-touching
   # protection. The pull_request trigger above has no path filter on purpose, so this always reports
-  # on every PR. Fails if any leg failed or was cancelled. Renovate's automerge waits for it to go green.
+  # on every PR. Fails if any leg failed, was cancelled or was skipped. Renovate's automerge waits for it to go green.
   helm-success:
     timeout-minutes: 5
     name: helm-success
@@ -147,10 +147,23 @@ jobs:
     if: always()
     needs: [lint-template, configcheck, helm-schema-validate]
     steps:
-      - name: Fail if any required job did not pass
-        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+      - name: Fail unless every required job succeeded
+        id: gate
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          echo "A required job failed or was cancelled: ${{ join(needs.*.result, ', ') }}"
-          exit 1
+          set -euo pipefail
+          failures=$(jq -r --arg event "$EVENT_NAME" '
+            to_entries[]
+            | select(.value.result != "success")
+            | "\(.key)=\(.value.result)"
+          ' <<< "$NEEDS_JSON")
+          if [[ -n "$failures" ]]; then
+            printf '%s\n' "$failures"
+            exit 1
+          fi
       - name: All required jobs passed
-        run: echo "helm-success — ${{ join(needs.*.result, ', ') }}"
+        env:
+          RESULTS: ${{ join(needs.*.result, ', ') }}
+        run: echo "helm-success — ${RESULTS}"

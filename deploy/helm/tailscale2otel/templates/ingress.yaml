@@ -2,8 +2,9 @@
 Opt-in Ingress for the two RECEIVER listeners, streaming and webhook (#346).
 
 Admin and Prometheus deliberately get NO Ingress at ANY value — see
-values.yaml's `ingress:` block and deploy/CLAUDE.md's "No Kubernetes Service"
-note. They are introspection/scrape surfaces; publishing either to the
+values.yaml's `ingress:` block and deploy/AGENTS.md's Listeners, Services and
+credentials section, which permits Ingress and HTTPRoute for streaming and webhook
+only. They are introspection/scrape surfaces; publishing either to the
 internet is never the right default, so this template does not offer that as
 a one-line mistake. There is no `admin`/`prometheus` entry in the $listeners
 list below on purpose — this is enforced structurally, not by a value guard.

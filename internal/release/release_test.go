@@ -378,3 +378,29 @@ func TestParseGitHubLatestMissingKey(t *testing.T) {
 		t.Error("want an error when the response is not a JSON object")
 	}
 }
+
+func TestSelfOlderThan(t *testing.T) {
+	for _, tc := range []struct {
+		current, latest string
+		older, ok       bool
+	}{
+		{"v5.0.0-rc.3", "5.0.0", true, true}, {"5.0.0-ALPHA1", "5.0.0", true, true},
+		{"5.0.0-beta", "5.0.0", true, true}, {"5.0.0", "5.0.0", false, true},
+		{"5.0.0-rc.1", "5.0.0-rc.2", false, true}, {"5.0.0-tabc", "5.0.0", false, true},
+		{"5.0.0-dev20260101", "5.0.0", false, true}, {"5.0.0-rc-other", "5.0.0", false, true},
+		{"5.0.0", "5.1.0", true, true}, {"6.0.0-rc.1", "5.0.0", false, true},
+		{"dev", "5.0.0", false, false}, {"5.0.0", "unknown", false, false},
+	} {
+		t.Run(tc.current+"/"+tc.latest, func(t *testing.T) {
+			older, ok := release.SelfOlderThan(tc.current, tc.latest)
+			if older != tc.older || ok != tc.ok {
+				t.Fatalf("comparison = %v,%v; want %v,%v", older, ok, tc.older, tc.ok)
+			}
+		})
+	}
+	for raw, want := range map[string]string{"v5.0.0-RC.3+build": "5.0.0-RC.3", "5.0.0-beta": "5.0.0-beta", "5.0.0-tabc": "5.0.0", "dev": "unknown"} {
+		if got := release.NormalizeSelf(raw); got != want {
+			t.Errorf("NormalizeSelf(%q)=%q, want %q", raw, got, want)
+		}
+	}
+}

@@ -428,23 +428,24 @@ func TestLiveContractLaneStaysScheduleOnlyAndHosted(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s has no jobs mapping", name)
 	}
-	for jobName, raw := range jobs {
-		job, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		runsOn, ok := job["runs-on"].(string)
-		if !ok {
-			continue
-		}
-		if !strings.HasPrefix(runsOn, "ubuntu-") && !strings.HasPrefix(runsOn, "windows-") &&
-			!strings.HasPrefix(runsOn, "macos-") {
-			t.Errorf("%s job %q runs on %q. A self-hosted runner on a PUBLIC repo is a risk GitHub "+
-				"warns against, and the never-provisioned `tailscale-api` runner is why this lane "+
-				"queued forever and was auto-canceled weekly, producing no signal at all (#160).",
-				name, jobName, runsOn)
-		}
+	if problems := hostedRunnerProblems(jobs); len(problems) > 0 {
+		t.Errorf("%v", problems)
 	}
+	for _, shape := range []struct {
+		name  string
+		value any
+	}{
+		{"list", []any{"self-hosted", "example"}}, {"mapping", map[string]any{"group": "example"}},
+	} {
+		t.Run(shape.name, func(t *testing.T) {
+			mutated := readWorkflow(t, name)
+			requiredJob(t, mutated, "live")["runs-on"] = shape.value
+			if problems := hostedRunnerProblems(jobsOf(t, mutated, name)); len(problems) == 0 {
+				t.Fatal("runs-on mutation escaped guard")
+			}
+		})
+	}
+
 }
 
 // The schema-driven decode tests are the ONE API-drift lane the README says
@@ -468,6 +469,7 @@ func TestSchemaDrivenDecodeTestsRideAGatedLeg(t *testing.T) {
 	if !ok {
 		t.Fatalf("%s has no steps list", leg)
 	}
+	checkRecipeArguments(t, steps, map[string]string{"test": ""})
 	body := recipeBackedWorkflowBody(t, steps, "test", "go test -race ./...")
 	if !strings.Contains(body, "go test -race") || !strings.Contains(body, "./...") {
 		t.Errorf("no step in %s runs `go test -race ./...`. The schema-driven decode tests in "+
@@ -638,6 +640,7 @@ func TestModuleVerifyRunsTheFullPerModuleGate(t *testing.T) {
 	if !ok {
 		t.Fatal("module-verify has no steps list")
 	}
+	checkRecipeArguments(t, steps, map[string]string{"test-modules": "${{ matrix.module }}", "vet": "${{ matrix.module }}", "tidy-check": "${{ matrix.module }}", "vuln": "${{ matrix.module }}"})
 	body := strings.Join([]string{
 		recipeBackedWorkflowBody(t, steps, "test-modules", "go build ./...", "go test -race ./..."),
 		recipeBackedWorkflowBody(t, steps, "vet", "go vet ./..."),
@@ -676,6 +679,7 @@ func TestRootModuleTidyIsChecked(t *testing.T) {
 	if !ok {
 		t.Fatal("build-test has no steps list")
 	}
+	checkRecipeArguments(t, steps, map[string]string{"tidy-check": "."})
 	body := recipeBackedWorkflowBody(t, steps, "tidy-check", "go mod tidy")
 	if strings.Contains(body, "go mod tidy -C") {
 		return
@@ -1723,6 +1727,49 @@ func TestNonGatingCILanesDoNotRunOnPullRequests(t *testing.T) {
 		if _, declared := jobs[job]; !declared {
 			t.Errorf("nonGatingCILanes lists %q, which ci.yml no longer declares; drop the "+
 				"stale entry rather than leaving it to bless a future job of the same name", job)
+		}
+	}
+}
+
+func readsGoRunExitStatus(script string) bool {
+	if !strings.Contains(script, "$?") {
+		return false
+	}
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "go run ") || strings.Contains(line, " go run ") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestNoWorkflowReadsTheExitStatusOfGoRun(t *testing.T) {
+	for _, tc := range []struct {
+		name, script string
+		want         bool
+	}{
+		{"go run status", "go run -C tools/apidrift .\necho code=$?", true},
+		{"binary status", `"$RUNNER_TEMP/apidrift" -operations` + "\necho code=$?", false},
+		{"go run only", "go run -C tools/apidrift .", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := readsGoRunExitStatus(tc.script); got != tc.want {
+				t.Errorf("got %v want %v", got, tc.want)
+			}
+		})
+	}
+	for _, name := range workflowFiles(t) {
+		for id, raw := range jobsOf(t, readWorkflow(t, name), name) {
+			job := raw.(map[string]any)
+			steps, _ := job["steps"].([]any)
+			for index, rawStep := range steps {
+				step := rawStep.(map[string]any)
+				script, _ := step["run"].(string)
+				if readsGoRunExitStatus(script) {
+					t.Errorf("%s job %s step %d reads go run's wrapper exit status", name, id, index)
+				}
+			}
 		}
 	}
 }

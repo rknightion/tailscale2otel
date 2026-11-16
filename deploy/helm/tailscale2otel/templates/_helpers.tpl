@@ -2,14 +2,18 @@
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{/* Maximum supported StatefulSet ordinal count, also used by pod-label RBAC. */}}
+{{- define "tailscale2otel.maxReplicas" -}}3{{- end -}}
+
 {{/* Validate the replica count before rendering either workload kind. */}}
 {{- define "tailscale2otel.validateReplicaCount" -}}
 {{- $replicas := int .Values.replicaCount -}}
 {{- if lt $replicas 1 -}}
 {{- fail (printf "replicaCount must be at least 1 (got %d)" $replicas) -}}
 {{- end -}}
-{{- if gt $replicas 3 -}}
-{{- fail (printf "replicaCount must be at most 3 (got %d): Kubernetes coordination supports at most three active-passive replicas" $replicas) -}}
+{{- $maxReplicas := include "tailscale2otel.maxReplicas" . | int -}}
+{{- if gt $replicas $maxReplicas -}}
+{{- fail (printf "replicaCount must be at most %d (got %d): Kubernetes coordination supports at most %d active-passive replicas" $maxReplicas $replicas $maxReplicas) -}}
 {{- end -}}
 {{- if and (gt $replicas 1) (ne .Values.config.coordination.mode "kubernetes") -}}
 {{- fail (printf "replicaCount must be 1 unless config.coordination.mode=kubernetes (got %d replicas with mode %q): multiple pollers would double-emit every metric and log" $replicas .Values.config.coordination.mode) -}}
@@ -478,8 +482,9 @@ because the port is always the final colon-separated field.
 {{/*
 Per-listener Service safety gate (#344).
 
-deploy/CLAUDE.md's standing rule for this chart: a Service may "never map a
-receiver port without its credential". Publishing a listener is the one action
+This chart's Service safety gate never maps a receiver port without its credential,
+as required by the fail-closed rule in deploy/AGENTS.md's Listeners, Services and
+credentials section. Publishing a listener is the one action
 that turns a local-only misconfiguration into a network-reachable one, so the
 two failure modes below are rejected at render time rather than warned about:
 
@@ -508,7 +513,8 @@ Args: (dict "ctx" $ "name" "prometheus" "enabled" <bool> "cred" <string> "credFi
 {{/*
 Ingress safety gate for the two RECEIVER listeners, streaming and webhook,
 opt-in per #346. Admin and Prometheus never get an Ingress at ANY value — see
-templates/ingress.yaml and deploy/CLAUDE.md's "No Kubernetes Service" note.
+templates/ingress.yaml and deploy/AGENTS.md's Listeners, Services and credentials
+section, which permits Ingress and HTTPRoute for streaming and webhook only.
 They are introspection/scrape surfaces; publishing either to the internet is
 never the right default, so the chart does not offer that as a one-line
 mistake.

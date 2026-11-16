@@ -39,51 +39,40 @@ const (
 	maxFlowsFilterLen = 128
 )
 
-// flowsCursorPrefix versions the opaque wire format of the ?cursor= parameter
-// (base64url, no padding, of "v1:<seq>"). It exists so a future format change
-// has something to key on; decodeFlowsCursor rejects anything else.
-const flowsCursorPrefix = "v1:"
+// flowsCursorPrefix versions the opaque (event time, sequence) keyset cursor.
+const flowsCursorPrefix = "v2:"
 
-// encodeFlowsCursor renders seq as the opaque cursor /api/flows.json hands
-// back in NextCursor. A zero seq (no further page) encodes to the empty
-// string, which the page's absent-cursor convention already treats as
-// "no more data".
-func encodeFlowsCursor(seq uint64) string {
+func encodeFlowsCursor(seq uint64, at time.Time) string {
 	if seq == 0 {
 		return ""
 	}
-	return base64.RawURLEncoding.EncodeToString([]byte(flowsCursorPrefix + strconv.FormatUint(seq, 10)))
+	return base64.RawURLEncoding.EncodeToString([]byte(flowsCursorPrefix + strconv.FormatInt(at.UnixNano(), 10) + ":" + strconv.FormatUint(seq, 10)))
 }
 
-// decodeFlowsCursor parses the ?cursor= parameter. An absent, malformed,
-// wrongly-versioned, or unparseable cursor decodes to 0 ("from the newest")
-// rather than an error: a cursor is a value the page merely round-trips, and
-// one gone stale must fail safe to the start of the list, never break the view
-// (#296).
-//
-// Whether a cursor CAN go stale depends on the backend. The in-memory ring's
-// seq counter restarts with the process, so a cursor held across a restart is
-// meaningless and lands back at the newest row. The persistent backend (#294)
-// numbers rows with an AUTOINCREMENT rowid that survives restarts and is never
-// reused, so a cursor stays valid across one — a shared /flows URL keeps its
-// place. Neither case needs handling here; both are already safe.
-func decodeFlowsCursor(s string) uint64 {
-	if s == "" {
-		return 0
-	}
+// decodeFlowsCursor treats absent, malformed and previous-version cursors as
+// first-page requests. A sequence alone cannot resume an event-time ordering.
+func decodeFlowsCursor(s string) (uint64, time.Time) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
 	if err != nil {
-		return 0
+		return 0, time.Time{}
 	}
 	text, ok := strings.CutPrefix(string(raw), flowsCursorPrefix)
 	if !ok {
-		return 0
+		return 0, time.Time{}
 	}
-	seq, err := strconv.ParseUint(text, 10, 64)
+	stamp, sequence, ok := strings.Cut(text, ":")
+	if !ok {
+		return 0, time.Time{}
+	}
+	ns, err := strconv.ParseInt(stamp, 10, 64)
 	if err != nil {
-		return 0
+		return 0, time.Time{}
 	}
-	return seq
+	seq, err := strconv.ParseUint(sequence, 10, 64)
+	if err != nil || seq == 0 {
+		return 0, time.Time{}
+	}
+	return seq, time.Unix(0, ns)
 }
 
 // newFlowStore builds this process's per-tailnet flow store, or nil when the
@@ -326,11 +315,12 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 	// pagination move server-side here so a connection matching the filter but
 	// outside the returned page is still reachable via NextCursor, rather than
 	// invisible the way client-side filtering over one fixed page was (#296).
+	cursor, cursorTime := decodeFlowsCursor(q.Get("cursor"))
 	page := rt.flowStore.RecentPage(flowstore.RecentQuery{
 		Start:  end.Add(-window),
 		End:    end,
 		Limit:  recent,
-		Cursor: decodeFlowsCursor(q.Get("cursor")),
+		Cursor: cursor, CursorTime: cursorTime,
 		Filter: filter,
 	})
 
@@ -351,7 +341,7 @@ func (a *App) handleFlowsJSON(w http.ResponseWriter, r *http.Request) {
 		RecentReturned:  len(page.Rows),
 		RecentRetained:  page.Retained,
 		RecentTruncated: page.Truncated,
-		NextCursor:      encodeFlowsCursor(page.NextCursor),
+		NextCursor:      encodeFlowsCursor(page.NextCursor, page.NextCursorTime),
 	}
 	// The page iterates Recent unconditionally, and a nil slice marshals to null.
 	if resp.Recent == nil {

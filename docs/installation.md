@@ -547,12 +547,15 @@ exactly one release and then rots.
 Download the archive for your platform, the checksums file, and its signature:
 
 ```sh
-VERSION=3.0.0
+VERSION=$(gh release view -R rknightion/tailscale2otel --json tagName --jq .tagName)
+VERSION=${VERSION#v}
 gh release download "v${VERSION}" -R rknightion/tailscale2otel \
   -p "tailscale2otel_${VERSION}_linux_amd64.tar.gz" \
   -p "tailscale2otel_${VERSION}_SHA256SUMS" \
   -p "tailscale2otel_${VERSION}_SHA256SUMS.sigstore.json"
 ```
+
+To verify a specific release instead, set `VERSION` to its number without the leading `v`.
 
 Verify the checksums file is genuine, then verify the archive against it:
 
@@ -595,14 +598,14 @@ so on those tags treat this step as unavailable rather than as a failure.
 ### Container image
 
 The image is signed by a *different* workflow than the binaries, so it needs a
-different identity:
+different identity. These commands reuse `VERSION` from the binary section:
 
 ```sh
-cosign verify ghcr.io/rknightion/tailscale2otel:3.0.0 \
+cosign verify "ghcr.io/rknightion/tailscale2otel:${VERSION}" \
   --certificate-identity-regexp '^https://github\.com/rknightion/\.github/\.github/workflows/container-publish\.yml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
-gh attestation verify oci://ghcr.io/rknightion/tailscale2otel:3.0.0 \
+gh attestation verify "oci://ghcr.io/rknightion/tailscale2otel:${VERSION}" \
   -R rknightion/tailscale2otel --signer-repo rknightion/.github
 ```
 

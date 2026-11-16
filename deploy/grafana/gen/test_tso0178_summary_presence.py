@@ -35,6 +35,25 @@ class FleetSummaryPresenceTest(unittest.TestCase):
                        for name, e in self.doc["spec"]["elements"].items()
                        if name in names}
 
+    def test_acl_evidence_title_has_room_without_wrapping_neighbors(self):
+        positions = {}
+        def visit(node):
+            if isinstance(node, dict):
+                if node.get("kind") == "GridLayoutItem":
+                    spec = node["spec"]
+                    title = self.doc["spec"]["elements"][spec["element"]["name"]]["spec"]["title"]
+                    positions[title] = spec
+                for child in node.values():
+                    visit(child)
+            elif isinstance(node, list):
+                for child in node:
+                    visit(child)
+        visit(self.doc["spec"]["layout"])
+        self.assertGreaterEqual(positions["ACL change evidence age (summary)"]["width"], 6)
+        for title in (*SUMMARY_TILES, "Updates available", "Flow logging"):
+            self.assertEqual(positions[title]["y"], 0, title)
+
+
     def test_frozen_named_tiles_have_neutral_explicit_absence(self):
         for title, missing in zip(SUMMARY_TILES, MISSING):
             defaults = self.panels[title]["vizConfig"]["spec"]["fieldConfig"]["defaults"]

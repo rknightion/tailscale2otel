@@ -2,11 +2,13 @@ package acl_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/tailscale/hujson"
 	tsclient "tailscale.com/client/tailscale/v2"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/collector"
@@ -289,13 +291,13 @@ func size(t *testing.T, rec *telemetrytest.Recorder) float64 {
 	return pts[0].Value
 }
 
-func TestRuleCountsFromRealACL(t *testing.T) {
-	huJSON, err := os.ReadFile("../../../.capture/acl.json")
+func TestRuleCountsFromCommittedPolicy(t *testing.T) {
+	huJSON, err := os.ReadFile("testdata/policy.hujson")
 	if err != nil {
-		t.Skipf("real ACL fixture unavailable: %v", err)
+		t.Fatalf("committed ACL fixture unavailable: %v", err)
 	}
 
-	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: string(huJSON), ETag: "etag-real"}}
+	api := &fakeAPI{acl: &tsclient.RawACL{HuJSON: string(huJSON), ETag: "etag-example"}}
 	c := acl.New(api, 0, func() time.Time { return time.Unix(1_000_000, 0).UTC() })
 
 	rec := telemetrytest.New()
@@ -312,7 +314,7 @@ func TestRuleCountsFromRealACL(t *testing.T) {
 	}
 
 	got := ruleCounts(t, rec)
-	// Counts taken directly from .capture/acl.json: array sections use the
+	// The synthetic policy pins these counts: array sections use the
 	// element count, object sections use the key count.
 	want := map[string]float64{
 		"acls":          4,
@@ -347,8 +349,8 @@ func TestRuleCountsFromRealACL(t *testing.T) {
 		t.Fatal("unexpected rules point for scalar randomizeClientPort")
 	}
 
-	// --- B1 risk scores from the real fixture ---
-	// grants: src wildcards on grants #2,#8 = 2; dst wildcards on #4,#6,#7,#9,#10 = 5.
+	// Risk scores from the committed synthetic fixture.
+	// Grants have two source wildcards and five destination wildcards.
 	wild := map[string]float64{}
 	for _, p := range rec.MetricPoints("tailscale.acl.wildcard_rules") {
 		wild[p.Attrs["tailscale.acl.section"]+"/"+p.Attrs["tailscale.acl.position"]] = p.Value
@@ -401,5 +403,59 @@ func TestMalformedHuJSONStillEmitsSizeAndLastChanged(t *testing.T) {
 	}
 	if pts := rec.MetricPoints("tailscale.acl.rules"); len(pts) != 0 {
 		t.Fatalf("rules points on malformed HuJSON = %d, want 0", len(pts))
+	}
+}
+
+func TestRuleCountsFromRealACL(t *testing.T) {
+	path := os.Getenv("TS2OTEL_TEST_ACL_CAPTURE")
+	if path == "" {
+		t.Skip("set TS2OTEL_TEST_ACL_CAPTURE to opt in to a private policy check")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal("cannot read opt-in policy file")
+	}
+	standardized, err := hujson.Standardize(body)
+	if err != nil {
+		t.Fatal("cannot standardize opt-in policy")
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(standardized, &top); err != nil {
+		t.Fatal("cannot decode opt-in policy")
+	}
+	rec := telemetrytest.New()
+	c := acl.New(&fakeAPI{acl: &tsclient.RawACL{HuJSON: string(body)}}, 0, nil)
+	if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+		t.Fatal("collecting opt-in policy failed")
+	}
+	if got := size(t, rec); got != float64(len(body)) {
+		t.Errorf("size = %v, want %d", got, len(body))
+	}
+	counts := ruleCounts(t, rec)
+	for _, section := range []string{"acls", "grants", "ssh", "tests", "postures", "autoApprovers", "tagOwners", "hosts", "groups", "nodeAttrs"} {
+		raw, present := top[section]
+		got, emitted := counts[section]
+		if !present {
+			if emitted {
+				t.Errorf("absent section %s emitted a count", section)
+			}
+			continue
+		}
+		var array []json.RawMessage
+		var object map[string]json.RawMessage
+		var want int
+		if json.Unmarshal(raw, &array) == nil {
+			want = len(array)
+		} else if json.Unmarshal(raw, &object) == nil {
+			want = len(object)
+		} else {
+			if emitted {
+				t.Errorf("scalar section %s emitted a count", section)
+			}
+			continue
+		}
+		if !emitted || got != float64(want) {
+			t.Errorf("section %s count = %v (emitted %v), want %d", section, got, emitted, want)
+		}
 	}
 }

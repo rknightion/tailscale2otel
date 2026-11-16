@@ -2,7 +2,8 @@
 Opt-in Gateway API HTTPRoute for the two RECEIVER listeners, streaming and
 webhook (#346). Same scope as ingress.yaml, and the same reason: admin and
 Prometheus never get one, at any value — see values.yaml's `gateway:` block
-and deploy/CLAUDE.md's "No Kubernetes Service" note.
+and deploy/AGENTS.md's Listeners, Services and credentials section, which permits
+Ingress and HTTPRoute for streaming and webhook only.
 
 Not gated on .Capabilities.APIVersions on purpose: these are explicit opt-ins,
 and the chart must render identically under `helm template` with no cluster

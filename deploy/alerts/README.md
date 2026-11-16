@@ -343,15 +343,15 @@ which take the same spec.
 Wire the `severity` label into your notification policy. The closed set is
 `critical` / `warning` / `info` / `advisory`, enforced by `alert()` in
 `gen/build_rules.py` -- a value outside it is a build error rather than a rule
-that silently routes nowhere. `advisory` is used as a severity by 10 rules; treat it
+that silently routes nowhere. `advisory` is used as a severity by 11 rules; treat it
 as non-paging, like `info`.
 
 Note that "advisory" names two independent things in this pack and they do not
-line up: the **severity label** above (10 rules) and the **evaluation policy**
-`advisory` in `gen/build_rules.py`'s POLICY table (24 rules), which sets
+line up: the **severity label** above (11 rules) and the **evaluation policy**
+`advisory` in `gen/build_rules.py`'s POLICY table (25 rules), which sets
 noDataState/execErrState to Ok/Ok because neither absence nor a transient error
 is actionable for that rule. A rule can carry `policy="advisory"` while
-reporting `severity="warning"`, and most of the 24 do. Counting one and
+reporting `severity="warning"`, and most of the 25 do. Counting one and
 reporting the other is an easy mistake to make.
 
 Thresholds, `for:` windows and the enabled/paused split all live in

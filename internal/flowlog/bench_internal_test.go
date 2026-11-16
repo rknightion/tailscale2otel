@@ -186,3 +186,58 @@ func BenchmarkRollupAccumulator_Record(b *testing.B) {
 		a.observeUnique(node, "peer", "443")
 	}
 }
+
+func BenchmarkProcessAll_RollupManyConnections(b *testing.B) {
+	fl := benchDecodeLiveRecord(b)
+	conn := fl.VirtualTraffic[0]
+	fl.VirtualTraffic = make([]ConnectionCounts, 10)
+	for i := range fl.VirtualTraffic {
+		fl.VirtualTraffic[i] = conn
+	}
+	resp := NetworkResponse{Logs: make([]FlowLog, 100)}
+	for i := range resp.Logs {
+		resp.Logs[i] = fl
+	}
+	p := NewProcessor(enrich.NewDeviceCache(), Options{FlowMetricsMode: flowModeRollup, LogMode: "off"})
+	e := telemetrytest.New().Emitter()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		p.ProcessAll(resp, e)
+	}
+}
+
+func manyDstNodesRecord(nodes int) FlowLog {
+	fl := FlowLog{SrcNode: &NodeRef{Addresses: []string{"100.64.0.1"}}, DstNodes: make([]NodeRef, nodes), VirtualTraffic: make([]ConnectionCounts, 1000)}
+	for i := range fl.DstNodes {
+		fl.DstNodes[i] = NodeRef{Addresses: []string{"fd7a:115c:a1e0::" + strconv.FormatInt(int64(i+2), 16)}}
+	}
+	for i := range fl.VirtualTraffic {
+		fl.VirtualTraffic[i] = ConnectionCounts{Proto: 6, Src: "100.64.0.1:1234", Dst: "192.0.2.1:443", TxBytes: 1}
+	}
+	return fl
+}
+
+func BenchmarkProcess_ManyDstNodes(b *testing.B) {
+	fl := manyDstNodesRecord(1000)
+	p := NewProcessor(enrich.NewDeviceCache(), Options{FlowMetricsMode: flowModeRollup, Store: benchDiscardStore{}, LogMode: "off"})
+	e := telemetrytest.New().Emitter()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		p.Process(fl, e)
+	}
+}
+
+func TestProcessManyDstNodesAllocations(t *testing.T) {
+	allocs := func(nodes int) float64 {
+		fl := manyDstNodesRecord(nodes)
+		p := NewProcessor(enrich.NewDeviceCache(), Options{FlowMetricsMode: flowModeRollup, Store: benchDiscardStore{}, LogMode: "off"})
+		e := telemetrytest.New().Emitter()
+		return testing.AllocsPerRun(3, func() { p.Process(fl, e) })
+	}
+	small, large := allocs(2), allocs(1000)
+	if large > 1.25*small {
+		t.Fatalf("large record allocations %v exceed 1.25 * small record %v", large, small)
+	}
+}

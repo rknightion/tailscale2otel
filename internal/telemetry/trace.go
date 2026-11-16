@@ -7,6 +7,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 )
 
@@ -16,11 +17,14 @@ import (
 //
 // When no category is disabled it returns next unchanged, so the default
 // configuration pays nothing: no wrapper, no per-span map allocation.
-func newPIISpanExporter(next sdktrace.SpanExporter, cats pii.Categories) sdktrace.SpanExporter {
+func newPIISpanExporter(next sdktrace.SpanExporter, cats pii.Categories, tailnetName string) sdktrace.SpanExporter {
 	if !anyCategoryDisabled(cats) {
 		return next
 	}
-	return piiSpanExporter{next: next, red: pii.New(cats)}
+	if enabled, ok := cats[pii.CatTailnetName]; !ok || enabled || tailnetName == "-" {
+		tailnetName = ""
+	}
+	return piiSpanExporter{next: next, red: pii.New(cats), tailnetName: tailnetName}
 }
 
 // anyCategoryDisabled reports whether cats explicitly turns any PII category off.
@@ -57,8 +61,9 @@ func anyCategoryDisabled(cats pii.Categories) bool {
 // collector) and would not cover span attributes added later — the same reason
 // the Emitter, not the collectors, owns metric/log redaction.
 type piiSpanExporter struct {
-	next sdktrace.SpanExporter
-	red  *pii.Redactor
+	next        sdktrace.SpanExporter
+	red         *pii.Redactor
+	tailnetName string
 }
 
 func (e piiSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
@@ -87,7 +92,8 @@ func (e piiSpanExporter) Shutdown(ctx context.Context) error { return e.next.Shu
 // nothing. Four surfaces are covered:
 //
 //   - span attributes: keys resolving to a disabled category are dropped
-//     (Redactor.Merge — the exact policy metrics and logs use);
+//     (Redactor.Merge — the exact policy metrics and logs use), and surviving
+//     values are scrubbed for disabled identifiers;
 //   - the status description, which is FREE TEXT and therefore governed by
 //     free_text_details exactly like the exception.message carrying the same
 //     string (#473). Redactor.RedactStatusDescription owns that decision: with
@@ -103,12 +109,17 @@ func (e piiSpanExporter) Shutdown(ctx context.Context) error { return e.next.Shu
 func (e piiSpanExporter) filterSpan(s sdktrace.ReadOnlySpan) (sdktrace.ReadOnlySpan, bool) {
 	attrs := s.Attributes()
 	all := attrMap(attrs)
-	kept := e.red.Merge(all)
+	// attrMap owns this copy; never add the scrub-only identifier to SDK attributes.
+	if e.tailnetName != "" {
+		if _, exists := all[semconv.AttrTailnet]; !exists {
+			all[semconv.AttrTailnet] = e.tailnetName
+		}
+	}
 
 	f := piiFilteredSpan{ReadOnlySpan: s, attrs: attrs, events: s.Events(), links: s.Links(), status: s.Status()}
 	changed := false
-	if len(kept) != len(all) {
-		f.attrs = keepPresent(attrs, kept)
+	if filtered, ok := e.filterKVs(attrs, all); ok {
+		f.attrs = filtered
 		changed = true
 	}
 	if d := e.red.RedactStatusDescription(f.status.Description, all); d != f.status.Description {
@@ -179,18 +190,34 @@ func (e piiSpanExporter) filterKVs(kvs []attribute.KeyValue, spanAttrs map[strin
 		changed = true
 	}
 	for i, kv := range out {
-		if kv.Value.Type() != attribute.STRING {
-			continue
-		}
-		scrubbed := e.red.RedactBody(kv.Value.AsString(), nil, spanAttrs)
-		if scrubbed == kv.Value.AsString() {
+		value := kv.Value
+		switch value.Type() {
+		case attribute.STRING:
+			scrubbed := e.red.RedactBody(value.AsString(), nil, spanAttrs)
+			if scrubbed == value.AsString() {
+				continue
+			}
+			value = attribute.StringValue(scrubbed)
+		case attribute.STRINGSLICE:
+			values := value.AsStringSlice()
+			scrubbed := slices.Clone(values)
+			different := false
+			for j, text := range values {
+				scrubbed[j] = e.red.RedactBody(text, nil, spanAttrs)
+				different = different || scrubbed[j] != text
+			}
+			if !different {
+				continue
+			}
+			value = attribute.StringSliceValue(scrubbed)
+		default:
 			continue
 		}
 		if !changed {
 			out = slices.Clone(out)
 			changed = true
 		}
-		out[i] = kv.Key.String(scrubbed)
+		out[i] = attribute.KeyValue{Key: kv.Key, Value: value}
 	}
 	if !changed {
 		return nil, false

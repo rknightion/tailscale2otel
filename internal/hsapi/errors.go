@@ -25,6 +25,9 @@ type StatusError struct {
 	Body string
 }
 
+// HTTPStatus returns the response status without exposing response content.
+func (e *StatusError) HTTPStatus() int { return e.Code }
+
 func (e *StatusError) Error() string {
 	return fmt.Sprintf("headscale GET %s: status %d", e.Path, e.Code)
 }

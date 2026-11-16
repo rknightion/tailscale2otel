@@ -131,9 +131,18 @@ type Collector struct {
 	prev map[string]map[string]float64
 	// tracker records per-operation availability for the admin status page. A
 	// nil *apistate.Tracker is a no-op, so it needs no nil check.
-	tracker *apistate.Tracker
+	tracker      *apistate.Tracker
+	gauges       *telemetry.GaugeSnapshotBuilder
+	destinations map[string]telemetry.GaugePoint
+	health       map[string]streamHealthGauges
 	// now is the clock, injectable from tests.
 	now func() time.Time
+}
+
+// streamHealthGauges retains a type's last successful status between probes.
+type streamHealthGauges struct {
+	lastActivity *telemetry.GaugePoint
+	error        telemetry.GaugePoint
 }
 
 // Option configures optional Collector behavior.
@@ -162,11 +171,14 @@ func WithProbeIntervals(configuration, network time.Duration) Option {
 // New returns a logstream collector. A non-positive interval resolves to 600s.
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
-		api:       a,
-		interval:  interval,
-		prev:      map[string]map[string]float64{},
-		lastProbe: map[string]time.Time{},
-		now:       time.Now,
+		api:          a,
+		gauges:       telemetry.NewGaugeSnapshotBuilder(),
+		destinations: make(map[string]telemetry.GaugePoint),
+		health:       make(map[string]streamHealthGauges),
+		interval:     interval,
+		prev:         map[string]map[string]float64{},
+		lastProbe:    map[string]time.Time{},
+		now:          time.Now,
 	}
 	for _, o := range opts {
 		o(c)
@@ -245,6 +257,9 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		cfg, cfgErr := c.api.LogStreamConfiguration(ctx, lt)
 		cfgState := c.observeConfiguration(e, lt, cfgErr)
 		if cfgErr != nil {
+			if isNotFound(cfgErr) {
+				delete(c.destinations, lt)
+			}
 			// The configuration endpoint documents 404 for both an absent sink
 			// and an inaccessible/unsupported log type. It is therefore an
 			// explicit unknown, not disabled, and does not make this scrape fail.
@@ -254,7 +269,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				}
 			}
 		} else {
-			c.emitConfiguration(e, lt, cfg)
+			c.emitConfiguration(lt, cfg)
 		}
 
 		st, err := c.api.LogStreamStatus(ctx, lt)
@@ -264,6 +279,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				// 404: the endpoint is not present for this tailnet, so there is
 				// genuinely no stream. Benign and idle.
 				c.emitConfigured(e, lt, 0)
+				delete(c.health, lt)
 				continue
 			}
 			// Deliberately no configured gauge here. A 401/403/5xx means we did
@@ -276,10 +292,23 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 		if !streamConfigured(st) {
 			c.emitConfigured(e, lt, 0)
+			delete(c.health, lt)
 			continue
 		}
 		c.emitHealth(e, lt, st)
 	}
+	for _, lt := range logTypes {
+		if point, ok := c.destinations[lt]; ok {
+			c.gauges.Add(docDestinationConfigured.Name, docDestinationConfigured.Unit, docDestinationConfigured.Description, point.Value, point.Attrs)
+		}
+		if points, ok := c.health[lt]; ok {
+			if point := points.lastActivity; point != nil {
+				c.gauges.Add(docLastActivity.Name, docLastActivity.Unit, docLastActivity.Description, point.Value, point.Attrs)
+			}
+			c.gauges.Add(docError.Name, docError.Unit, docError.Description, points.error.Value, points.error.Attrs)
+		}
+	}
+	c.gauges.Flush(e)
 	return firstErr
 }
 
@@ -307,14 +336,14 @@ func isNotFound(err error) bool {
 	return ok && code == http.StatusNotFound
 }
 
-func (c *Collector) emitConfiguration(e telemetry.Emitter, requestedLogType string, cfg *tsapi.LogStreamConfiguration) {
+func (c *Collector) emitConfiguration(requestedLogType string, cfg *tsapi.LogStreamConfiguration) {
+	delete(c.destinations, requestedLogType)
 	if cfg == nil {
 		return
 	}
 	logType := boundedLogType(cfg.LogType, requestedLogType)
 	destinationType := boundedDestinationType(cfg.DestinationType)
-	e.Gauge(docDestinationConfigured.Name, docDestinationConfigured.Unit, docDestinationConfigured.Description,
-		1, telemetry.Attrs{attrLogType: logType, attrDestinationType: destinationType})
+	c.destinations[requestedLogType] = telemetry.GaugePoint{Value: 1, Attrs: telemetry.Attrs{attrLogType: logType, attrDestinationType: destinationType}}
 }
 
 func boundedLogType(value, fallback string) string {
@@ -356,16 +385,17 @@ func (c *Collector) emitHealth(e telemetry.Emitter, lt string, st *tsapi.LogStre
 	c.emitDelta(e, lt, docSpoofedEntries, float64(st.NumSpoofedEntries), attrs)
 	c.emitDelta(e, lt, docMaxBodyRequests, float64(st.NumMaxBodyRequests), attrs)
 
+	points := streamHealthGauges{}
 	if !st.LastActivity.IsZero() {
-		e.Gauge(docLastActivity.Name, docLastActivity.Unit, docLastActivity.Description,
-			float64(st.LastActivity.Unix()), attrs)
+		points.lastActivity = &telemetry.GaugePoint{Value: float64(st.LastActivity.Unix()), Attrs: attrs}
 	}
 
 	errVal := 0.0
 	if st.LastError != "" {
 		errVal = 1
 	}
-	e.Gauge(docError.Name, docError.Unit, docError.Description, errVal, attrs)
+	points.error = telemetry.GaugePoint{Value: errVal, Attrs: attrs}
+	c.health[lt] = points
 	if st.LastError != "" {
 		e.LogEvent(telemetry.Event{
 			Name:     docErrorLog.Name,

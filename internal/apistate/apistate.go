@@ -31,7 +31,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
+	"golang.org/x/oauth2"
+	tsclient "tailscale.com/client/tailscale/v2"
 )
 
 // State is the bounded availability state of one API operation. The values are
@@ -99,6 +100,23 @@ type Disposition struct {
 	DisabledOn []int
 }
 
+// HTTPStatus resolves provider and token-exchange errors without reading bodies.
+func HTTPStatus(err error) (int, bool) {
+	var status interface{ HTTPStatus() int }
+	if errors.As(err, &status) {
+		return status.HTTPStatus(), true
+	}
+	var api tsclient.APIError
+	if errors.As(err, &api) && api.Status != 0 {
+		return api.Status, true
+	}
+	var token *oauth2.RetrieveError
+	if errors.As(err, &token) && token.Response != nil {
+		return token.Response.StatusCode, true
+	}
+	return 0, false
+}
+
 // Classify maps an error returned by a Tailscale API call to a State.
 func Classify(err error, d Disposition) State {
 	if err == nil {
@@ -112,11 +130,23 @@ func Classify(err error, d Disposition) State {
 		return StateUnknown
 	}
 
-	if se, ok := errors.AsType[*tsapi.StatusError](err); ok {
-		if slices.Contains(d.DisabledOn, se.Code) {
+	var token *oauth2.RetrieveError
+	if errors.As(err, &token) {
+		rejected := token.Response != nil && (token.Response.StatusCode == 401 || token.Response.StatusCode == 403)
+		switch token.ErrorCode {
+		case "invalid_client", "unauthorized_client", "invalid_grant":
+			rejected = true
+		}
+		if rejected {
+			return StateCredentialRejected
+		}
+		return StateTransientFailure
+	}
+	if code, ok := HTTPStatus(err); ok {
+		if slices.Contains(d.DisabledOn, code) {
 			return StateDisabled
 		}
-		switch se.Code {
+		switch code {
 		case 401:
 			return StateCredentialRejected
 		case 403:
@@ -129,7 +159,7 @@ func Classify(err error, d Disposition) State {
 			// Rate limiting: genuinely retryable.
 			return StateTransientFailure
 		default:
-			if se.Code >= 400 && se.Code < 500 {
+			if code >= 400 && code < 500 {
 				// A 4xx we did not special-case above means the API rejected the
 				// request we built. Retrying it unchanged cannot help, so this
 				// must never read as transient.

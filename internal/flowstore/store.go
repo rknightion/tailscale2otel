@@ -65,7 +65,7 @@ type Backend struct {
 	// Queued is the number of observations waiting to be written.
 	Queued int `json:"queued,omitempty"`
 	// QueueDrops counts observations dropped because the write-behind queue was
-	// full. Non-zero means the view is missing traffic that OTLP still carries.
+	// full or lost to a failed flush. Non-zero means the view is missing traffic that OTLP still carries.
 	QueueDrops int64 `json:"queue_drops,omitempty"`
 	// Rows is the number of connections currently retained on disk.
 	Rows int64 `json:"rows,omitempty"`

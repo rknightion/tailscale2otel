@@ -4,6 +4,8 @@
 package httpguard
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"mime"
 	"net"
 	"net/http"
@@ -101,4 +103,14 @@ func NoRedirectClient(base *http.Client) *http.Client {
 		return http.ErrUseLastResponse
 	}
 	return &clone
+}
+
+// TokenEqual compares fixed-size digests so a wrong-length credential follows
+// the same ConstantTimeCompare path as an equal-length one. The caller knows
+// the candidate length; hashing removes the configured token length from the
+// comparison primitive's early-return behavior.
+func TokenEqual(candidate, token string) bool {
+	candidateHash := sha256.Sum256([]byte(candidate))
+	tokenHash := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(candidateHash[:], tokenHash[:]) == 1
 }

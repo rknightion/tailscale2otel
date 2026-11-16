@@ -1368,10 +1368,11 @@ type RecentQuery struct {
 	Start, End time.Time
 	Limit      int
 	// Cursor resumes after a previous page: 0 means "start from the newest",
-	// otherwise only rows with seq < Cursor are considered. It is the seq of
-	// the last row a previous RecentPage call returned.
-	Cursor uint64
-	Filter RecentFilter
+	// together with CursorTime it resumes strictly after the last row in
+	// descending (event time, sequence) order. A missing time starts anew.
+	Cursor     uint64
+	CursorTime time.Time
+	Filter     RecentFilter
 }
 
 // RecentPage is one page of the raw-connection ring, plus the bookkeeping an
@@ -1380,9 +1381,10 @@ type RecentQuery struct {
 type RecentPage struct {
 	// Rows is newest-first, same convention as Recent and RecentRange.
 	Rows []Recent
-	// NextCursor is the seq of the last row in Rows when further matching rows
-	// remain beyond Limit, and 0 when there are none.
-	NextCursor uint64
+	// NextCursor and NextCursorTime identify the last row in Rows when further
+	// matching rows remain beyond Limit; both are zero when there are none.
+	NextCursor     uint64
+	NextCursorTime time.Time
 	// Matched is how many rows in [Start, End] satisfy Filter, ignoring both
 	// Limit and Cursor — it answers "how many are there", not "how many did
 	// this page return".
@@ -1437,7 +1439,7 @@ func (m *Memory) RecentPage(q RecentQuery) RecentPage {
 		// Matched counts every in-window match regardless of Cursor/Limit, so
 		// it keeps counting after this page has filled up below.
 		page.Matched++
-		if q.Cursor != 0 && r.seq >= q.Cursor {
+		if q.Cursor != 0 && !q.CursorTime.IsZero() && (r.Time.After(q.CursorTime) || (r.Time.Equal(q.CursorTime) && r.seq >= q.Cursor)) {
 			// Already served by an earlier page.
 			continue
 		}
@@ -1450,6 +1452,7 @@ func (m *Memory) RecentPage(q RecentQuery) RecentPage {
 	page.Rows = rows
 	if haveMore && len(rows) > 0 {
 		page.NextCursor = rows[len(rows)-1].seq
+		page.NextCursorTime = rows[len(rows)-1].Time
 	}
 	return page
 }

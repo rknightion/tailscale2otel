@@ -33,6 +33,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/provider"
 	"github.com/rknightion/tailscale2otel/v5/internal/rdns"
 	"github.com/rknightion/tailscale2otel/v5/internal/release"
+	"github.com/rknightion/tailscale2otel/v5/internal/safefile"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
@@ -92,11 +93,13 @@ type App struct {
 	lifecycle func(context.Context, telemetry.FlushReason) error
 	// runtimeSetupErr records a runtime whose provider could not take its
 	// scheduled rollup producer. New (via buildIngressWAL) refuses to start.
-	runtimeSetupErr error
-	restore         func()                    // restores the prior otel error handler
-	runtimeHist     *runtimeHistory           // short-term runtime/cardinality trends, for the status page
-	store           collector.CheckpointStore // poll-cursor store; read for window-collector state on the status page
-	evidenceStore   collector.CheckpointStore // restart-stable semantic evidence (ACL revision/audit provenance)
+	runtimeSetupErr   error
+	restore           func()          // restores the prior otel error handler
+	runtimeHist       *runtimeHistory // short-term runtime/cardinality trends, for the status page
+	checkpointInit    sync.Once
+	checkpointInitErr error
+	store             collector.CheckpointStore // poll-cursor store; read for window-collector state on the status page
+	evidenceStore     collector.CheckpointStore // restart-stable semantic evidence (ACL revision/audit provenance)
 	// checkpointEffective is the store kind actually in use ("file"|"memory"),
 	// which can differ from cfg.Checkpoint.Store after a fallback (unwritable path
 	// or a corrupt file). The status page and the checkpoint reporter use this, not
@@ -512,10 +515,7 @@ func New(ctx context.Context, cfg *config.Config, version string, logger *slog.L
 		a.flowDedup = a.runtimes[0].flowDedup
 		a.auditDedup = a.runtimes[0].auditDedup
 	}
-	// Reconcile checkpoint keys with the current namespacing shape (single<->multi
-	// transitions, tailnet renames) so window cursors survive instead of silently
-	// cold-starting and re-emitting the overlap window (#105).
-	a.migrateCheckpointKeys(withComponent(logger, compCheckpoint))
+
 	if a.runtimeSetupErr != nil {
 		return nil, a.runtimeSetupErr
 	}
@@ -846,6 +846,9 @@ func (a *App) Run(ctx context.Context) error {
 // receivers, WAL replay, rollup flusher and the Prometheus listener. The admin
 // listener is optionally already serving the standby status page.
 func (a *App) runActive(ctx context.Context, startAdmin bool) error {
+	if err := a.initializeCheckpointState(); err != nil {
+		return err
+	}
 	activeCtx, cancelActive := context.WithCancelCause(ctx)
 	defer cancelActive(nil)
 	ctx = activeCtx
@@ -1497,26 +1500,25 @@ func checkpointStoreWithDefaultAndFatal(
 		collector.WithWriteDebounce(cfg.Checkpoint.WriteDebounce.D()),
 	}
 	store, err := collector.NewFileStore(path, storeOpts...)
-	if errors.Is(err, collector.ErrCorruptCheckpoint) {
-		// Non-critical window-cursor state: rename the corrupt file aside and start
-		// from an empty checkpoint (cold start from initial_lookback) rather than
-		// fail startup. The dir is writable (checked above), so a fresh file store
-		// persists going forward.
-		aside := path + ".corrupt"
-		if renameErr := os.Rename(path, aside); renameErr != nil {
-			logger.Warn("checkpoint file is corrupt and could not be renamed aside; falling back to in-memory checkpoints",
-				"file_path", path, "error", err, "rename_error", renameErr)
-			return collector.NewMemoryStore(), checkpointOutcome{
-				Kind:   "memory",
-				Reason: fmt.Sprintf("checkpoint file %s is corrupt and could not be renamed aside", path),
-			}, nil
+	if errors.Is(err, collector.ErrCorruptCheckpoint) || errors.Is(err, safefile.ErrTooLarge) {
+		// Window cursors are disposable; retain the rejected file for diagnosis and
+		// cold-start rather than repeatedly failing startup.
+		suffix, problem := ".corrupt", "is corrupt"
+		if errors.Is(err, safefile.ErrTooLarge) {
+			suffix, problem = ".oversize", "exceeded the read limit"
 		}
-		logger.Warn("checkpoint file was corrupt/unreadable; renamed it aside and started from an empty checkpoint "+
-			"(window collectors cold-start from initial_lookback)",
+		aside := path + suffix
+		if renameErr := os.Rename(path, aside); renameErr != nil {
+			logger.Warn("checkpoint file "+problem+" and could not be renamed aside; falling back to in-memory checkpoints",
+				"file_path", path, "error", err, "rename_error", renameErr)
+			return collector.NewMemoryStore(), checkpointOutcome{Kind: "memory", Reason: fmt.Sprintf("checkpoint file %s %s and could not be renamed aside", path, problem)}, nil
+		}
+		logger.Warn("checkpoint file "+problem+"; renamed it aside and started from an empty checkpoint (window collectors cold-start from initial_lookback)",
 			"file_path", path, "moved_to", aside, "error", err)
-		reason = fmt.Sprintf("checkpoint file was corrupt; renamed aside to %s and cold-started", aside)
+		reason = fmt.Sprintf("checkpoint file %s; renamed aside to %s and cold-started", problem, aside)
 		store, err = collector.NewFileStore(path, storeOpts...)
 	}
+
 	if err != nil {
 		return nil, checkpointOutcome{}, err
 	}

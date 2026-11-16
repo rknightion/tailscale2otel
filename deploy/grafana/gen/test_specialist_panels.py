@@ -71,9 +71,12 @@ class SpecialistOptionContracts(unittest.TestCase):
             builder.geomap_opts(),
             {"view": {"id": "fit", "lat": 0, "lon": 0, "zoom": 1},
              "controls": {"showZoom": True, "showAttribution": True},
-             "layers": [{"type": "markers", "name": "Devices", "config": {
-                 "showLegend": True, "style": {"size": {"field": "Devices", "fixed": 5}},
-                 "location": {"mode": "lookup", "lookup": "lookup"}}}]},
+             "layers": [{"type": "markers", "name": "Devices",
+                         "location": {"mode": "lookup", "lookup": "lookup",
+                                      "gazetteer": "public/gazetteer/countries.json"},
+                         "config": {"showLegend": True,
+                                    "style": {"size": {"field": "Devices", "fixed": 5,
+                                                       "min": 4, "max": 20}}}}]},
         )
         self.assertEqual(
             builder.state_timeline_opts(),
@@ -83,7 +86,7 @@ class SpecialistOptionContracts(unittest.TestCase):
         )
         self.assertEqual(
             builder.heatmap_opts(),
-            {"calculate": False, "yAxis": {"axisPlacement": "left", "unit": "s"},
+            {"calculate": False, "cellValues": {"unit": "cps"}, "yAxis": {"axisPlacement": "left", "unit": "s"},
              "legend": {"show": True}, "tooltip": {"show": True, "yHistogram": False}},
         )
         self.assertEqual(builder.sankey_opts("Bytes/s"), {
@@ -96,9 +99,9 @@ class SpecialistOptionContracts(unittest.TestCase):
             "groupBy": "Group", "tiling": "squarify", "separator": "",
         })
 
-    def test_ordered_organize_keeps_legacy_defaults(self):
+    def test_ordered_organize_defaults_to_declared_columns(self):
         legacy = builder.organize(exclude=["Time"], rename={"Value": "Count"})
-        self.assertEqual(legacy["spec"]["options"]["indexByName"], {})
+        self.assertEqual(legacy["spec"]["options"]["indexByName"], {"Value": 0})
 
         ordered = builder.organize(
             exclude=["Time"], rename={"src": "Source", "dst": "Destination", "Value": "Bytes/s"},
@@ -128,7 +131,21 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
     def test_country_geomap_uses_iso_lookup_and_keeps_empty_state(self):
         spec = panel_spec(self.doc, "Devices by country")
         self.assertEqual(spec["vizConfig"]["group"], "geomap")
-        self.assertEqual(spec["vizConfig"]["spec"]["options"], builder.geomap_opts())
+        layer = spec["vizConfig"]["spec"]["options"]["layers"][0]
+        self.assertEqual(layer["type"], "markers")
+        self.assertEqual(layer.get("location"), {"mode": "lookup", "lookup": "lookup",
+                                              "gazetteer": "public/gazetteer/countries.json"})
+        for element in self.doc["spec"]["elements"].values():
+            viz = element["spec"]["vizConfig"]
+            if viz["group"] != "geomap":
+                continue
+            for layer in viz["spec"]["options"]["layers"]:
+                self.assertNotIn("location", layer.get("config", {}))
+                size = layer.get("config", {}).get("style", {}).get("size", {})
+                if layer["type"] == "markers" and size.get("field"):
+                    self.assertIsInstance(size.get("min"), (int, float))
+                    self.assertIsInstance(size.get("max"), (int, float))
+                    self.assertLess(size["min"], size["max"])
         self.assertIn("tailscale_devices_by_country_ratio",
                       spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"])
         transform = spec["data"]["spec"]["transformations"][0]["spec"]["options"]
@@ -231,6 +248,16 @@ class HealthAndCostPanelContracts(unittest.TestCase):
         self.assertIn("tailscale2otel_scrape_duration_histogram_seconds_bucket", expr)
         self.assertIn("sum by (le)", expr)
         self.assertIn("rate(", expr)
+
+    def test_scrape_heatmap_distinguishes_bucket_duration_from_frequency(self):
+        spec = panel_spec(self.doc, "Scrape duration distribution")
+        query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]
+        self.assertEqual(query["format"], "heatmap")
+        viz = spec["vizConfig"]["spec"]
+        self.assertEqual(viz["fieldConfig"]["defaults"]["unit"], "cps")
+        self.assertEqual(viz["options"]["cellValues"]["unit"], "cps")
+        self.assertEqual(viz["options"]["yAxis"]["unit"], "s")
+        self.assertIn("observations per second in each duration bucket", spec["description"])
 
     def test_active_series_treemap_is_bounded_and_keeps_plugin_identity(self):
         spec = panel_spec(self.doc, "Active series by metric family")

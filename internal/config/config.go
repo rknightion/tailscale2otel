@@ -1924,6 +1924,9 @@ func Load(path string) (*Config, error) {
 		if u := unknownFileKeys(fk.Keys(), validKeys); len(u) > 0 {
 			return nil, unknownKeyError(u, validKeys)
 		}
+		if u, valid := unknownListEntryKeys(fk); len(u) > 0 {
+			return nil, unknownKeyError(u, valid)
+		}
 		deviceVersionChecksExplicit = fk.Exists("version_checks.devices.enabled")
 		// A kubelet-projected ConfigMap/Secret file on a read-only mount takes
 		// its mode from the volume's defaultMode and cannot be chmod'ed, so

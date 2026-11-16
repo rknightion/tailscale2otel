@@ -159,7 +159,7 @@ jobs:
 
   # The single writer for this lane. `if: always()` because the "all clear, close
   # the issue" path has to be decided from the same view of every leg as the
-  # failure path.
+  # failure path. A clean assembled result resolves the tracking issue below.
   report:
     timeout-minutes: 10
     needs: fuzz
@@ -223,3 +223,9 @@ jobs:
       - name: Fail on a finding
         if: steps.assemble.outputs.findings != '0'
         run: 'echo "fuzzing found a crasher — see the issue labelled fuzz-finding" >&2; exit 1'
+
+      - name: Resolve tracking issue on a clean run
+        if: steps.assemble.outputs.findings == '0'
+        uses: ./.github/actions/resolve-drift
+        with:
+          lane-label: fuzz-finding

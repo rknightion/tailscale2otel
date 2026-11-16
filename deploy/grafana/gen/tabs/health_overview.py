@@ -85,8 +85,7 @@ def tab_health_overview(scope):
                                          rename={"coordination_identity": "Pod identity",
                                                  "coordination_lease_name": "Lease",
                                                  "coordination_namespace": "Namespace",
-                                                 "coordination_state": "State",
-                                                 "Value": "Leader"})],
+                                                 "coordination_state": "State"})],
                novalue="No lease-coordination series. Requires coordination.mode: kubernetes.",
                desc="Current active-passive Lease holder and transition state. Leader=1; standby "
                     "or stepped-down=0, so an API-server renewal failure remains visible."), 8, 5),
@@ -104,7 +103,7 @@ def tab_health_overview(scope):
               [prom_t("time() - %s" % lot("tailscale2otel_scrape_last_timestamp_seconds"),
                       instant=True, fmt="table")],
               unit="s",
-              transformations=[organize(exclude=TBL_NOISE,
+              transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                         rename={"tailscale_collector": "Collector", "Value": "Age"})],
               desc="Seconds since each collector's last scrape — a row aging past its configured "
                    "interval means that collector stopped running."),
@@ -152,9 +151,9 @@ def tab_health_overview(scope):
         # a healthy-looking answer out of "not applicable" (#385).
         (panel("Checkpoint disk", "stat", [prom_t("max(tailscale2otel_checkpoint_disk_size_bytes)")],
                unit="bytes", options=stat_opts(),
-               novalue="No checkpoint file — the store is not file-backed, or nothing has "
-                       "persisted yet.",
-               desc="On-disk size of the file-backed checkpoint store."), 4, 5),
+               novalue="No checkpoint file",
+               desc="On-disk size of the file-backed checkpoint store. When empty: "
+                    "No checkpoint file — the store is not file-backed, or nothing has persisted yet."), 4, 5),
         (panel("Process CPU (summary)", "timeseries",
                [prom_t("sum by (cpu_mode) (rate(process_cpu_time_seconds_total[%s]))" % RI, legend="{{cpu_mode}}")],
                unit="percentunit", custom=ts_custom(), options=ts_opts(),
@@ -240,7 +239,7 @@ def tab_health_overview(scope):
             (panel("Log catch-up skipped seconds/s", "timeseries",
                    [prom_t("sum by (tailscale_collector) (rate(tailscale2otel_log_catchup_skipped_seconds_total[%s]))" % RI,
                            legend="{{tailscale_collector}}")],
-                   unit="s", custom=ts_custom(), options=ts_opts(),
+                   unit="none", custom=dict(ts_custom(), axisLabel="seconds per second"), options=ts_opts(),
                    novalue="No skipped-history rate samples in the selected range.",
                    desc="Rate of history duration deliberately skipped beyond delivery.log_max_record_age, by collector. The absolute duration panel also shows a first positive sample with no earlier sample for a rate."), 12, 6),
         ]),

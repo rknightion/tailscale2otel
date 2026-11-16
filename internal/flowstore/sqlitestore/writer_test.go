@@ -701,3 +701,122 @@ func fileSize(t *testing.T, path string) int64 {
 	}
 	return info.Size()
 }
+
+func TestSweep_DeletesExpiredRowsInBoundedBatches(t *testing.T) {
+	for _, expired := range []int{35, 505} {
+		t.Run(fmt.Sprint(expired), func(t *testing.T) {
+			opts := testOpts(t)
+			opts.SweepBatchRows = 10
+			s := openTestStore(t, opts)
+			now := time.Now()
+			for range expired {
+				insertFlow(t, s, map[string]any{"time": timeToDB(now.Add(-2 * time.Hour))})
+			}
+			insertFlow(t, s, map[string]any{"time": timeToDB(now)})
+			var batches []int64
+			s.afterSweepChunk = func(n int64) { batches = append(batches, n) }
+			if err := s.sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			wantRemaining := 1
+			wantBatches := 4
+			if expired > 500 {
+				wantRemaining = 6
+				wantBatches = 50
+			}
+			if got := rowCount(t, s.db); got != wantRemaining {
+				t.Fatalf("remaining=%d, want %d", got, wantRemaining)
+			}
+			if len(batches) != wantBatches {
+				t.Fatalf("batches=%v, want %d statements", batches, wantBatches)
+			}
+			for _, n := range batches {
+				if n > 10 {
+					t.Errorf("batch removed %d, want <=10", n)
+				}
+			}
+			if err := s.sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			if got := rowCount(t, s.db); got != 1 {
+				t.Fatalf("second sweep rows=%d, want retained row only", got)
+			}
+		})
+	}
+}
+
+func TestSweep_ChunkedDeleteKeepsProgressWhenBudgetEnds(t *testing.T) {
+	for _, retention := range []bool{true, false} {
+		t.Run(fmt.Sprint(retention), func(t *testing.T) {
+			opts := testOpts(t)
+			opts.SweepBatchRows = 10
+			opts.MaxRows = 5
+			s := openTestStore(t, opts)
+			now := time.Now()
+			at := now
+			if retention {
+				at = now.Add(-2 * time.Hour)
+			}
+			for i := range 25 {
+				insertFlow(t, s, map[string]any{"time": timeToDB(at.Add(time.Duration(i) * time.Millisecond))})
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			s.afterSweepChunk = func(rows int64) {
+				if rows > 0 {
+					cancel()
+				}
+			}
+			if err := s.sweep(ctx); err != nil {
+				t.Fatal(err)
+			}
+			if got := rowCount(t, s.db); got != 15 {
+				t.Fatalf("remaining=%d, want 15 after one committed chunk", got)
+			}
+			if !s.Stats().Backend.Healthy {
+				t.Fatal("partial progress marked failed")
+			}
+			s.afterSweepChunk = nil
+			if err := s.sweep(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			want := 5
+			if retention {
+				want = 0
+			}
+			if got := rowCount(t, s.db); got != want {
+				t.Fatalf("remaining=%d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestSweep_EndedBudgetBeforeProgressFails(t *testing.T) {
+	s := openTestStore(t, testOpts(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if s.sweep(ctx) == nil || s.Stats().Backend.Healthy {
+		t.Fatal("zero progress cancellation should fail")
+	}
+}
+
+func TestMaintain_CheckpointRunsAfterSweepBudgetExpires(t *testing.T) {
+	opts := testOpts(t)
+	opts.SweepBatchRows = 10
+	s := openTestStore(t, opts)
+	for range 25 {
+		insertFlow(t, s, map[string]any{"time": timeToDB(time.Now().Add(-2 * time.Hour))})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.afterSweepChunk = func(rows int64) {
+		if rows > 0 {
+			cancel()
+		}
+	}
+	s.maintain(ctx, true, true)
+	got := s.Stats().Backend
+	if !got.Healthy || got.LastCheckpointAt.IsZero() {
+		t.Fatalf("maintenance did not get fresh budget: %+v", got)
+	}
+}

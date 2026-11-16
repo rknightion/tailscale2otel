@@ -95,6 +95,7 @@ jobs:
           echo "wrong-audience token rejected with HTTP $code, no access_token issued"
 
       - name: Exchange the GitHub OIDC token for a short-lived API token
+        id: exchange
         # Missing config is a misconfiguration of this lane, not a reason to pass quietly:
         # fail here rather than self-skipping, or the lane reports green having checked nothing.
         env:
@@ -132,7 +133,7 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$token"
-          echo "TS_API_ACCESS_TOKEN=$token" >> "$GITHUB_ENV"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
 
       # A token that mints is not a token that can READ. Rotating the federated identity on
       # 2026-08-08 produced one carrying only auth-key and tailnet-settings read, and the lane
@@ -145,6 +146,7 @@ jobs:
       # and it is the resource ResolveLiveArgs needs to address the path-parameterized ops.
       - name: The minted token must carry read scope
         env:
+          TS_API_ACCESS_TOKEN: ${{ steps.exchange.outputs.token }}
           TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
           set -euo pipefail
@@ -168,6 +170,7 @@ jobs:
       - name: Run live contract
         id: live
         env:
+          TS_API_ACCESS_TOKEN: ${{ steps.exchange.outputs.token }}
           TS_TAILNET: ${{ vars.TS_TAILNET }}
         run: |
           set +e

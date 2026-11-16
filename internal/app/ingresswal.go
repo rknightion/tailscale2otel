@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -196,7 +197,13 @@ func (c *ingressWALCoordinator) appender(
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
-			c.setState(ingressWALStateFailed)
+			if ingressWALPermanent(err) != nil {
+				c.setState(ingressWALStateFailed)
+			} else {
+				c.setState(ingressWALStateRetrying)
+				c.signalWake()
+				slog.WarnContext(ctx, "ingress WAL append failed; retrying", "component", "ingress_wal")
+			}
 			return errIngressWALAppend
 		}
 		// Re-checked after the write, because replay can mark the WAL permanently
@@ -558,6 +565,17 @@ func (c *ingressWALCoordinator) commitEligible(ctx context.Context) error {
 	return combined
 }
 
+// ingressWALPermanent returns a bounded permanent class without exposing
+// filesystem paths that may be present in the original wrapped error.
+func ingressWALPermanent(err error) error {
+	for _, permanent := range []error{ingresswal.ErrCorrupt, ingresswal.ErrIncompatible, ingresswal.ErrOwnership, ingresswal.ErrClosed, ingresswal.ErrUnsupported} {
+		if errors.Is(err, permanent) {
+			return permanent
+		}
+	}
+	return nil
+}
+
 func boundedIngressWALReplayError(err error) (error, bool) {
 	// A poisoned entered callback remains a permanent application failure even
 	// if cancellation or a cleanup error is joined to the same outcome.
@@ -582,17 +600,10 @@ func boundedIngressWALReplayError(err error) (error, bool) {
 			return bounded, errors.Is(err, errIngressWALRoute) || errors.Is(err, errIngressWALApply)
 		}
 	}
-	for _, permanent := range []error{
-		ingresswal.ErrCorrupt,
-		ingresswal.ErrIncompatible,
-		ingresswal.ErrOwnership,
-		ingresswal.ErrClosed,
-		ingresswal.ErrUnsupported,
-	} {
-		if errors.Is(err, permanent) {
-			return errors.Join(errIngressWALReplay, permanent), true
-		}
+	if permanent := ingressWALPermanent(err); permanent != nil {
+		return errors.Join(errIngressWALReplay, permanent), true
 	}
+
 	return errIngressWALReplay, false
 }
 

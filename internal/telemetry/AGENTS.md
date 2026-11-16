@@ -79,7 +79,9 @@ gauges hold **absolute epoch timestamps**; dashboards subtract `time()`.
 
 `CardinalityTracker.Observe(name, attrs)` runs on the emit hot path for every data point (gated by
 self-obs; a nil tracker is a no-op). `Report(e)` runs once per export interval, emits one gauge per
-source metric, then **resets** the sets, so each interval measures active-per-interval cardinality.
+source metric. Cumulative synchronous instruments retain bounded lifetime sets and overflow
+state until restart, matching the SDK. `ObserveSnapshot` counts observable gauges per interval;
+delta instruments also reset each interval. Label samples always reset each interval.
 When editing it, preserve:
 
 - **Self-exclusion.** The tracker never measures `series.active` itself, both to avoid skew and to
@@ -97,8 +99,9 @@ stale sets each cycle. `Emitter.GaugeSnapshot` wraps that, and collectors accumu
 `telemetry.GaugeSnapshotBuilder` - hold one, `Add` points each `Collect`, then `Flush`, which
 re-emits every gauge it has ever seen, empty snapshots included, so an emptied metric clears.
 
-Every attribute-keyed (churning) gauge must use it. Only **nil-attr single-series** gauges stay
-synchronous, because they cannot churn. The one deliberate exception is nodemetrics' forwarded
+Every attribute-keyed (churning) gauge must use it. Synchronous gauges may have **nil attributes**
+or a **fixed label set written in full on every pass**, with a reasoned entry in
+`internal/collector/gaugeguard_test.go`. The one deliberate exception is nodemetrics' forwarded
 passthrough samples: dynamic names plus monotonic counters, so snapshot semantics do not fit.
 
 ## Testing

@@ -32,3 +32,16 @@ func TestSameOriginRequiresMatchingExternallyObservedScheme(t *testing.T) {
 		})
 	}
 }
+
+func TestTokenEqual(t *testing.T) {
+	for _, tc := range []struct {
+		candidate, token string
+		want             bool
+	}{
+		{"same", "same", true}, {"", "", true}, {"", "token", false}, {"token", "", false}, {"short", "a-longer-token", false}, {"wrong", "right", false},
+	} {
+		if got := TokenEqual(tc.candidate, tc.token); got != tc.want {
+			t.Errorf("TokenEqual(%q,%q)=%v", tc.candidate, tc.token, got)
+		}
+	}
+}

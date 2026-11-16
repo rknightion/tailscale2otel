@@ -200,10 +200,10 @@ exporter health.
 | `tailscale2otel.scrape.last_timestamp` | `s` | gauge | `tailscale2otel_scrape_last_timestamp_seconds` | `tailscale_collector` | Unix timestamp the last scrape *finished* (success **or** failure); pair with `scrape.success` to detect last-success staleness. |
 | `tailscale2otel.scrape.staleness` | `s` | gauge | `tailscale2otel_scrape_staleness_seconds` | `tailscale_collector` | Seconds since this collector's last successful scrape (counts up from process start until the first success); pair with `scrape.success` for freshness alerting. |
 | `tailscale2otel.scrape.success` | `1` | gauge | `tailscale2otel_scrape_success_ratio` | `tailscale_collector` | `1` if the last scrape for that collector succeeded, else `0`. |
-| `tailscale2otel.series.active` | `{series}` | gauge | `tailscale2otel_series_active` | `metric_name` | Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**. |
-| `tailscale2otel.series.by_group` | `{series}` | gauge | `tailscale2otel_series_by_group` | `metric_group` | Active time series emitted during the last export interval, summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**. |
+| `tailscale2otel.series.active` | `{series}` | gauge | `tailscale2otel_series_active` | `metric_name` | Distinct time series for `metric.name`, bounded by a per-metric cap. Cumulative synchronous instruments count series since process start; observable snapshots and delta instruments count the last interval. The value pins at the cap. A **count**. |
+| `tailscale2otel.series.by_group` | `{series}` | gauge | `tailscale2otel_series_by_group` | `metric_group` | Current tailscale2otel.series.active counts (lifetime for cumulative synchronous instruments, last interval for observable snapshots and delta instruments), summed by the catalog group that owns each metric (a roll-up of tailscale2otel.series.active by `metric.group`). Uncataloged metric names (e.g. node-metrics passthrough) bucket under `other`. A **count**. |
 | `tailscale2otel.series.limit` | `{series}` | gauge | `tailscale2otel_series_limit` | — | Effective per-metric active-series cap (`cardinality.metric_limit`): the point at which excess series collapse into `otel_metric_overflow` (silent per-series loss). Emitted only when a positive limit is configured. A **count**. |
-| `tailscale2otel.series.overflowing` | `1` | gauge | `tailscale2otel_series_overflowing_ratio` | `metric_name` | 1 when `metric.name` reached the per-metric series cap during the last interval (excess series silently dropped into `otel_metric_overflow`), else 0. Always 0 when no positive `cardinality.metric_limit` is configured. |
+| `tailscale2otel.series.overflowing` | `1` | gauge | `tailscale2otel_series_overflowing_ratio` | `metric_name` | 1 when `metric.name` reached the per-metric series cap (excess series collapse into `otel_metric_overflow`), else 0. Cumulative synchronous overflow persists until process restart; observable snapshots and delta instruments reflect the last interval. Always 0 when no positive `cardinality.metric_limit` is configured. |
 | `tailscale2otel.subrequest.attempts` | `{request}` | counter | `tailscale2otel_subrequest_attempts_total` | `tailscale_collector`, `tailscale_subrequest` | Per-entity subrequests attempted, by bounded subrequest type (e.g. one posture-attributes call per device). |
 | `tailscale2otel.subrequest.coverage` | `1` | gauge | `tailscale2otel_subrequest_coverage_ratio` | `tailscale_collector`, `tailscale_subrequest` | Fraction of per-entity subrequests that succeeded on the last pass, in `[0,1]` (a genuine ratio, unlike most `_ratio` metrics here). `1` when nothing was attempted — an empty tailnet has complete coverage of the entities it has. |
 | `tailscale2otel.subrequest.failures` | `{request}` | counter | `tailscale2otel_subrequest_failures_total` | `tailscale_collector`, `tailscale_subrequest`, `tailscale_api_state` | Per-entity subrequests that failed, by bounded subrequest type and availability state. A single entity's failure is non-fatal to the enclosing snapshot, so without this signal a missing scope silently degrades coverage while the collector still reports a clean scrape. |
@@ -275,25 +275,28 @@ per-connection detail is emitted as **log records** (see [Log events](#log-event
 > default, as ports add cardinality).
 
 > **Per-metric cardinality cap.** Every metric is bounded by `cardinality.metric_limit` (default
-> 10000) - the OTLP SDK's hard limit on distinct series per instrument per export cycle. Series past
+> 10000) - the OTLP SDK's hard limit on distinct series per instrument. For cumulative synchronous
+> instruments this includes every distinct attribute set since process start; for observable
+> snapshots and delta instruments it applies per collection interval. Series past
 > it collapse into a single `{otel_metric_overflow="true"}` series (silent loss of per-series
 > detail). So a label-less `tailscale_network_io_bytes_total{otel_metric_overflow="true"}` (or the
 > same on `network.packets`) means you are **over the cap** - raise `metric_limit` or lower flow
 > cardinality (ephemeral `source_port` is the biggest driver). `tailscale2otel.series.active` pins at
-> the same cap, so it flags the condition too.
+> the same cap, so it flags the condition too. For cumulative synchronous instruments its count
+> and `tailscale2otel.series.overflowing` remain at the cap until process restart; reducing churn
+> does not remove series already retained by the SDK.
 
-> **Per-entity gauges drop out on churn (no ghost series).** Metrics are exported with **cumulative**
-> temporality (what Grafana Cloud / Mimir ingest). A *synchronous* cumulative gauge would re-export a
-> stale value forever once its attribute set has been seen (upstream
-> [otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)), so every churning
-> per-entity gauge - `tailscale.device.online` and its per-device siblings, the by-version/by-tag/
-> by-region/by-CIDR rollups, `tailscale.node.up`, and the per-resolver/per-search-path `tailscale.dns.*`
-> - is instead emitted as an **observable** gauge from a per-tick snapshot. An observable gauge under
-> cumulative temporality reports only the series observed in the current collection, so when a device is
-> **removed or renamed** (or a version/tag/resolver stops appearing) its series simply **drops out of
-> the export on the next scrape** rather than ghosting, and it stops consuming a cardinality-limit slot
-> (issue #55). Dashboards and alerts on `device.online==1` / `node.up` therefore reflect the live fleet
-> without needing to join against a separate recency signal.
+> **Gauges whose labels can change use snapshots.** Metrics use cumulative temporality,
+> under which a synchronous gauge can keep exporting the last value for a departed entity
+> ([otel-go #3006](https://github.com/open-telemetry/opentelemetry-go/issues/3006)). Collectors
+> publish changing label sets as observable gauges from each successful poll's snapshot.
+> Examples include devices and their rollups, node reachability, DNS entries, keys, users,
+> posture integrations, log streams, ACL sections, services, OAuth apps, webhook endpoints,
+> and the flow unique-destination gauges (snapshotted per rollup interval).
+> Removed entities disappear from subsequent exports; failed or incomplete source reads retain
+> the last complete snapshot. Synchronous gauges are limited to nil attributes or fixed label
+> sets written in full on every pass, with the reason recorded in
+> `internal/collector/gaugeguard_test.go`.
 >
 > One deliberate exception: the **forwarded node-metrics passthrough samples** (the raw series scraped
 > from each node's tailscaled `:5252` endpoint) are still synchronous - their names are dynamic and

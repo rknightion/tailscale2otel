@@ -226,3 +226,29 @@ func TestDeviceVersionCheckInfo_NeverSucceededIsNotReady(t *testing.T) {
 		t.Errorf("State = %q, want error", got.State)
 	}
 }
+
+func TestUpdateCheckTreatsPrereleaseAsOlderThanFinal(t *testing.T) {
+	for _, tc := range []struct {
+		current, display, state string
+		gauge                   float64
+	}{
+		{"5.0.0-rc.3", "5.0.0-rc.3", "available", 1},
+		{"v5.0.0-alpha1", "5.0.0-alpha1", "available", 1},
+		{"5.0.0-BETA.2", "5.0.0-BETA.2", "available", 1},
+		{"5.0.0", "5.0.0", "current", 0},
+		{"5.0.0-tabcdef", "5.0.0", "current", 0},
+	} {
+		t.Run(tc.current, func(t *testing.T) {
+			rec := telemetrytest.New()
+			emitUpdateCheck(rec.Emitter(), func() (string, bool) { return "v5.0.0", true }, tc.current)
+			pts := rec.MetricPoints(appcatalog.MetricUpdateAvailable)
+			if len(pts) != 1 || pts[0].Value != tc.gauge {
+				t.Fatalf("gauge = %+v, want %v", pts, tc.gauge)
+			}
+			got := updateInfo(true, release.Snapshot{OK: true, Latest: "v5.0.0"}, tc.current)
+			if got.State != tc.state || got.CurrentVersion != tc.display || got.LatestVersion != "5.0.0" || got.MinorsBehind != 0 {
+				t.Fatalf("unexpected update status: %+v", got)
+			}
+		})
+	}
+}

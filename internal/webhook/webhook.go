@@ -52,6 +52,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/audit"
 	"github.com/rknightion/tailscale2otel/v5/internal/certreload"
 	"github.com/rknightion/tailscale2otel/v5/internal/dedup"
 	"github.com/rknightion/tailscale2otel/v5/internal/eventstore"
@@ -660,8 +661,10 @@ func WithDurableAppend(appendBody DurableAppend) Option {
 // Processor (see audit.WithCrossDedup). When set is non-nil, a webhook event
 // that maps to a change already recorded in set — by the audit poller/stream or
 // a prior webhook — is suppressed (no log record, no counter increment) so
-// enabling both webhooks and audit-log polling does not double-count. This is
-// BEST-EFFORT (see crossKey); a nil set is a no-op.
+// enabling both webhooks and audit-log polling does not double-count.
+// The first observation records its source so audit events can distinguish
+// webhook copies from other audit properties. BEST-EFFORT (see crossKey); a
+// nil set is a no-op.
 func WithDedup(set *dedup.Set) Option {
 	return func(s *Server) { s.dedup = set }
 }
@@ -1181,7 +1184,7 @@ func expectedSignature(secret string, ts time.Time, body []byte) string {
 func (s *Server) emit(ctx context.Context, ev event) { s.emitSelected(ctx, ev, s.e) }
 func (s *Server) emitSelected(ctx context.Context, ev event, emitter telemetry.Emitter) {
 	if s.dedup != nil {
-		if key, ok := crossKey(ev); ok && !s.dedup.Add(key) {
+		if key, ok := crossKey(ev); ok && s.dedup.CompareAndAdd(key, audit.CrossSourceWebhook) != dedup.ResultNew {
 			// Same change already emitted via the audit logs (or a prior webhook):
 			// suppress to avoid double-counting.
 			return

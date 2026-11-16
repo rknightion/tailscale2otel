@@ -112,7 +112,7 @@ var (
 		Name:        seriesActiveMetric,
 		Unit:        semconv.UnitSeries,
 		Instrument:  metricdoc.Gauge,
-		Description: "Exact distinct active time series emitted for `metric.name` during the last export interval; bounded by a per-metric cap (the value pins at the cap when exceeded). A **count**.",
+		Description: "Distinct time series for `metric.name`, bounded by a per-metric cap. Cumulative synchronous instruments count series since process start; observable snapshots and delta instruments count the last interval. The value pins at the cap. A **count**.",
 		Attributes:  []string{semconv.AttrMetricName},
 		Group:       groupSelfObs,
 	}
@@ -127,7 +127,7 @@ var (
 		Name:        seriesOverflowMetric,
 		Unit:        "1",
 		Instrument:  metricdoc.Gauge,
-		Description: "1 when `metric.name` reached the per-metric series cap during the last interval (excess series silently dropped into `otel_metric_overflow`), else 0. Always 0 when no positive `cardinality.metric_limit` is configured.",
+		Description: "1 when `metric.name` reached the per-metric series cap (excess series collapse into `otel_metric_overflow`), else 0. Cumulative synchronous overflow persists until process restart; observable snapshots and delta instruments reflect the last interval. Always 0 when no positive `cardinality.metric_limit` is configured.",
 		Attributes:  []string{semconv.AttrMetricName},
 		Group:       groupSelfObs,
 	}

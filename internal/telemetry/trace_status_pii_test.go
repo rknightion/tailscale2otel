@@ -27,7 +27,7 @@ func freeTextOffExporter(t *testing.T) (*tracetest.InMemoryExporter, *sdktrace.T
 	t.Helper()
 	exp := tracetest.NewInMemoryExporter()
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(
-		newPIISpanExporter(exp, pii.Categories{pii.CatFreeTextDetails: false}),
+		newPIISpanExporter(exp, pii.Categories{pii.CatFreeTextDetails: false}, ""),
 	))
 	t.Cleanup(func() { _ = tp.Shutdown(context.Background()) })
 	return exp, tp
@@ -147,7 +147,7 @@ func TestPIISpanExporterKeepsStatusDescriptionWhenFreeTextOn(t *testing.T) {
 		{pii.CatHostnames: false}, // an unrelated category off: wrapper active, text kept
 	} {
 		exp := tracetest.NewInMemoryExporter()
-		tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(newPIISpanExporter(exp, cats)))
+		tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(newPIISpanExporter(exp, cats, "")))
 		_, span := tp.Tracer("test").Start(context.Background(), "scrape devices")
 		span.SetStatus(codes.Error, desc)
 		span.End()

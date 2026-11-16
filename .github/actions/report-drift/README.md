@@ -17,7 +17,7 @@ Shared triage step for the Tailscale API drift lanes. On detection it:
 
 | input | required | description |
 | --- | --- | --- |
-| `lane-label` | yes | marker label: `api-drift`, `clientlib-drift`, or `live-contract` |
+| `lane-label` | yes | marker label: `api-drift`, `api-operation-drift`, `clientlib-drift`, `live-contract`, `iana-drift`, `changelog-review`, or `fuzz-finding` |
 | `title` | yes | issue title (used only when creating a new issue) |
 | `report-path` | yes | path to a markdown report file (issue/comment body) |
 
@@ -29,6 +29,10 @@ The marker labels must exist — `gh issue create --label` fails on a missing la
 gh label create api-drift      -c FBCA04 -d "Tailscale OpenAPI spec drift on consumed operations"
 gh label create clientlib-drift -c FBCA04 -d "tailscale-client-go/v2 main/latest breaks our build"
 gh label create live-contract  -c FBCA04 -d "Live Tailscale API contract failing"
+gh label create api-operation-drift -c FBCA04 -d "Tailscale published an unclassified API operation"
+gh label create iana-drift -c FBCA04 -d "Committed IANA service registry is out of date"
+gh label create changelog-review -c FBCA04 -d "Tailscale changelog entries awaiting a verdict"
+gh label create fuzz-finding -c FBCA04 -d "Scheduled fuzzing found a crasher"
 ```
 
 Calling workflows must grant `issues: write`. `pull-requests: write` is NOT required —

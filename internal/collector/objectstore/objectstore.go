@@ -162,6 +162,9 @@ const (
 
 // Options configures a Collector. Zero values select the defaults above.
 type Options struct {
+	// DeferCheckpointMigration leaves shared state untouched until the active lifecycle.
+	DeferCheckpointMigration bool
+
 	// Prefix is the export's root within the bucket, above the YYYY/MM/DD
 	// partitions.
 	Prefix string
@@ -205,7 +208,7 @@ type Options struct {
 	Scope CheckpointScope
 	// LegacyCheckpointNamespace is the pre-v1 namespace used by this runtime:
 	// empty for single-tailnet mode, or the tailnet name for multi-tailnet mode.
-	// New migrates that state atomically before the collector starts.
+	// New migrates atomically unless DeferCheckpointMigration delays it until activation.
 	LegacyCheckpointNamespace string
 	// APIState, when non-nil, receives this collector's per-operation
 	// availability for the admin status page and the capability matrix
@@ -216,6 +219,8 @@ type Options struct {
 // Collector ingests exported flow-log objects and feeds them to the shared
 // processor.
 type Collector struct {
+	initializeCheckpoints func() error
+
 	api    storeapi.Backend
 	signal SignalProcessor
 	cp     collector.CheckpointStore
@@ -260,9 +265,14 @@ func New(
 	// other signal would have that signal adopt the flow cursor, seen set and
 	// gaps as its own AND delete them out from under flow, so it is gated on the
 	// signal here rather than trusted to every caller.
+	var initializeCheckpoints func() error
 	if signal.Signal() == semconv.IngestSignalFlow {
-		if err := migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace); err != nil {
-			return nil, err
+		initializeCheckpoints = func() error { return migrateLegacyState(cp, opts.LegacyCheckpointNamespace, namespace) }
+		if !opts.DeferCheckpointMigration {
+			if err := initializeCheckpoints(); err != nil {
+				return nil, err
+			}
+			initializeCheckpoints = nil
 		}
 	}
 	// An unrecognized layout is refused rather than defaulted: silently reading it
@@ -322,13 +332,14 @@ func New(
 		now = time.Now
 	}
 	return &Collector{
-		api:     api,
-		signal:  signal,
-		cp:      collector.Namespaced(cp, namespace),
-		opts:    opts,
-		logger:  logger,
-		now:     now,
-		tracker: opts.APIState,
+		initializeCheckpoints: initializeCheckpoints,
+		api:                   api,
+		signal:                signal,
+		cp:                    collector.Namespaced(cp, namespace),
+		opts:                  opts,
+		logger:                logger,
+		now:                   now,
+		tracker:               opts.APIState,
 	}, nil
 }
 
@@ -374,6 +385,9 @@ const opListObjects = "listObjects"
 // logged but does not abort the cycle: a single corrupt object must not wedge
 // ingestion behind it forever.
 func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
+	if err := c.InitializeCheckpoints(); err != nil {
+		return err
+	}
 	now := c.now().UTC()
 	admission := newHorizonAdmission(now, c.opts.LogMaxRecordAge)
 	cursor, ok := c.cp.Get(cursorKey)
@@ -1572,4 +1586,16 @@ func countSkips(e telemetry.Emitter, byReason map[string]int) {
 				telemetry.Attrs{attrReason: reason})
 		}
 	}
+}
+
+// InitializeCheckpoints migrates legacy object cursors once the caller may write.
+func (c *Collector) InitializeCheckpoints() error {
+	if c.initializeCheckpoints == nil {
+		return nil
+	}
+	if err := c.initializeCheckpoints(); err != nil {
+		return err
+	}
+	c.initializeCheckpoints = nil
+	return nil
 }

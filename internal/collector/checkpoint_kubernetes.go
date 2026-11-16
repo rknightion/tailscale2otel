@@ -109,30 +109,10 @@ func NewKubernetesCheckpointStore(ctx context.Context, client KubernetesCheckpoi
 			opt(s)
 		}
 	}
-	objects, err := client.ListCheckpoints(ctx)
+	var err error
+	s.shards, err = loadKubernetesCheckpointShards(ctx, client)
 	if err != nil {
-		return nil, fmt.Errorf("list Kubernetes checkpoint shards: %w", err)
-	}
-	for _, object := range objects {
-		shard, rows, err := decodeKubernetesCheckpoint(object.Data)
-		if err != nil {
-			return nil, fmt.Errorf("decode Kubernetes checkpoint shard at resourceVersion %q: %w", object.ResourceVersion, err)
-		}
-		if object.Shard != "" && object.Shard != shard {
-			return nil, fmt.Errorf("kubernetes checkpoint shard identity mismatch: object=%q payload=%q", object.Shard, shard)
-		}
-		if _, exists := s.shards[shard]; exists {
-			return nil, fmt.Errorf("duplicate Kubernetes checkpoint shard %q", shard)
-		}
-		for key := range rows {
-			// Format v1 makes shard ownership an on-disk invariant. A future
-			// ownership change needs an explicit versioned migration; silently
-			// re-homing a mis-owned row here would rewrite corrupt state on open.
-			if want := ShardKey(key); want != shard {
-				return nil, fmt.Errorf("kubernetes checkpoint shard %q contains key %q owned by shard %q", shard, key, want)
-			}
-		}
-		s.shards[shard] = &kubernetesCheckpointShard{resourceVersion: object.ResourceVersion, legacyMigrationResourceVersion: object.LegacyMigrationResourceVersion, m: rows}
+		return nil, err
 	}
 	baseline, baselineOK := s.legacyMigrationBaseline()
 	if baselineOK {
@@ -540,3 +520,59 @@ func decodeKubernetesCheckpointWithLimit(data []byte, decodedLimit int64) (strin
 var _ CheckpointStore = (*kubernetesCheckpointStore)(nil)
 var _ CheckpointFlusher = (*kubernetesCheckpointStore)(nil)
 var _ checkpointBatchStore = (*kubernetesCheckpointStore)(nil)
+
+func loadKubernetesCheckpointShards(ctx context.Context, client KubernetesCheckpointClient) (map[string]*kubernetesCheckpointShard, error) {
+	shards := map[string]*kubernetesCheckpointShard{}
+	objects, err := client.ListCheckpoints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list Kubernetes checkpoint shards: %w", err)
+	}
+	for _, object := range objects {
+		shard, rows, err := decodeKubernetesCheckpoint(object.Data)
+		if err != nil {
+			return nil, fmt.Errorf("decode Kubernetes checkpoint shard at resourceVersion %q: %w", object.ResourceVersion, err)
+		}
+		if object.Shard != "" && object.Shard != shard {
+			return nil, fmt.Errorf("kubernetes checkpoint shard identity mismatch: object=%q payload=%q", object.Shard, shard)
+		}
+		if _, exists := shards[shard]; exists {
+			return nil, fmt.Errorf("duplicate Kubernetes checkpoint shard %q", shard)
+		}
+		for key := range rows {
+			// Format v1 makes shard ownership an on-disk invariant. A future
+			// ownership change needs an explicit versioned migration; silently
+			// re-homing a mis-owned row here would rewrite corrupt state on open.
+			if want := ShardKey(key); want != shard {
+				return nil, fmt.Errorf("kubernetes checkpoint shard %q contains key %q owned by shard %q", shard, key, want)
+			}
+		}
+		shards[shard] = &kubernetesCheckpointShard{resourceVersion: object.ResourceVersion, legacyMigrationResourceVersion: object.LegacyMigrationResourceVersion, m: rows}
+	}
+	return shards, nil
+}
+
+// Reload adopts the shared cursor and resource versions after acquiring leadership.
+// It must never be used to retry a write conflict from a deposed leader.
+func (s *kubernetesCheckpointStore) Reload(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.timer != nil {
+		s.timer.Stop()
+		s.timer = nil
+	}
+	// Discard local writes even on a failed reload: shutdown must not flush stale state.
+	s.dirty = map[string]bool{}
+	s.persistErr = nil
+	ctx, cancel := context.WithTimeout(ctx, kubernetesCheckpointWriteTimeout)
+	defer cancel()
+	shards, err := loadKubernetesCheckpointShards(ctx, s.client)
+	if err != nil {
+		return err
+	}
+	s.shards = shards
+	s.legacyMigrationResourceVersion = ""
+	if baseline, ok := s.legacyMigrationBaseline(); ok {
+		s.legacyMigrationResourceVersion = baseline
+	}
+	return nil
+}

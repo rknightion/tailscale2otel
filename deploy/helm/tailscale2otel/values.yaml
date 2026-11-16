@@ -385,8 +385,8 @@ service: # @schema additionalProperties:false
 # prometheus NEVER get one, at any value: they are introspection/scrape
 # surfaces, and publishing either to the internet is never the right default,
 # so this chart does not offer that as a one-line mistake. There is no
-# `admin`/`prometheus` key here to set — see deploy/CLAUDE.md's "No Kubernetes
-# Service" note and templates/ingress.yaml.
+# `admin`/`prometheus` key here to set. The Listeners, Services and credentials
+# section of deploy/AGENTS.md permits Ingress and HTTPRoute for receivers only.
 #
 # Rendering FAILS if you enable an Ingress for a listener with no backing
 # Service (service.<listener>.enabled), no credential set, no host, or with

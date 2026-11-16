@@ -86,6 +86,7 @@ type Collector struct {
 	// tracker records per-operation availability for the admin status page
 	// (#420). A nil *apistate.Tracker is a no-op.
 	tracker *apistate.Tracker
+	gauges  *telemetry.GaugeSnapshotBuilder
 	// now is the clock, injectable from tests.
 	now               func() time.Time
 	snapshotEnabled   bool
@@ -153,6 +154,7 @@ func WithSnapshotHeartbeat(heartbeat time.Duration) Option {
 func New(a api, interval time.Duration, opts ...Option) *Collector {
 	c := &Collector{
 		api:               a,
+		gauges:            telemetry.NewGaugeSnapshotBuilder(),
 		interval:          interval,
 		perEntity:         true,
 		now:               time.Now,
@@ -193,6 +195,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if err != nil {
 		if state == apistate.StateDisabled {
 			e.Gauge(docEndpointsCount.Name, docEndpointsCount.Unit, docEndpointsCount.Description, 0, nil)
+			c.gauges.Flush(e)
 			return nil
 		}
 		return err
@@ -212,16 +215,18 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	c.emitAge(e, hooks)
 
 	if !c.perEntity {
+		c.gauges.Flush(e)
 		return nil
 	}
 	for i := range hooks {
 		h := &hooks[i]
-		e.Gauge(docEndpointSubs.Name, docEndpointSubs.Unit, docEndpointSubs.Description,
+		c.gauges.Add(docEndpointSubs.Name, docEndpointSubs.Unit, docEndpointSubs.Description,
 			float64(len(h.Subscriptions)), telemetry.Attrs{
 				attrEndpointID:       h.EndpointID,
 				attrEndpointProvider: string(h.ProviderType),
 			})
 	}
+	c.gauges.Flush(e)
 	return nil
 }
 

@@ -117,7 +117,7 @@ def tab_health_delivery(scope):
         (panel("PII filter status", "table",
                [prom_t("%s" % lot("tailscale2otel_pii_filter_category_ratio", WIN_FAST), instant=True, fmt="table")],
                mappings=bool_map("REDACTED", "emitted", "red", "green"),
-               transformations=[organize(exclude=TBL_NOISE,
+               transformations=[organize(exclude=[n for n in TBL_NOISE if n != "Value"],
                                          rename={"category": "Category", "Value": "State"})],
                desc="Compliance view: every category should read 'emitted' (==1) unless "
                     "redacted."), 12, 7),
@@ -170,7 +170,7 @@ def tab_health_delivery(scope):
                [prom_t("sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_failed_total[%s])) / clamp_min("
                        "sum by (tailscale_logstream_type) (rate(tailscale_logstream_requests_total[%s])), 0.001)" % (RI, RI),
                        legend="{{tailscale_logstream_type}}")],
-               unit="percentunit", min_=0, custom=ts_custom(), options=ts_opts(),
+               unit="percentunit", min_=0, max_=1, custom=ts_custom(), options=ts_opts(),
                desc="Failed share of attempted delivery requests. The denominator is clamped, so a "
                     "type with no attempts reads 0 rather than dividing by zero."), 8, 6),
         (panel("Failed requests/s by type", "timeseries",
@@ -198,16 +198,17 @@ def tab_health_delivery(scope):
 
     # --- Moved verbatim from tabs/health_internals.py (#526 dissolution).
     traces = [
-        (panel("Scrape → API trace waterfall", "traces",
+        (panel("Scrape → API traces", "table",
                [tempo_t('{ resource.service.name = "tailscale2otel" && name =~ "scrape.+" }')],
-               desc=_TRACE_DESC), 24, 9),
+               transformations=[],
+               desc=_TRACE_DESC + " Select a trace ID to open its waterfall."), 24, 9),
     ]
     traces2 = [
         (panel("Span class activity", "timeseries",
                [tempo_t('{resource.service.name = "tailscale2otel" && '
                         'name =~ "scrape .+|tailscale.api .+|headscale.api .+|nodemetrics.scrape|'
                         'stream.receive|webhook.receive|release.check .+"} | rate() by (name)')],
-               custom=ts_custom(), options=ts_opts(placement="right"),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"),
                desc="Bounded discovery rate for every span class emitted by the exporter: "
                     "scheduler scrapes, Tailscale and Headscale API calls, node-metrics HTTP "
                     "scrapes, stream and webhook receivers, and release checks. An absent class "
@@ -219,7 +220,7 @@ def tab_health_delivery(scope):
                unit="s", custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
         (panel("Scrape cadence by collector (traces)", "timeseries",
                [tempo_t('{name =~ "scrape.+" && resource.service.name = "tailscale2otel"} | rate() by (name)')],
-               custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
+               unit="cps", custom=ts_custom(), options=ts_opts(placement="right"), desc=_TRACE_DESC), 12, 7),
         (panel("stream.receive batch size (traces)", "timeseries",
                [tempo_t('{name = "stream.receive" && resource.service.name = "tailscale2otel"} '
                    '| avg_over_time(span.tailscale.stream.flows) by (resource.service.instance.id)'),

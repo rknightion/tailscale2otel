@@ -62,12 +62,16 @@ metadata:
   labels:
     {{- include "tailscale2otel.labels" . | nindent 4 }}
 rules:
-  # Kubernetes RBAC cannot dynamically constrain patch to the caller pod's name. The
-  # coordinator only clears or sets its identity pod's leader role label.
+  # Restrict pod labels to StatefulSet ordinals up to the supported replica cap.
   - apiGroups:
       - ""
     resources:
       - pods
+    resourceNames:
+      {{- $fullname := include "tailscale2otel.fullname" . }}
+      {{- range $ordinal := until (include "tailscale2otel.maxReplicas" . | int) }}
+      - {{ printf "%s-%d" $fullname $ordinal | quote }}
+      {{- end }}
     verbs:
       - get
       - patch

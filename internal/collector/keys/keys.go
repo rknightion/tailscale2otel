@@ -153,6 +153,7 @@ type Collector struct {
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
 	tracker *apistate.Tracker
+	gauges  *telemetry.GaugeSnapshotBuilder
 }
 
 // Option configures optional Collector behavior.
@@ -230,6 +231,7 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 	}
 	c := &Collector{
 		api:             api,
+		gauges:          telemetry.NewGaugeSnapshotBuilder(),
 		interval:        interval,
 		expiryWarn:      expiryWarn,
 		logMaxRecordAge: collector.DefaultLogMaxRecordAge,
@@ -383,7 +385,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				}
 				addOwner(attrs, k)
 				addTags(attrs, k)
-				e.Gauge(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
+				c.gauges.Add(docKeyExpiry.Name, docKeyExpiry.Unit, docKeyExpiry.Description,
 					float64(k.Expires.Unix()), attrs)
 			}
 
@@ -426,7 +428,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				attrDescription: k.Description,
 			}
 			addOwner(scopeAttrs, k)
-			e.Gauge(docKeyScopes.Name, docKeyScopes.Unit, docKeyScopes.Description,
+			c.gauges.Add(docKeyScopes.Name, docKeyScopes.Unit, docKeyScopes.Description,
 				float64(len(k.Scopes)), scopeAttrs)
 			// Body is generic (type + count only) so it is safe without pii_filter.
 			// The key label (description, a free_text_details attr) and the scope
@@ -450,7 +452,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// for the same population as the scopes gauge (only credentials that
 		// carry scopes at all). Per-key -> gated by cardinality.per_entity.key.
 		if c.perEntity && len(k.Scopes) > 0 {
-			emitScopeClass(e, k, typ)
+			emitScopeClass(c.gauges, k, typ)
 		}
 
 		// Top-level trust-credential tag authority (#416). Only OAuth clients
@@ -458,7 +460,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// and API tokens never do — see tsapi.Key.AllowedTags' doc comment).
 		// Per-key -> gated by cardinality.per_entity.key.
 		if c.perEntity && typ == typeClient {
-			emitTagScope(e, k)
+			emitTagScope(c.gauges, k)
 		}
 
 		// Per-key preauthorized flag (auth keys only). Per-key -> gated by
@@ -475,7 +477,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			}
 			addOwner(paAttrs, k)
 			addTags(paAttrs, k)
-			e.Gauge(docKeyPreauthorized.Name, docKeyPreauthorized.Unit, docKeyPreauthorized.Description,
+			c.gauges.Add(docKeyPreauthorized.Name, docKeyPreauthorized.Unit, docKeyPreauthorized.Description,
 				pa, paAttrs)
 		}
 	}
@@ -495,7 +497,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	}
 
 	for key, n := range counts {
-		e.Gauge(docKeysCount.Name, docKeysCount.Unit, docKeysCount.Description,
+		c.gauges.Add(docKeysCount.Name, docKeysCount.Unit, docKeysCount.Description,
 			float64(n), telemetry.Attrs{
 				attrType:     key.typ,
 				attrAuthKind: key.authKind,
@@ -508,7 +510,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	// per owner x type. Stays available when cardinality.per_entity.key is off
 	// (unlike the per-key gauges above, it is not gated by c.perEntity).
 	for key, n := range byOwner {
-		e.Gauge(docKeysByOwner.Name, docKeysByOwner.Unit, docKeysByOwner.Description,
+		c.gauges.Add(docKeysByOwner.Name, docKeysByOwner.Unit, docKeysByOwner.Description,
 			float64(n), telemetry.Attrs{
 				attrOwner: key.owner,
 				attrType:  key.typ,
@@ -526,6 +528,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
+	c.gauges.Flush(e)
 	return c.persistLifecycleMarks(createdMark, revokedMark, newCreatedMark, newRevokedMark)
 }
 
@@ -583,9 +586,8 @@ func emitKeyLifecycle(e telemetry.Emitter, name, transition string, k tsapi.Key,
 
 // emitScopeClass zero-seeds k's privilege class across every tsscope.Class
 // (mirrors apistate.EmitAvailability's zero-seed shape): one series holds
-// value 1 (the current class), the rest hold 0, so a plain synchronous Gauge
-// can never ghost a stale class after a credential's scopes change.
-func emitScopeClass(e telemetry.Emitter, k tsapi.Key, typ string) {
+// value 1 (the current class), the rest hold 0, so every class remains explicit in the current snapshot.
+func emitScopeClass(gauges *telemetry.GaugeSnapshotBuilder, k tsapi.Key, typ string) {
 	class := tsscope.Classify(k.Scopes)
 	for _, want := range tsscope.Classes() {
 		v := 0.0
@@ -599,7 +601,7 @@ func emitScopeClass(e telemetry.Emitter, k tsapi.Key, typ string) {
 			attrScopeClass:  string(want),
 		}
 		addOwner(attrs, k)
-		e.Gauge(docKeyScopeClass.Name, docKeyScopeClass.Unit, docKeyScopeClass.Description, v, attrs)
+		gauges.Add(docKeyScopeClass.Name, docKeyScopeClass.Unit, docKeyScopeClass.Description, v, attrs)
 	}
 }
 
@@ -618,7 +620,7 @@ func tagScopeClass(k tsapi.Key) string {
 // count. The count is unconditional — never gated on count > 0 — because a
 // count of 0 IS the dangerous case here (no tag restriction) and must not be
 // silently omitted the way an empty node-attributes/scopes list is elsewhere.
-func emitTagScope(e telemetry.Emitter, k tsapi.Key) {
+func emitTagScope(gauges *telemetry.GaugeSnapshotBuilder, k tsapi.Key) {
 	class := tagScopeClass(k)
 	for _, want := range []string{tagScopeNone, tagScopeRestricted} {
 		v := 0.0
@@ -632,7 +634,7 @@ func emitTagScope(e telemetry.Emitter, k tsapi.Key) {
 			attrTagScope:    want,
 		}
 		addOwner(attrs, k)
-		e.Gauge(docKeyTagScope.Name, docKeyTagScope.Unit, docKeyTagScope.Description, v, attrs)
+		gauges.Add(docKeyTagScope.Name, docKeyTagScope.Unit, docKeyTagScope.Description, v, attrs)
 	}
 
 	countAttrs := telemetry.Attrs{
@@ -641,7 +643,7 @@ func emitTagScope(e telemetry.Emitter, k tsapi.Key) {
 		attrDescription: k.Description,
 	}
 	addOwner(countAttrs, k)
-	e.Gauge(docKeyAllowedTags.Name, docKeyAllowedTags.Unit, docKeyAllowedTags.Description,
+	gauges.Add(docKeyAllowedTags.Name, docKeyAllowedTags.Unit, docKeyAllowedTags.Description,
 		float64(len(k.AllowedTags)), countAttrs)
 }
 
