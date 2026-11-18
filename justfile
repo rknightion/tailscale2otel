@@ -48,6 +48,41 @@ setup:
       (cd "$m" && go mod download)
     done
 
+# Install the source-gate tools and warm all five Go modules for Cursor Cloud.
+[script('bash')]
+cloud-bootstrap:
+    set -euo pipefail
+    export GOBIN="$(go env GOPATH)/bin"
+    export PATH="$GOBIN:$PATH"
+    mkdir -p "$GOBIN"
+    just setup </dev/null
+    go install github.com/mikefarah/yq/v4@v4.54.1
+
+    scratch="$(mktemp -d)"
+    trap 'rm -rf "$scratch"' EXIT
+    helm_version=v4.2.2
+    if [[ ! -x "$GOBIN/helm" ]] || [[ "$("$GOBIN/helm" version --short)" != "${helm_version}"+* ]]; then
+      case "$(go env GOARCH)" in
+        amd64) checksum=9adafecab4d406853bba163a70e9f104f47dbbf65ce24b7653bae7e36150bcb6 ;;
+        arm64) checksum=78803142087a0069fa4b50d3f32a84d3ef25c14d1ee8a40fbccf86a6216d2f36 ;;
+        *) printf '%s\n' 'Cursor Cloud Helm binaries require amd64 or arm64' >&2; exit 1 ;;
+      esac
+      platform="linux-$(go env GOARCH)"
+      archive="helm-${helm_version}-$platform.tar.gz"
+      curl -qfsSL --retry 2 --max-time 120 -o "$scratch/$archive" "https://get.helm.sh/$archive"
+      (cd "$scratch" && printf '%s  %s\n' "$checksum" "$archive" | sha256sum --check)
+      tar -xzf "$scratch/$archive" -C "$scratch" "$platform/helm"
+      install -m 0755 "$scratch/$platform/helm" "$GOBIN/helm"
+    fi
+
+    for module in {{ modules }}; do
+      output="$scratch/build/$module"
+      mkdir -p "$output"
+      go build -C "$module" -mod=readonly -o "$output/" ./...
+      # Discard the binaries to allow packages with the same test binary name.
+      go test -C "$module" -mod=readonly -race -c -o /dev/null ./...
+    done
+
 # install the pinned promtool into GOPATH/bin, verified against the release's own sha256sums.txt (idempotent)
 [script('bash')]
 install-promtool:
