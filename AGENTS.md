@@ -286,22 +286,14 @@ file such as `ROADMAP.md` beside them.
 
 ## Maintainer code review
 
-Enrolled Personal maintainers use the centrally managed `kodus-review` skill and authenticated
-adapter plus a separate independent local agent review before committing code. Freeze the exact
-base and candidate trees (including new files), sanitized intent and applicable central rules in
-the review evidence. Pin the central rules source by full commit, selected rule IDs and rendered
-SHA-256 in the local brief; verify that pin and the brief hash in the local review. Private rule
-context stays local and must not be copied into this repository or assumed to reach Kodus.
+Pull requests are reviewed by Cursor Bugbot, guided by `.cursor/BUGBOT.md`. Before merging, read
+its `Cursor Bugbot` check on the exact head. `success` clears the head. `neutral` means findings:
+fix each one the code shows to be a real defect, answer the rest on their threads with the code
+evidence, and resolve every thread. A missing, cancelled, errored or oversized review is no
+verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
+review rule. There is no local review tool to run before committing, and no review evidence to
+freeze.
 
-Both components must pass for the same candidate identity. The independent agent inspects the
-full frozen candidate and base context against the intent and pinned rules; Kodus context is
-partial/unknown. Adapter exit zero alone is not combined approval. Missing, incomplete, unknown,
-unsupported or oversized reviews are no verdict: resolve or split into fully covered candidates,
-never omit changed files or substitute one component. Resolve verified findings and record their
-dispositions; unresolved critical, high or major findings block landing. Root-authored additions
-need their own exact-candidate review. Hosted reviews are supplementary and do not replace either
-local component, required tests, deployment authority or human approvals.
-
-Public contributors need no private maintainer configuration or paid review account; normal
-contribution and hosted-check requirements still apply. Never submit backup repositories,
-credentials, private fixtures or customer identifiers to an external reviewer.
+Public contributors need no maintainer configuration or review account; normal contribution and
+hosted-check requirements still apply. Hosted review never replaces required tests, deployment
+authority or human approval.
