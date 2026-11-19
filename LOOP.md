@@ -70,9 +70,8 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
   unit suffixes, `_ratio` on unit-`1` gauges.
 - Pick exactly one ingestion path per log type (`poll` or `stream`); both double-counts.
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
-- Code slices require the combined Kodus and independent local exact-candidate review in
-  the maintainer code-review contract. Include generated and new files in candidate coverage;
-  missing or oversized review is no verdict, never clean.
+- Code slices are reviewed by Cursor Bugbot on their pull request (the maintainer code-review
+  section of `AGENTS.md`). A missing, cancelled or oversized review is no verdict, never clean.
 - `helm-success` exists only for pushes touching `helm.yml`'s push paths (`deploy/helm/**`,
   `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`, `helm.yml` itself; no
   `workflow_dispatch`);
