@@ -2,14 +2,19 @@
 tier: guarded
 gate: just check
 ci-required: ci-success, helm-success
+ci-status: just ci-status {sha}
+  0 green, 1 red, 2 pending or unread.
 release-on-push: yes
 deploy-on-push: yes
+deploy-paths: deploy/grafana/**, deploy/alerts/**, scripts/grafana-prune-rules.py
+deploy-verify: just deploy-status {sha}
+  Same exit codes, for grafana-sync.
 grafana-stack: robknight
 tracker: github
 landing: pr
 
-Public repository: no lab name, address, identifier, credential or observability capture in any
-tracked file, issue or pull request. Run `just` with stdin from `/dev/null`. `just setup` once per
+Public repository: no lab identifier, credential or observability capture in any tracked file,
+issue or PR. Run `just` with stdin from `/dev/null`. `just setup` once per
 clone installs the pinned tools; a local lint or vuln result counts only when its pin assertion
 passed. `just ci` adds the goreleaser cross-compile and the image and smoke legs.
 
@@ -72,17 +77,13 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
 - Code slices are reviewed by Cursor Bugbot on their pull request (the maintainer code-review
   section of `AGENTS.md`). A missing, cancelled or oversized review is no verdict, never clean.
-- `helm-success` exists only for pushes touching `helm.yml`'s push paths (`deploy/helm/**`,
-  `config.example.yaml`, `internal/config/**`, `tools/configcheck/**`, `helm.yml` itself; no
-  `workflow_dispatch`);
-  any other push to `main` never gets one. Record it as absent, not a pass,
-  and do not make a source edit to trigger it. Pull requests always report it.
+- `helm-success` reports on `main` only for pushes on `helm.yml`'s push paths; `just ci-status`
+  treats it as absent, not a pass. Never make a source edit to trigger it. PRs always report it.
 - The live spec endpoint emits YAML, but `spec/tailscale-api.json` stays JSON: re-vendor with
   `curl ... | yq -o=json '.'` (`spec/README.md`). `internal/oas.ParseSpec` keeps only GET operations.
-- More traps in `reference/ci-gates.md`: dashboards-drift, gen-check staging, the Tailscale client
-  path, grafana-sync rules.
-- Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change alone.
-- Wall-clock flakes, auto-rc, reruns, release posture, RBAC proofs: `reference/ci-gates.md`.
+- Scheduled workflows (live contract, API drift, IANA freshness) can fail on upstream change.
+- More traps (dashboards-drift, gen-check staging, grafana-sync rules, flakes, auto-rc, reruns,
+  release posture, RBAC proofs): `reference/ci-gates.md`.
 
 ## Mutexes
 

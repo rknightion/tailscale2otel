@@ -595,6 +595,29 @@ run config="config.yaml": build
 validate config="config.yaml": build
     ./bin/tailscale2otel -config '{{ config }}' -validate
 
+# required CI for a commit, read from each workflow's newest run: exit 0 green, 1 red, 2 pending or unreadable
+[group('infra')]
+[no-exit-message]
+ci-status sha:
+    @python3 -B scripts/ci_status.py {{ quote(sha) }}
+
+# grafana-sync outcome for a commit on main: exit 0 passed, 1 failed, 2 not run yet or unreadable
+[group('infra')]
+[no-exit-message]
+deploy-status sha:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    runs=$(gh run list --repo rknightion/tailscale2otel --workflow grafana-sync.yml --event push \
+        --commit {{ quote(sha) }} --json status,conclusion,createdAt 2>/dev/null) || exit 2
+    verdict=$(jq -r 'sort_by(.createdAt) | last | if . == null then "none"
+        elif .status != "completed" then "pending" else .conclusion end' <<<"$runs") || exit 2
+    echo "grafana-sync {{ sha }}: $verdict"
+    case "$verdict" in
+        success) exit 0 ;;
+        failure|cancelled|timed_out|startup_failure|action_required) exit 1 ;;
+        *) exit 2 ;;
+    esac
+
 # report drift between the live Grafana stack and what this repo ships (read-only)
 [group('infra')]
 [no-exit-message]
