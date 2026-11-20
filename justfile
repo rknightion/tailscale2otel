@@ -595,18 +595,25 @@ run config="config.yaml": build
 validate config="config.yaml": build
     ./bin/tailscale2otel -config '{{ config }}' -validate
 
-# required CI for a commit: exit 0 green, 1 red, 2 pending or unreadable (helm-success counts only when it ran)
+# required CI for a commit, newest run per check: exit 0 green, 1 red, 2 pending, cancelled or unreadable (helm-success counts only when it ran)
 [group('infra')]
 [no-exit-message]
 ci-status sha:
     #!/usr/bin/env bash
     set -uo pipefail
     runs=$(gh api --paginate "repos/rknightion/tailscale2otel/commits/{{ sha }}/check-runs?filter=latest&per_page=100" \
-        --jq '.check_runs[] | select(.name == "ci-success" or .name == "helm-success") | [.name, .status, (.conclusion // "")] | @tsv' \
+        --jq '.check_runs[] | select(.name == "ci-success" or .name == "helm-success") | [.name, (.started_at // ""), .status, (.conclusion // "")] | @tsv' \
         2>/dev/null) || exit 2
+    # A CI or Helm workflow run still queued or running will post a newer result: pending.
+    active=$(gh api "repos/rknightion/tailscale2otel/actions/runs?head_sha={{ sha }}&per_page=100" \
+        --jq '[.workflow_runs[] | select((.name == "CI" or .name == "Helm") and .status != "completed")] | length' \
+        2>/dev/null) || exit 2
+    if [ "$active" != 0 ]; then echo "$active CI/Helm run(s) still in progress"; exit 2; fi
+    # Only the newest run of each check counts: a run superseded by a newer one is cancelled, not red.
+    runs=$(sort -t $'\t' -k1,1 -k2,2r <<<"$runs" | awk -F'\t' '!seen[$1]++ { print $1 "\t" $3 "\t" $4 }')
     echo "${runs:-no required check runs yet}"
-    awk -F'\t' '$1 == "ci-success" { seen = 1 } $2 != "completed" { pending = 1 }
-        $2 == "completed" && $3 !~ /^(success|skipped|neutral)$/ { red = 1 }
+    awk -F'\t' '$1 == "ci-success" { seen = 1 } $2 != "completed" || $3 == "cancelled" { pending = 1 }
+        $2 == "completed" && $3 !~ /^(success|skipped|neutral|cancelled)$/ { red = 1 }
         END { if (red) exit 1; if (!seen || pending) exit 2; exit 0 }' <<<"$runs"
 
 # grafana-sync outcome for a commit on main: exit 0 passed, 1 failed, 2 not run yet or unreadable
