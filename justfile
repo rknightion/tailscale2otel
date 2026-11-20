@@ -595,6 +595,37 @@ run config="config.yaml": build
 validate config="config.yaml": build
     ./bin/tailscale2otel -config '{{ config }}' -validate
 
+# required CI for a commit: exit 0 green, 1 red, 2 pending or unreadable (helm-success counts only when it ran)
+[group('infra')]
+[no-exit-message]
+ci-status sha:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    runs=$(gh api --paginate "repos/rknightion/tailscale2otel/commits/{{ sha }}/check-runs?filter=latest&per_page=100" \
+        --jq '.check_runs[] | select(.name == "ci-success" or .name == "helm-success") | [.name, .status, (.conclusion // "")] | @tsv' \
+        2>/dev/null) || exit 2
+    echo "${runs:-no required check runs yet}"
+    awk -F'\t' '$1 == "ci-success" { seen = 1 } $2 != "completed" { pending = 1 }
+        $2 == "completed" && $3 !~ /^(success|skipped|neutral)$/ { red = 1 }
+        END { if (red) exit 1; if (!seen || pending) exit 2; exit 0 }' <<<"$runs"
+
+# grafana-sync outcome for a commit on main: exit 0 passed, 1 failed, 2 not run yet or unreadable
+[group('infra')]
+[no-exit-message]
+deploy-status sha:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    runs=$(gh run list --repo rknightion/tailscale2otel --workflow grafana-sync.yml --event push \
+        --commit {{ quote(sha) }} --json status,conclusion,createdAt 2>/dev/null) || exit 2
+    verdict=$(jq -r 'sort_by(.createdAt) | last | if . == null then "none"
+        elif .status != "completed" then "pending" else .conclusion end' <<<"$runs") || exit 2
+    echo "grafana-sync {{ sha }}: $verdict"
+    case "$verdict" in
+        success) exit 0 ;;
+        failure|cancelled|timed_out|startup_failure|action_required) exit 1 ;;
+        *) exit 2 ;;
+    esac
+
 # report drift between the live Grafana stack and what this repo ships (read-only)
 [group('infra')]
 [no-exit-message]
