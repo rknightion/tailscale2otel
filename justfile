@@ -604,11 +604,17 @@ ci-status sha:
     runs=$(gh api --paginate "repos/rknightion/tailscale2otel/commits/{{ sha }}/check-runs?filter=latest&per_page=100" \
         --jq '.check_runs[] | select(.name == "ci-success" or .name == "helm-success") | [.name, (.started_at // ""), .status, (.conclusion // "")] | @tsv' \
         2>/dev/null) || exit 2
-    # A CI or Helm workflow run still queued or running will post a newer result: pending.
-    active=$(gh api "repos/rknightion/tailscale2otel/actions/runs?head_sha={{ sha }}&per_page=100" \
-        --jq '[.workflow_runs[] | select((.name == "CI" or .name == "Helm") and .status != "completed")] | length' \
+    # A CI or Helm run that started after the newest ci-success or helm-success has not posted its gate
+    # check yet: pending. Jobs outside the gate (fuzz, coverage) finishing later do not hold it.
+    wf=$(gh api "repos/rknightion/tailscale2otel/actions/runs?head_sha={{ sha }}&per_page=100" \
+        --jq '.workflow_runs[] | select(.name == "CI" or .name == "Helm") | [.name, (.run_started_at // .created_at)] | @tsv' \
         2>/dev/null) || exit 2
-    if [ "$active" != 0 ]; then echo "$active CI/Helm run(s) still in progress"; exit 2; fi
+    newer=$(awk -F'\t' 'FILENAME == ARGV[1] { if ($1 == "CI") $1 = "ci-success"; else $1 = "helm-success"
+            if ($2 > run[$1]) run[$1] = $2; next }
+        { if ($2 > check[$1]) check[$1] = $2 }
+        END { for (n in run) if (run[n] > check[n]) print n }' <(printf '%s\n' "$wf" | grep -v '^$') \
+        <(printf '%s\n' "$runs" | grep -v '^$'))
+    if [ -n "$newer" ]; then echo "awaiting a newer $newer"; exit 2; fi
     # Only the newest run of each check counts: a run superseded by a newer one is cancelled, not red.
     runs=$(sort -t $'\t' -k1,1 -k2,2r <<<"$runs" | awk -F'\t' '!seen[$1]++ { print $1 "\t" $3 "\t" $4 }')
     echo "${runs:-no required check runs yet}"
