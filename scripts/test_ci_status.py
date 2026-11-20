@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Tests for the required-CI reader behind `just ci-status`.
 
 The rows mirror real workflow and check runs read from the GitHub API on 2026-11-20 (ids,
