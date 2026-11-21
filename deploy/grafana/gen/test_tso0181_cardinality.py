@@ -66,7 +66,9 @@ class ConsolidatedCardinalityTest(unittest.TestCase):
         self.assertEqual(len(self.panels), len(self.elements))
         self.assertIn("Active series by metric family", self.panels)
         self.assertIn("Metric families tracked", self.panels)
-        self.assertIn("native table and time series remain available", self.panels["Active series by metric family"]["description"])
+        self.assertEqual(self.panels["Active series by metric family"]["vizConfig"]["group"], "barchart")
+        self.assertIn("Per-metric utilization (top-N)", self.panels)
+        self.assertIn("Series cap utilization over time (top $topn)", self.panels)
 
     def test_regenerated_alert_destinations(self):
         expected = {
