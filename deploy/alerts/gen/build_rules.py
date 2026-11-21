@@ -1844,6 +1844,40 @@ def groups():
               "enable it where reporter/source agreement is expected.",
               domain="security", paused=True,
               policy="optional", runbook="flow-data-pipeline", panel="Reporter trust & consistency"),
+        # --- Flow security anomalies (runbook: flow-security-anomalies) ---
+        # Both read families that exist under every metrics_mode: the rollup
+        # and the unique.* gauges. The fan-out rule compares a node with
+        # its OWN 7-day peak, so no fleet-specific threshold has to be tuned;
+        # the clamp_min floor stops a quiet node (peak 1-2) from firing on a
+        # handful of new peers. A node with no 7-day history has no baseline
+        # and cannot fire here, which is the documented gap. There is
+        # deliberately NO destination-port twin: flows are logged from the
+        # reporting node's side, so a busy server's replies count its clients'
+        # ephemeral ports as destination ports. Backtested on a lab tailnet, a
+        # port-fanout rule fired 67x on a server answering one client burst.
+        alert("ts2o-flow-acl-rejection-burst", "ACL rejection burst from one source",
+              'sum by (tailscale_src_node) (increase(tailscale_network_packets_rollup_total{network_transport="tsmp"}[15m]))',
+              "gt", 500, "15m", "warning",
+              "{{ $labels.tailscale_src_node }} is hitting the tailnet policy's deny path",
+              "More than 500 TSMP rejection packets in 15 minutes came from {{ $labels.tailscale_src_node }}. "
+              "TSMP records are what a peer sends back when the tailnet policy refuses a connection, so a "
+              "burst from one source means it is repeatedly trying peers or ports it is not allowed to "
+              "reach: a scan, lateral movement, or a misconfigured client retrying forever. A source of "
+              "__other__ means the attempts were spread over enough small conversations to fold out of the "
+              "rollup's top-N, which is itself a scanning shape; use the flow logs to name it.",
+              domain="security", paused=False,
+              policy="optional", runbook="flow-security-anomalies"),
+        alert("ts2o-flow-peer-fanout-anomaly", "Node reaching far more peers than usual",
+              "max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[15m])) / "
+              "clamp_min(max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[7d] offset 1h)), 10)",
+              "gt", 3, "5m", "warning",
+              "{{ $labels.tailscale_src_node }} is reaching over 3x its usual number of peers",
+              "In the last 15 minutes {{ $labels.tailscale_src_node }} talked to more than three times as "
+              "many distinct peers as its peak over the previous 7 days (with a floor of 10, so at least 31 "
+              "peers). A sudden widening of who a node talks to is the classic lateral-movement shape. "
+              "Needs cardinality.flow.node_dims, which emits the unique.* gauges.",
+              domain="security", paused=False,
+              policy="optional", runbook="flow-security-anomalies"),
         alert("ts2o-audit-schema-drift", "Audit schema drift detected",
               'sum by (field) (rate(tailscale_config_audit_schema_drift_total{status="unknown"}[10m]))',
               "gt", 0, "15m", "warning",

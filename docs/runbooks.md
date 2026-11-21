@@ -960,6 +960,38 @@ these need the node-metrics scraper - with it disabled the series are absent and
 **Resolved when.** The relay share returns to its baseline. Note the baseline is fleet-specific: pick
 a threshold from your own history rather than assuming 50% is meaningful for you.
 
+## Flow security anomalies {#flow-security-anomalies}
+
+**Rules:** `ts2o-flow-acl-rejection-burst`, `ts2o-flow-peer-fanout-anomaly`
+
+**What it means.** One node is behaving differently on the network: it is being refused by the
+tailnet policy many times (TSMP rejection records), or it is suddenly talking to far more peers
+than its own recent peak. Those are the shapes of a scan, lateral movement after a compromise,
+or a client stuck retrying something it may not reach.
+
+**Legitimate causes.** A monitoring or inventory job that sweeps the tailnet, a newly deployed
+service discovering its peers, a misconfigured client retrying a denied connection, or a policy
+change that just started refusing traffic that used to be allowed. The fan-out rule compares a node
+with its own previous 7 days, so a node with no history has no baseline and cannot fire; a brand new
+device that starts scanning straight away is only caught by the rejection rule.
+
+**Not legitimate.** A personal or user-owned device that starts reaching servers or ports it has
+never used, or rejection bursts from a device nobody can account for.
+
+**First step.** Query the flow logs for the named source over the alert window, for example
+`{service_name="tailscale2otel"} | event_name="tailscale.network.flow" | tailscale_src_node="<node>"`,
+and look at the destination nodes, ports and `network_transport`. For a rejection burst, filter on
+`network_transport="tsmp"`. A source of `__other__` means the attempts were spread across enough
+small conversations to fall out of the rollup's top-N; the flow logs still carry every one.
+
+**Why there is no port-scan rule.** Flows are logged from the reporting node's side, so a busy
+server's replies count its clients' ephemeral source ports as destination ports. A per-node
+destination-port fan-out therefore fires on ordinary server load, not only on scans. Use
+`tailscale_network_unique_dst_ports` as a dashboard signal and read the flow logs before acting on it.
+
+**Resolved when.** The rate falls back under the threshold. If the behaviour is expected (a new
+scanner, a new service), let it age into the 7-day baseline or silence the source.
+
 ## Flow data pipeline {#flow-data-pipeline}
 
 **Persistent flow-store checkpoint:** `ts2o-flow-store-checkpoint-stale` warns when the

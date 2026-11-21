@@ -1488,7 +1488,8 @@
       "prom_name": "tailscale_network_packets_rollup_total",
       "surface": "operational",
       "dispositions": [
-        "visualized"
+        "visualized",
+        "alertable"
       ]
     },
     {
@@ -1517,6 +1518,7 @@
       "surface": "operational",
       "dispositions": [
         "visualized",
+        "alertable",
         "drives_a_variable"
       ]
     },

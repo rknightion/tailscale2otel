@@ -1,0 +1,104 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-flow-peer-fanout-anomaly"
+  },
+  "spec": {
+    "annotations": {
+      "description": "In the last 15 minutes {{ $labels.tailscale_src_node }} talked to more than three times as many distinct peers as its peak over the previous 7 days (with a floor of 10, so at least 31 peers). A sudden widening of who a node talks to is the classic lateral-movement shape. Needs cardinality.flow.node_dims, which emits the unique.* gauges.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#flow-security-anomalies",
+      "summary": "{{ $labels.tailscale_src_node }} is reaching over 3x its usual number of peers"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[15m])) / clamp_min(max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[7d] offset 1h)), 10)",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  3
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "5m0s",
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "Node reaching far more peers than usual",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}

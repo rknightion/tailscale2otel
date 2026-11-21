@@ -1,0 +1,104 @@
+{
+  "apiVersion": "rules.alerting.grafana.app/v0alpha1",
+  "kind": "AlertRule",
+  "metadata": {
+    "annotations": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "labels": {
+      "grafana.app/folder": "tailscale2otel"
+    },
+    "name": "ts2o-flow-acl-rejection-burst"
+  },
+  "spec": {
+    "annotations": {
+      "description": "More than 500 TSMP rejection packets in 15 minutes came from {{ $labels.tailscale_src_node }}. TSMP records are what a peer sends back when the tailnet policy refuses a connection, so a burst from one source means it is repeatedly trying peers or ports it is not allowed to reach: a scan, lateral movement, or a misconfigured client retrying forever. A source of __other__ means the attempts were spread over enough small conversations to fold out of the rollup's top-N, which is itself a scanning shape; use the flow logs to name it.",
+      "runbook_url": "https://m7kni.io/tailscale2otel/runbooks/#flow-security-anomalies",
+      "summary": "{{ $labels.tailscale_src_node }} is hitting the tailnet policy's deny path"
+    },
+    "execErrState": "Error",
+    "expressions": {
+      "A": {
+        "datasourceUID": "grafanacloud-prom",
+        "model": {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "grafanacloud-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by (tailscale_src_node) (increase(tailscale_network_packets_rollup_total{network_transport=\"tsmp\"}[15m]))",
+          "instant": false,
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "range": true,
+          "refId": "A"
+        },
+        "relativeTimeRange": {
+          "from": "1h0m0s",
+          "to": "0s"
+        }
+      },
+      "B": {
+        "model": {
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "A",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "reducer": "last",
+          "refId": "B",
+          "type": "reduce"
+        }
+      },
+      "C": {
+        "model": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [
+                  500
+                ],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": []
+              },
+              "reducer": {
+                "params": [],
+                "type": "last"
+              },
+              "type": "query"
+            }
+          ],
+          "datasource": {
+            "type": "__expr__",
+            "uid": "__expr__"
+          },
+          "expression": "B",
+          "intervalMs": 1000,
+          "maxDataPoints": 43200,
+          "refId": "C",
+          "type": "threshold"
+        },
+        "source": true
+      }
+    },
+    "for": "15m0s",
+    "labels": {
+      "domain": "security",
+      "service": "tailscale2otel",
+      "severity": "warning"
+    },
+    "noDataState": "Ok",
+    "paused": false,
+    "title": "ACL rejection burst from one source",
+    "trigger": {
+      "interval": "1m"
+    }
+  }
+}
