@@ -15880,7 +15880,7 @@
         "spec": {
           "id": 174,
           "title": "Active series by metric family",
-          "description": "Top-$topn metric families by active-series count. This optional panel needs `marcusolsson-treemap-panel` 2.1.1; install it from https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/. The native table and time series remain available when the plugin is absent.",
+          "description": "Top-$topn metric families by active-series count, using the maximum reported count per family across visible reporters.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -15941,15 +15941,22 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "marcusolsson-treemap-panel",
-            "version": "2.1.1",
+            "group": "barchart",
+            "version": "12.1.0",
             "spec": {
               "options": {
-                "labelBy": "metric_name",
-                "sizeBy": "Value",
-                "colorBy": "Value",
-                "tiling": "squarify",
-                "separator": ""
+                "orientation": "horizontal",
+                "showValue": "auto",
+                "stacking": "none",
+                "legend": {
+                  "showLegend": false,
+                  "displayMode": "list",
+                  "placement": "bottom"
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
               },
               "fieldConfig": {
                 "defaults": {

@@ -16,7 +16,7 @@ duplicates of panels already on this tab, so nothing was added:
 """
 
 from builder import (barchart_opts, organize, panel, prom_t, RI, row,
-                     sentinel, stat_opts, TBL_NOISE, thr, treemap_opts, ts_custom, ts_opts,
+                     sentinel, stat_opts, TBL_NOISE, thr, ts_custom, ts_opts,
                      WIN_FAST)
 
 _NO_CAP = ("Capacity uncertain — missing limit or reporter telemetry; "
@@ -184,7 +184,7 @@ def tab_cardinality(scope):
                     "ingestion delay, or reporter scope. Neither inventory replaces the other."), 12, 6),
     ]
 
-    # Active-series cost drivers and optional treemap; native fallbacks remain.
+    # Active-series cost drivers, by group and by metric family.
     bygroup = [
         (panel("Active series by group", "barchart",
                [prom_t("sum by (metric_group) (last_over_time(tailscale2otel_series_by_group[%s]))" % WIN_FAST,
@@ -194,18 +194,16 @@ def tab_cardinality(scope):
                desc="Reported active-series counts summed by metric_group across process/runtime reporters "
                     "over the lookback window — a cost-driver view, not a live backend inventory. "
                     "Groups reflect logical metric domains and vary with enabled collectors and reporting replicas."), 24, 8),
-        (panel("Active series by metric family", "marcusolsson-treemap-panel",
+        (panel("Active series by metric family", "barchart",
                [prom_t("topk($topn, max by (metric_name) (tailscale2otel_series_active))",
                        instant=True, fmt="table")],
-               unit="short", options=treemap_opts("metric_name", "Value"), version="2.1.1",
+               unit="short", options=barchart_opts(),
                transformations=[organize(
                    exclude=[name for name in TBL_NOISE if name != "Value"],
                    index={"metric_name": 0, "Value": 1})],
                novalue="No active-series inventory from exporter self-observability.",
-               desc="Top-$topn metric families by active-series count. This optional panel "
-                    "needs `marcusolsson-treemap-panel` 2.1.1; install it from "
-                    "https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/. The "
-                    "native table and time series remain available when the plugin is absent."),
+               desc="Top-$topn metric families by active-series count, using the maximum reported "
+                    "count per family across visible reporters."),
          24, 9),
     ]
 

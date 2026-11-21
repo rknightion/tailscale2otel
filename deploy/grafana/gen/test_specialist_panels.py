@@ -259,14 +259,10 @@ class HealthAndCostPanelContracts(unittest.TestCase):
         self.assertEqual(viz["options"]["yAxis"]["unit"], "s")
         self.assertIn("observations per second in each duration bucket", spec["description"])
 
-    def test_active_series_treemap_is_bounded_and_keeps_plugin_identity(self):
+    def test_active_series_family_view_is_native_and_bounded(self):
         spec = panel_spec(self.doc, "Active series by metric family")
         viz = spec["vizConfig"]
-        self.assertEqual(viz["group"], "marcusolsson-treemap-panel")
-        self.assertEqual(viz["version"], "2.1.1")
-        self.assertEqual(viz["spec"]["options"], builder.treemap_opts("metric_name", "Value"))
-        self.assertIn("https://grafana.com/grafana/plugins/marcusolsson-treemap-panel/",
-                      spec["description"])
+        self.assertEqual(viz["group"], "barchart")
         query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
         self.assertIn("topk($topn,", query)
         self.assertIn('max by (metric_name) (tailscale2otel_series_active{tailscale_tailnet=~"$tailnet"})', query)
