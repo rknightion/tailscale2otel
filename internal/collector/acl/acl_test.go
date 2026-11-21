@@ -355,27 +355,30 @@ func TestRuleCountsFromCommittedPolicy(t *testing.T) {
 	for _, p := range rec.MetricPoints("tailscale.acl.wildcard_rules") {
 		wild[p.Attrs["tailscale.acl.section"]+"/"+p.Attrs["tailscale.acl.position"]] = p.Value
 	}
-	if wild["grants/src"] != 2 || wild["grants/dst"] != 5 {
-		t.Fatalf("grants wildcard src/dst = %v/%v, want 2/5", wild["grants/src"], wild["grants/dst"])
-	}
-	if wild["acls/src"] != 0 || wild["acls/dst"] != 0 {
-		t.Fatalf("acls wildcard src/dst = %v/%v, want 0/0", wild["acls/src"], wild["acls/dst"])
+	for key, want := range map[string]float64{"grants/src": 2, "grants/dst": 5, "acls/src": 0, "acls/dst": 0} {
+		if got, ok := wild[key]; !ok || got != want {
+			t.Errorf("wildcard %s = %v (present %v), want %v", key, got, ok, want)
+		}
 	}
 
 	unr := map[string]float64{}
 	for _, p := range rec.MetricPoints("tailscale.acl.unrestricted_rules") {
 		unr[p.Attrs["tailscale.acl.section"]] = p.Value
 	}
-	if unr["acls"] != 0 || unr["grants"] != 0 {
-		t.Fatalf("unrestricted acls/grants = %v/%v, want 0/0", unr["acls"], unr["grants"])
+	for _, key := range []string{"acls", "grants"} {
+		if got, ok := unr[key]; !ok || got != 0 {
+			t.Errorf("unrestricted %s = %v (present %v), want 0", key, got, ok)
+		}
 	}
 
 	aa := map[string]float64{}
 	for _, p := range rec.MetricPoints("tailscale.acl.autoapprovers") {
 		aa[p.Attrs["tailscale.acl.autoapprover_kind"]] = p.Value
 	}
-	if aa["routes"] != 7 || aa["exit_node"] != 2 || aa["services"] != 1 {
-		t.Fatalf("autoapprovers routes/exit_node/services = %v/%v/%v, want 7/2/1", aa["routes"], aa["exit_node"], aa["services"])
+	for key, want := range map[string]float64{"routes": 7, "exit_node": 2, "services": 1} {
+		if got, ok := aa[key]; !ok || got != want {
+			t.Errorf("autoapprovers %s = %v (present %v), want %v", key, got, ok, want)
+		}
 	}
 
 	sshPts := rec.MetricPoints("tailscale.acl.ssh_wildcard")
