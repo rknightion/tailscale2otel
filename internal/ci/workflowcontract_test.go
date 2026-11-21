@@ -14,6 +14,7 @@ package ci_test
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -491,6 +492,134 @@ func TestSchemaDrivenDecodeTestsRideAGatedLeg(t *testing.T) {
 	}
 	t.Errorf("ci-success does not require %q, so the only API-drift lane the README calls gating "+
 		"would not actually block a merge", leg)
+}
+
+// dockerImageScanContract validates the build, scan and smoke ordering as well as
+// the fail-closed publication policy on the actual image produced by the job.
+func dockerImageScanContract(job map[string]any) error {
+	steps, ok := job["steps"].([]any)
+	if !ok {
+		return errors.New("docker-build has no steps")
+	}
+	build, scan, smoke := -1, -1, -1
+	for i, raw := range steps {
+		step, ok := raw.(map[string]any)
+		if !ok {
+			return fmt.Errorf("step %d is not a mapping", i)
+		}
+		uses, _ := step["uses"].(string)
+		if strings.HasPrefix(uses, "docker/build-push-action@") {
+			with, _ := step["with"].(map[string]any)
+			if with["tags"] == "tailscale2otel:ci" && with["load"] == true {
+				build = i
+			}
+		}
+		if strings.HasPrefix(uses, "aquasecurity/trivy-action@") {
+			if scan != -1 {
+				return errors.New("multiple Trivy steps")
+			}
+			scan = i
+			if uses != "aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25" {
+				return errors.New("Trivy action differs from the publication pin")
+			}
+			if _, ok := step["if"]; ok {
+				return errors.New("scan has an if condition")
+			}
+			if _, ok := step["continue-on-error"]; ok {
+				return errors.New("scan has continue-on-error")
+			}
+			env, _ := step["env"].(map[string]any)
+			if env["TRIVY_IGNORE_UNFIXED"] != "false" {
+				return errors.New("scan must explicitly set TRIVY_IGNORE_UNFIXED to false")
+			}
+			with, _ := step["with"].(map[string]any)
+			for key, want := range map[string]any{"image-ref": "tailscale2otel:ci", "severity": "CRITICAL,HIGH", "exit-code": "1", "ignore-unfixed": false, "cache": false, "format": "table"} {
+				if with[key] != want {
+					return fmt.Errorf("scan %s = %v, want %v", key, with[key], want)
+				}
+			}
+			if _, ok := with["scanners"]; ok {
+				return errors.New("scan must use default scanners")
+			}
+		}
+		if step["run"] == "just smoke tailscale2otel:ci" {
+			smoke = i
+		}
+	}
+	if build < 0 || scan <= build || smoke <= scan {
+		return fmt.Errorf("want build < scan < smoke, got %d < %d < %d", build, scan, smoke)
+	}
+	return nil
+}
+
+func TestDockerBuildScansTheImageAtThePublishSeverity(t *testing.T) {
+	jobs := jobsOf(t, readWorkflow(t, "ci.yml"), "ci.yml")
+	job, ok := jobs["docker-build"].(map[string]any)
+	if !ok {
+		t.Fatal("missing docker-build job")
+	}
+	if err := dockerImageScanContract(job); err != nil {
+		t.Fatal(err)
+	}
+	success, _ := jobs["ci-success"].(map[string]any)
+	needs, _ := success["needs"].([]any)
+	found := false
+	for _, need := range needs {
+		found = found || need == "docker-build"
+	}
+	if !found {
+		t.Error("ci-success must require docker-build")
+	}
+
+	mutations := map[string]func([]any, int, int){
+		"missing ignore-unfixed env": func(steps []any, _, scan int) {
+			delete(steps[scan].(map[string]any)["env"].(map[string]any), "TRIVY_IGNORE_UNFIXED")
+		},
+		"true ignore-unfixed env": func(steps []any, _, scan int) {
+			steps[scan].(map[string]any)["env"].(map[string]any)["TRIVY_IGNORE_UNFIXED"] = "true"
+		},
+		"narrowed severity": func(steps []any, _, scan int) {
+			steps[scan].(map[string]any)["with"].(map[string]any)["severity"] = "CRITICAL"
+		},
+		"exit code zero": func(steps []any, _, scan int) {
+			steps[scan].(map[string]any)["with"].(map[string]any)["exit-code"] = "0"
+		},
+		"continue on error": func(steps []any, _, scan int) {
+			steps[scan].(map[string]any)["continue-on-error"] = true
+		},
+		"scan before build": func(steps []any, build, scan int) {
+			steps[build], steps[scan] = steps[scan], steps[build]
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			data, err := yaml.Marshal(job)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var copyJob map[string]any
+			if err := yaml.Unmarshal(data, &copyJob); err != nil {
+				t.Fatal(err)
+			}
+			steps := copyJob["steps"].([]any)
+			build, scan := -1, -1
+			for i, raw := range steps {
+				uses, _ := raw.(map[string]any)["uses"].(string)
+				if strings.HasPrefix(uses, "docker/build-push-action@") {
+					build = i
+				}
+				if strings.HasPrefix(uses, "aquasecurity/trivy-action@") {
+					scan = i
+				}
+			}
+			mutate(steps, build, scan)
+			if err := dockerImageScanContract(copyJob); err == nil {
+				t.Fatal("mutation was not detected")
+			} else {
+				t.Logf("mutation rejected: %v", err)
+			}
+		})
+	}
 }
 
 // goModules discovers every Go module in the repository by walking for go.mod,

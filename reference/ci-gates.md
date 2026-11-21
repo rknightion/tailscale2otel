@@ -3,6 +3,9 @@
 Read before editing a workflow, diagnosing a red check that `just check` does not reproduce, or
 refreshing the vendored OpenAPI spec.
 
+- The CI-only `docker-build` image scan mirrors the publish gate. A new advisory can make a pull
+  request red without any change in that pull request; update the affected Go dependency or base
+  image, depending on which owns the finding.
 - Running `promqlcheck` against the ARTIFACTS is a different question from the module legs and easy
   to conflate. Building and unit-testing the tool proves nothing about the dashboards and rules the
   repo ships; the artifact run parses every expression and resolves each `$variable` against what is
