@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
+	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 	"github.com/rknightion/tailscale2otel/v5/internal/tsapi"
 )
@@ -83,6 +86,179 @@ func oneTCPResponse() flowlog.NetworkResponse {
 				},
 			},
 		},
+	}
+}
+
+type splitLogEmitter struct {
+	telemetry.Emitter
+	logs telemetry.Emitter
+}
+
+func (e splitLogEmitter) LogEvent(event telemetry.Event) { e.logs.LogEvent(event) }
+func (e splitLogEmitter) LogEventCtx(ctx context.Context, event telemetry.Event) {
+	e.logs.LogEventCtx(ctx, event)
+}
+
+func TestCollectWindowHorizonWithBackedUpQueue(t *testing.T) {
+	reached, release := make(chan struct{}, 1), make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case reached <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+			w.WriteHeader(http.StatusOK)
+		case <-r.Context().Done():
+		}
+	}))
+	defer srv.Close()
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{ServiceName: "horizon-test", Protocol: "http", Endpoint: srv.URL,
+		Batch: telemetry.BatchOptions{Tracker: telemetry.NewBatchQueueTracker(), Logs: telemetry.QueueOptions{MaxQueueSize: 4, ExportMaxBatchSize: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := p.Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	}()
+	p.Emitter().LogEvent(telemetry.Event{Name: "test.block"})
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("export did not block")
+	}
+	for range 4 {
+		p.Emitter().LogEvent(telemetry.Event{Name: "test.fill"})
+	}
+	probe, cancel := context.WithCancel(context.Background())
+	cancel()
+	if !errors.Is(p.WaitLogCapacity(probe), context.Canceled) {
+		t.Fatal("queue was not backed up")
+	}
+
+	resp := oneTCPResponse()
+	cc := resp.Logs[0].VirtualTraffic[0]
+	resp.Logs[0].VirtualTraffic = make([]flowlog.ConnectionCounts, 300)
+	for i := range resp.Logs[0].VirtualTraffic {
+		cc.Src = fmt.Sprintf("100.64.0.1:%d", i+1000)
+		resp.Logs[0].VirtualTraffic[i] = cc
+	}
+	rec := telemetrytest.New()
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+	e := collector.LogHorizonEmitter(splitLogEmitter{Emitter: rec.Emitter(), logs: p.Emitter()}, func() time.Time { return from.Add(48 * time.Hour) }, time.Hour)
+	c := New(&fakeAPI{resp: resp}, flowlog.NewProcessor(nil, flowlog.Options{LogMode: "per_connection"}), 10*time.Second, 0, nil, nil, WithLogPacing(p.WaitLogCapacity))
+	ctx, stop := context.WithTimeout(context.Background(), 3*time.Second)
+	defer stop()
+	start := time.Now()
+	hwm, err := c.CollectWindow(ctx, from, to, e)
+	if err != nil || !hwm.Equal(to) {
+		t.Fatalf("hwm=%v err=%v", hwm, err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("expired-only window waited for backed-up queue: %v", time.Since(start))
+	}
+	var bytes float64
+	for _, point := range rec.MetricPoints(flowlog.MetricIO) {
+		bytes += point.Value
+	}
+	if bytes != 300*(1000+800) {
+		t.Fatalf("flow bytes = %v, want %d", bytes, 300*(1000+800))
+	}
+}
+
+func TestCollectWindowPacingRespectsLogHorizon(t *testing.T) {
+	resp := oneTCPResponse()
+	cc := resp.Logs[0].VirtualTraffic[0]
+	resp.Logs[0].VirtualTraffic = make([]flowlog.ConnectionCounts, 300)
+	for i := range resp.Logs[0].VirtualTraffic {
+		cc.Src = fmt.Sprintf("100.64.0.1:%d", i+1000)
+		resp.Logs[0].VirtualTraffic[i] = cc
+	}
+	rec := telemetrytest.New()
+	calls := 0
+	c := New(&fakeAPI{resp: resp}, flowlog.NewProcessor(nil, flowlog.Options{LogMode: "per_connection"}), time.Second, 0, nil, nil,
+		WithLogPacing(func(context.Context) error { calls++; return nil }))
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+	e := collector.LogHorizonEmitter(rec.Emitter(), func() time.Time { return from.Add(48 * time.Hour) }, time.Hour)
+	hwm, err := c.CollectWindow(context.Background(), from, to, e)
+	if err != nil || !hwm.Equal(to) {
+		t.Fatalf("hwm=%v err=%v", hwm, err)
+	}
+	if calls != 0 {
+		t.Errorf("paced %d times despite no forwarded logs", calls)
+	}
+	if got := len(rec.LogRecords()); got != 0 {
+		t.Errorf("forwarded %d expired logs", got)
+	}
+	if got := len(rec.MetricPoints(flowlog.MetricIO)); got == 0 {
+		t.Error("expired logs suppressed flow metrics")
+	}
+}
+
+func TestCollectWindowPacingMixedHorizon(t *testing.T) {
+	resp := oneTCPResponse()
+	old := resp.Logs[0]
+	cc := old.VirtualTraffic[0]
+	old.VirtualTraffic = make([]flowlog.ConnectionCounts, 255)
+	for i := range old.VirtualTraffic {
+		cc.Src = fmt.Sprintf("100.64.0.1:%d", 1000+i)
+		old.VirtualTraffic[i] = cc
+	}
+	fresh := old
+	fresh.Start = old.Start.Add(47 * time.Hour)
+	fresh.End = fresh.Start.Add(time.Minute)
+	fresh.Logged = fresh.End.Add(time.Second)
+	fresh.VirtualTraffic = make([]flowlog.ConnectionCounts, 256)
+	for i := range fresh.VirtualTraffic {
+		cc.Src = fmt.Sprintf("100.64.0.1:%d", 2000+i)
+		fresh.VirtualTraffic[i] = cc
+	}
+	resp.Logs = []flowlog.FlowLog{old, fresh}
+	rec := telemetrytest.New()
+	var calls []int
+	c := New(&fakeAPI{resp: resp}, flowlog.NewProcessor(nil, flowlog.Options{LogMode: "per_connection"}), time.Second, 0, nil, nil,
+		WithLogPacing(func(context.Context) error { calls = append(calls, len(rec.LogRecords())); return nil }))
+	e := collector.LogHorizonEmitter(rec.Emitter(), func() time.Time { return old.Start.Add(48 * time.Hour) }, time.Hour)
+	if _, err := c.CollectWindow(context.Background(), old.Start, fresh.End, e); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0] != 256 {
+		t.Fatalf("paced at forwarded counts %v, want [256]", calls)
+	}
+	if got := len(rec.LogRecords()); got != 256 {
+		t.Fatalf("forwarded logs = %d, want 256", got)
+	}
+}
+
+func TestCollectWindowPacesLogs(t *testing.T) {
+	resp := oneTCPResponse()
+	cc := resp.Logs[0].VirtualTraffic[0]
+	resp.Logs[0].VirtualTraffic = make([]flowlog.ConnectionCounts, 600)
+	for i := range resp.Logs[0].VirtualTraffic {
+		cc.Src = fmt.Sprintf("100.64.0.1:%d", i+1000)
+		resp.Logs[0].VirtualTraffic[i] = cc
+	}
+	rec := telemetrytest.New()
+	calls := 0
+	c := New(&fakeAPI{resp: resp}, flowlog.NewProcessor(nil, flowlog.Options{LogMode: "per_connection"}), 2*time.Second, 0, nil, nil,
+		WithLogPacing(func(ctx context.Context) error { calls++; <-ctx.Done(); return ctx.Err() }))
+	from := time.Date(2026, 6, 2, 11, 58, 0, 0, time.UTC)
+	to := from.Add(time.Minute)
+	if _, err := c.CollectWindow(context.Background(), from, to, rec.Emitter()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("pace calls = %d, want one before deadline", calls)
+	}
+	if got := len(rec.LogRecords()); got != 600 {
+		t.Fatalf("emitted %d logs after deadline, want 600", got)
 	}
 }
 

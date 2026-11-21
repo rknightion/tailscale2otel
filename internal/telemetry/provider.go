@@ -228,6 +228,7 @@ type Provider struct {
 	// SDK processors, so a deployment that exports no self-telemetry keeps the
 	// untouched SDK code path rather than paying for instrumentation nobody reads.
 	batchQueues                   *BatchQueueTracker
+	logQueue                      *batchQueue[sdklog.Record]
 	metricReader                  *scheduledMetricReader
 	serialLogs                    *serialLogExporter
 	options                       Options
@@ -236,6 +237,15 @@ type Provider struct {
 	logTimeout                    time.Duration
 	logCancel                     context.CancelFunc
 	logDone                       chan struct{}
+}
+
+// WaitLogCapacity waits until the observable log queue is at most half full.
+// Providers without a queueing processor do not wait.
+func (p *Provider) WaitLogCapacity(ctx context.Context) error {
+	if p == nil || p.logQueue == nil {
+		return nil
+	}
+	return p.logQueue.waitBelow(ctx, p.logQueue.capacity()/2)
 }
 
 // NewProvider builds the telemetry pipeline for the given options.
@@ -314,9 +324,13 @@ func NewProvider(ctx context.Context, opts Options) (*Provider, error) {
 		metricsExcluded: !signalEnabled(opts.Signals.Metrics), logsExcluded: !signalEnabled(opts.Signals.Logs),
 		logBatchSize: opts.Batch.Logs.resolve(dfltLogQueueConfig).batchSize,
 		logTimeout:   opts.Batch.Logs.resolve(dfltLogQueueConfig).exportTimeout, logDone: make(chan struct{})}
+	logProcessor := newLogProcessor(serialLogs, opts)
+	if queued, ok := logProcessor.(*queueingLogProcessor); ok {
+		provider.logQueue = queued.q
+	}
 	lp := sdklog.NewLoggerProvider(
 		sdklog.WithResource(logRes),
-		sdklog.WithProcessor(&ingressLogProcessor{owner: provider, next: newLogProcessor(serialLogs, opts)}),
+		sdklog.WithProcessor(&ingressLogProcessor{owner: provider, next: logProcessor}),
 	)
 
 	var tp *sdktrace.TracerProvider

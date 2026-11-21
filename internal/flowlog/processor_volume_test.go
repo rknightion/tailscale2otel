@@ -1,6 +1,7 @@
 package flowlog_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -42,6 +43,38 @@ func droppedTotal(rec *telemetrytest.Recorder) float64 {
 		total += p.Value
 	}
 	return total
+}
+
+func TestProcessAllPacedCtx(t *testing.T) {
+	rec := telemetrytest.New()
+	p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: "per_connection"})
+	flow := fiveConnFlow()
+	flow.VirtualTraffic = make([]flowlog.ConnectionCounts, 600)
+	for i := range flow.VirtualTraffic {
+		flow.VirtualTraffic[i] = fiveConnFlow().VirtualTraffic[0]
+	}
+	var counts []int
+	pace := func(context.Context) error {
+		counts = append(counts, len(rec.LogRecords()))
+		return nil
+	}
+	p.ProcessAllPacedCtx(context.Background(), flowlog.NetworkResponse{Logs: []flowlog.FlowLog{flow}}, rec.Emitter(), pace)
+	if len(counts) != 2 || counts[0] != 256 || counts[1] != 512 || len(rec.LogRecords()) != 600 {
+		t.Fatalf("pace at logs %v, total %d; want [256 512], 600", counts, len(rec.LogRecords()))
+	}
+	for _, mode := range []string{"none", "per_record"} {
+		r := telemetrytest.New()
+		p := flowlog.NewProcessor(cacheWith(t), flowlog.Options{LogMode: mode})
+		calls := 0
+		p.ProcessAllPacedCtx(context.Background(), flowlog.NetworkResponse{Logs: []flowlog.FlowLog{flow}}, r.Emitter(), func(context.Context) error { calls++; return nil })
+		want := 0
+		if mode == "per_record" {
+			want = 1
+		}
+		if calls != 0 || len(r.LogRecords()) != want {
+			t.Errorf("%s: calls=%d logs=%d, want 0, %d", mode, calls, len(r.LogRecords()), want)
+		}
+	}
 }
 
 func TestProcessAllCapsLogsButNotMetrics(t *testing.T) {
