@@ -36,8 +36,11 @@ func gatingJobProblems(t *testing.T, doc map[string]any, sentinel string) []stri
 	for _, raw := range needs {
 		name := raw.(string)
 		job := requiredJob(t, doc, name)
+		if sentinel == "ci-success" && name == "dependency-review" && job["if"] != "github.event_name == 'pull_request'" {
+			problems = append(problems, name+" must be pull request only")
+		}
 		if condition, exists := job["if"]; exists {
-			allowed := sentinel == "ci-success" && (name == "ac-evidence" || name == "privacy-sweep" || name == "backlog-freeze") && condition == "github.event_name == 'pull_request'"
+			allowed := sentinel == "ci-success" && (name == "ac-evidence" || name == "privacy-sweep" || name == "backlog-freeze" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
 			if !allowed {
 				problems = append(problems, name+" has job-level if")
 			}
@@ -65,6 +68,13 @@ func TestGatingJobsCannotBeSkippedOrSoftFailed(t *testing.T) {
 			t.Errorf("%s: %v", tc.file, problems)
 		}
 	}
+	t.Run("dependency review condition removed", func(t *testing.T) {
+		doc := readWorkflow(t, "ci.yml")
+		delete(requiredJob(t, doc, "dependency-review"), "if")
+		if problems := gatingJobProblems(t, doc, "ci-success"); !strings.Contains(strings.Join(problems, "\n"), "dependency-review") {
+			t.Fatalf("condition removal escaped guard: %v", problems)
+		}
+	})
 	for _, tc := range []struct {
 		name, file, gate, job string
 		soft                  bool
@@ -72,6 +82,7 @@ func TestGatingJobsCannotBeSkippedOrSoftFailed(t *testing.T) {
 		{"build condition", "ci.yml", "ci-success", "build-test", false},
 		{"build soft failure", "ci.yml", "ci-success", "build-test", true},
 		{"privacy condition", "ci.yml", "ci-success", "privacy-sweep", false},
+		{"dependency review condition", "ci.yml", "ci-success", "dependency-review", false},
 		{"helm condition", "helm.yml", "helm-success", "lint-template", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
