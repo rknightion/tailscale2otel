@@ -85,6 +85,7 @@ type Collector struct {
 	lag          time.Duration
 	seen         *dedup.Set
 	featureCheck FeatureCheck
+	logPace      func(context.Context) error
 	// onIngest, when non-nil, is called once per successful poll window with
 	// ("poll","flow", <records accepted>, 0). The app supplies it (gated on
 	// self-observability); the collector stays agnostic to how it's emitted.
@@ -108,6 +109,11 @@ type Collector struct {
 
 // Option configures optional Collector behavior.
 type Option func(*Collector)
+
+// WithLogPacing enables bounded queue pacing for polled windows only.
+func WithLogPacing(pace func(context.Context) error) Option {
+	return func(c *Collector) { c.logPace = pace }
+}
 
 // WithAPIState wires the shared per-operation availability tracker (#420).
 // Availability METRICS are emitted regardless; the tracker is the in-process
@@ -267,7 +273,19 @@ func (c *Collector) CollectWindow(ctx context.Context, from, to time.Time, e tel
 	stale := c.pruneExpiredReplay(from)
 	resp = c.validRecords(resp, e)
 	deduped, additions := c.dedupe(resp, e)
-	c.proc.ProcessAllCtx(ctx, deduped, e)
+	if c.logPace == nil {
+		c.proc.ProcessAllCtx(ctx, deduped, e)
+	} else {
+		paceCtx, cancel := context.WithTimeout(ctx, c.DefaultInterval())
+		defer cancel()
+		pacedEmitter := collector.PaceLogEmitter(e, func(context.Context) error {
+			if err := paceCtx.Err(); err != nil {
+				return err
+			}
+			return c.logPace(paceCtx)
+		})
+		c.proc.ProcessAllCtx(ctx, deduped, pacedEmitter)
+	}
 	if c.acceptedObserver != nil {
 		acceptedAt := c.now()
 		for i := range deduped.Logs {

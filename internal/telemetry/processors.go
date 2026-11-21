@@ -462,6 +462,29 @@ func (q *batchQueue[T]) enqueue(v T) {
 	}
 }
 
+// waitBelow waits for the queue to drain to target, or until ctx ends or the queue stops.
+func (q *batchQueue[T]) waitBelow(ctx context.Context, target int) error {
+	for {
+		if q.stopped.Load() || len(q.items) <= target {
+			return nil
+		}
+		select {
+		case q.trigger <- struct{}{}:
+		default:
+		}
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-q.kill:
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+	}
+}
+
 func (q *batchQueue[T]) size() int     { return len(q.items) }
 func (q *batchQueue[T]) capacity() int { return cap(q.items) }
 

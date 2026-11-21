@@ -45,6 +45,40 @@ func LogHorizonEmitter(e telemetry.Emitter, now func() time.Time, age time.Durat
 	return logHorizonEmitter{Emitter: e, now: now, age: age}
 }
 
+// PaceLogEmitter applies pacing only to logs forwarded through the horizon guard.
+// It is intended for a single polled window; callers bound the supplied callback.
+func PaceLogEmitter(e telemetry.Emitter, pace func(context.Context) error) telemetry.Emitter {
+	if horizon, ok := e.(logHorizonEmitter); ok {
+		horizon.Emitter = &pacedLogEmitter{Emitter: horizon.Emitter, pace: pace}
+		return horizon
+	}
+	return &pacedLogEmitter{Emitter: e, pace: pace}
+}
+
+type pacedLogEmitter struct {
+	telemetry.Emitter
+	pace  func(context.Context) error
+	count int
+}
+
+func (e *pacedLogEmitter) afterEmit(ctx context.Context) {
+	e.count++
+	if e.count == 256 {
+		e.count = 0
+		_ = e.pace(ctx)
+	}
+}
+
+func (e *pacedLogEmitter) LogEvent(event telemetry.Event) {
+	e.Emitter.LogEvent(event)
+	e.afterEmit(context.Background())
+}
+
+func (e *pacedLogEmitter) LogEventCtx(ctx context.Context, event telemetry.Event) {
+	e.Emitter.LogEventCtx(ctx, event)
+	e.afterEmit(ctx)
+}
+
 func (e logHorizonEmitter) LogEvent(event telemetry.Event) {
 	if event.Timestamp.IsZero() || !event.Timestamp.Before(e.now().Add(-e.age)) {
 		e.Emitter.LogEvent(event)

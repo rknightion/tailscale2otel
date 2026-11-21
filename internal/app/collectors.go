@@ -342,6 +342,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 	if c.Flowlogs.Enabled && cp.Supports("flowlogs") && pollSource(c.Flowlogs.Source) {
 		fc := flowlogs.New(rt.client, rt.flowProc, c.Flowlogs.Interval.D(), c.Flowlogs.Lag.D(), flowFeatureCheck(rt.client), onIngest,
 			flowlogs.WithAPIState(rt.apiState),
+			flowlogs.WithLogPacing(rt.delivery.WaitLogCapacity),
 			flowlogs.WithAcceptedObserver(onAccepted),
 			flowlogs.WithDedupCapacity(c.Flowlogs.DedupCapacity),
 			flowlogs.WithReplay(

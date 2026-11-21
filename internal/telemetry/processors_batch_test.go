@@ -13,17 +13,21 @@ package telemetry_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	collectorlog "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/flowlog"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
@@ -164,6 +168,125 @@ func TestNewProvider_ZeroBatchOptionsTracesFlowThrough(t *testing.T) {
 			t.Fatal("span never reached trace endpoint under zero BatchOptions")
 		}
 	})
+}
+
+func TestBatchQueueWaitBelowControls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var nilProvider *telemetry.Provider
+	if err := nilProvider.WaitLogCapacity(ctx); err != nil {
+		t.Fatalf("nil provider: %v", err)
+	}
+	p, err := telemetry.NewProvider(context.Background(), telemetry.Options{ServiceName: "no-queue", Protocol: "stdout", StdoutWriter: io.Discard})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.WaitLogCapacity(ctx); err != nil {
+		t.Errorf("stdout provider: %v", err)
+	}
+	shutdownCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	if err := p.Shutdown(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+
+	reached := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(blockingServer(reached, release))
+	defer srv.Close()
+	tracker := telemetry.NewBatchQueueTracker()
+	q, err := telemetry.NewProvider(context.Background(), telemetry.Options{ServiceName: "queue", Protocol: "http", Endpoint: srv.URL, Batch: telemetry.BatchOptions{Tracker: tracker, Logs: telemetry.QueueOptions{MaxQueueSize: 4, ExportMaxBatchSize: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		close(release)
+		c, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
+		if err := q.Shutdown(c); err != nil {
+			t.Error(err)
+		}
+	}()
+	q.Emitter().LogEvent(telemetry.Event{Name: "test.event"})
+	select {
+	case <-reached:
+	case <-time.After(5 * time.Second):
+		t.Fatal("export did not start")
+	}
+	for range 4 {
+		q.Emitter().LogEvent(telemetry.Event{Name: "test.event"})
+	}
+	if err := q.WaitLogCapacity(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("saturated queue error = %v, want canceled", err)
+	}
+}
+
+func TestBatchQueueWaitBelowPacedFlowWindow(t *testing.T) {
+	var exported atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/logs" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		var request collectorlog.ExportLogsServiceRequest
+		if err != nil || proto.Unmarshal(body, &request) != nil {
+			t.Error("invalid log request")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		for _, resource := range request.ResourceLogs {
+			for _, scope := range resource.ScopeLogs {
+				exported.Add(int64(len(scope.LogRecords)))
+			}
+		}
+		select {
+		case <-time.After(50 * time.Millisecond):
+		case <-r.Context().Done():
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	tracker := telemetry.NewBatchQueueTracker()
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	p, err := telemetry.NewProvider(ctx, telemetry.Options{ServiceName: "pacing-test", Protocol: "http", Endpoint: srv.URL, Batch: telemetry.BatchOptions{Tracker: tracker, Logs: telemetry.QueueOptions{MaxQueueSize: 2048, ExportMaxBatchSize: 512}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shutdown := false
+	defer func() {
+		if !shutdown {
+			if err := p.Shutdown(ctx); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	flow := flowlog.FlowLog{VirtualTraffic: make([]flowlog.ConnectionCounts, 20000)}
+	for i := range flow.VirtualTraffic {
+		flow.VirtualTraffic[i] = flowlog.ConnectionCounts{Proto: 6, Src: "192.0.2.1:1234", Dst: "192.0.2.2:443"}
+	}
+	proc := flowlog.NewProcessor(nil, flowlog.Options{LogMode: "per_connection"})
+	resp := flowlog.NetworkResponse{Logs: []flowlog.FlowLog{flow}}
+	proc.ProcessAllPacedCtx(ctx, resp, p.Emitter(), p.WaitLogCapacity)
+	if err := p.ForceFlush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	shutdown = true
+	rec := telemetrytest.New()
+	tracker.Report(rec.Emitter())
+	for _, pt := range rec.MetricPoints("tailscale2otel.processor.dropped") {
+		if pt.Attrs["signal"] == "logs" && pt.Value != 0 {
+			t.Errorf("dropped %v flow logs", pt.Value)
+		}
+	}
+	if got := exported.Load(); got != 20000 {
+		t.Errorf("exported %d logs, want 20000", got)
+	}
 }
 
 // TestBatchQueueTracker_LogsSaturateAndDropUnderStalledExporter is the #358

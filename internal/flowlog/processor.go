@@ -261,6 +261,8 @@ func stringSet(values []string) map[string]struct{} {
 type logBudget struct {
 	remaining int
 	dropped   int
+	emitted   int
+	pace      func(context.Context) error
 }
 
 // newLogBudget returns a budget for max log records. max <= 0 yields an
@@ -287,6 +289,17 @@ func (b *logBudget) allow() bool {
 	return true
 }
 
+func (b *logBudget) afterEmit(ctx context.Context) {
+	if b.pace == nil {
+		return
+	}
+	b.emitted++
+	if b.emitted >= 256 {
+		b.emitted = 0
+		_ = b.pace(ctx)
+	}
+}
+
 // ProcessAll converts every flow log in resp. The MaxLogRecordsPerWindow cap (if
 // set) applies across the whole call (the poll window): one shared budget gates
 // every flow log record, and any suppressed records are flushed into
@@ -300,7 +313,14 @@ func (p *Processor) ProcessAll(resp NetworkResponse, e telemetry.Emitter) {
 // record(s) so a sampled span context (the poll window's or the streaming
 // request's) produces a native TraceID/SpanID on each one (#367).
 func (p *Processor) ProcessAllCtx(ctx context.Context, resp NetworkResponse, e telemetry.Emitter) {
+	p.ProcessAllPacedCtx(ctx, resp, e, nil)
+}
+
+// ProcessAllPacedCtx processes a window, optionally waiting after every 256 emitted logs.
+// Pacing errors do not interrupt processing or metric emission.
+func (p *Processor) ProcessAllPacedCtx(ctx context.Context, resp NetworkResponse, e telemetry.Emitter, pace func(context.Context) error) {
 	budget := newLogBudget(p.maxLogs)
+	budget.pace = pace
 	var tally connTally
 	defer flushTally(&tally, e)
 	for i := range resp.Logs {
@@ -418,6 +438,7 @@ func (p *Processor) process(ctx context.Context, flow FlowLog, e telemetry.Emitt
 	// consumes the volume budget.
 	if p.logMode == logPerRecord && (totalConns > 0 || p.dedup == nil) && budget.allow() {
 		p.emitRecordLog(ctx, flow, reporter, totalConns, totalTxBytes, totalRxBytes, totalTxPkts, totalRxPkts, e)
+		budget.afterEmit(ctx)
 	}
 }
 
@@ -601,6 +622,7 @@ func (p *Processor) processConn(ctx context.Context, flow FlowLog, trafficType s
 
 	if p.logMode == logPerConnection && budget.allow() {
 		p.emitConnLog(ctx, flow, trafficType, cc, transport, netType, srcAddr, srcPort, dstAddr, dstPort, srcNode, dstNode, dstService, srcGeo, dstGeo, reporter, e, refs)
+		budget.afterEmit(ctx)
 	}
 }
 
