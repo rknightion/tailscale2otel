@@ -219,12 +219,13 @@ func TestSelfObs_WindowCollectorEmitsScrapeMetrics(t *testing.T) {
 		}}, time.Millisecond, 5*time.Minute, time.Hour)
 
 	rec := telemetrytest.New()
-	runRecorderScheduler(t, r, rec, now)
-
-	waitFor(t, func() bool {
-		_, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
-		return ok
-	}, 2*time.Second)
+	s := collector.NewScheduler(rec.Emitter(), collector.NewMemoryStore(),
+		collector.WithStaggerWindow(0),
+		collector.WithClock(func() time.Time { return now }),
+	)
+	lastSuccess := now
+	// Wait for the whole tick, not just the success gauge, before sampling.
+	s.RunTick(context.Background(), r.Entries()[0], &lastSuccess)
 
 	success, ok := findPoint(rec, collector.MetricScrapeSuccess, "win")
 	if !ok || success.Value != 1 {
