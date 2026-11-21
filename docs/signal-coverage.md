@@ -48,7 +48,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| operational | 267 | 266 | 60 | 11 | 46 |
+| operational | 267 | 266 | 62 | 11 | 46 |
 | self_obs | 107 | 107 | 45 | 9 | 10 |
 
 ## Operational signals
@@ -206,10 +206,10 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale.network.io` | metric | `tailscale_network_io_bytes_total` | visualized, recorded, drives_a_variable |  |
 | `tailscale.network.io.rollup` | metric | `tailscale_network_io_rollup_bytes_total` | visualized, recorded, drives_a_variable |  |
 | `tailscale.network.packets` | metric | `tailscale_network_packets_total` | visualized |  |
-| `tailscale.network.packets.rollup` | metric | `tailscale_network_packets_rollup_total` | visualized |  |
+| `tailscale.network.packets.rollup` | metric | `tailscale_network_packets_rollup_total` | visualized, alertable |  |
 | `tailscale.network.reporter.observations` | metric | `tailscale_network_reporter_observations_total` | visualized, alertable |  |
 | `tailscale.network.store.dropped` | metric | `tailscale_network_store_dropped_total` | visualized |  |
-| `tailscale.network.unique.dst_peers` | metric | `tailscale_network_unique_dst_peers` | visualized, drives_a_variable |  |
+| `tailscale.network.unique.dst_peers` | metric | `tailscale_network_unique_dst_peers` | visualized, alertable, drives_a_variable |  |
 | `tailscale.network.unique.dst_ports` | metric | `tailscale_network_unique_dst_ports` | visualized |  |
 | `tailscale.node.derp.home_region` | metric | `tailscale_node_derp_home_region_ratio` | visualized |  |
 | `tailscale.node.health_messages` | metric | `tailscale_node_health_messages_ratio` | visualized, alertable |  |

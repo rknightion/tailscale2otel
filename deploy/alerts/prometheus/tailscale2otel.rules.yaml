@@ -1084,6 +1084,26 @@ groups:
         annotations:
           summary: "Verified flow reporter disagrees with embedded source identity"
           runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-data-pipeline"
+      - alert: "ACLRejectionBurstFromOneSource"
+        expr: "(sum by (tailscale_src_node) (increase(tailscale_network_packets_rollup_total{network_transport=\"tsmp\"}[15m]))) > 500"
+        for: "15m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "{{ $labels.tailscale_src_node }} is hitting the tailnet policy's deny path"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-security-anomalies"
+      - alert: "NodeReachingFarMorePeersThanUsual"
+        expr: "(max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[15m])) / clamp_min(max by (tailscale_src_node) (max_over_time(tailscale_network_unique_dst_peers[7d] offset 1h)), 10)) > 3"
+        for: "5m"
+        labels:
+          severity: "warning"
+          service: "tailscale2otel"
+          domain: "security"
+        annotations:
+          summary: "{{ $labels.tailscale_src_node }} is reaching over 3x its usual number of peers"
+          runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#flow-security-anomalies"
       - alert: "AuditSchemaDriftDetected"
         expr: "(sum by (field) (rate(tailscale_config_audit_schema_drift_total{status=\"unknown\"}[10m]))) > 0"
         for: "15m"
