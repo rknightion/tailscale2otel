@@ -31,6 +31,7 @@ refreshing the vendored OpenAPI spec.
   keeps **only** `get` operations and silently drops every other verb, so `Spec.Ops` never contains
   a write. A workflow that branches on a Go tool's exit status must run a built binary, never
   `go run`.
+- Required CI also runs Helm schema validation with kubeconform and enforced zizmor security analysis; neither has a local `just` recipe. They gate through `helm-success` and `ci-success` respectively. Actionlint and pull-request dependency review also gate through `ci-success`; the justfile format check runs both locally and in CI.
 - A clean local `actionlint` does NOT mean the actionlint CI lane will pass. actionlint shells out
   to whatever `shellcheck` is on PATH, and the runner's is OLDER and reports MORE - local shellcheck
   0.11.0 does not emit SC2015 (`A && B || C` is not if-then-else) at all, so a workflow edit can be

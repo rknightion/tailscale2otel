@@ -29,6 +29,9 @@ jobs:
         with:
           just-version: '1.59.0'
 
+      - name: Check justfile formatting
+        run: just --fmt --check
+
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
@@ -624,6 +627,18 @@ jobs:
           fi
           echo "No file under backlog/ is added or changed."
 
+  actionlint:
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/actionlint.yml@77faed457d4f87675fec4024e2cd526fe964d7c9 # v1.30.36
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    uses: rknightion/.github/.github/workflows/dependency-review.yml@77faed457d4f87675fec4024e2cd526fe964d7c9 # v1.30.36
+
   # zizmor fails a pull request on any finding (enforce); push runs upload SARIF instead.
   zizmor:
     permissions:
@@ -642,7 +657,7 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze, zizmor]
+    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze, actionlint, dependency-review, zizmor]
     steps:
       - name: Fail unless every required job succeeded
         id: gate
@@ -653,7 +668,7 @@ jobs:
           set -euo pipefail
           failures=$(jq -r --arg event "$EVENT_NAME" '
             to_entries[]
-            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "ac-evidence" and .key != "privacy-sweep" and .key != "backlog-freeze")))
+            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "ac-evidence" and .key != "privacy-sweep" and .key != "backlog-freeze" and .key != "dependency-review")))
             | "\(.key)=\(.value.result)"
           ' <<< "$NEEDS_JSON")
           if [[ -n "$failures" ]]; then

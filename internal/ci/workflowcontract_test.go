@@ -1200,6 +1200,28 @@ func jobsOf(t *testing.T, doc map[string]any, name string) map[string]any {
 	return jobs
 }
 
+// TestWorkflowLintAndDependencyReviewGateMerges guards the required CI boundary.
+func TestWorkflowLintAndDependencyReviewGateMerges(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	jobs := jobsOf(t, doc, "ci.yml")
+	needs := requiredJob(t, doc, "ci-success")["needs"].([]any)
+	for _, name := range []string{"actionlint", "dependency-review"} {
+		if _, ok := jobs[name].(map[string]any); !ok {
+			t.Errorf("ci.yml missing %s job", name)
+		}
+		found := false
+		for _, need := range needs {
+			found = found || need == name
+		}
+		if !found {
+			t.Errorf("ci-success does not require %s", name)
+		}
+		if _, err := os.Stat(filepath.Join(workflowDir, name+".yml")); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("standalone %s workflow must be absent: %v", name, err)
+		}
+	}
+}
+
 // reusableCallJobs are the jobs this repository CANNOT bound, because they are
 // `uses:` calls to a reusable workflow and GitHub rejects `timeout-minutes` on
 // that job form — the key is simply not part of the schema for a job with
@@ -1211,24 +1233,24 @@ func jobsOf(t *testing.T, doc map[string]any, name string) map[string]any {
 // exemption's only justification, and TestExemptionsAreOnlyForReusableCallJobs
 // below fails in that direction too.
 var reusableCallJobs = map[string]bool{
-	"actionlint.yml/actionlint":               true,
-	"ci.yml/ac-evidence":                      true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"ci.yml/privacy-sweep":                    true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"arm-automerge.yml/arm":                   true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"auto-rc.yml/rc":                          true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"auto-rc.yml/publish":                     true, // local reusable call; the called workflow owns its job timeouts
-	"auto-rc.yml/binaries":                    true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"codeql.yml/codeql":                       true,
-	"dependency-review.yml/dependency-review": true,
-	"docker-security.yml/docker-security":     true,
-	"ghcr-cleanup.yml/prune":                  true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"helm.yml/helm-schema-validate":           true, // reusable call to rknightion/.github: GitHub does not allow timeout-minutes on uses jobs
-	"publish.yml/image":                       true,
-	"release-please.yml/publish":              true,
-	"release-please.yml/edge":                 true,
-	"release-please.yml/binaries":             true,
-	"scorecard.yml/scorecard":                 true,
-	"ci.yml/zizmor":                           true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"ci.yml/actionlint":                   true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"ci.yml/ac-evidence":                  true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"ci.yml/privacy-sweep":                true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"arm-automerge.yml/arm":               true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"auto-rc.yml/rc":                      true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"auto-rc.yml/publish":                 true, // local reusable call; the called workflow owns its job timeouts
+	"auto-rc.yml/binaries":                true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"codeql.yml/codeql":                   true,
+	"ci.yml/dependency-review":            true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"docker-security.yml/docker-security": true,
+	"ghcr-cleanup.yml/prune":              true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"helm.yml/helm-schema-validate":       true, // reusable call to rknightion/.github: GitHub does not allow timeout-minutes on uses jobs
+	"publish.yml/image":                   true,
+	"release-please.yml/publish":          true,
+	"release-please.yml/edge":             true,
+	"release-please.yml/binaries":         true,
+	"scorecard.yml/scorecard":             true,
+	"ci.yml/zizmor":                       true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 }
 
 // maxJobTimeout bounds the bound. A timeout of 360 is the implicit default
