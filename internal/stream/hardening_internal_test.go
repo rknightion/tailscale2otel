@@ -62,6 +62,39 @@ func TestWithProcessDeadline_DerivesDeadlineContext(t *testing.T) {
 	}
 }
 
+// writeObserver records response commitment independently of handler return.
+type writeObserver struct {
+	*httptest.ResponseRecorder
+	wrote chan struct{}
+}
+
+func (w *writeObserver) markWrite() {
+	select {
+	case w.wrote <- struct{}{}:
+	default:
+	}
+}
+
+func (w *writeObserver) WriteHeader(code int) {
+	w.markWrite()
+	w.ResponseRecorder.WriteHeader(code)
+}
+
+func (w *writeObserver) Write(p []byte) (int, error) {
+	w.markWrite()
+	return w.ResponseRecorder.Write(p)
+}
+
+func (w *writeObserver) WriteString(s string) (int, error) {
+	w.markWrite()
+	return w.ResponseRecorder.WriteString(s)
+}
+
+func (w *writeObserver) Flush() {
+	w.markWrite()
+	w.ResponseRecorder.Flush()
+}
+
 // TestHandler_ProcessDeadlineWaitsForInFlightCallback pins #278's response
 // boundary: a deadline prevents Phase 2 from starting new effects, but it never
 // sends a 503 while an already-started effect is still running. The raw-body
@@ -85,18 +118,26 @@ func TestHandler_ProcessDeadlineWaitsForInFlightCallback(t *testing.T) {
 		s.processDeadline = 5 * time.Millisecond
 
 		response := make(chan *httptest.ResponseRecorder, 1)
+		observer := &writeObserver{ResponseRecorder: httptest.NewRecorder(), wrote: make(chan struct{}, 1)}
 		go func() {
-			w := httptest.NewRecorder()
+			w := observer
 			req := httptest.NewRequest(http.MethodPost, defaultPath,
 				strings.NewReader(`{"nodeId":"n1","virtualTraffic":[{"proto":6,"src":"100.64.0.1:443","dst":"100.64.0.2:51820","txBytes":1}]}`))
 			req.Host = "127.0.0.1:9099"
 			s.Handler().ServeHTTP(w, req)
-			response <- w
+			response <- w.ResponseRecorder
 		}()
 
 		<-entered
 		time.Sleep(time.Second)
 		synctest.Wait()
+		select {
+		case <-observer.wrote:
+			close(unblock)
+			<-callbackDone
+			t.Fatal("response was written while the in-flight callback was still blocked")
+		default:
+		}
 		select {
 		case w := <-response:
 			close(unblock)
