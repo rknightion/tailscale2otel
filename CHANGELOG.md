@@ -1,5 +1,80 @@
 # Changelog
 
+## [5.4.0](https://github.com/rknightion/tailscale2otel/compare/v5.3.0...v5.4.0) (2026-11-21)
+
+
+### Features
+
+* **alerts:** add flow security anomaly rules ([#1185](https://github.com/rknightion/tailscale2otel/issues/1185)) ([b1a2a94](https://github.com/rknightion/tailscale2otel/commit/b1a2a948092096b4d2d0c1ee10b7500786ff7059))
+
+
+### Bug Fixes
+
+* **acl:** remove gauges for deleted policy sections ([fb8d3fc](https://github.com/rknightion/tailscale2otel/commit/fb8d3fc179bea6ecc6234750d97f6ac58ab7c87e)), closes [#1053](https://github.com/rknightion/tailscale2otel/issues/1053)
+* **apistate:** classify provider errors by HTTP status ([d8dd9ae](https://github.com/rknightion/tailscale2otel/commit/d8dd9ae50d1ace7242ade352c555a6e6cf388544)), closes [#1048](https://github.com/rknightion/tailscale2otel/issues/1048)
+* **audit:** retain distinct changes during webhook cross-dedup ([1f17a59](https://github.com/rknightion/tailscale2otel/commit/1f17a5911932598b0c8bdd4b727a1b399669d92a)), closes [#1059](https://github.com/rknightion/tailscale2otel/issues/1059)
+* **auth:** share digest comparison for receiver tokens ([066c111](https://github.com/rknightion/tailscale2otel/commit/066c111e6f010cd0cb1fb9f0c5f37f3c7f152710)), closes [#1094](https://github.com/rknightion/tailscale2otel/issues/1094)
+* **checkpoints:** reject writes beyond the readable file limit ([c1dcffb](https://github.com/rknightion/tailscale2otel/commit/c1dcffbb724902851e1b24653a66f0f4fa8261ff)), closes [#1052](https://github.com/rknightion/tailscale2otel/issues/1052)
+* **checkpoints:** reload shared state on standby promotion ([35c7204](https://github.com/rknightion/tailscale2otel/commit/35c7204d55a3179cbe48534bbbaa1485985d0dc8)), closes [#1051](https://github.com/rknightion/tailscale2otel/issues/1051)
+* **collectors:** clear gauges for removed identity entities ([66261d0](https://github.com/rknightion/tailscale2otel/commit/66261d0c24f783be28ea530832fbc74bd6a30b53)), closes [#1073](https://github.com/rknightion/tailscale2otel/issues/1073)
+* **collectors:** clear removed integration and log stream gauges ([f249cb5](https://github.com/rknightion/tailscale2otel/commit/f249cb50851250d855dffaf1bbdbd6007926ecfa)), closes [#1055](https://github.com/rknightion/tailscale2otel/issues/1055)
+* **collectors:** clear stale service and posture gauges ([2d04e9b](https://github.com/rknightion/tailscale2otel/commit/2d04e9b5decb8c97cbf5610f9544a3dcda3c1c61)), closes [#1074](https://github.com/rknightion/tailscale2otel/issues/1074)
+* **collector:** shrink windows that exceed response budgets ([e8035c5](https://github.com/rknightion/tailscale2otel/commit/e8035c5a8a6b02bc45aefb39c915c9c382ff6918)), closes [#1069](https://github.com/rknightion/tailscale2otel/issues/1069)
+* **config:** recognize applied tailnet secret overrides ([f374a44](https://github.com/rknightion/tailscale2otel/commit/f374a44a02113ac4e07ea0d035ada67c132855d6)), closes [#1064](https://github.com/rknightion/tailscale2otel/issues/1064)
+* **config:** reject unknown keys in list entries ([0213a28](https://github.com/rknightion/tailscale2otel/commit/0213a28c6572936d0d1db8d47fa6fc7e19265f9a)), closes [#1065](https://github.com/rknightion/tailscale2otel/issues/1065)
+* **config:** reject userinfo in OTLP and GeoIP URLs ([3703c90](https://github.com/rknightion/tailscale2otel/commit/3703c90c1b866b53dd772d4b77dd7116e0736679)), closes [#1083](https://github.com/rknightion/tailscale2otel/issues/1083)
+* **config:** require units for nonzero durations ([ad12428](https://github.com/rknightion/tailscale2otel/commit/ad12428fc9599cc2fc85527e5c3f4ddd36739b1f)), closes [#1063](https://github.com/rknightion/tailscale2otel/issues/1063)
+* **devices:** bound subrequests and publish the device snapshot ([b4ebe7d](https://github.com/rknightion/tailscale2otel/commit/b4ebe7d3a584a7c59cec4b8874a0150088835513)), closes [#1050](https://github.com/rknightion/tailscale2otel/issues/1050)
+* **flowlog:** publish unique destinations as interval snapshots ([6eb4d7a](https://github.com/rknightion/tailscale2otel/commit/6eb4d7ab985329bb7172c2cdd6da684cd791a47c)), closes [#1072](https://github.com/rknightion/tailscale2otel/issues/1072)
+* **flowlogs:** retire replay identities by window position ([ce7aeb4](https://github.com/rknightion/tailscale2otel/commit/ce7aeb4aba34cdbfd2247978c6122bf52dc12f51)), closes [#1046](https://github.com/rknightion/tailscale2otel/issues/1046)
+* **flowlogs:** retry replay startup cleanup ([07e411f](https://github.com/rknightion/tailscale2otel/commit/07e411f26f5ab898293b8027e76320ee3f02d84a)), closes [#1068](https://github.com/rknightion/tailscale2otel/issues/1068)
+* **flowstore:** chunk row-cap eviction and isolate maintenance ([53e8ab5](https://github.com/rknightion/tailscale2otel/commit/53e8ab596e0dbc0434bc95bc0db7ed4691b6f6c9)), closes [#1090](https://github.com/rknightion/tailscale2otel/issues/1090)
+* **flowstore:** delete expired rows in bounded batches ([a4c62b5](https://github.com/rknightion/tailscale2otel/commit/a4c62b557fffb4e29a7d579067ffe25921433d69)), closes [#1139](https://github.com/rknightion/tailscale2otel/issues/1139)
+* **flowstore:** page by event time and sequence ([8dc7bd6](https://github.com/rknightion/tailscale2otel/commit/8dc7bd66c068a3b11cf43eee02c7dcbe824d6461)), closes [#1066](https://github.com/rknightion/tailscale2otel/issues/1066)
+* **flowstore:** recover health and account for failed flushes ([0d0f048](https://github.com/rknightion/tailscale2otel/commit/0d0f0486c464592570484f7695509acf3c3d2ae5)), closes [#1070](https://github.com/rknightion/tailscale2otel/issues/1070)
+* **grafana:** align colors with health and inventory semantics ([f1e609f](https://github.com/rknightion/tailscale2otel/commit/f1e609f37ff23c4a8941339efbef9e538f41fb60)), closes [#1123](https://github.com/rknightion/tailscale2otel/issues/1123)
+* **grafana:** bound and separate tag chart categories ([9691a1e](https://github.com/rknightion/tailscale2otel/commit/9691a1e1b87e2fc0076c54f6503a477d2bbf6de8)), closes [#1111](https://github.com/rknightion/tailscale2otel/issues/1111)
+* **grafana:** bound delivery failure ratio scales ([6590947](https://github.com/rknightion/tailscale2otel/commit/65909471bc8a013233c989266502a09e47c3493d)), closes [#1124](https://github.com/rknightion/tailscale2otel/issues/1124)
+* **grafana:** compare flow byte measures on one scale ([8b9ae89](https://github.com/rknightion/tailscale2otel/commit/8b9ae892c9b0d56669f4750628e4b72156902cc5)), closes [#1121](https://github.com/rknightion/tailscale2otel/issues/1121)
+* **grafana:** compare ingestion and export costs per minute ([62c56f3](https://github.com/rknightion/tailscale2otel/commit/62c56f35f8f1f5c4f87447e7cfbdc372178c7a76)), closes [#1125](https://github.com/rknightion/tailscale2otel/issues/1125)
+* **grafana:** distinguish audit counts from rates ([0cec6a1](https://github.com/rknightion/tailscale2otel/commit/0cec6a15bc0472b33cb6e916392d79e169a5ea46)), closes [#1127](https://github.com/rknightion/tailscale2otel/issues/1127)
+* **grafana:** join measurements into coherent entity rows ([d950c22](https://github.com/rknightion/tailscale2otel/commit/d950c228a069f5a5bff8abe6bc30b12a26632a59)), closes [#1122](https://github.com/rknightion/tailscale2otel/issues/1122)
+* **grafana:** keep absence explanations out of table cells ([b76db14](https://github.com/rknightion/tailscale2otel/commit/b76db143589ed5373fd7fc6fef3eedb1b235f820)), closes [#1132](https://github.com/rknightion/tailscale2otel/issues/1132)
+* **grafana:** keep absent organization cards legible ([f0fa6fa](https://github.com/rknightion/tailscale2otel/commit/f0fa6fa1e2f6a684928a0ff692bbaa151781e448)), closes [#1118](https://github.com/rknightion/tailscale2otel/issues/1118)
+* **grafana:** keep default log rows compact ([3110800](https://github.com/rknightion/tailscale2otel/commit/3110800432694bddedc7479b5537d01c6e045a04)), closes [#1134](https://github.com/rknightion/tailscale2otel/issues/1134)
+* **grafana:** keep table measurements visible and ordered ([22c095c](https://github.com/rknightion/tailscale2otel/commit/22c095c9a4832760190102a78801342483971ce7)), closes [#1114](https://github.com/rknightion/tailscale2otel/issues/1114)
+* **grafana:** label heatmap intensity as frequency ([e90bd24](https://github.com/rknightion/tailscale2otel/commit/e90bd241197e9957ec9a04c51a208f0d4494a1f4)), closes [#1136](https://github.com/rknightion/tailscale2otel/issues/1136)
+* **grafana:** limit table units to measured columns ([803303e](https://github.com/rknightion/tailscale2otel/commit/803303ea1bf760eefa067a6b9d88bb2e525e2760)), closes [#1119](https://github.com/rknightion/tailscale2otel/issues/1119)
+* **grafana:** name active-series cap use as a ratio ([c2d9ad3](https://github.com/rknightion/tailscale2otel/commit/c2d9ad33d58d63ee91e33a9c5893297864b86b28)), closes [#1130](https://github.com/rknightion/tailscale2otel/issues/1130)
+* **grafana:** name used scrape budget consistently ([0d7de40](https://github.com/rknightion/tailscale2otel/commit/0d7de400695b6e8472187c424260e992dbdfce65)), closes [#1128](https://github.com/rknightion/tailscale2otel/issues/1128)
+* **grafana:** page the device online timeline ([e72d088](https://github.com/rknightion/tailscale2otel/commit/e72d0880f3ecd6ff17d1773c750d4d16294701e0)), closes [#1112](https://github.com/rknightion/tailscale2otel/issues/1112)
+* **grafana:** preserve absence for optional sources ([85c133a](https://github.com/rknightion/tailscale2otel/commit/85c133ada0602ed3ab3b72d235433db305315ee7)), closes [#1117](https://github.com/rknightion/tailscale2otel/issues/1117)
+* **grafana:** preserve distribution category names ([e2df68b](https://github.com/rknightion/tailscale2otel/commit/e2df68bf423511d6f2b3515117a5e803a2b096d1)), closes [#1120](https://github.com/rknightion/tailscale2otel/issues/1120)
+* **grafana:** rank node-pair talkers with visible identities ([7a8a204](https://github.com/rknightion/tailscale2otel/commit/7a8a20478a57602947544e5a769500b5cda84c5c)), closes [#1133](https://github.com/rknightion/tailscale2otel/issues/1133)
+* **grafana:** render absent threshold data neutrally ([af7f07b](https://github.com/rknightion/tailscale2otel/commit/af7f07b4b049d05d26d86a301608c2b6ce1a7f57)), closes [#1115](https://github.com/rknightion/tailscale2otel/issues/1115)
+* **grafana:** render actionable trace search results ([3466445](https://github.com/rknightion/tailscale2otel/commit/3466445c7fe8a9eacfb816d7d76bc40992ed1233)), closes [#1137](https://github.com/rknightion/tailscale2otel/issues/1137)
+* **grafana:** render duration rates without duration units ([797c073](https://github.com/rknightion/tailscale2otel/commit/797c073aecb5ddce01dd387f3b39a41f33d7f87f)), closes [#1135](https://github.com/rknightion/tailscale2otel/issues/1135)
+* **grafana:** render populated country markers ([376afdc](https://github.com/rknightion/tailscale2otel/commit/376afdce2cbfce21b0321ada32bfeb922643525e)), closes [#1126](https://github.com/rknightion/tailscale2otel/issues/1126)
+* **grafana:** show zero for disabled device flags ([a97f71a](https://github.com/rknightion/tailscale2otel/commit/a97f71a6c8dce8f8bc63d379aec734b37a367cc1)), closes [#1116](https://github.com/rknightion/tailscale2otel/issues/1116)
+* **grafana:** widen the ACL evidence summary title ([f4d61fa](https://github.com/rknightion/tailscale2otel/commit/f4d61faa49279d1af19cd21db128d8a8e9876b18)), closes [#1113](https://github.com/rknightion/tailscale2otel/issues/1113)
+* **helm:** restrict coordination labels to exporter pods ([2e18b9d](https://github.com/rknightion/tailscale2otel/commit/2e18b9d4474d1506c7832fd67bffbd2ffff08247)), closes [#1077](https://github.com/rknightion/tailscale2otel/issues/1077)
+* **ingress:** retry WAL appends after transient storage errors ([598ebe6](https://github.com/rknightion/tailscale2otel/commit/598ebe627f9d8a598b250f0f1a1a9a4477409c33)), closes [#1138](https://github.com/rknightion/tailscale2otel/issues/1138)
+* **keys:** remove gauges for deleted keys and buckets ([7163d8c](https://github.com/rknightion/tailscale2otel/commit/7163d8cf6be035a11d613e4d548805f0a0e56576)), closes [#1054](https://github.com/rknightion/tailscale2otel/issues/1054)
+* **pam:** record completion for sessions first seen open ([9cd8a37](https://github.com/rknightion/tailscale2otel/commit/9cd8a37a0c3682cd75d4bb01035fc276c018739b)), closes [#1080](https://github.com/rknightion/tailscale2otel/issues/1080)
+* **privacy:** filter address-suffixed node instance labels ([2d8367c](https://github.com/rknightion/tailscale2otel/commit/2d8367c697fb30fcb69a661caff4ee4e81a2e2c8)), closes [#1079](https://github.com/rknightion/tailscale2otel/issues/1079)
+* **privacy:** scrub filtered identifiers from surviving span values ([dbc1cf2](https://github.com/rknightion/tailscale2otel/commit/dbc1cf2f4cad97a6b1041c50d220edfa363b2a99)), closes [#1056](https://github.com/rknightion/tailscale2otel/issues/1056)
+* **release:** offer final releases to prerelease builds ([5b2d917](https://github.com/rknightion/tailscale2otel/commit/5b2d91701f996951c0cfb053c514e9e19df80f8d)), closes [#1093](https://github.com/rknightion/tailscale2otel/issues/1093)
+* **release:** preserve executable modes when bumping modules ([da80f7a](https://github.com/rknightion/tailscale2otel/commit/da80f7a34ec03d2ced5ee719f12121628893ab2f)), closes [#1057](https://github.com/rknightion/tailscale2otel/issues/1057)
+* **s3:** encode object paths before signing and sending ([9e951d0](https://github.com/rknightion/tailscale2otel/commit/9e951d0beda378c722f228f811108be1f378d9a3)), closes [#1081](https://github.com/rknightion/tailscale2otel/issues/1081)
+* **stream:** expose durable receiver batch trace observations ([f5a1c8e](https://github.com/rknightion/tailscale2otel/commit/f5a1c8ea787e51b5b4b695823fe95b58e5fad944)), closes [#1129](https://github.com/rknightion/tailscale2otel/issues/1129)
+* **telemetry:** track cumulative lifetime cardinality ([d23af10](https://github.com/rknightion/tailscale2otel/commit/d23af10acdcaec2ae991bab2afa59dff5e66e1dd)), closes [#1049](https://github.com/rknightion/tailscale2otel/issues/1049)
+
+
+### Performance
+
+* **flowlog:** batch fixed-cardinality counter emissions ([45dbc1e](https://github.com/rknightion/tailscale2otel/commit/45dbc1ebbc8c153e6a247e9329a6c1de1107fde6)), closes [#1067](https://github.com/rknightion/tailscale2otel/issues/1067)
+* **flowlog:** index embedded addresses once per record ([f168674](https://github.com/rknightion/tailscale2otel/commit/f168674622784b597c8f94b3c4208fba41104e2c)), closes [#1089](https://github.com/rknightion/tailscale2otel/issues/1089)
+
 ## [5.3.0](https://github.com/rknightion/tailscale2otel/compare/v5.2.1...v5.3.0) (2026-11-11)
 
 
