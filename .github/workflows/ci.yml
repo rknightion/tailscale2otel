@@ -394,6 +394,19 @@ jobs:
           build-args: |
             VERSION=ci-${{ github.sha }}
 
+      # Mirrors container-publish's Trivy scan policy; both steps must move together.
+      - name: Scan image with publish vulnerability policy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IGNORE_UNFIXED: "false"
+        with:
+          image-ref: tailscale2otel:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: false
+          cache: false
+          format: table
+
       # The render guard above catches Compose-asset drift. This starts the
       # actual Compose service against the image just built, local stdout
       # delivery and disposable file secrets, then waits for its binary health
