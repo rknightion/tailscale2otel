@@ -122,6 +122,9 @@
                                 "device": {
                                     "type": "boolean"
                                 },
+                                "device_derp_latency": {
+                                    "type": "boolean"
+                                },
                                 "key": {
                                     "type": "boolean"
                                 },

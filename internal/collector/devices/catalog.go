@@ -79,7 +79,7 @@ var (
 		Name:        metricDERPLatency,
 		Unit:        semconv.UnitSeconds,
 		Instrument:  metricdoc.Gauge,
-		Description: "Latency from the device to a DERP region; one series per region.",
+		Description: "Latency from the device to a DERP region; one series per region, gated by cardinality.per_entity.device_derp_latency.",
 		Attributes:  []string{semconv.HostName, semconv.HostID, attrDERPRegion, attrDERPPreferred},
 		Group:       groupDevices,
 	}

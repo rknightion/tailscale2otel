@@ -143,6 +143,7 @@ func registerCollectors(rt *tailnetRuntime, d runtimeDeps) {
 		}
 		devOpts := []devices.Option{
 			devices.WithPerEntity(cfg.Cardinality.PerEntity.Device),
+			devices.WithDERPLatency(cfg.Cardinality.PerEntity.DeviceDERPLatency),
 			devices.WithChangeLog(c.Devices.ChangeLogEnabled),
 			devices.WithPostureLogMode(c.Devices.PostureLogMode),
 			devices.WithExpiryLogMode(c.Devices.ExpiryLogMode),

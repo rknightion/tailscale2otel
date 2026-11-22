@@ -1152,11 +1152,12 @@ type FlowCardinality struct {
 // emitted (the per-entity gauges, one series per device/user/key/..., are
 // dropped). All default true.
 type PerEntityCardinality struct {
-	Device  bool `yaml:"device" reload:"restart"`
-	User    bool `yaml:"user" reload:"restart"`
-	Key     bool `yaml:"key" reload:"restart"`
-	Webhook bool `yaml:"webhook" reload:"restart"`
-	Service bool `yaml:"service" reload:"restart"`
+	Device            bool `yaml:"device" reload:"restart"`
+	DeviceDERPLatency bool `yaml:"device_derp_latency" reload:"restart"`
+	User              bool `yaml:"user" reload:"restart"`
+	Key               bool `yaml:"key" reload:"restart"`
+	Webhook           bool `yaml:"webhook" reload:"restart"`
+	Service           bool `yaml:"service" reload:"restart"`
 }
 
 // Collectors groups the per-collector configurations. Each collector exposes

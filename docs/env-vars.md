@@ -193,6 +193,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CARDINALITY__FLOW__EXIT_NODE_ATTRIBUTION` | `true` | `restart` | emit bounded tailscale.exit_node.io/packets attributing exit traffic to the relaying node (bounded by exit-node count) |
 | `TS2OTEL_CARDINALITY__FLOW__GEO_DIMS` | `false` | `restart` | add source/destination geo.country.iso_code + geo.continent.code to flow METRICS (needs enrichment.geoip). Nearly free under metrics_mode: rollup (top-N bounded); on the RAW families it splits the single "external" series ~250 ways. ASN/city NEVER reach a metric; flow LOGS carry everything regardless |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__DEVICE` | `true` | `restart` | per-device gauges (online/last_seen/key_expiry/derp/routes) |
+| `TS2OTEL_CARDINALITY__PER_ENTITY__DEVICE_DERP_LATENCY` | `true` | `restart` | per-device DERP latency: devices reporting latency times regions probed |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__USER` | `true` | `restart` | per-user gauges (devices/connected/last_seen) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__KEY` | `true` | `restart` | per-key expiry gauge (the expiry WARN log fires regardless) |
 | `TS2OTEL_CARDINALITY__PER_ENTITY__WEBHOOK` | `true` | `restart` | per-endpoint webhook-subscriptions gauge |

@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.5](https://img.shields.io/badge/Version-0.36.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.6](https://img.shields.io/badge/Version-0.36.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -310,6 +310,7 @@ extraVolumeMounts:
 | config.cardinality.label_value_sample_cap | int | `100` | Distinct values retained per (metric,label) for the label-cardinality views; beyond it the label is capped and examples truncated (0 disables label capture). |
 | config.cardinality.metric_limit | int | `10000` | Hard per-metric series cap (0/negative = unlimited). |
 | config.cardinality.per_entity.device | bool | `true` | Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the aggregate tailscale.devices.count rollup. |
+| config.cardinality.per_entity.device_derp_latency | bool | `true` | Emit per-device DERP latency (series scale with devices reporting latency times regions probed). |
 | config.cardinality.per_entity.key | bool | `true` | Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires). |
 | config.cardinality.per_entity.service | bool | `true` | Emit the per-service ports/hosts gauges; false emits only tailscale.services.count. |
 | config.cardinality.per_entity.user | bool | `true` | Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count. |

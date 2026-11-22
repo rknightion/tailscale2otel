@@ -174,11 +174,12 @@ func Default() *Config {
 				ExitNodeAttribution: true,
 			},
 			PerEntity: PerEntityCardinality{
-				Device:  true,
-				User:    true,
-				Key:     true,
-				Webhook: true,
-				Service: true,
+				Device:            true,
+				DeviceDERPLatency: true,
+				User:              true,
+				Key:               true,
+				Webhook:           true,
+				Service:           true,
 			},
 		},
 		Collectors: Collectors{
