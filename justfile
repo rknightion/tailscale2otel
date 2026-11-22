@@ -13,11 +13,11 @@ tool_modules := "tools/apidrift tools/configcheck tools/metricscatalog tools/pro
 
 chart_dir := "deploy/helm/tailscale2otel"
 
-# Pinned to what CI installs. golangci-lint tracks .github/workflows/ci.yml's
-# golangci-lint-action `version:`; govulncheck tracks the `go install` line in the
-# module-verify and govulncheck jobs. A local tool of another version reports
-# different findings than the gate.
-golangci_version := "v2.14.0"
+# These are the only pins for lint and vulnerability tools; CI reads them here.
+# A local tool of another version reports different findings than the gate.
+# renovate: datasource=github-releases depName=golangci/golangci-lint
+golangci_version := "v2.15.0"
+# renovate: datasource=go depName=golang.org/x/vuln
 govulncheck_version := "v1.3.0"
 
 # promtool cannot be `go install`ed (the prometheus module carries replace
