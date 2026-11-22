@@ -47,7 +47,7 @@ var (
 	docAppInfo = metricdoc.LogEvent{
 		Name:        EventAppInfo,
 		Severity:    "INFO",
-		Description: "Emitted for each OAuth application on the tailnet. `tailscale.oauth_app.scope_values` is a comma-separated list of the granted scope strings; `tailscale.oauth_app.node_attribute_count` is the number of custom node attributes it may set.",
+		Description: "Emitted for each OAuth application on the tailnet on first sight, on change and daily. `tailscale.oauth_app.scope_values` is a comma-separated list of the granted scope strings; `tailscale.oauth_app.node_attribute_count` is the number of custom node attributes it may set.",
 		Attributes:  []string{attrID, attrName, attrScopeValues, attrNodeAttrCount},
 		Group:       groupOAuthApps,
 	}

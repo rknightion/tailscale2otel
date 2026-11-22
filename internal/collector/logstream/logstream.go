@@ -135,6 +135,7 @@ type Collector struct {
 	gauges       *telemetry.GaugeSnapshotBuilder
 	destinations map[string]telemetry.GaugePoint
 	health       map[string]streamHealthGauges
+	errorLogs    map[string]*collector.StateLogGate[string]
 	// now is the clock, injectable from tests.
 	now func() time.Time
 }
@@ -175,6 +176,7 @@ func New(a api, interval time.Duration, opts ...Option) *Collector {
 		gauges:       telemetry.NewGaugeSnapshotBuilder(),
 		destinations: make(map[string]telemetry.GaugePoint),
 		health:       make(map[string]streamHealthGauges),
+		errorLogs:    make(map[string]*collector.StateLogGate[string]),
 		interval:     interval,
 		prev:         map[string]map[string]float64{},
 		lastProbe:    map[string]time.Time{},
@@ -280,6 +282,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 				// genuinely no stream. Benign and idle.
 				c.emitConfigured(e, lt, 0)
 				delete(c.health, lt)
+				delete(c.errorLogs, lt)
 				continue
 			}
 			// Deliberately no configured gauge here. A 401/403/5xx means we did
@@ -293,6 +296,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		if !streamConfigured(st) {
 			c.emitConfigured(e, lt, 0)
 			delete(c.health, lt)
+			delete(c.errorLogs, lt)
 			continue
 		}
 		c.emitHealth(e, lt, st)
@@ -396,7 +400,17 @@ func (c *Collector) emitHealth(e telemetry.Emitter, lt string, st *tsapi.LogStre
 	}
 	points.error = telemetry.GaugePoint{Value: errVal, Attrs: attrs}
 	c.health[lt] = points
-	if st.LastError != "" {
+	if st.LastError == "" {
+		delete(c.errorLogs, lt)
+	} else {
+		gate := c.errorLogs[lt]
+		if gate == nil {
+			gate = collector.NewStateLogGate[string]()
+			c.errorLogs[lt] = gate
+		}
+		if !gate.Due(lt, st.LastError, c.now()) {
+			return
+		}
 		e.LogEvent(telemetry.Event{
 			Name:     docErrorLog.Name,
 			Severity: telemetry.SeverityError,

@@ -148,6 +148,7 @@ type Collector struct {
 	expiryLogMode   string // "daily" (default) | "always" | "off"
 	expiryState     map[string]expiryState
 	lifecycleState  map[string]lifecycleState
+	scopeLogs       *collector.StateLogGate[string]
 	// evidence holds the lifecycle watermarks across restarts.
 	evidence collector.CheckpointStore
 	// tracker records this collector's per-operation availability for the admin
@@ -240,6 +241,7 @@ func New(api lister, interval, expiryWarn time.Duration, now func() time.Time, o
 		expiryLogMode:   expiryLogModeDaily,
 		expiryState:     make(map[string]expiryState),
 		lifecycleState:  make(map[string]lifecycleState),
+		scopeLogs:       collector.NewStateLogGate[string](),
 		evidence:        collector.NewMemoryStore(),
 	}
 	for _, o := range opts {
@@ -315,6 +317,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	byOwner := make(map[ownerKey]int)
 	currentExpiring := make(map[string]struct{})
 	currentKeys := make(map[string]struct{}, len(ks))
+	currentScopes := make(map[string]struct{}, len(ks))
 
 	createdMark, _ := c.evidence.Get(lifecycleCreatedWatermarkKey)
 	revokedMark, _ := c.evidence.Get(lifecycleRevokedWatermarkKey)
@@ -434,16 +437,19 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 			// The key label (description, a free_text_details attr) and the scope
 			// list (attrScopeValues, non-identifier) are preserved in Attrs so
 			// nothing is lost and operators can gate them independently.
-			e.LogEvent(telemetry.Event{
-				Name:     docKeyScopesLog.Name,
-				Severity: telemetry.SeverityInfo,
-				Body:     fmt.Sprintf("Tailscale key (%s) has %d scope(s)", typ, len(k.Scopes)),
-				Attrs: telemetry.Attrs{
-					attrID:          k.ID,
-					attrDescription: k.Description,
-					attrScopeValues: strings.Join(k.Scopes, ","),
-				},
-			})
+			currentScopes[k.ID] = struct{}{}
+			if c.scopeLogs.Due(k.ID, strings.Join(k.Scopes, ","), now) {
+				e.LogEvent(telemetry.Event{
+					Name:     docKeyScopesLog.Name,
+					Severity: telemetry.SeverityInfo,
+					Body:     fmt.Sprintf("Tailscale key (%s) has %d scope(s)", typ, len(k.Scopes)),
+					Attrs: telemetry.Attrs{
+						attrID:          k.ID,
+						attrDescription: k.Description,
+						attrScopeValues: strings.Join(k.Scopes, ","),
+					},
+				})
+			}
 		}
 
 		// Per-credential privilege classification (#415): the bounded REPLACEMENT
@@ -482,6 +488,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		}
 	}
 
+	c.scopeLogs.Retain(currentScopes)
 	for id := range c.expiryState {
 		if _, ok := currentExpiring[id]; !ok {
 			delete(c.expiryState, id)

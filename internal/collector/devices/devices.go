@@ -405,6 +405,9 @@ type Collector struct {
 	attributeValueLimit     int
 	postureComplianceChecks []PostureComplianceCheck
 
+	lockLogs   *collector.StateLogGate[string]
+	inviteLogs map[string]*collector.StateLogGate[inviteLogID]
+
 	// lastPosture remembers each device's last-emitted posture signature
 	// (deviceID -> signature) so the posture LOG can fire on-change only. A
 	// device absent from the map is first-seen and counts as changed.
@@ -834,6 +837,8 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		collectConnectivity:   true,
 		subnetRouteRollup:     true,
 		postureLogMode:        postureLogChanges,
+		lockLogs:              collector.NewStateLogGate[string](),
+		inviteLogs:            make(map[string]*collector.StateLogGate[inviteLogID]),
 		lastPosture:           make(map[string]string),
 		changeLogBaseline:     make(map[string]deviceChangeState),
 		expiryLogMode:         expiryLogModeDaily,
@@ -1008,6 +1013,8 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	counts := make(map[countKey]int, len(devs))
 	lockErrors := 0
 	inviteCounts := map[deviceInviteKey]int{}
+	currentLockErrors := make(map[string]struct{})
+	currentDevices := make(map[string]struct{}, len(devs))
 
 	// Fleet-hygiene roll-up accumulators (aggregate, low-cardinality).
 	untagged := 0
@@ -1074,6 +1081,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 	for i := range devs {
 		d := &devs[i]
+		currentDevices[d.ID] = struct{}{}
 
 		// Per-device gauges (one series per device) are gated by
 		// cardinality.per_entity.device; when off, only the aggregate
@@ -1239,14 +1247,17 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 
 		if d.TailnetLockError != "" {
 			lockErrors++
-			e.LogEvent(telemetry.Event{
-				Name:     docTailnetLockError.Name,
-				Severity: telemetry.SeverityError,
-				Body:     d.TailnetLockError,
-				// Raw upstream error text — free-text; drop the body when free_text_details is off (#197).
-				BodyPII: []pii.Category{pii.CatFreeTextDetails},
-				Attrs:   telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID},
-			})
+			currentLockErrors[d.ID] = struct{}{}
+			if c.lockLogs.Due(d.ID, d.TailnetLockError, nowT) {
+				e.LogEvent(telemetry.Event{
+					Name:     docTailnetLockError.Name,
+					Severity: telemetry.SeverityError,
+					Body:     d.TailnetLockError,
+					// Raw upstream error text — free-text; drop the body when free_text_details is off (#197).
+					BodyPII: []pii.Category{pii.CatFreeTextDetails},
+					Attrs:   telemetry.Attrs{semconv.HostName: d.Hostname, semconv.HostID: d.ID},
+				})
+			}
 		}
 
 		counts[countKey{os: d.OS, authorized: d.Authorized, external: d.IsExternal}]++
@@ -1411,6 +1422,13 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	if complete {
 		e.Gauge(docAttributesDropped.Name, docAttributesDropped.Unit, docAttributesDropped.Description,
 			float64(droppedAttributeKeys), nil)
+	}
+
+	c.lockLogs.Retain(currentLockErrors)
+	for id := range c.inviteLogs {
+		if _, ok := currentDevices[id]; !ok {
+			delete(c.inviteLogs, id)
+		}
 	}
 
 	// #61: prune lastPosture to the current tick's fleet so it does not retain
@@ -1815,11 +1833,22 @@ func (c *Collector) fetchDeviceInvites(ctx context.Context, d *tsapi.RichDevice)
 	return invs, err
 }
 
+type inviteLogID struct {
+	email, login, delivery string
+	accepted               bool
+}
+
 // emitDeviceInvites folds one successful device's invites into the aggregate
 // gauge, records the pending-invite age distribution, and emits a per-invite
 // log event carrying the invitee email, the acceptedBy login, and the sharing
 // device identity.
 func (c *Collector) emitDeviceInvites(e telemetry.Emitter, d *tsapi.RichDevice, invs []tsapi.DeviceInvite, counts map[deviceInviteKey]int, nowT time.Time) {
+	gate := c.inviteLogs[d.ID]
+	if gate == nil {
+		gate = collector.NewStateLogGate[inviteLogID]()
+		c.inviteLogs[d.ID] = gate
+	}
+	current := make(map[inviteLogID]struct{}, len(invs))
 	for _, inv := range invs {
 		delivery := inviteDelivery(inv)
 		counts[deviceInviteKey{
@@ -1847,6 +1876,11 @@ func (c *Collector) emitDeviceInvites(e telemetry.Emitter, d *tsapi.RichDevice, 
 		if inv.Email == "" && inv.AcceptedByLogin == "" {
 			continue
 		}
+		id := inviteLogID{email: inv.Email, login: inv.AcceptedByLogin, delivery: delivery, accepted: inv.Accepted}
+		current[id] = struct{}{}
+		if !gate.Due(id, "", nowT) {
+			continue
+		}
 		body := "device share invite pending"
 		if inv.Accepted {
 			body = "device share invite accepted"
@@ -1864,6 +1898,7 @@ func (c *Collector) emitDeviceInvites(e telemetry.Emitter, d *tsapi.RichDevice, 
 			},
 		})
 	}
+	gate.Retain(current)
 }
 
 // emitDERPRollup aggregates the per-device DERP latency already fetched into

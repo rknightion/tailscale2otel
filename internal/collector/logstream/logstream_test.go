@@ -543,6 +543,62 @@ func TestSupportedStateAndTracker(t *testing.T) {
 	}
 }
 
+// TestStateLogsEmitOnChangeOnly exercises the stream error through Collect and
+// checks that suppressing repeated logs never suppresses the error gauge.
+func TestStateLogsEmitOnChangeOnly(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	message := "synthetic error"
+	fail := false
+	api := networkOnly(func(st *tsapi.LogStreamStatus) { st.LastError = message })
+	original := api.fn
+	api.fn = func(lt string) (*tsapi.LogStreamStatus, error) {
+		if lt == "network" && fail {
+			return nil, errors.New("synthetic failure")
+		}
+		return original(lt)
+	}
+	c := New(api, 0)
+	c.now = func() time.Time { return at }
+	collect := func(wantLogs int, wantGauge float64, wantErr bool) {
+		t.Helper()
+		rec := telemetrytest.New()
+		err := c.Collect(context.Background(), rec.Emitter())
+		if (err != nil) != wantErr {
+			t.Errorf("Collect error = %v, want error %v", err, wantErr)
+		}
+		logs := 0
+		for _, lr := range rec.LogRecords() {
+			if lr.EventName == "tailscale.logstream.error" {
+				logs++
+				if lr.Body != message || lr.Attrs["tailscale.logstream.type"] != "network" {
+					t.Errorf("unexpected log: %+v", lr)
+				}
+			}
+		}
+		if logs != wantLogs {
+			t.Errorf("logs = %d, want %d", logs, wantLogs)
+		}
+		gauges := byType(rec.MetricPoints("tailscale.logstream.error"))
+		if got, ok := gauges["network"]; !ok || got != wantGauge {
+			t.Errorf("error gauge = %v (present %v), want %v", got, ok, wantGauge)
+		}
+	}
+	collect(1, 1, false)
+	collect(0, 1, false)
+	message = "different synthetic error"
+	collect(1, 1, false)
+	fail = true
+	collect(0, 1, true)
+	fail = false
+	collect(0, 1, false)
+	at = at.Add(24 * time.Hour)
+	collect(1, 1, false)
+	message = ""
+	collect(0, 0, false)
+	message = "different synthetic error"
+	collect(1, 1, false)
+}
+
 func TestErrorGaugeAndLog(t *testing.T) {
 	api := networkOnly(func(st *tsapi.LogStreamStatus) { st.LastError = "splunk: connection refused" })
 	rec := telemetrytest.New()
