@@ -1924,3 +1924,75 @@ func TestNoWorkflowReadsTheExitStatusOfGoRun(t *testing.T) {
 		}
 	}
 }
+
+// binariesPreCommandProblems checks the reusable workflow inputs and their GoReleaser dependency.
+func binariesPreCommandProblems(config string, commands []string) []string {
+	var problems []string
+	tag := regexp.MustCompile(`\$\{\{\s*needs\.[^}]+\}\}`)
+	for _, cmd := range commands {
+		if strings.Contains(cmd, "scripts/notices.sh") != strings.Contains(config, "THIRD_PARTY_NOTICES.md") {
+			problems = append(problems, "notices command and GoReleaser config disagree")
+		}
+		if !strings.Contains(cmd, "scripts/wait-for-module-proxy.sh") {
+			problems = append(problems, "missing proxy wait")
+		}
+		if !strings.Contains(cmd, "go install github.com/anchore/syft/cmd/syft@") {
+			problems = append(problems, "missing syft install")
+		}
+	}
+	if tag.ReplaceAllString(commands[0], "TAG") != tag.ReplaceAllString(commands[1], "TAG") {
+		problems = append(problems, "pre-commands diverge")
+	}
+	return problems
+}
+
+func TestBinariesPreCommandMatchesGoreleaserInputs(t *testing.T) {
+	config, err := os.ReadFile(filepath.Join(repoDir, ".goreleaser.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	for _, name := range []string{"release-please.yml", "auto-rc.yml"} {
+		job := requiredJob(t, readWorkflow(t, name), "binaries")
+		inputs, ok := job["with"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s binaries has no inputs", name)
+		}
+		cmd, ok := inputs["pre-cmd"].(string)
+		if !ok || cmd == "" {
+			t.Fatalf("%s binaries has no pre-cmd", name)
+		}
+		commands = append(commands, cmd)
+	}
+	if problems := binariesPreCommandProblems(string(config), commands); len(problems) != 0 {
+		t.Errorf("%v", problems)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func([]string)
+	}{
+		{"notices without config", func(c []string) {
+			for i := range c {
+				c[i] += " && bash scripts/notices.sh"
+			}
+		}},
+		{"missing proxy", func(c []string) { c[0] = strings.Replace(c[0], "scripts/wait-for-module-proxy.sh", "missing", 1) }},
+		{"both missing proxy", func(c []string) {
+			for i := range c {
+				c[i] = strings.Replace(c[i], "scripts/wait-for-module-proxy.sh", "missing", 1)
+			}
+		}},
+		{"divergence", func(c []string) { c[0] += " && echo divergent" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clean := append([]string(nil), commands...)
+			if problems := binariesPreCommandProblems(string(config), clean); len(problems) != 0 {
+				t.Fatalf("mutation baseline invalid: %v", problems)
+			}
+			tc.mutate(clean)
+			if problems := binariesPreCommandProblems(string(config), clean); len(problems) == 0 {
+				t.Fatal("mutation escaped guard")
+			}
+		})
+	}
+}
