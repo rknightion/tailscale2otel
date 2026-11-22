@@ -18,7 +18,7 @@ chart_dir := "deploy/helm/tailscale2otel"
 # renovate: datasource=github-releases depName=golangci/golangci-lint
 golangci_version := "v2.15.0"
 # renovate: datasource=go depName=golang.org/x/vuln
-govulncheck_version := "v1.3.0"
+govulncheck_version := "v1.10.0"
 
 # promtool cannot be `go install`ed (the prometheus module carries replace
 # directives), so install-promtool fetches this release tarball. CI runs the same
