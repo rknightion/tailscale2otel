@@ -155,6 +155,19 @@ func TestStarterConfigsLoadAndValidate(t *testing.T) {
 	}
 }
 
+func TestHeadscaleStarterHasNoCollectorAdvisory(t *testing.T) {
+	t.Setenv("TS2OTEL_HEADSCALE__API_KEY", "placeholder-headscale-api-key")
+	cfg, err := Load(filepath.Join("..", "..", "examples", "config", "headscale.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, warning := range cfg.Warnings() {
+		if strings.Contains(warning, "collector ") && strings.Contains(warning, "provider=headscale does not support") {
+			t.Errorf("unexpected unsupported collector advisory: %s", warning)
+		}
+	}
+}
+
 func setStarterTailscaleOAuth(t *testing.T) {
 	t.Helper()
 	t.Setenv("TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID", "placeholder-client-id")

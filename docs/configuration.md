@@ -261,10 +261,12 @@ For runnable first-run configurations and evidence for each destination, start a
 Used only when `provider: headscale`. Auth is a Bearer API key; keep it in an environment variable
 (`TS2OTEL_HEADSCALE__API_KEY`), not in the YAML file.
 
-Under `provider: headscale` only the `devices`, `users`, `keys`, `acl`, and `nodemetrics` collectors
-run. The Tailscale-only collectors (`flowlogs`, `auditlogs`, `services`, `webhooks`, `contacts`,
-`posture_integrations`, `log_stream`, `oauth_apps`, `settings`, `dns`) auto-disable; enabling them explicitly triggers
-a startup warning.
+Under `provider: headscale` the control-plane collectors `devices`, `users`, `keys`, `acl`, and
+`nodemetrics` can run. The Tailscale-only collectors (`flowlogs`, `auditlogs`, `services`, `webhooks`,
+`contacts`, `posture_integrations`, `log_stream`, `oauth_apps`, `settings`, `dns`) do not run whatever
+their `enabled` value; one INFO line at startup names the enabled inactive collectors. `flowlogs` and
+`auditlogs` with `source: objectstore` still run, because they read an export bucket and call no
+control-plane API.
 
 **Reduced device signal set.** Headscale's API exposes fewer device fields than Tailscale, so under
 `provider: headscale` the `devices` collector emits a *subset* of its usual signals - online status,

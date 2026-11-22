@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,6 +45,37 @@ func writeTempConfig(t *testing.T, content string) string {
 		t.Fatalf("write temp config: %v", err)
 	}
 	return p
+}
+
+func TestLogProviderInactiveCollectors(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	cfg := config.Default()
+	cfg.Provider = "headscale"
+	logProviderInactiveCollectors(logger, cfg)
+	var record struct {
+		Level      string   `json:"level"`
+		Message    string   `json:"msg"`
+		Provider   string   `json:"provider"`
+		Collectors []string `json:"collectors"`
+	}
+	decoder := json.NewDecoder(&output)
+	if err := decoder.Decode(&record); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"flowlogs", "auditlogs", "settings", "dns", "contacts", "webhooks", "posture_integrations", "log_stream", "oauth_apps", "services"}
+	if record.Level != "INFO" || record.Message != "collectors inactive under this provider" || record.Provider != "headscale" || !slices.Equal(record.Collectors, want) {
+		t.Fatalf("unexpected record: %+v", record)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		t.Fatalf("extra record: %v, %v", extra, err)
+	}
+	cfg.Provider = "tailscale"
+	logProviderInactiveCollectors(logger, cfg)
+	if output.Len() != 0 {
+		t.Fatalf("unexpected tailscale log: %s", &output)
+	}
 }
 
 func TestRun_Version(t *testing.T) {

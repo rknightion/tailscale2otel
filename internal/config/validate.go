@@ -300,6 +300,36 @@ func (c *Config) validateWebhookCredentials() error {
 	return nil
 }
 
+// ProviderInactiveCollectors lists enabled collectors that cannot run under the
+// selected provider. Object-store log sources do not depend on the provider API.
+func (c *Config) ProviderInactiveCollectors() []string {
+	if c.Provider != "headscale" {
+		return nil
+	}
+	collectors := []struct {
+		name     string
+		inactive bool
+	}{
+		{"flowlogs", c.Collectors.Flowlogs.Enabled && c.Collectors.Flowlogs.Source != "objectstore"},
+		{"auditlogs", c.Collectors.Auditlogs.Enabled && c.Collectors.Auditlogs.Source != "objectstore"},
+		{"settings", c.Collectors.Settings.Enabled},
+		{"dns", c.Collectors.Dns.Enabled},
+		{"contacts", c.Collectors.Contacts.Enabled},
+		{"webhooks", c.Collectors.Webhooks.Enabled},
+		{"posture_integrations", c.Collectors.PostureIntegrations.Enabled},
+		{"log_stream", c.Collectors.LogStream.Enabled},
+		{"oauth_apps", c.Collectors.OAuthApps.Enabled},
+		{"services", c.Collectors.Services.Enabled},
+	}
+	var inactive []string
+	for _, collector := range collectors {
+		if collector.inactive {
+			inactive = append(inactive, collector.name)
+		}
+	}
+	return inactive
+}
+
 // Warnings returns non-fatal configuration advisories. They never block startup
 // (Validate handles hard errors); the caller logs them at WARN. The goal is to
 // steer operators toward the safer choice without removing flexibility.
@@ -715,24 +745,6 @@ func (c *Config) Warnings() []string {
 	}
 
 	if c.Provider == "headscale" {
-		// Features with no Headscale API; warn if the operator explicitly enabled them.
-		type col struct {
-			name    string
-			enabled bool
-		}
-		unsupported := []col{
-			{"flowlogs", c.Collectors.Flowlogs.Enabled}, {"auditlogs", c.Collectors.Auditlogs.Enabled},
-			{"settings", c.Collectors.Settings.Enabled}, {"dns", c.Collectors.Dns.Enabled},
-			{"contacts", c.Collectors.Contacts.Enabled}, {"webhooks", c.Collectors.Webhooks.Enabled},
-			{"posture_integrations", c.Collectors.PostureIntegrations.Enabled},
-			{"log_stream", c.Collectors.LogStream.Enabled}, {"services", c.Collectors.Services.Enabled},
-		}
-		for _, u := range unsupported {
-			if u.enabled {
-				w = append(w, fmt.Sprintf("collector %s is enabled but provider=headscale does not "+
-					"support it; it will not run. Set collectors.%s.enabled=false to silence this.", u.name, u.name))
-			}
-		}
 		// Streaming/webhook receivers have no Headscale equivalent (Headscale has no
 		// log-stream/webhook API), so an enabled receiver just exposes a listener that
 		// can never receive legitimate data — and, token-less, would accept forged

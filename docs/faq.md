@@ -129,11 +129,12 @@ either way - the choice is about latency and exposure, not data shape. See
 
 ### Does it work against Headscale instead of hosted Tailscale?
 
-Yes, with a reduced collector set. Setting `provider: headscale` runs only `devices`, `users`,
-`keys`, `acl`, and `nodemetrics` - the Tailscale-only collectors (`flowlogs`, `auditlogs`,
-`services`, `webhooks`, `contacts`, `posture_integrations`, `log_stream`, `settings`, `dns`)
-auto-disable because Headscale's API doesn't expose the equivalent data, and some device/user
-signals are reduced. See
+Yes, with a reduced control-plane collector set. Setting `provider: headscale` allows `devices`,
+`users`, `keys`, `acl`, and `nodemetrics` to run. The Tailscale-only collectors (`flowlogs`,
+`auditlogs`, `services`, `webhooks`, `contacts`, `posture_integrations`, `log_stream`, `oauth_apps`,
+`settings`, `dns`) do not run regardless of their `enabled` value; one INFO line names enabled inactive
+collectors. `flowlogs` and `auditlogs` with `source: objectstore` still run without the control-plane
+API. Some device/user signals are reduced. See
 [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection).
 
 ## Security

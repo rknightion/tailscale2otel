@@ -197,6 +197,7 @@ func runServer(configPath string, stderr io.Writer) int {
 	for _, w := range cfg.Warnings() {
 		logger.Warn("configuration advisory", "warning", w)
 	}
+	logProviderInactiveCollectors(logger, cfg)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -219,6 +220,12 @@ func runServer(configPath string, stderr io.Writer) int {
 	}
 	logger.Info("tailscale2otel stopped")
 	return 0
+}
+
+func logProviderInactiveCollectors(logger *slog.Logger, cfg *config.Config) {
+	if inactive := cfg.ProviderInactiveCollectors(); len(inactive) > 0 {
+		logger.Info("collectors inactive under this provider", "provider", cfg.Provider, "collectors", inactive)
+	}
 }
 
 func parseLevel(s string) slog.Level {

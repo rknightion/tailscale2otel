@@ -1121,19 +1121,22 @@ func TestValidateRejectsUnknownProvider(t *testing.T) {
 	}
 }
 
-func TestWarnsOnUnsupportedCollectorUnderHeadscale(t *testing.T) {
+func TestProviderInactiveCollectors(t *testing.T) {
 	c := config.Default()
-	c.Provider = "headscale"
-	c.Headscale = config.HeadscaleConfig{URL: "https://h", APIKey: "k"}
-	c.Collectors.Flowlogs.Enabled = true // unsupported on headscale
-	found := false
-	for _, w := range c.Warnings() {
-		if strings.Contains(w, "flowlogs") && strings.Contains(w, "headscale") {
-			found = true
-		}
+	if got := c.ProviderInactiveCollectors(); len(got) != 0 {
+		t.Fatalf("tailscale inactive collectors = %v", got)
 	}
-	if !found {
-		t.Errorf("expected a warning about flowlogs unsupported under headscale; got %v", c.Warnings())
+	c.Provider = "headscale"
+	want := []string{"flowlogs", "auditlogs", "settings", "dns", "contacts", "webhooks", "posture_integrations", "log_stream", "oauth_apps", "services"}
+	if got := c.ProviderInactiveCollectors(); !slices.Equal(got, want) {
+		t.Errorf("headscale inactive collectors = %v, want %v", got, want)
+	}
+	c.Collectors.Flowlogs.Source = "objectstore"
+	c.Collectors.Auditlogs.Source = "objectstore"
+	c.Collectors.Services.Enabled = false
+	want = []string{"settings", "dns", "contacts", "webhooks", "posture_integrations", "log_stream", "oauth_apps"}
+	if got := c.ProviderInactiveCollectors(); !slices.Equal(got, want) {
+		t.Errorf("objectstore and disabled collectors = %v, want %v", got, want)
 	}
 }
 
