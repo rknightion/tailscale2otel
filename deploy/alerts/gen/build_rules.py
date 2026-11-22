@@ -683,25 +683,10 @@ def groups():
               domain="observability", paused=False,
               policy="advisory", runbook="checkpoint-health",
               panel="Leadership handovers (last 15m)"),
-        # Four signals the health dashboard already panels and nothing watched.
-        # All four are `optional`: each is gated on an opt-in subsystem, so
+        # Three signals the health dashboard already panels and nothing watched.
+        # All three are `optional`: each is gated on an opt-in subsystem, so
         # absence means "not configured" rather than a fault, while a datasource
         # error still has to surface as an error rather than as silence.
-        alert("ts2o-receiver-fail-closed", "Receiver fail closed",
-              "max by (receiver) (tailscale2otel_receiver_misconfigured_ratio)",
-              "gt", 0, "10m", "advisory",
-              "Receiver {{ $labels.receiver }} is refusing every request",
-              "The {{ $labels.receiver }} receiver is enabled and bound to a network-reachable "
-              "address without its required token or signing secret, so it answers every request "
-              "with HTTP 403 and accepts nothing. This is fail-closed by design and it is not a "
-              "crash: the exporter is healthy, the poller path still works, and only this ingestion "
-              "route is dead, which is why nothing else in the pack notices. Supply the credential "
-              "(streaming token or webhook secret) or bind the listener to loopback, which is "
-              "supported without one. A 10m window keeps a rolling restart quiet. Absence stays OK: "
-              "receivers are optional and a disabled one emits nothing.",
-              domain="observability", paused=False,
-              policy="optional", runbook="ingest-receivers",
-              panel="Fail-closed receiver misconfiguration"),
         alert("ts2o-pull-gather-errors", "Pull endpoint gather errors",
               "sum (rate(tailscale2otel_metrics_scrape_gather_errors_total[10m]))",
               "gt", 0, "15m", "advisory",

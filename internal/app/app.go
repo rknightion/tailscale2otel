@@ -960,7 +960,6 @@ func (a *App) runActive(ctx context.Context, startAdmin bool) error {
 		go runRuntimeReporter(ctx, a.procEmitter, interval, readRuntimeStats)
 		go runProcessReporter(ctx, a.procEmitter, a.startTime, interval, readProcessCPU)
 		go runConfigHealthReporter(ctx, a.cfg, a.procEmitter, interval)
-		go runReceiverConfigReporter(ctx, a.cfg, a.procEmitter, interval)
 		go runPIIFilterReporter(ctx, a.cfg.PIIFilter, a.procEmitter, interval)
 		go runIngressWALReporter(ctx, a.procEmitter, a.ingressWAL, interval)
 		// webhook cross-dedup is process-global only in single-tailnet mode — report

@@ -3258,16 +3258,6 @@
     },
     {
       "kind": "metric",
-      "name": "tailscale2otel.receiver.misconfigured",
-      "prom_name": "tailscale2otel_receiver_misconfigured_ratio",
-      "surface": "self_obs",
-      "dispositions": [
-        "visualized",
-        "alertable"
-      ]
-    },
-    {
-      "kind": "metric",
       "name": "tailscale2otel.runtime.gc.count",
       "prom_name": "tailscale2otel_runtime_gc_count_total",
       "surface": "self_obs",

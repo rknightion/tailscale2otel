@@ -827,18 +827,14 @@ cadence.
 ## Ingest receivers {#ingest-receivers}
 
 **Rules:** `ts2o-receiver-rejections`, `ts2o-receiver-latency-high`, `ts2o-ingest-data-stale`,
-`ts2o-stream-records-skipped`, `ts2o-webhook-schema-drift`, `ts2o-receiver-fail-closed`
+`ts2o-stream-records-skipped`, `ts2o-webhook-schema-drift`
 
 **What it means.** The exporter's own inbound paths - the Splunk-HEC stream receiver and the
 HMAC-verified webhook receiver - are rejecting events, responding slowly, accepting nothing recent,
-skipping records it cannot classify, seeing a payload field drift out from under its schema, or
-refusing every request outright because a network-reachable listener has no credential.
+skipping records it cannot classify, or seeing a payload field drift out from under its schema.
 
-`ts2o-receiver-fail-closed` is the last of those and it is the one that looks least like a fault.
-The exporter is healthy, polling still works, and only that ingestion route is dead: an enabled
-receiver bound to a network-reachable address without its token or signing secret answers HTTP 403
-to everything by design. Supply the credential, or bind the listener to loopback, which is supported
-without one.
+An enabled network-reachable receiver without a credential is rejected at startup in v5. Supply the
+credential, or bind the listener to loopback, which is supported without one.
 
 `ts2o-stream-records-skipped` counts stream records skipped by reason. The two documented reasons
 are `unclassified` (the record matched neither the flow-log nor the audit-log shape) and

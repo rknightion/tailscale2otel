@@ -49,7 +49,7 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | surface | signals | visualized | alertable | recorded | drives a variable |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | operational | 267 | 266 | 62 | 11 | 46 |
-| self_obs | 107 | 107 | 45 | 9 | 10 |
+| self_obs | 106 | 106 | 44 | 9 | 10 |
 
 ## Operational signals
 
@@ -399,7 +399,6 @@ A signal can carry more than one disposition, so the columns do not sum to the t
 | `tailscale2otel.profiling.upload.duration` | metric | `tailscale2otel_profiling_upload_duration_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.failures` | metric | `tailscale2otel_profiling_upload_failures_total` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
 | `tailscale2otel.profiling.upload.last_success` | metric | `tailscale2otel_profiling_upload_last_success_seconds` | visualized | #526 wave 2/3: panel scheduled on health/Runtime (profiling upload). |
-| `tailscale2otel.receiver.misconfigured` | metric | `tailscale2otel_receiver_misconfigured_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.count` | metric | `tailscale2otel_runtime_gc_count_total` | visualized |  |
 | `tailscale2otel.runtime.gc.cpu_fraction` | metric | `tailscale2otel_runtime_gc_cpu_fraction_ratio` | visualized, alertable |  |
 | `tailscale2otel.runtime.gc.next_target` | metric | `tailscale2otel_runtime_gc_next_target_bytes` | visualized |  |
