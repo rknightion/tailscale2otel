@@ -134,7 +134,8 @@ jobs:
   # .goreleaser.yaml sets gomod.proxy: true, so GoReleaser rebuilds from
   # proxy.golang.org/sum.golang.org rather than the checked-out tree; the
   # wait-for-module-proxy.sh guard keeps this job from racing sumdb ingestion of
-  # the RC tag the same way it does for stable releases.
+  # the RC tag the same way it does for stable releases. It then installs syft
+  # for archive SBOMs; the notices asset comes from the notices job in publish.yml.
   #
   # `proxy` below decides whether this job runs at all, so an RC whose tag the
   # module proxy has not ingested SKIPS rather than fails.
@@ -151,4 +152,4 @@ jobs:
       release-tag: ${{ needs.rc.outputs.tag }}
       install-cosign: true
       goreleaser-args: "release --clean --skip=docker"
-      pre-cmd: "bash scripts/wait-for-module-proxy.sh '${{ needs.rc.outputs.tag }}' && go install github.com/anchore/syft/cmd/syft@v1.18.1 && go install github.com/google/go-licenses@v1.6.0 && bash scripts/notices.sh"
+      pre-cmd: "bash scripts/wait-for-module-proxy.sh '${{ needs.rc.outputs.tag }}' && go install github.com/anchore/syft/cmd/syft@v1.18.1"
