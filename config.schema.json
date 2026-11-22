@@ -2268,6 +2268,11 @@
     "ingress_wal": {
       "additionalProperties": false,
       "properties": {
+        "acknowledge_data_at_rest": {
+          "default": false,
+          "description": "acknowledge that unfiltered receiver bodies are stored on disk",
+          "type": "boolean"
+        },
         "corruption": {
           "default": "fail",
           "description": "only supported mode: fail closed rather than discard corrupt state",

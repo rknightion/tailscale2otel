@@ -1629,6 +1629,7 @@ type CheckpointConfig struct {
 // IngressWALConfig configures the process-global write-ahead log for accepted
 // streaming and webhook request bodies. It is disabled by default.
 type IngressWALConfig struct {
+	AcknowledgeDataAtRest  bool   `yaml:"acknowledge_data_at_rest" reload:"restart"`
 	MaxPermanentRejections int    `yaml:"max_permanent_rejections" reload:"restart"`
 	Enabled                bool   `yaml:"enabled" reload:"restart"`
 	Directory              string `yaml:"directory" reload:"restart"`
