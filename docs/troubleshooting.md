@@ -327,6 +327,11 @@ catalogs. `manifest.json` lists its contents and any truncation.
 The archive also includes `recent_logs.jsonl`, a bounded process-log tail captured after structured
 log redaction. This is separate from raw flow, audit and webhook payloads.
 
+The bundle redacts known configuration secrets, but it can contain the tailnet name. It can contain
+endpoint hostnames and receiver hostnames. It can contain cloud account IDs and instance IDs,
+object-store bucket and prefix names, and recent process log lines. It can contain sensitive log text,
+including secrets in error messages. Review the bundle before sharing it and prefer a private channel.
+
 The device inventory (device names, hostnames, users, IP addresses) is PII-heavy and is **excluded
 by default**; add `?include_devices=1` to opt in only when you intend to share it. Flow-log records
 and raw audit/webhook log content are **never** included by this bundle - there is no opt-in for
@@ -357,11 +362,13 @@ page as much as in the code.
 
 - **[Search existing issues](https://github.com/rknightion/tailscale2otel/issues)** - someone may have
   hit it already.
-- **[Open a new issue](https://github.com/rknightion/tailscale2otel/issues/new)** - attach the support
-  bundle above (or, without the admin server, the startup log, the output of
-  `tailscale2otel -validate -config <file>`, and the version from `tailscale2otel -version`).
+- **[Open a new issue](https://github.com/rknightion/tailscale2otel/issues/new)** - attach the output
+  of `tailscale2otel -validate -config <file>` and the version from `tailscale2otel -version` to the
+  public issue. Review and redact the validation output before sharing it: load errors can contain
+  sensitive text. Offer the support bundle privately, or attach it after redacting identifiers and
+  sensitive log text.
 - **[Check the latest release notes](https://github.com/rknightion/tailscale2otel/releases/latest)** -
   the behaviour may have changed since your build.
 
-Please redact tailnet names, device names, and IP addresses from anything you paste that did not
-come from the support bundle above.
+Please review and redact sensitive text and identifiers, including tailnet names, device names,
+and IP addresses, from anything you share publicly.

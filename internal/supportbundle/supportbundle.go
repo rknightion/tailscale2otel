@@ -1,4 +1,4 @@
-// Package supportbundle assembles a privacy-safe support bundle: everything
+// Package supportbundle assembles a secret-redacted support bundle: everything
 // docs/troubleshooting.md's "Still stuck?" section previously asked an
 // operator to gather and redact BY HAND (#321) — version, every configuration
 // diagnostic, the full redacted effective config, component/API/export state,
