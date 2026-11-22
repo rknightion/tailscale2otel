@@ -549,9 +549,14 @@ coverage:
 lint-workflows:
     actionlint
 
+# Verify configuration keys against the rendered reference, including negative controls.
+[group('check')]
+config-reference-render:
+    python3 scripts/check_config_reference.py
+
 # THE GATE — everything a pull request must pass, minus the container/goreleaser legs (see `ci`)
 [group('check')]
-check: fmt-check lint vet test test-modules test-python tidy-check vuln gen-check docs-check helm-lint helm-gen-check config-check promql rules-check hygiene compose-check build
+check: fmt-check lint vet test test-modules test-python tidy-check vuln gen-check docs-check config-reference-render helm-lint helm-gen-check config-check promql rules-check hygiene compose-check build
 
 # `check` plus the two heavy legs CI also gates: the goreleaser matrix and the image build + smoke
 [group('check')]
