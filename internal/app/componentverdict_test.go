@@ -76,8 +76,18 @@ func TestReadinessAndStatusAgreeOnIdenticalState(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ready, readyReason := readinessVerdict(tc.collectors, tc.failures)
-			health, _ := deriveHealth(tc.collectors, tc.failures)
+			var names []string
+			for _, failure := range tc.failures {
+				name, _, _ := strings.Cut(failure, ": ")
+				names = append(names, name)
+			}
+			ready, readyReason := readinessVerdict(tc.collectors, names)
+			health, reasons := deriveHealth(tc.collectors, tc.failures)
+			for _, name := range names {
+				if !strings.Contains(readyReason, name) || !strings.Contains(strings.Join(reasons, "; "), name) {
+					t.Errorf("probe %q and status %v must both name %q", readyReason, reasons, name)
+				}
+			}
 			if ready != tc.wantReady {
 				t.Errorf("ready = %v (%q), want %v", ready, readyReason, tc.wantReady)
 			}

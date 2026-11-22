@@ -42,8 +42,23 @@ func (h *componentHealth) fail(component string, err error) {
 	h.failures[component] = err.Error()
 }
 
+// names returns only the sorted names of failed components for the public probe.
+func (h *componentHealth) names() []string {
+	if h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out []string
+	for name := range h.failures {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
+}
+
 // reasons returns the current component failures as sorted "component: reason"
-// strings (the shape readinessVerdict expects), or nil when none have failed.
+// strings, or nil when none have failed.
 // nil-safe for the same reason as fail.
 func (h *componentHealth) reasons() []string {
 	if h == nil {
@@ -94,9 +109,8 @@ func readinessVerdict(collectors []statusdata.CollectorStatus, componentFailures
 }
 
 // componentFailureReasons is THE list of failed non-collector components, as
-// sorted "component: reason" strings. Both /readyz and the status page's health
-// verdict read it, which is what stops the probe and the page disagreeing about
-// identical state (#318).
+// sorted "component: reason" strings for the status page's health verdict.
+// /readyz uses the same failure state but omits terminal error details.
 //
 // Two sources feed it: a.readyState, populated by recordComponentStop
 // (internal/app/selfobs.go) when a receiver or a listener terminates with other
@@ -171,7 +185,7 @@ func (a *App) activeReadiness() (bool, string) {
 	if startup := a.ingressWALStartupReason(); startup != "" {
 		return false, startup
 	}
-	return readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.reasons())
+	return readinessVerdict(a.collectorStatuses(time.Now()), a.readyState.names())
 }
 
 // readyz serves /readyz: 200 "ok" once the service is ready, otherwise 503
@@ -196,7 +210,7 @@ func (a *App) readyz(w http.ResponseWriter, _ *http.Request) {
 			// Collectors and WAL replay are leader-only work, so a campaigning
 			// standby cannot satisfy either startup gate. Its live listeners
 			// still retain their component-failure gating.
-			ready, reason = readinessVerdict(nil, a.readyState.reasons())
+			ready, reason = readinessVerdict(nil, a.readyState.names())
 		default:
 			ready, reason = a.activeReadiness()
 		}

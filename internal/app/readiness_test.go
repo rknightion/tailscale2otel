@@ -63,13 +63,13 @@ func TestReadinessVerdict(t *testing.T) {
 	t.Run("component failure with no pending collectors -> not ready, reason mentions the failure", func(t *testing.T) {
 		ready, reason := readinessVerdict(
 			[]statusdata.CollectorStatus{readyRan("devices", true)},
-			[]string{"stream: listen tcp :8088: bind: address already in use"},
+			[]string{"stream"},
 		)
 		if ready {
 			t.Fatal("got ready=true, want not-ready when a receiver has terminally failed")
 		}
-		if !strings.Contains(reason, "component failure") || !strings.Contains(reason, "8088") {
-			t.Fatalf("reason = %q, want it to mention the component failure + the underlying error", reason)
+		if !strings.Contains(reason, "component failure") || !strings.Contains(reason, "stream") {
+			t.Fatalf("reason = %q, want it to mention the component failure and name", reason)
 		}
 	})
 
