@@ -76,10 +76,23 @@ jobs:
           cache: true
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.59.0'
+
+      - id: pins
+        run: |
+          version=$(just --evaluate golangci_version)
+          if [[ -z "${version//[[:space:]]/}" ]]; then
+            echo "golangci version pin is empty" >&2
+            exit 1
+          fi
+          echo "golangci=$version" >> "$GITHUB_OUTPUT"
+
       - name: golangci-lint (${{ matrix.module }})
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
-          version: v2.15.0
+          version: ${{ steps.pins.outputs.golangci }}
           working-directory: ${{ matrix.module }}
 
   # Per-module verification for the three CI-only tool modules.
@@ -121,7 +134,7 @@ jobs:
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: install govulncheck (pinned)
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+        run: go install "golang.org/x/vuln/cmd/govulncheck@$(just --evaluate govulncheck_version)"
 
       # -race here too: these modules parse untrusted-ish inputs (a spec, a config)
       # and the cost is trivial at this size.
@@ -281,7 +294,7 @@ jobs:
           cache: true
 
       - name: install govulncheck (pinned)
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
+        run: go install "golang.org/x/vuln/cmd/govulncheck@$(just --evaluate govulncheck_version)"
 
       - name: govulncheck
         run: just vuln .
