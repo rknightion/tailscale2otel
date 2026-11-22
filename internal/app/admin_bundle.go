@@ -15,7 +15,7 @@ import (
 // silently opt in; this fails CLOSED on anything but the one documented value).
 const bundleIncludeDevicesParam = "include_devices"
 
-// handleSupportBundle serves a privacy-safe support bundle (#321): version,
+// handleSupportBundle serves a secret-redacted support bundle (#321): version,
 // every configuration diagnostic, the full redacted effective config,
 // component/API/export state, and the metric/log-event catalogs, as one
 // deterministic, bounded zip archive. It replaces the manual

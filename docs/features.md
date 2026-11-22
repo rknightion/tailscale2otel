@@ -69,7 +69,7 @@ Optional collection requires both its configuration switch and access to the sou
 | Flow explorer | Provides traffic views, filters, aggregates and bounded JSON/CSV export; SQLite persistence is optional. | [Flow view](flow-view.md) |
 | Event explorer | Shows recent audit/webhook events in a bounded in-memory ring. | [Event explorer](events.md) |
 | CLI diagnostics | Validates config, prints redacted effective settings, checks collection/export, probes health and adopts legacy flow databases. | [Getting started](getting-started.md#check-a-configuration-before-a-rollout), [troubleshooting](troubleshooting.md) |
-| Support bundles | Downloads bounded redacted diagnostics and recent process logs, with separate device-inventory consent. | [Support bundles](troubleshooting.md#generating-a-support-bundle) |
+| Support bundles | Downloads bounded secret-redacted diagnostics and recent process logs, with separate device-inventory consent. | [Support bundles](troubleshooting.md#generating-a-support-bundle) |
 | Secret and certificate rotation | Reloads supported fixed file contents; whole-config changes require a restart. | [Reload classifications](configuration.md#reload-classifications), [rotation](configuration.md#otlpcredential_reload) |
 | Checkpoints and state | Separates cursor progress from ACL evidence; supports file, memory and Kubernetes cursor storage. | [Checkpoints](configuration.md#checkpoint-poll-high-water-marks), [upgrading](upgrading.md) |
 | Kubernetes HA | Elects one active process, routes Services by leader label and keeps per-pod local state. | [High availability](high-availability.md) |
