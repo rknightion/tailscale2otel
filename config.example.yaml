@@ -323,6 +323,7 @@ cardinality:
     geo_dims: false                   # add source/destination geo.country.iso_code + geo.continent.code to flow METRICS (needs enrichment.geoip). Nearly free under metrics_mode: rollup (top-N bounded); on the RAW families it splits the single "external" series ~250 ways. ASN/city NEVER reach a metric; flow LOGS carry everything regardless
   per_entity:                         # emit one gauge series per entity (true) or only the aggregate *.count (false)
     device: true                      # per-device gauges (online/last_seen/key_expiry/derp/routes)
+    device_derp_latency: true         # per-device DERP latency: devices reporting latency times regions probed
     user: true                        # per-user gauges (devices/connected/last_seen)
     key: true                         # per-key expiry gauge (the expiry WARN log fires regardless)
     webhook: true                     # per-endpoint webhook-subscriptions gauge

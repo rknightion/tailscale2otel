@@ -1191,6 +1191,8 @@ config: # @schema additionalProperties:false
       # -- Emit per-device gauges (online/last_seen/key.expiry/derp/routes); false emits only the
       # aggregate tailscale.devices.count rollup.
       device: true
+      # -- Emit per-device DERP latency (series scale with devices reporting latency times regions probed).
+      device_derp_latency: true
       # -- Emit per-user gauges (devices/connected/last_seen); false emits only tailscale.users.count.
       user: true
       # -- Emit the per-key expiry gauge; false emits only tailscale.keys.count (the key-expiry warning log still fires).

@@ -928,7 +928,8 @@ per-entity gauge series (one per device/user/key/…) are dropped. All default `
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `cardinality.per_entity.device` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). `false` leaves only `tailscale.devices.count`. |
+| `cardinality.per_entity.device` | `true` | Emit per-device gauges (online, last-seen, key-expiry, DERP latency, routes). DERP latency also requires `cardinality.per_entity.device_derp_latency`. `false` leaves only `tailscale.devices.count`. |
+| `cardinality.per_entity.device_derp_latency` | `true` | Emit per-device DERP latency, with series scaling as devices reporting latency times regions probed. Region rollups are independent. |
 | `cardinality.per_entity.user` | `true` | Emit per-user gauges (devices, connected, last-seen). `false` leaves only `tailscale.users.count`. |
 | `cardinality.per_entity.key` | `true` | Emit the per-key gauges (`tailscale.key.expiry`, `tailscale.key.scopes`, `tailscale.key.preauthorized`). `false` leaves only `tailscale.keys.count` (the "expiring soon" WARN log still fires). |
 | `cardinality.per_entity.webhook` | `true` | Emit per-webhook gauges. `false` leaves only the aggregate count. |

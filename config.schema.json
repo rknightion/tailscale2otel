@@ -200,6 +200,11 @@
               "description": "per-device gauges (online/last_seen/key_expiry/derp/routes)",
               "type": "boolean"
             },
+            "device_derp_latency": {
+              "default": true,
+              "description": "per-device DERP latency: devices reporting latency times regions probed",
+              "type": "boolean"
+            },
             "key": {
               "default": true,
               "description": "per-key expiry gauge (the expiry WARN log fires regardless)",

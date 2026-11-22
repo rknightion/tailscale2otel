@@ -382,6 +382,7 @@ type Collector struct {
 	collectDeviceInvites  bool
 	subrequestConcurrency int
 	perEntity             bool
+	derpLatency           bool
 	derpRollup            bool
 	collectConnectivity   bool
 	// geo supplies country/continent for a device's public magicsock endpoint;
@@ -502,6 +503,11 @@ type Collector struct {
 
 // Option configures optional Collector behavior.
 type Option func(*Collector)
+
+// WithDERPLatency controls per-device DERP latency independently of region rollups.
+func WithDERPLatency(enabled bool) Option {
+	return func(c *Collector) { c.derpLatency = enabled }
+}
 
 // WithPerEntity controls whether the per-device gauges (online, last_seen,
 // key.expiry, update_available, DERP latency, routes) are emitted. The default
@@ -823,6 +829,7 @@ func New(api api, cache *enrich.DeviceCache, interval time.Duration, collectRout
 		collectPosture:        collectPosture,
 		subrequestConcurrency: defaultSubrequestConcurrency,
 		perEntity:             true,
+		derpLatency:           true,
 		derpRollup:            true,
 		collectConnectivity:   true,
 		subnetRouteRollup:     true,
@@ -1157,14 +1164,16 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 					boolToFloat(d.PostureIdentity.Disabled), idAttrs)
 			}
 
-			for region, derp := range d.DERPLatency {
-				c.gsb.Add(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
-					derp.LatencyMs/1000, telemetry.Attrs{
-						semconv.HostName:  d.Hostname,
-						semconv.HostID:    d.ID,
-						attrDERPRegion:    region,
-						attrDERPPreferred: derp.Preferred,
-					})
+			if c.derpLatency {
+				for region, derp := range d.DERPLatency {
+					c.gsb.Add(docDERPLatency.Name, docDERPLatency.Unit, docDERPLatency.Description,
+						derp.LatencyMs/1000, telemetry.Attrs{
+							semconv.HostName:  d.Hostname,
+							semconv.HostID:    d.ID,
+							attrDERPRegion:    region,
+							attrDERPPreferred: derp.Preferred,
+						})
+				}
 			}
 
 			if c.collectRoutes {

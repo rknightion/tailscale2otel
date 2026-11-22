@@ -2,6 +2,7 @@ package devices_test
 
 import (
 	"context"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -831,6 +832,36 @@ func TestCollect_PostureIdentitySerialNeverEmitted(t *testing.T) {
 			if strings.Contains(k, serial) || strings.Contains(v, serial) {
 				t.Fatalf("log %s leaked serial in attrs: %+v", lr.EventName, lr.Attrs)
 			}
+		}
+	}
+}
+
+func TestCollect_DERPLatencyToggle(t *testing.T) {
+	devs := sampleDevices()
+	collect := func(opts ...devices.Option) *telemetrytest.Recorder {
+		t.Helper()
+		rec := telemetrytest.New()
+		c := devices.New(&fakeAPI{devices: devs}, enrich.NewDeviceCache(), 0, false, false, opts...)
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+		return rec
+	}
+	on := collect()
+	off := collect(devices.WithDERPLatency(false))
+	if pts := on.MetricPoints("tailscale.device.derp.latency"); len(pts) != 2 {
+		t.Fatalf("default latency: %+v", pts)
+	}
+	if pts := off.MetricPoints("tailscale.device.derp.latency"); len(pts) != 0 {
+		t.Errorf("disabled latency: %+v", pts)
+	}
+	if pts := off.MetricPoints("tailscale.device.online"); len(pts) != len(devs) {
+		t.Errorf("online: %+v", pts)
+	}
+	for _, name := range []string{"tailscale.derp.region.devices", "tailscale.derp.region.preferred", "tailscale.derp.region.latency_min"} {
+		a, b := byRegion(on.MetricPoints(name)), byRegion(off.MetricPoints(name))
+		if len(a) == 0 || !maps.Equal(a, b) {
+			t.Errorf("%s: on=%v off=%v", name, a, b)
 		}
 	}
 }

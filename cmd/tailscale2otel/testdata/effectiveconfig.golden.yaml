@@ -83,6 +83,9 @@
 - key: cardinality.per_entity.device
   value: true
   provenance: default
+- key: cardinality.per_entity.device_derp_latency
+  value: true
+  provenance: default
 - key: cardinality.per_entity.key
   value: true
   provenance: default
