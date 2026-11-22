@@ -68,13 +68,13 @@ from selector_scope import scope_queries, scope_promql
 # `matchAny: False` is load-bearing on the category layers — it ANDs the tags. With
 # matchAny true they would each match every tailscale2otel annotation and the six
 # layers would be identical.
-def tag_annotation(name, tags, color, enable, hide):
+def tag_annotation(name, tags, color, enable, hide, match_any=False):
     """One annotation layer over the Grafana annotation store, selected by tags."""
     return {"kind": "AnnotationQuery", "spec": {
         "builtIn": False, "enable": enable, "hide": hide, "iconColor": color, "name": name,
         "query": {"kind": "DataQuery", "version": "v0", "group": "grafana",
                   "datasource": {"name": "-- Grafana --"},
-                  "spec": {"queryType": "tags", "matchAny": False, "tags": tags, "limit": 100}}}}
+                  "spec": {"queryType": "tags", "matchAny": match_any, "tags": tags, "limit": 100}}}}
 
 
 def annotation_layers():
@@ -84,14 +84,17 @@ def annotation_layers():
             "name": "Annotations & Alerts",
             "query": {"kind": "DataQuery", "version": "v0", "group": "grafana",
                       "datasource": {"name": "-- Grafana --"}, "spec": {}}}},
-        # On by default and the only one that is: it is the whole timeline, and an
-        # operator reading a step in a rate panel wants "something happened here"
-        # before they want to know which category it was.
-        tag_annotation("Tailnet events", ["tailscale2otel"],
-                       "light-blue", enable=True, hide=False),
-        # The two below are SUBSETS of the layer above, so they are off by default —
-        # enabling one alongside it double-draws every marker it matches. They exist
-        # for the case where a busy tailnet's config churn is burying everything else.
+        # OR only the writer's point-rule tags, never the root tag: root would
+        # also match historical rollup regions. TestDashboardPointRules guards
+        # this list against the Go rule registry and lifecycle marker.
+        tag_annotation("Tailnet events", [
+            "rule:tailscale.config_change", "rule:tailscale.policy_snapshot",
+            "rule:tailscale.device_inventory_change", "rule:tailscale.acl.risk_finding",
+            "rule:tailscale.key_expiring", "rule:tailscale.device_key_expiring",
+            "rule:tailscale2otel.startup",
+        ], "light-blue", enable=True, hide=False, match_any=True),
+        # Category overlays remain opt-in and include historical rollup regions.
+        # Enabling one alongside the default can double-draw point markers.
         tag_annotation("— config changes only", ["tailscale2otel", "category:config_change"],
                        "light-orange", enable=False, hide=False),
         tag_annotation("— key expiry only", ["tailscale2otel", "category:expiry"],

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -25,6 +26,55 @@ import (
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetry/pii"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
+
+// TestDashboardPointRules tracks the writer-owned set so new curated events
+// cannot silently disappear from the default annotation layer.
+func TestDashboardPointRules(t *testing.T) {
+	want := []string{annotations.TagRulePrefix + annotations.RuleStartup}
+	for _, r := range annotations.Rules() {
+		want = append(want, annotations.TagRulePrefix+r.ID)
+	}
+	slices.Sort(want)
+	for _, name := range []string{"tailscale2otel-health.json", "tailscale2otel-tailnet.json"} {
+		t.Run(name, func(t *testing.T) {
+			data, err := os.ReadFile(filepath.Join("..", "..", "deploy", "grafana", name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc struct {
+				Spec struct {
+					Annotations []struct {
+						Spec struct {
+							Name   string `json:"name"`
+							Enable bool   `json:"enable"`
+							Query  struct {
+								Spec struct {
+									MatchAny bool     `json:"matchAny"`
+									Tags     []string `json:"tags"`
+								} `json:"spec"`
+							} `json:"query"`
+						} `json:"spec"`
+					} `json:"annotations"`
+				} `json:"spec"`
+			}
+			if err := json.Unmarshal(data, &doc); err != nil {
+				t.Fatal(err)
+			}
+			for _, layer := range doc.Spec.Annotations {
+				if layer.Spec.Name != "Tailnet events" {
+					continue
+				}
+				got := layer.Spec.Query.Spec.Tags
+				slices.Sort(got)
+				if !layer.Spec.Enable || !layer.Spec.Query.Spec.MatchAny || !slices.Equal(got, want) {
+					t.Errorf("default point selector: enabled=%v matchAny=%v tags=%v, want enabled OR %v", layer.Spec.Enable, layer.Spec.Query.Spec.MatchAny, got, want)
+				}
+				return
+			}
+			t.Fatal("Tailnet events layer missing")
+		})
+	}
+}
 
 // ---- tag contract --------------------------------------------------------
 

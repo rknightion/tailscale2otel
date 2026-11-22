@@ -1,9 +1,8 @@
 """Tests for the Grafana annotation-store layer contract.
 
 The dashboard layers must select Grafana's own annotation store by the same
-root-plus-category tags that internal/annotations.Annotation.Tags emits. They
-must remain hidden/off by default because each category layer is a subset of
-the always-visible timeline layer.
+tags that internal/annotations.Annotation.Tags emits. Category overlays stay
+off by default and can also expose rollup regions.
 """
 
 import importlib.util
@@ -53,7 +52,7 @@ class AnnotationLayerContractTest(unittest.TestCase):
                     query["tags"], ["tailscale2otel", "category:" + category]
                 )
 
-    def test_root_timeline_layer_stays_visible(self):
+    def test_point_timeline_layer_stays_visible(self):
         layer = next(
             layer
             for layer in BUILD.annotation_layers()
@@ -62,7 +61,10 @@ class AnnotationLayerContractTest(unittest.TestCase):
         spec = layer["spec"]
         self.assertTrue(spec["enable"])
         self.assertFalse(spec["hide"])
-        self.assertEqual(spec["query"]["spec"]["tags"], ["tailscale2otel"])
+        query = spec["query"]["spec"]
+        self.assertTrue(query["matchAny"])
+        self.assertNotIn("tailscale2otel", query["tags"])
+        self.assertTrue(all(tag.startswith("rule:") for tag in query["tags"]))
 
 
 if __name__ == "__main__":

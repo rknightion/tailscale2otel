@@ -70,9 +70,15 @@
             },
             "spec": {
               "queryType": "tags",
-              "matchAny": false,
+              "matchAny": true,
               "tags": [
-                "tailscale2otel"
+                "rule:tailscale.config_change",
+                "rule:tailscale.policy_snapshot",
+                "rule:tailscale.device_inventory_change",
+                "rule:tailscale.acl.risk_finding",
+                "rule:tailscale.key_expiring",
+                "rule:tailscale.device_key_expiring",
+                "rule:tailscale2otel.startup"
               ],
               "limit": 100
             }
