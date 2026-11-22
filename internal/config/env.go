@@ -232,6 +232,20 @@ func typedScalarKeys(k *koanf.Koanf) map[string]bool {
 	return keys
 }
 
+// blankTypedEnvAdvisory records whether another accepted name supplied this key.
+type blankTypedEnvAdvisory struct {
+	name          string
+	aliasAccepted bool
+}
+
+func blankTypedEnvAdvisories(skipped []string, accepted map[string]bool) []blankTypedEnvAdvisory {
+	advisories := make([]blankTypedEnvAdvisory, 0, len(skipped))
+	for _, name := range skipped {
+		advisories = append(advisories, blankTypedEnvAdvisory{name: name, aliasAccepted: accepted[envKey(name)]})
+	}
+	return advisories
+}
+
 // newEnvTransform converts names and splits lists, skipping blank typed scalars.
 func newEnvTransform(typed map[string]bool, skipped *[]string, accepted map[string]bool) func(string, string) (string, any) {
 	return func(name, value string) (string, any) {
