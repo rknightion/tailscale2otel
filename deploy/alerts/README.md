@@ -95,7 +95,7 @@ Datasource UIDs are the portable Grafana Cloud defaults (`grafanacloud-prom` /
 `infra` / `observability`); rules not worthy of automatic investigation
 (non-critical, non-paging, non-security) also carry `skipinvestigation: "true"`
 so IRM routing / auto-investigation stays focused. The generated set currently
-has **119 alert rules + 23 recording rules** across five groups (`-health`,
+has **118 alert rules + 23 recording rules** across five groups (`-health`,
 `-security`, `-integrations`, `-network`, `-recording`); the tables below are an
 illustrative guide - `gen/build_rules.py` is the source of truth.
 
@@ -138,7 +138,7 @@ semantics:
 |---|---|---|---|---|
 | `coverage_critical` | `Alerting` | `Alerting` | absence **is** the fault | 1 |
 | `core` | `NoData` | `Error` | always emitted while the exporter runs | 10 |
-| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 83 |
+| `optional` | `Ok` | `Error` | legitimately absent (gated collector, optional source, a counter that has not incremented) | 82 |
 | `advisory` | `Ok` | `Ok` | hygiene; neither absence nor a transient error is actionable | 25 |
 
 Before this, *every* rule was fail-open on error, so a broken datasource read
@@ -146,7 +146,7 @@ as "healthy" across the whole pack. Only the `advisory` class still is, and that
 is a per-rule decision.
 
 **Every alert also carries a `runbook_url` annotation** pointing at a section of
-[`docs/runbooks.md`](../../docs/runbooks.md), and 112 of the 119 carry the
+[`docs/runbooks.md`](../../docs/runbooks.md), and 111 of the 118 carry the
 `__dashboardUid__`/`__panelId__` annotation pair for their canonical panel in the
 generated flagship dashboard. Both are resolved and validated **at generation
 time**: an unknown runbook slug, an unreferenced runbook section, a missing panel
@@ -343,11 +343,11 @@ which take the same spec.
 Wire the `severity` label into your notification policy. The closed set is
 `critical` / `warning` / `info` / `advisory`, enforced by `alert()` in
 `gen/build_rules.py` -- a value outside it is a build error rather than a rule
-that silently routes nowhere. `advisory` is used as a severity by 11 rules; treat it
+that silently routes nowhere. `advisory` is used as a severity by 10 rules; treat it
 as non-paging, like `info`.
 
 Note that "advisory" names two independent things in this pack and they do not
-line up: the **severity label** above (11 rules) and the **evaluation policy**
+line up: the **severity label** above (10 rules) and the **evaluation policy**
 `advisory` in `gen/build_rules.py`'s POLICY table (25 rules), which sets
 noDataState/execErrState to Ok/Ok because neither absence nor a transient error
 is actionable for that rule. A rule can carry `policy="advisory"` while

@@ -64,9 +64,6 @@ const (
 	// MetricFlowStoreLastCheckpointTimestamp is the Unix time of the most recent
 	// successful SQLite WAL checkpoint per tailnet.
 	MetricFlowStoreLastCheckpointTimestamp = "tailscale2otel.flow_store.last_checkpoint_timestamp"
-	// MetricReceiverMisconfigured marks fail-closed ingestion receivers that can
-	// accept no traffic because a network-reachable bind has no credential.
-	MetricReceiverMisconfigured = "tailscale2otel.receiver.misconfigured"
 	// MetricCoordinationLeader is the current Lease leadership flag.
 	MetricCoordinationLeader = "tailscale2otel.coordination.leader"
 	// MetricCoordinationHandovers counts completed Lease handovers observed by
@@ -638,14 +635,6 @@ var (
 		Group:       GroupSelfObs,
 		TimeSource:  metricdoc.TimestampProcessLocal,
 	}
-	DocReceiverMisconfigured = metricdoc.Metric{
-		Name:        MetricReceiverMisconfigured,
-		Unit:        semconv.UnitDimensionless,
-		Instrument:  metricdoc.Gauge,
-		Description: "`1` when an enabled ingestion receiver is bound to a network-reachable address without its required token or signing secret and therefore refuses every request with HTTP 403, else `0`, by receiver (`streaming` or `webhook`).",
-		Attributes:  []string{"receiver"},
-		Group:       GroupSelfObs,
-	}
 )
 
 // Process metric descriptors. process.uptime is a point-in-time gauge; process.cpu.time
@@ -854,7 +843,6 @@ func Catalog() []metricdoc.Metric {
 		DocAdminAuthRejected,
 		DocDedupSize, DocDedupEvictions, DocDedupHits, DocDedupYoungestEvictionAge, DocDedupOverlapHorizon,
 		DocFlowStoreJournalSize, DocFlowStoreLastCheckpointTimestamp,
-		DocReceiverMisconfigured,
 		DocProcessUptime, DocProcessCPUTime,
 		DocConfigWarnings, DocConfigValid,
 		DocIngressWALPermanentDrops, DocIngressWALExpiredEntries, DocIngressWALPendingEntries, DocIngressWALPendingSize,

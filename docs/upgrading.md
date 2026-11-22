@@ -251,6 +251,8 @@ multi-tailnet route: set `streaming.token` (or `streaming.token_file`) for strea
 `webhook.secret` (or `webhook.secret_file`) for webhooks. In v4, an empty credential on a
 network-reachable listener started the process but made the receiver refuse every request with
 HTTP `403`; v5 rejects that configuration during `Config.Validate` instead.
+The `tailscale2otel.receiver.misconfigured` metric and `ts2o-receiver-fail-closed` alert have been
+removed. The startup error replaces both for network-reachable receivers without credentials.
 
 Credential-free loopback listeners remain intentionally supported for local development or a
 trusted local proxy. They still warn because any process on the host can inject records or events;

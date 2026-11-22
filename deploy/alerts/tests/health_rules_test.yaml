@@ -462,42 +462,6 @@ tests:
               summary: "API requests are waiting on the client-side rate limiter"
               runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#tailscale-api-health"
 
-  # --- ReceiverFailClosed: a gauge, so no rate window to wait out -------------
-  # The whole point of the signal is that the exporter is healthy while one
-  # ingestion route accepts nothing, so the healthy case here is a receiver
-  # reporting 0 rather than a receiver that is absent.
-  - name: receiver configured correctly does not fire
-    interval: 1m
-    input_series:
-      - series: 'tailscale2otel_receiver_misconfigured_ratio{receiver="webhook"}'
-        values: '0+0x20'
-    alert_rule_test:
-      - eval_time: 20m
-        alertname: ReceiverFailClosed
-        exp_alerts: []
-
-  - name: fail-closed receiver fires after 10m
-    interval: 1m
-    input_series:
-      - series: 'tailscale2otel_receiver_misconfigured_ratio{receiver="webhook"}'
-        values: '1+0x20'
-    alert_rule_test:
-      - eval_time: 9m
-        alertname: ReceiverFailClosed
-        exp_alerts: []
-      - eval_time: 15m
-        alertname: ReceiverFailClosed
-        exp_alerts:
-          - exp_labels:
-              severity: advisory
-              service: tailscale2otel
-              domain: observability
-              skipinvestigation: "true"
-              receiver: webhook
-            exp_annotations:
-              summary: "Receiver webhook is refusing every request"
-              runbook_url: "https://m7kni.io/tailscale2otel/runbooks/#ingest-receivers"
-
   # --- PullEndpointGatherErrors ----------------------------------------------
   # A flat counter is the healthy case, not an absent one: the handler returns
   # HTTP 200 either way, so "no errors" and "endpoint disabled" look identical
