@@ -290,12 +290,14 @@ file such as `ROADMAP.md` beside them.
 
 ## Maintainer code review
 
-Pull requests are reviewed by Cursor Bugbot, guided by `.cursor/BUGBOT.md`. Before merging, read
-its `Cursor Bugbot` check on the exact head. `success` clears the head. `neutral` means findings:
-fix each one the code shows to be a real defect, answer the rest on their threads with the code
-evidence, and resolve every thread. A missing, cancelled, errored or oversized review is no
-verdict, never clean. Maintainers' agents take rounds and waits from their centrally managed
-review rule. There is no local review tool to run before committing, and no review evidence to
+Pull requests are reviewed on demand: Codex (`@codex review`) first, with Cursor Bugbot (guided by
+`.cursor/BUGBOT.md`) as its fallback and as a second reviewer on guarded or large changes.
+Documentation, CI, dependency, test-only and small changes merge on green checks with no hosted
+review. Before merging a reviewed head, read each requested reviewer's verdict on the exact head:
+fix each finding the code shows to be a real defect, answer the rest on their threads with the code
+evidence, and resolve every thread. A missing, cancelled, errored or oversized review is no verdict,
+never clean. Maintainers' agents take which heads need a review, rounds and waits from their
+centrally managed review rule. There is no local review tool to run before committing, and no review evidence to
 freeze.
 
 Public contributors need no maintainer configuration or review account; normal contribution and
