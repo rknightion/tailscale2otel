@@ -38,9 +38,8 @@
 #   just gen-<target>       # one family
 #   just gen <target>...    # same, spelled the way the docs and error messages do
 #
-# Call this script DIRECTLY only where `just` is not available:
-# scripts/cloud-environment-setup.sh runs `scripts/regen-generated.sh tools` to
-# provision an environment that has no `just` on PATH yet.
+# Where `just` is not available, call `scripts/regen-generated.sh tools`
+# directly to install the pinned generators.
 #
 # A missing OR VERSION-MISMATCHED tool is a loud SKIP (not a failure) so the hook
 # never blocks a commit — CI's fail-on-diff checks remain the hard backstop. A
