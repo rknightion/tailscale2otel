@@ -95,7 +95,7 @@ type Config struct {
 	// known config key (a likely typo — they were ignored). Unexported, populated
 	// by Load, surfaced via Warnings.
 	unknownEnv    []string
-	blankTypedEnv []string
+	blankTypedEnv []blankTypedEnvAdvisory
 
 	// configFileWarning is a load-time advisory about the config file itself
 	// (currently: loose permissions). Surfaced by Warnings(), like unknownEnv.
@@ -1979,7 +1979,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	slices.Sort(skipped)
-	cfg.blankTypedEnv = skipped
+	cfg.blankTypedEnv = blankTypedEnvAdvisories(skipped, envKeys)
 	cfg.unknownEnv = unknownEnvVars(validKeys)
 	cfg.configFileWarning = cfgFileWarning
 

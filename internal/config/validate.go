@@ -819,8 +819,14 @@ func (c *Config) Warnings() []string {
 		w = append(w, c.configFileWarning)
 	}
 
-	for _, name := range c.blankTypedEnv {
-		w = append(w, fmt.Sprintf("environment variable %s is set but empty and was ignored for a boolean or numeric key; the value from the config file or built-in default stands.", name))
+	for _, advisory := range c.blankTypedEnv {
+		message := fmt.Sprintf("environment variable %s is set but empty and was ignored for a boolean or numeric key", advisory.name)
+		if advisory.aliasAccepted {
+			message += "; another environment variable supplies the value."
+		} else {
+			message += "; the value from the config file or built-in default stands."
+		}
+		w = append(w, message)
 	}
 
 	for _, name := range c.unknownEnv {
