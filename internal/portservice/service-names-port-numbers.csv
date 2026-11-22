@@ -4176,6 +4176,7 @@ lutap,4912,tcp
 lutcp,4913,tcp
 bones,4914,tcp
 frcs,4915,tcp
+fmsg,4930,tcp
 eq-office-4940,4940,tcp
 eq-office-4941,4941,tcp
 eq-office-4942,4942,tcp
@@ -4871,6 +4872,7 @@ virprot-lm,7121,tcp
 snif,7123,tcp
 scenidm,7128,tcp
 scenccs,7129,tcp
+ambesasql,7151,tcp
 cabsm-comm,7161,tcp
 caistoragemgr,7162,tcp
 cacsambroker,7163,tcp
@@ -10725,12 +10727,14 @@ mxi,8005,udp
 wpl-disc,8006,udp
 warppipe,8007,udp
 http-alt,8008,udp
+bier-echo,8011,udp
 cisco-cloudsec,8017,udp
 qbdb,8019,udp
 intu-ec-svcdisc,8020,udp
 intu-ec-client,8021,udp
 oa-system,8022,udp
 arca-api,8023,udp
+gaap,8024,udp
 ca-audit-da,8025,udp
 ca-audit-ds,8026,udp
 papachi-p2p-srv,8027,udp
