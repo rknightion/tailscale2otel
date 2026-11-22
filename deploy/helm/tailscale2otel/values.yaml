@@ -1772,6 +1772,8 @@ config: # @schema additionalProperties:false
   ingress_wal: # @schema additionalProperties:false
     # -- Persist accepted receiver bodies before acknowledging them. Off by default.
     enabled: false
+    # -- Acknowledge that unfiltered receiver bodies are stored on disk.
+    acknowledge_data_at_rest: false
     # -- Absolute, clean, non-root WAL directory. Must live on the state volume for persistence.
     directory: "/var/lib/tailscale2otel/ingress-wal"
     # -- Encoded WAL byte ceiling. Full WALs fail receiver requests closed; no capacity eviction.

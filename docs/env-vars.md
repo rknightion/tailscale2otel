@@ -386,6 +386,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_CHECKPOINT__FILE_PATH` | `/var/lib/tailscale2otel/checkpoints.json` | `restart` | used when either store is file — both file-backed classes share this atomic JSON file, preserving existing checkpoint keys. Mount a writable, persistent path here. This default suits a CONTAINER (the image pre-seeds it for uid 65532); a native run that cannot write it falls back to the platform state dir (~/.local/state, ~/Library/Application Support, %LocalAppData%) and logs where it went. Set this explicitly and it is used as-is — an explicit path is never relocated. |
 | `TS2OTEL_CHECKPOINT__WRITE_DEBOUNCE` | `0s` | `restart` | coalesce nearby file writes; 0 preserves synchronous Set durability |
 | `TS2OTEL_INGRESS_WAL__ENABLED` | `false` | `restart` | opt in to durable local acceptance and oldest-first replay for receiver payloads |
+| `TS2OTEL_INGRESS_WAL__ACKNOWLEDGE_DATA_AT_REST` | `false` | `restart` | acknowledge that unfiltered receiver bodies are stored on disk |
 | `TS2OTEL_INGRESS_WAL__DIRECTORY` | `/var/lib/tailscale2otel/ingress-wal` | `restart` | absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters |
 | `TS2OTEL_INGRESS_WAL__MAX_BYTES` | `268435456` | `restart` | encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no capacity eviction |
 | `TS2OTEL_INGRESS_WAL__MAX_ENTRIES` | `10000` | `restart` | encoded entry ceiling; full WAL fails new requests closed; no capacity eviction |

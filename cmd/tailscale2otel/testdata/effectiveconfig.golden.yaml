@@ -917,6 +917,9 @@
 - key: headscale.url
   value: ""
   provenance: default
+- key: ingress_wal.acknowledge_data_at_rest
+  value: false
+  provenance: default
 - key: ingress_wal.corruption
   value: fail
   provenance: default

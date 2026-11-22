@@ -584,6 +584,7 @@ checkpoint:
 # and do not suppress this.
 ingress_wal:
   enabled: false                        # opt in to durable local acceptance and oldest-first replay for receiver payloads
+  acknowledge_data_at_rest: false       # acknowledge that unfiltered receiver bodies are stored on disk
   directory: /var/lib/tailscale2otel/ingress-wal   # absolute, filepath-clean, non-root directory; mount durable state here when reschedule survival matters
   max_bytes: 268435456               # encoded WAL byte ceiling (256 MiB); full WAL fails new requests closed; no capacity eviction
   max_entries: 10000                 # encoded entry ceiling; full WAL fails new requests closed; no capacity eviction

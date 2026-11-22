@@ -1492,6 +1492,11 @@ request bodies. It is disabled by default, so the default remains stateless. Whe
 successful receiver ACK means the accepted payload was fsynced into the local WAL: the raw
 authenticated webhook body or the fully validated decompressed streaming body. It means **durable
 local acceptance only**: it does not mean OTLP export completed or the backend acknowledged the data.
+Accepted bodies are stored unfiltered on disk; `pii_filter` does not filter the stored bodies.
+Restrict access to the WAL directory and encrypt its storage. Removing entries is not secure erasure,
+and underlying storage or backups may retain their bytes. Expiry is checked at replay drain, not
+continuously. The default `ingress_wal.acknowledge_data_at_rest: false` leaves the advisory enabled;
+setting it to `true` only suppresses the advisory and does not change storage or retention.
 
 Replay is at-least-once. A crash after applying an envelope and before the local completion commit
 can replay the whole body on restart, so exported data and the metrics and log records derived from
@@ -1623,6 +1628,7 @@ long after startup, if the live drain worker reaches that state with the listene
 | Key | Default | Description |
 |-----|---------|-------------|
 | `ingress_wal.enabled` | `false` | Enable durable local acceptance and oldest-first replay for receiver request bodies. With both receivers disabled, this is a valid drain-only configuration for clearing already persisted entries. It does not require the admin server or a persistent volume. |
+| `ingress_wal.acknowledge_data_at_rest` | `false` | Acknowledge the unfiltered receiver bodies stored on disk and silence the data-at-rest advisory. |
 | `ingress_wal.directory` | `/var/lib/tailscale2otel/ingress-wal` | WAL directory. When enabled, it must be an absolute, filepath-clean path and must not be the filesystem root. The existing parent must be writable; the WAL creates and secures the final directory. |
 | `ingress_wal.max_bytes` | `268435456` (256 MiB) | Encoded byte ceiling. Must be `> 0` and `< 9223372036854775807`. Counts pending entries and staging/recovery state; full means new receiver requests fail closed. |
 | `ingress_wal.max_entries` | `10000` | Encoded entry ceiling. Must be `> 0`; full means new receiver requests fail closed. |

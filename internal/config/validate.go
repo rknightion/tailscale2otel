@@ -492,6 +492,12 @@ func (c *Config) Warnings() []string {
 			"flows.store.acknowledge_data_at_rest=true to acknowledge.")
 	}
 
+	if c.IngressWAL.Enabled && !c.IngressWAL.AcknowledgeDataAtRest {
+		w = append(w, "ingress_wal.enabled: accepted receiver bodies are written to disk unfiltered at "+
+			c.IngressWAL.Directory+"; pii_filter does not filter stored bodies. Expiry via ingress_wal.max_replay_age is checked at replay drain, not continuous. "+
+			"Restrict access and encrypt the storage; deletion is not secure erasure. Set ingress_wal.acknowledge_data_at_rest=true to suppress this advisory.")
+	}
+
 	// flows.capacity_profile only tunes flowstore.Memory, the in-memory ring:
 	// WithCapacityProfile is passed only when internal/app/admin_flows.go builds
 	// that backend. Once flows.store.directory selects the persistent sqlite

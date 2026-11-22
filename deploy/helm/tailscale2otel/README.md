@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.6](https://img.shields.io/badge/Version-0.36.6-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.7](https://img.shields.io/badge/Version-0.36.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -580,6 +580,7 @@ extraVolumeMounts:
 | config.headscale.ip_prefixes | list | `[]` | Tailnet address CIDRs allocated by this Headscale. Empty preserves the Tailscale defaults. Entries must be canonical and fully inside RFC1918, fc00::/7, or 100.64.0.0/10. |
 | config.headscale.max_response_bytes | int | `4194304` | Cap on ONE Headscale API response body before it is decoded, in bytes. Sized from a measured ~715 B/node, so 4 MiB covers roughly 5,800 nodes. These endpoints are not paginated, so a larger deployment needs a larger value — raise the container memory limit alongside it, since decoding costs several times the wire size. A value above 64 MiB triggers a startup warning. |
 | config.headscale.url | string | `""` | Headscale origin only (scheme + host, optional port; no path, credentials, query, or fragment), e.g. https://headscale.example.org. |
+| config.ingress_wal.acknowledge_data_at_rest | bool | `false` | Acknowledge that unfiltered receiver bodies are stored on disk. |
 | config.ingress_wal.corruption | string | `"fail"` | Corruption policy. Only fail is supported: startup/drain stops rather than discarding data. |
 | config.ingress_wal.directory | string | `"/var/lib/tailscale2otel/ingress-wal"` | Absolute, clean, non-root WAL directory. Must live on the state volume for persistence. |
 | config.ingress_wal.enabled | bool | `false` | Persist accepted receiver bodies before acknowledging them. Off by default. |

@@ -17,6 +17,45 @@ const (
 	maxIngressWALBodyBytes      = int64(64 << 20)
 )
 
+func TestWarnings_IngressWALDataAtRest(t *testing.T) {
+	for _, tc := range []struct {
+		name, yaml string
+		warn       bool
+	}{
+		{"default", "", false},
+		{"disabled", "ingress_wal:\n  enabled: false\n", false},
+		{"enabled", "ingress_wal:\n  enabled: true\n", true},
+		{"explicit false", "ingress_wal:\n  enabled: true\n  acknowledge_data_at_rest: false\n", true},
+		{"acknowledged", "ingress_wal:\n  enabled: true\n  acknowledge_data_at_rest: true\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.Load(writeTemp(t, tc.yaml))
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate: %v", err)
+			}
+			var found string
+			for _, w := range cfg.Warnings() {
+				if strings.HasPrefix(w, "ingress_wal.enabled") {
+					found = w
+				}
+			}
+			if (found != "") != tc.warn {
+				t.Fatalf("advisory = %q, want present %v", found, tc.warn)
+			}
+			if tc.warn {
+				for _, fragment := range []string{cfg.IngressWAL.Directory, "unfiltered", "pii_filter", "replay drain", "not continuous", "ingress_wal.max_replay_age", "encrypt", "ingress_wal.acknowledge_data_at_rest=true"} {
+					if !strings.Contains(found, fragment) {
+						t.Errorf("advisory %q missing %q", found, fragment)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestIngressWALDefaults(t *testing.T) {
 	got := config.Default().IngressWAL
 	if got.Enabled {
