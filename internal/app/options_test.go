@@ -312,6 +312,16 @@ func TestHeadscaleAddrSetUsesConfiguredPrefixes(t *testing.T) {
 	}
 }
 
+func TestFlowOptions_ExternalDetailPrivacy(t *testing.T) {
+	for _, externalIPs := range []bool{false, true} {
+		cfg := config.Default()
+		cfg.PIIFilter.ExternalIPs = externalIPs
+		if got := flowOptions(cfg).HideExternalDetail; got != !externalIPs {
+			t.Errorf("external_ips=%v: HideExternalDetail=%v", externalIPs, got)
+		}
+	}
+}
+
 func TestFlowOptions_MaxLogRecordsPerWindow(t *testing.T) {
 	cfg := config.Default()
 	cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow = 250

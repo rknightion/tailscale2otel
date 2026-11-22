@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rknightion/tailscale2otel/v5/internal/enrich"
+	"github.com/rknightion/tailscale2otel/v5/internal/flowstore"
 	"github.com/rknightion/tailscale2otel/v5/internal/geoip"
 	"github.com/rknightion/tailscale2otel/v5/internal/semconv"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
@@ -22,6 +24,70 @@ func (f fakeGeo) Lookup(addr netip.Addr) (geoip.Result, bool) {
 var testGeo = fakeGeo{
 	"8.8.8.8":         {CountryISO: "US", ContinentCode: "NA", ASN: 15169, ASOrg: "Google LLC"},
 	"185.199.108.153": {CountryISO: "DE", ContinentCode: "EU", ASN: 54113, ASOrg: "Fastly, Inc."},
+}
+
+type geoTestRDNS map[netip.Addr]string
+
+func (f geoTestRDNS) LookupName(a netip.Addr) (string, bool) {
+	name, ok := f[a]
+	return name, ok
+}
+
+func TestExternalDetailHiddenWhenExternalIPsOff(t *testing.T) {
+	const addr = "203.0.113.7"
+	const ptr = "ptr.example.invalid"
+	geo := fakeGeo{addr: {CountryISO: "US", ContinentCode: "NA", City: "Example", RegionISO: "EX", Latitude: 1, Longitude: 2, HasLocation: true, ASN: 64500, ASOrg: "Example org"}}
+	for _, hidden := range []bool{false, true} {
+		t.Run(map[bool]string{false: "default", true: "hidden"}[hidden], func(t *testing.T) {
+			flow := externalFlow(addr + ":443")
+			store := flowstore.NewMemory(0, flowstore.WithClock(func() time.Time { return flow.Start }))
+			rec := telemetrytest.New()
+			p := NewProcessor(enrich.NewDeviceCache(), Options{HideExternalDetail: hidden, NodeDims: true, GeoDims: true, Geo: geo, RDNS: geoTestRDNS{netip.MustParseAddr(addr): ptr}, Store: store})
+			p.Process(flow, rec.Emitter())
+			wantNode := ptr
+			if hidden {
+				wantNode = "external"
+			}
+			logs := rec.LogRecords()
+			if len(logs) != 1 {
+				t.Fatalf("logs = %d, want 1", len(logs))
+			}
+			attrs := logs[0].Attrs
+			if got := attrs[semconv.AttrDstNode]; got != wantNode {
+				t.Errorf("log dst node = %q, want %q", got, wantNode)
+			}
+			for k, want := range map[string]string{semconv.DestinationGeoCountryISO: "US", semconv.DestGeoContinentCode: "NA", semconv.AttrDstService: "https"} {
+				if got := attrs[k]; got != want {
+					t.Errorf("log %s = %q, want %q", k, got, want)
+				}
+			}
+			for _, k := range []string{semconv.DestinationGeoCity, semconv.DestinationGeoRegionISO, semconv.DestinationGeoLat, semconv.DestinationGeoLon, semconv.DestinationASNumber, semconv.DestinationASOrg} {
+				_, ok := attrs[k]
+				if ok == hidden {
+					t.Errorf("log %s presence = %v, hidden = %v", k, ok, hidden)
+				}
+			}
+			points := rec.MetricPoints(MetricIO)
+			if len(points) == 0 {
+				t.Fatal("no flow metric points")
+			}
+			for _, pt := range points {
+				if got := pt.Attrs[semconv.AttrDstNode]; got != wantNode {
+					t.Errorf("metric dst node = %q, want %q", got, wantNode)
+				}
+				if got := pt.Attrs[semconv.DestinationGeoCountryISO]; got != "US" {
+					t.Errorf("metric country = %q", got)
+				}
+			}
+			rows := store.RecentPage(flowstore.RecentQuery{Start: flow.Start.Add(-time.Hour), End: flow.Start.Add(time.Hour), Limit: 10}).Rows
+			if len(rows) != 1 {
+				t.Fatalf("store rows = %d, want 1", len(rows))
+			}
+			if got := rows[0].DstNode; got != wantNode {
+				t.Errorf("store dst node = %q, want %q", got, wantNode)
+			}
+		})
+	}
 }
 
 // externalFlow is one virtual connection from a tailnet device to an external

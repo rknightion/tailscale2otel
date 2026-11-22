@@ -680,7 +680,8 @@ audit records.
 Optional async reverse-DNS (PTR) enrichment of external (non-Tailscale) flow addresses. Off by
 default. When enabled, resolved hostnames replace the `external` bucket / raw IP in
 `tailscale.src.node` / `tailscale.dst.node` on flow logs and metrics. Lookups are async and cached;
-the hot path never blocks.
+the hot path never blocks. When `pii_filter.external_ips` is `false`, flow processing skips
+both cached PTR lookups and new resolutions, even if reverse DNS is enabled.
 
 | Key | Default | Description |
 |-----|---------|-------------|
@@ -696,7 +697,9 @@ the hot path never blocks.
 ### `enrichment.geoip`
 
 Optional geolocation and autonomous-system enrichment of external (non-Tailscale) addresses, from
-MaxMind DB (`.mmdb`) files on local disk. Off by default.
+MaxMind DB (`.mmdb`) files on local disk. Off by default. When `pii_filter.external_ips` is
+`false`, country and continent are retained, including from a City database, but city, region,
+coordinates and AS details are omitted from flow logs.
 
 **Lookups never touch the network.** The databases are loaded into memory at startup and a lookup is
 a radix-tree walk, so nothing is added to the flow-processing hot path. **Tailnet addresses are never
@@ -711,7 +714,7 @@ say) faults every in-flight lookup and kills the process.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `enrichment.geoip.enabled` | `false` | Turn on geo/ASN enrichment. |
-| `enrichment.geoip.country_database` | `""` | Path to a GeoLite2/GeoIP2 **Country** `.mmdb`. A **City** database is also accepted - it is a superset, and supplying one additionally fills locality, region and coordinates on flow logs. Defaults to the downloader's install path when `download.enabled` is set. |
+| `enrichment.geoip.country_database` | `""` | Path to a GeoLite2/GeoIP2 **Country** `.mmdb`. A **City** database is also accepted - it is a superset, and supplying one additionally fills locality, region and coordinates on flow logs when `pii_filter.external_ips` is `true`. Defaults to the downloader's install path when `download.enabled` is set. |
 | `enrichment.geoip.asn_database` | `""` | Path to a GeoLite2/GeoIP2 **ASN** `.mmdb`. Defaults to the downloader's install path when `download.enabled` is set. |
 | `enrichment.geoip.reload_interval` | `6h` | Re-stat the database paths and hot-swap a changed file. This is what makes an externally-managed database work - a `geoipupdate` cron, an init container, a mounted volume. `0` disables it. |
 | `enrichment.geoip.acknowledge_cardinality` | `false` | Set `true` (once `cardinality.metric_limit` is sized) to silence the advisory that fires when `cardinality.flow.geo_dims` puts country labels on the **raw** flow-metric families. |
@@ -719,7 +722,7 @@ say) faults every in-flight lookup and kills the process.
 | `enrichment.geoip.download.account_id` | `""` | MaxMind account ID. A free GeoLite2 account is enough. |
 | `enrichment.geoip.download.license_key` | `""` | MaxMind license key. Keep it in an environment variable (`TS2OTEL_ENRICHMENT__GEOIP__DOWNLOAD__LICENSE_KEY`), never in YAML. |
 | `enrichment.geoip.download.license_key_file` | `""` | Read the license key from a file instead (Docker/Kubernetes secret style). Mutually exclusive with the value above. |
-| `enrichment.geoip.download.editions` | `[GeoLite2-Country, GeoLite2-ASN]` | MaxMind edition IDs to fetch; each installs as `<directory>/<edition>.mmdb`. Swap `GeoLite2-Country` for `GeoLite2-City` to get locality and coordinates on flow logs. |
+| `enrichment.geoip.download.editions` | `[GeoLite2-Country, GeoLite2-ASN]` | MaxMind edition IDs to fetch; each installs as `<directory>/<edition>.mmdb`. Swap `GeoLite2-Country` for `GeoLite2-City` to get locality and coordinates on flow logs when `pii_filter.external_ips` is `true`. |
 | `enrichment.geoip.download.directory` | `""` | Where databases are installed. Empty uses the platform state directory, beside the checkpoint file. **Mount it**, or every restart re-downloads. |
 | `enrichment.geoip.download.interval` | `24h` | How often to ask MaxMind for a newer build. Each check is a conditional request, so an unchanged database costs a `304` and no download quota. |
 | `enrichment.geoip.download.timeout` | `5m` | Per-edition download timeout. |
@@ -733,8 +736,8 @@ The split is deliberate, and it is the whole cardinality story of this feature.
 |-----------|---------------|------------------|
 | `source.geo.country.iso_code`, `destination.geo.country.iso_code` | always | only with `cardinality.flow.geo_dims` |
 | `source.geo.continent.code`, `destination.geo.continent.code` | always | only with `cardinality.flow.geo_dims` |
-| `source.as.number`, `source.as.organization.name` (and `destination.*`) | always | **never** |
-| `source.geo.locality.name`, `.region.iso_code`, `.location.lat`, `.location.lon` (City database only) | always | **never** |
+| `source.as.number`, `source.as.organization.name` (and `destination.*`) | when `pii_filter.external_ips` is `true` | **never** |
+| `source.geo.locality.name`, `.region.iso_code`, `.location.lat`, `.location.lon` (City database only) | when `pii_filter.external_ips` is `true` | **never** |
 
 Country and continent are bounded (~250 and 7 values) so they can safely become metric labels. The
 autonomous system and the city-level fields are not bounded by anything useful - a log record is not
@@ -889,7 +892,7 @@ effect no matter whether logs arrive by poll or by stream.
 
 ### `cardinality.flow` - flow metric shaping
 
-These knobs affect flow **metrics** only. Flow **logs** always carry full detail regardless.
+These knobs affect flow **metrics** only. Flow **logs** carry detail regardless of these knobs, subject to `pii_filter.external_ips`.
 
 !!! warning "`metrics_mode` gates the port toggles"
     `source_port` and `destination_port` apply **only to the raw families**, so under the default
@@ -1789,7 +1792,7 @@ Tailscale IPs, for example.
 | `pii_filter.node_ids` | `true` | Tailscale node IDs (e.g. the `nodeId` field on a device). |
 | `pii_filter.tailscale_ips` | `true` | Tailscale overlay addresses: `100.64.0.0/10` (IPv4) and `fd7a:115c:a1e0::/48` (IPv6). |
 | `pii_filter.internal_ips` | `true` | RFC 1918 / ULA / link-local addresses (non-Tailscale private ranges). |
-| `pii_filter.external_ips` | `true` | Public/routable (non-private) IP addresses. |
+| `pii_filter.external_ips` | `true` | Public/routable (non-private) IP addresses. When `false`, flow reverse-DNS names and fine GeoIP details (city, region, coordinates, AS number and organisation) are also withheld, including reverse-DNS names in the admin flow view and store. Country and continent remain. |
 | `pii_filter.service_addrs` | `true` | VIP service names and optional display names from the Tailscale Services collector. |
 | `pii_filter.endpoint_paths` | `true` | Tailscale API endpoint paths carried on self-observability metrics and spans. The path embeds the tailnet name and device IDs, so `false` drops `url.full` and `tailscale.endpoint` from exported spans and scrubs the URL out of span status descriptions and error events. |
 | `pii_filter.network_topology` | `true` | Route CIDRs, split-DNS domains, and search paths from the DNS/ACL collectors. |
