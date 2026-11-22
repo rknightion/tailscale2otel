@@ -164,6 +164,62 @@ All three sources feed the _same_ `flowlog.Processor` / `audit.Processor`, so th
 are identical regardless of which source delivers the record. Webhooks are a separate event feed;
 they are not a flow/audit source choice.
 
+### Discovery freshness for flat object archives
+
+The flat reader caps returned LIST entries per cycle, not the time to find a new object. It resumes
+in key order and wraps after completing the walk so it can find late arrivals behind the previous
+position. Key order is not time order: the export timestamp comes from the final key components.
+The age fence prevents expired objects from consuming GET or ingestion budget, but only after
+LIST has returned their metadata. Under sustained growth, errors or stalled scan progress, even a
+full wrap need not finish before an eligible object ages out.
+
+In a synthetic run through the collector and S3 client (60-second cycles, 1,200 metadata entries
+per cycle, six-day horizon, one-hour overlap), 2,400 expired keys filled the first four LIST pages
+and caused no GETs. Two current objects first appeared on cycle 3 (120 seconds after cycle 1,
+five LIST pages and 2,402 entries cumulatively); without the old keys both appeared on cycle 1
+(one LIST page, two entries). A still-eligible key inserted behind the saved position just after
+cycle 2 appeared on cycle 5 after the wrap (180 seconds after insertion). Total for the archive run:
+nine LIST pages, 4,802 metadata entries including repeats, three GETs, three records.
+
+- **Bounded scans** work with ordered prefix listing and resumable key positions, and need no new
+  store. Keep the wrap. A time bound needs a cap on archive size and guaranteed scan progress;
+  raising the page budget only changes the cost and delay.
+- **An arrival-time window** needs a provider range query on ingestion time or a writer that puts
+  ingestion time in a leading key prefix. S3 `ListObjectsV2` exposes `LastModified` but cannot filter
+  or order by it. Re-read overlapping arrival windows and deduplicate; objects visible only after
+  their window closes can be missed unless the writer bounds visibility delay or a scan repairs it.
+- **Append notifications or an index** can find a write regardless of where its key sorts. Provider
+  notifications vary and can duplicate or reorder events; without a complete, durable replay source,
+  use them only as hints, not as proof that every object was discovered.
+
+**Recommended source contract (design only):** Use a durable append index for publishers that need
+bounded discovery. Register every readable object version, including late uploads. Record the
+write intent durably before making the object readable so interrupted publication can be repaired.
+Publish only a contiguous readable prefix of the index: each position holds a readable object
+version or a permanent cancellation. Cancel only after establishing that no object version became
+readable and that the write cannot commit later. A timeout is not a cancellation: verify the outcome
+and repair or retry the write without exposing later positions past the hole.
+
+Record the discovery decision durably before advancing the checkpoint: queue eligible work or
+record why the entry was skipped, including cancellations. Make object decisions idempotent by
+stable versioned identity, not by key name alone. A crash after the decision but before the
+checkpoint can then replay without duplicating work. On a failed read or missing position, leave the
+checkpoint at the last contiguous decision and retry from there. If a gap persists or the checkpoint
+has expired, report the loss of coverage. Resume only after restoring the missing entries or
+verifying a complete rebuild from an authoritative source. Never jump to the latest position.
+
+From the time an object version becomes readable, the discovery bound includes time to publish its
+contiguous prefix (including repair of earlier positions), reader wake-up (bounded polling even if a
+notification is lost), outage and restart time, and backlog processing through that entry's durable
+discovery decision.
+The bound requires stated limits on publication, downtime, recovery, arrival rates and bursts,
+plus enough reader throughput to clear the worst-case backlog within the catch-up window.
+Retain entries, object versions and replay decisions through the supported outage and catch-up
+window. Report when those limits are exceeded; the bound does not apply then. It is independent of
+old archive size and does not promise GET, ingestion or delivery; existing age rules still apply.
+The index costs storage and publisher coordination and does not retrofit flat archives. Keep the
+wrapping scan for compatibility and reconciliation, not as a path to bounded freshness.
+
 ## Device enrichment
 
 Two enrichment layers feed source/destination naming on flow and audit records; the device cache
