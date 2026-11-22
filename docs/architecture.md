@@ -73,10 +73,12 @@ at a self-hosted [Headscale](https://headscale.net/) control plane instead, via 
 behind the same `internal/provider` abstraction - the collectors and processors described above are
 unaware of which backend is in play.
 
-Headscale's API is narrower than Tailscale's, so under `provider: headscale` only the `devices`,
-`users`, `keys`, `acl`, and `nodemetrics` collectors run; the Tailscale-only collectors (`flowlogs`,
-`auditlogs`, `services`, `webhooks`, `contacts`, `posture_integrations`, `log_stream`, `settings`,
-`dns`) auto-disable, and several device/user signals are reduced or omitted. See
+Headscale's API is narrower than Tailscale's, so under `provider: headscale` the `devices`, `users`,
+`keys`, `acl`, and `nodemetrics` control-plane collectors can run. The Tailscale-only collectors
+(`flowlogs`, `auditlogs`, `services`, `webhooks`, `contacts`, `posture_integrations`, `log_stream`,
+`oauth_apps`, `settings`, `dns`) do not run regardless of their `enabled` value; one INFO line names
+the enabled inactive collectors. `flowlogs` and `auditlogs` with `source: objectstore` still run
+without the control-plane API. Several device/user signals are reduced or omitted. See
 [Configuration → `headscale`](configuration.md#headscale-headscale-control-plane-connection) for
 the full list of what's affected and the required connection settings.
 
