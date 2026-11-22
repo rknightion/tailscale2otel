@@ -54,6 +54,7 @@ func flowOptions(cfg *config.Config) flowlog.Options {
 		// and, when cardinality.flow.node_dims is true, the flow METRIC attrs tailscale.src.node /
 		// tailscale.dst.node (srcNode/dstNode come from the processor's resolve()).
 		KeepExternalAddrs:      !cfg.Cardinality.Flow.CollapseExternal,
+		HideExternalDetail:     !cfg.PIIFilter.ExternalIPs,
 		MaxLogRecordsPerWindow: cfg.Collectors.Flowlogs.MaxLogRecordsPerWindow,
 		TrustedReporterNodeIDs: cfg.Collectors.Flowlogs.TrustedReporterNodeIDs,
 		TrustedReporterTags:    cfg.Collectors.Flowlogs.TrustedReporterTags,

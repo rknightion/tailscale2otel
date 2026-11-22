@@ -59,6 +59,8 @@ const (
 
 // Options configures a Processor.
 type Options struct {
+	// HideExternalDetail suppresses address-derived PTR and fine GeoIP details.
+	HideExternalDetail bool
 	// LogMode selects how flow logs are emitted: "per_connection" (default),
 	// "per_record", or "off". An empty value means "per_connection".
 	LogMode string
@@ -84,8 +86,9 @@ type Options struct {
 	KeepExternalAddrs bool
 	// Geo, when non-nil, supplies country/continent/AS (and, with a City
 	// database, city/region/coordinates) for EXTERNAL addresses from local
-	// MaxMind databases. Flow LOGS carry everything it returns; flow METRICS
-	// carry only the country and continent, and only when GeoDims is set.
+	// MaxMind databases. Flow LOGS carry everything it returns unless
+	// HideExternalDetail is set; flow METRICS carry only the country and
+	// continent, and only when GeoDims is set.
 	Geo geoip.Lookup
 	// GeoDims adds the bounded source/destination country and continent to flow
 	// METRIC attributes (raw and rollup families). Default false. The AS number,
@@ -170,19 +173,20 @@ type PolicySource interface {
 // is stateless per call and safe to share between the polling collector and the
 // streaming receiver; all mutable accumulation lives in the Emitter.
 type Processor struct {
-	cache        *enrich.DeviceCache
-	logMode      string
-	mode         string
-	srcPort      bool
-	dstPort      bool
-	nodes        bool
-	keepExternal bool
-	identity     bool
-	rdns         rdns.Resolver
-	geo          geoip.Lookup
-	geoDims      bool
-	dedup        *dedup.Set
-	maxLogs      int
+	cache              *enrich.DeviceCache
+	logMode            string
+	mode               string
+	srcPort            bool
+	dstPort            bool
+	nodes              bool
+	keepExternal       bool
+	hideExternalDetail bool
+	identity           bool
+	rdns               rdns.Resolver
+	geo                geoip.Lookup
+	geoDims            bool
+	dedup              *dedup.Set
+	maxLogs            int
 	// rollup is non-nil in "rollup"/"both" mode; it accumulates per-connection
 	// contributions and is drained by FlushRollup on the export interval.
 	rollup *rollupAccumulator
@@ -223,6 +227,7 @@ func NewProcessor(cache *enrich.DeviceCache, opts Options) *Processor {
 		dstPort:                opts.IncludeDestinationPort,
 		nodes:                  opts.NodeDims,
 		keepExternal:           opts.KeepExternalAddrs,
+		hideExternalDetail:     opts.HideExternalDetail,
 		identity:               opts.IdentityDims,
 		rdns:                   opts.RDNS,
 		geo:                    opts.Geo,
@@ -1148,13 +1153,14 @@ func (p *Processor) emitConnLog(ctx context.Context, flow FlowLog, trafficType s
 	}
 	p.addNodeHostname(attrs, flow.NodeID)
 	addFlowWindow(attrs, flow)
-	// Logs carry full detail by design, so identity is unconditional here — the
-	// IdentityDims toggle governs the metric surface only. Geo is the same: the
-	// full set (country, continent, AS, and city/region/coordinates when a City
-	// database is loaded) rides every flow log whenever geoip is on, and the
-	// GeoDims toggle governs only what reaches a metric.
+	// Identity is unconditional on logs. Geo detail is withheld when external
+	// addresses are filtered; country and continent remain available.
 	addIdentityAttrs(attrs, refs.lookup(srcAddr), refs.lookup(dstAddr))
-	addGeoLogAttrs(attrs, srcGeo, dstGeo)
+	if p.hideExternalDetail {
+		addGeoMetricAttrs(attrs, srcGeo, dstGeo)
+	} else {
+		addGeoLogAttrs(attrs, srcGeo, dstGeo)
+	}
 	e.LogEventCtx(ctx, telemetry.Event{
 		Name:              docFlowLog.Name,
 		Body:              body,
@@ -1265,7 +1271,7 @@ func (p *Processor) resolve(addrPort, host string) string {
 	}
 	// Reverse DNS enriches only external addresses (never tailnet "unknown"), and
 	// only when a name is already cached — the lookup itself never blocks here.
-	if name == "external" && p.rdns != nil && host != "" {
+	if name == "external" && !p.hideExternalDetail && p.rdns != nil && host != "" {
 		if a, err := netip.ParseAddr(host); err == nil {
 			if ptr, ok := p.rdns.LookupName(a); ok && ptr != "" {
 				return ptr

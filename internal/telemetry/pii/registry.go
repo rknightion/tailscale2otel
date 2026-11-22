@@ -121,19 +121,11 @@ var identityKeys = map[string]bool{
 	"tailscale.pam.policy.name":        true,
 }
 
-// geoNonIdentifier are the GeoIP-enrichment keys (#461). Every one is DERIVED
-// from an address that is already on the record — source.address /
-// destination.address are the redactable originals, classified above by IP
-// range. Enrichment therefore adds no new identifying surface: an operator who
-// has redacted external IPs has removed the input, and one who has not is
-// already exporting a more precise identifier than "Germany".
-//
-// The coordinates are the only entries worth a second look, and they are the
-// coordinates of an IP BLOCK, not of a person: MaxMind resolves to a city or
-// regional centroid, and the accuracy radius is measured in kilometers. They are
-// also confined to flow LOGS beside the full address, so they never widen what a
-// metric exposes. Geolocating a tailnet address is impossible by construction —
-// geoip.Enrichable refuses the CGNAT range and the ULA before any lookup.
+// geoNonIdentifier are GeoIP-enrichment keys (#461). The flow processor
+// withholds fine-grained GeoIP details when external addresses are filtered;
+// country and continent remain. Coordinates describe an IP block, not a
+// person, and fine details never reach flow metrics. GeoIP does not resolve
+// tailnet addresses.
 var geoNonIdentifier = map[string]bool{
 	"source.geo.country.iso_code":      true,
 	"source.geo.continent.code":        true,
