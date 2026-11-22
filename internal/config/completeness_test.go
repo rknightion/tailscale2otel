@@ -158,12 +158,36 @@ func TestHelmValuesCoverEveryKey(t *testing.T) {
 // TestDocsConfigurationMentionsEveryKey requires the key's own path, a
 // heading-relative or slash-combined table entry, or an explicit mirrored subtree.
 func TestDocsConfigurationMentionsEveryKey(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "configuration.md"))
+	path := filepath.Join("..", "..", "docs", "configuration.md")
+	if rendered := os.Getenv("TS2OTEL_RENDERED_CONFIG_REFERENCE"); rendered != "" {
+		path = rendered
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	keys := defaultKeySet(t)
 	documented := documentedConfigKeys(string(data), keys)
+	if dir := os.Getenv("TS2OTEL_RENDERED_CONFIG_CONTROLS"); dir != "" {
+		malformed, err := os.ReadFile(filepath.Join(dir, "malformed.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if documentedConfigKeys(string(malformed), keys)["collectors.node_metrics.discovery.interval"] {
+			t.Error("malformed discovery table falsely documents its interval")
+		}
+		forms, err := os.ReadFile(filepath.Join(dir, "forms.txt"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixtureKeys := map[string]bool{"first.enabled": true, "second.enabled": true, "streaming.tls.cert_file": true, "streaming.tls.key_file": true, "collector.discovery.interval": true, "collectors.flowlogs.objectstore.bucket": true, "collectors.auditlogs.objectstore.bucket": true, "collectors.k8s_audit.objectstore.bucket": true}
+		got := documentedConfigKeys(string(forms), fixtureKeys)
+		for key := range fixtureKeys {
+			if got[key] != (key != "second.enabled") {
+				t.Errorf("rendered forms documented[%s] = %v", key, got[key])
+			}
+		}
+	}
 	var undocumented []string
 	for _, key := range sortedKeys(keys) {
 		if !documented[key] {

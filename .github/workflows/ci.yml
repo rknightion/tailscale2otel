@@ -46,6 +46,9 @@ jobs:
       - name: go test -race
         run: just test
 
+      - name: Render configuration reference
+        run: just config-reference-render
+
       # The root module gets the same tidy-diff as the tool modules (#437): three
       # of its requirements were marked `// indirect` while being imported
       # directly, which nothing caught. `go mod tidy` is a pure function of the
