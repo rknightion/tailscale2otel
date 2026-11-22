@@ -83,8 +83,9 @@ type Collector struct {
 	now      func() time.Time
 	// tracker records this collector's per-operation availability for the admin
 	// status page and the capability matrix (#430/#524). A nil tracker is a no-op.
-	tracker *apistate.Tracker
-	gauges  *telemetry.GaugeSnapshotBuilder
+	tracker  *apistate.Tracker
+	gauges   *telemetry.GaugeSnapshotBuilder
+	infoLogs *collector.StateLogGate[string]
 }
 
 // Option configures optional Collector behavior.
@@ -105,7 +106,7 @@ func WithAPIState(t *apistate.Tracker) Option { return func(c *Collector) { c.tr
 // the package DefaultInterval (300s) via (*Collector).DefaultInterval,
 // mirroring webhooks.New/logstream.New.
 func New(api lister, interval time.Duration, opts ...Option) *Collector {
-	c := &Collector{api: api, interval: interval, now: time.Now, gauges: telemetry.NewGaugeSnapshotBuilder()}
+	c := &Collector{api: api, interval: interval, now: time.Now, gauges: telemetry.NewGaugeSnapshotBuilder(), infoLogs: collector.NewStateLogGate[string]()}
 	for _, o := range opts {
 		o(c)
 	}
@@ -158,6 +159,7 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 	e.Gauge(docAppsCount.Name, docAppsCount.Unit, docAppsCount.Description, float64(len(apps)), nil)
 
 	now := c.now()
+	current := make(map[string]struct{}, len(apps))
 	for i := range apps {
 		a := &apps[i]
 		attrs := telemetry.Attrs{attrID: a.ID, attrName: a.Name}
@@ -183,19 +185,24 @@ func (c *Collector) Collect(ctx context.Context, e telemetry.Emitter) error {
 		// tailscale.oauth_app.scopes gauge above).
 		emitScopeClass(c.gauges, a)
 
-		e.LogEvent(telemetry.Event{
-			Name:     docAppInfo.Name,
-			Severity: telemetry.SeverityInfo,
-			Body:     fmt.Sprintf("Tailscale OAuth app %q has %d scope(s) and %d allowed node attribute(s)", a.Name, len(a.Scopes), len(a.AllowedNodeAttributes)),
-			Attrs: telemetry.Attrs{
-				attrID:            a.ID,
-				attrName:          a.Name,
-				attrScopeValues:   strings.Join(a.Scopes, ","),
-				attrNodeAttrCount: strconv.Itoa(len(a.AllowedNodeAttributes)),
-			},
-		})
+		current[a.ID] = struct{}{}
+		signature := fmt.Sprintf("%q|%q|%d", a.Name, strings.Join(a.Scopes, ","), len(a.AllowedNodeAttributes))
+		if c.infoLogs.Due(a.ID, signature, now) {
+			e.LogEvent(telemetry.Event{
+				Name:     docAppInfo.Name,
+				Severity: telemetry.SeverityInfo,
+				Body:     fmt.Sprintf("Tailscale OAuth app %q has %d scope(s) and %d allowed node attribute(s)", a.Name, len(a.Scopes), len(a.AllowedNodeAttributes)),
+				Attrs: telemetry.Attrs{
+					attrID:            a.ID,
+					attrName:          a.Name,
+					attrScopeValues:   strings.Join(a.Scopes, ","),
+					attrNodeAttrCount: strconv.Itoa(len(a.AllowedNodeAttributes)),
+				},
+			})
+		}
 	}
 
+	c.infoLogs.Retain(current)
 	c.gauges.Flush(e)
 	// tailscale.oauth_apps.age (#426): a single bounded fleet age-distribution
 	// histogram, not a per-entity series. Apps with no Created timestamp are

@@ -99,7 +99,7 @@ var (
 	docErrorLog = metricdoc.LogEvent{
 		Name:        metricError,
 		Severity:    "ERROR",
-		Description: "Emitted when a log stream's last delivery reported an error; the error text is the log body.",
+		Description: "Emitted when a log stream's last delivery reported an error, on first sight, on change and daily; the error text is the log body.",
 		Attributes:  typeAttr,
 		Group:       groupLogStreaming,
 	}

@@ -2,8 +2,10 @@ package devices_test
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2097,6 +2099,111 @@ func TestCollect_AttributeExpiryNamespaceGated(t *testing.T) {
 			t.Errorf("unexpected attribute.expiring log for non-allow-listed namespace: %+v", lr)
 		}
 	}
+}
+
+func TestStateLogsEmitOnChangeOnly(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	d := tsapi.RichDevice{ID: "synthetic-device", Hostname: "synthetic", TailnetLockError: "synthetic error"}
+	inv := tsapi.DeviceInvite{Email: "synthetic@example.com"}
+	api := &fakeAPI{devices: []tsapi.RichDevice{d}, invites: map[string][]tsapi.DeviceInvite{d.ID: {inv}}}
+	c := devices.New(api, enrich.NewDeviceCache(), 0, false, false, devices.WithDeviceInvites(true), devices.WithClock(func() time.Time { return at }), devices.WithSubrequestConcurrency(1))
+	collect := func(lock, invite int, gauge float64, hasInviteGauge bool) {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+		locks, invites := 0, 0
+		for _, l := range rec.LogRecords() {
+			switch l.EventName {
+			case "tailscale.device.tailnet_lock_error":
+				locks++
+				if l.Body != d.TailnetLockError || l.Attrs[semconv.HostID] != d.ID {
+					t.Errorf("lock log = %+v", l)
+				}
+			case "tailscale.device_invite":
+				invites++
+				if l.Attrs[semconv.HostID] != d.ID || l.Attrs[semconv.AttrUser] != inv.Email {
+					t.Errorf("invite log = %+v", l)
+				}
+			}
+		}
+		if locks != lock || invites != invite {
+			t.Errorf("logs lock=%d invite=%d, want %d,%d", locks, invites, lock, invite)
+		}
+		pts := rec.MetricPoints("tailscale.tailnet_lock.errors")
+		if len(pts) != 1 || pts[0].Value != gauge {
+			t.Errorf("lock gauge = %+v, want %v", pts, gauge)
+		}
+		if hasInviteGauge {
+			pts = rec.MetricPoints("tailscale.device_invites.count")
+			found := false
+			for _, p := range pts {
+				if p.Value == 1 && p.Attrs["tailscale.device_invite.accepted"] == strconv.FormatBool(inv.Accepted) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("invite count missing: %+v", pts)
+			}
+		} else if pts := rec.MetricPoints("tailscale.device_invites.count"); len(pts) != 0 {
+			t.Errorf("unexpected invite count after failed or absent observation: %+v", pts)
+		}
+	}
+	collect(1, 1, 1, true)
+	collect(0, 0, 1, true)
+	d.TailnetLockError = "different synthetic error"
+	api.devices[0] = d
+	inv.Accepted = true
+	api.invites[d.ID] = []tsapi.DeviceInvite{inv}
+	collect(1, 1, 1, true)
+	api.inviteFail = d.ID
+	api.inviteErr = errors.New("synthetic failure")
+	collect(0, 0, 1, false)
+	api.inviteFail = ""
+	collect(0, 0, 1, true)
+	at = at.Add(24 * time.Hour)
+	collect(1, 1, 1, true)
+	api.devices = nil
+	collect(0, 0, 0, false)
+	api.devices = []tsapi.RichDevice{d}
+	collect(1, 1, 1, true)
+}
+
+func TestStateLogsEmitOnChangeOnlySkippedInvites(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	api := &fakeAPI{invites: map[string][]tsapi.DeviceInvite{}}
+	for _, id := range []string{"synthetic-1", "synthetic-2", "synthetic-3", "synthetic-4"} {
+		api.devices = append(api.devices, tsapi.RichDevice{ID: id})
+		api.invites[id] = []tsapi.DeviceInvite{{Email: "synthetic@example.com"}}
+	}
+	c := devices.New(api, enrich.NewDeviceCache(), 0, false, false, devices.WithDeviceInvites(true), devices.WithClock(func() time.Time { return at }), devices.WithSubrequestConcurrency(1))
+	collect := func(want int) {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, l := range rec.LogRecords() {
+			if l.EventName == "tailscale.device_invite" {
+				count++
+			}
+		}
+		if count != want {
+			t.Errorf("invite logs = %d, want %d", count, want)
+		}
+	}
+	collect(4)
+	api.inviteIDs = nil
+	api.inviteFailAll = true
+	api.inviteErr = &tsapi.StatusError{Code: 403}
+	collect(0)
+	if len(api.inviteIDs) != 3 {
+		t.Fatalf("attempts = %d, want 3 before systemic stop", len(api.inviteIDs))
+	}
+	api.inviteFailAll = false
+	collect(0)
 }
 
 func TestCollect_DeviceInvitesGroupedCounts(t *testing.T) {

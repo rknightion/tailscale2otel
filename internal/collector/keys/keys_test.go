@@ -61,6 +61,49 @@ func reusableKey(id string, expires time.Time) tsapi.Key {
 	return tsapi.Key{ID: id, Description: "ci runner", Type: "auth", Reusable: true, Expires: expires}
 }
 
+func TestStateLogsEmitOnChangeOnly(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	k := tsapi.Key{ID: "synthetic-key", Type: "client", Scopes: []string{"devices:read"}}
+	api := &fakeLister{keys: []tsapi.Key{k}}
+	c := keys.New(api, 0, 0, func() time.Time { return at })
+	collect := func(want int, gauge float64) {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, l := range rec.LogRecords() {
+			if l.EventName == "tailscale.key.scopes" {
+				count++
+				if l.Attrs["tailscale.key.scope_values"] != strings.Join(k.Scopes, ",") {
+					t.Errorf("scopes log = %+v", l)
+				}
+			}
+		}
+		if count != want {
+			t.Errorf("logs = %d, want %d", count, want)
+		}
+		if len(api.keys) > 0 {
+			p := findPoint(t, rec.MetricPoints(keys.MetricKeyScopes), map[string]string{"tailscale.key.id": k.ID})
+			if p.Value != gauge {
+				t.Errorf("scope gauge = %v, want %v", p.Value, gauge)
+			}
+		}
+	}
+	collect(1, 1)
+	collect(0, 1)
+	k.Scopes = []string{"devices:read", "users:read"}
+	api.keys[0] = k
+	collect(1, 2)
+	at = at.Add(24 * time.Hour)
+	collect(1, 2)
+	api.keys = nil
+	collect(0, 0)
+	api.keys = []tsapi.Key{k}
+	collect(1, 2)
+}
+
 func TestName(t *testing.T) {
 	c := keys.New(&fakeLister{}, 0, time.Hour, nil)
 	if c.Name() != "keys" {

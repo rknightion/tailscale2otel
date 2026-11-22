@@ -383,7 +383,7 @@ var (
 	docTailnetLockError = metricdoc.LogEvent{
 		Name:        eventTailnetLockError,
 		Severity:    "ERROR",
-		Description: "Emitted per device when its tailnet-lock error is non-empty (e.g. an unsigned node); the error text is the log body.",
+		Description: "Emitted per device when its tailnet-lock error is non-empty (e.g. an unsigned node), on first sight, on change and daily; the error text is the log body.",
 		Attributes:  []string{semconv.HostName, semconv.HostID},
 		Group:       groupDevices,
 	}
@@ -391,7 +391,7 @@ var (
 	docDeviceInviteLog = metricdoc.LogEvent{
 		Name:        eventDeviceInvite,
 		Severity:    "INFO",
-		Description: "Per-invite log event emitted during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), the bounded delivery state (`tailscale.device_invite.delivery`), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId). The invite's `inviteUrl` is a bearer token and is never decoded, let alone emitted.",
+		Description: "Per-invite log event emitted on first sight, on change and daily during device-invite collection (gated by `collect_device_invites`). Carries the invitee email, the login of the user who accepted the invite (when accepted), the bounded delivery state (`tailscale.device_invite.delivery`), and the sharing device identity. Only emitted when at least one of email or acceptedBy.loginName is present on the wire record (anonymous link-only invites that have not been accepted are skipped). `host.id` is the sharing device's device id, consistent with every other device signal (not its nodeId). The invite's `inviteUrl` is a bearer token and is never decoded, let alone emitted.",
 		Attributes:  []string{semconv.HostName, semconv.HostID, semconv.AttrUser, attrActorLogin, attrInviteDelivery},
 		Group:       groupDevices,
 	}

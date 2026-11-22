@@ -42,6 +42,53 @@ outer:
 	return telemetrytest.MetricPoint{}
 }
 
+func TestStateLogsEmitOnChangeOnly(t *testing.T) {
+	at := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	a := tsapi.OAuthApp{ID: "synthetic-app", Name: "synthetic", Scopes: []string{"devices:read"}, AllowedNodeAttributes: []string{"custom:example"}}
+	api := &fakeLister{apps: []tsapi.OAuthApp{a}}
+	c := oauthapps.New(api, 0, oauthapps.WithClock(func() time.Time { return at }))
+	collect := func(want int) {
+		t.Helper()
+		rec := telemetrytest.New()
+		if err := c.Collect(context.Background(), rec.Emitter()); err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, l := range rec.LogRecords() {
+			if l.EventName == oauthapps.EventAppInfo {
+				count++
+				if l.Attrs["tailscale.oauth_app.scope_values"] != strings.Join(a.Scopes, ",") {
+					t.Errorf("scope log = %+v", l)
+				}
+			}
+		}
+		if count != want {
+			t.Errorf("logs = %d, want %d", count, want)
+		}
+		if len(api.apps) > 0 {
+			p := findPoint(t, rec.MetricPoints(oauthapps.MetricAppScopes), map[string]string{"tailscale.oauth_app.id": a.ID})
+			if p.Value != float64(len(a.Scopes)) {
+				t.Errorf("scope gauge = %v", p.Value)
+			}
+			p = findPoint(t, rec.MetricPoints(oauthapps.MetricAppNodeAttributes), map[string]string{"tailscale.oauth_app.id": a.ID})
+			if p.Value != float64(len(a.AllowedNodeAttributes)) {
+				t.Errorf("attribute gauge = %v", p.Value)
+			}
+		}
+	}
+	collect(1)
+	collect(0)
+	a.Scopes = []string{"users:read"}
+	api.apps[0] = a
+	collect(1)
+	at = at.Add(24 * time.Hour)
+	collect(1)
+	api.apps = nil
+	collect(0)
+	api.apps = []tsapi.OAuthApp{a}
+	collect(1)
+}
+
 func TestName(t *testing.T) {
 	c := oauthapps.New(&fakeLister{}, 0)
 	if got, want := c.Name(), "oauth_apps"; got != want {
