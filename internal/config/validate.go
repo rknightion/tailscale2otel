@@ -801,6 +801,10 @@ func (c *Config) Warnings() []string {
 		w = append(w, c.configFileWarning)
 	}
 
+	for _, name := range c.blankTypedEnv {
+		w = append(w, fmt.Sprintf("environment variable %s is set but empty and was ignored for a boolean or numeric key; the value from the config file or built-in default stands.", name))
+	}
+
 	for _, name := range c.unknownEnv {
 		w = append(w, fmt.Sprintf("environment variable %s does not match any configuration key "+
 			"and was ignored — check the name for typos (keys use the %s prefix with %q as the "+

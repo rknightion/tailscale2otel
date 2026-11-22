@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/knadh/koanf/v2"
 )
 
 // listEnvKeys are the config keys whose environment value is a comma-separated
@@ -213,21 +214,49 @@ func envKey(name string) string {
 	return strings.ReplaceAll(k, envNestDelim, keyDelim)
 }
 
-// envTransform is the koanf env-provider callback: it converts the variable name
-// to a config key and, for the known list fields, splits the value on commas.
-func envTransform(name, value string) (string, any) {
-	key := envKey(name)
-	if listEnvKeys[key] {
-		if strings.TrimSpace(value) == "" {
-			return key, []string{}
+// typedScalarKeys identifies scalar defaults for which blank env values are ignored.
+func typedScalarKeys(k *koanf.Koanf) map[string]bool {
+	keys := make(map[string]bool)
+	for _, key := range k.Keys() {
+		t := reflect.TypeOf(k.Get(key))
+		if t == nil || t == durationType {
+			continue
 		}
-		parts := strings.Split(value, ",")
-		for i := range parts {
-			parts[i] = strings.TrimSpace(parts[i])
+		switch t.Kind() {
+		case reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+			reflect.Float32, reflect.Float64:
+			keys[key] = true
 		}
-		return key, parts
 	}
-	return key, value
+	return keys
+}
+
+// newEnvTransform converts names and splits lists, skipping blank typed scalars.
+func newEnvTransform(typed map[string]bool, skipped *[]string, accepted map[string]bool) func(string, string) (string, any) {
+	return func(name, value string) (string, any) {
+		key := envKey(name)
+		if typed[key] && strings.TrimSpace(value) == "" {
+			if skipped != nil {
+				*skipped = append(*skipped, name)
+			}
+			return "", nil
+		}
+		if accepted != nil {
+			accepted[key] = true
+		}
+		if listEnvKeys[key] {
+			if strings.TrimSpace(value) == "" {
+				return key, []string{}
+			}
+			parts := strings.Split(value, ",")
+			for i := range parts {
+				parts[i] = strings.TrimSpace(parts[i])
+			}
+			return key, parts
+		}
+		return key, value
+	}
 }
 
 // durationType is the reflect.Type of the config.Duration named type.

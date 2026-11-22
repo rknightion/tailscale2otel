@@ -88,6 +88,7 @@ func Provenance(path string) (map[string]Source, error) {
 		return nil, fmt.Errorf("load defaults: %w", err)
 	}
 	afterDefaults := snapshotKeys(k)
+	typedKeys := typedScalarKeys(k)
 
 	if path != "" {
 		if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
@@ -98,7 +99,7 @@ func Provenance(path string) (map[string]Source, error) {
 
 	if err := k.Load(env.Provider(keyDelim, env.Opt{
 		Prefix:        EnvPrefix,
-		TransformFunc: envTransform,
+		TransformFunc: newEnvTransform(typedKeys, nil, nil),
 	}), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
 	}
