@@ -1,0 +1,112 @@
+package config_test
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/rknightion/tailscale2otel/v5/internal/config"
+)
+
+func TestBlankEnvAliasPreservesHeadscaleExplicitChoice(t *testing.T) {
+	path := writeTemp(t, "provider: headscale\nheadscale:\n  url: https://headscale.invalid\n  api_key: synthetic\n")
+	const canonical = "TS2OTEL_VERSION_CHECKS__DEVICES__ENABLED"
+	// Dots and double underscores normalize to the same key but remain
+	// distinct environment names on case-insensitive operating systems.
+	const alias = "TS2OTEL_version_checks.devices.enabled"
+	t.Setenv(canonical, "true")
+	t.Setenv(alias, " ")
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.VersionChecks.Devices.Enabled {
+		t.Error("blank alias suppressed the nonblank explicit Headscale choice")
+	}
+	warnings := strings.Join(cfg.Warnings(), "\n")
+	if !strings.Contains(warnings, alias) || strings.Contains(warnings, canonical) {
+		t.Error("advisory must name the skipped alias, not the accepted variable")
+	}
+	t.Setenv(canonical, "")
+	t.Setenv(alias, "true")
+	cfg, err = config.Load(path)
+	if err != nil || !cfg.VersionChecks.Devices.Enabled {
+		t.Fatalf("nonblank dotted alias must select the same Headscale key: %v", err)
+	}
+}
+
+func TestBlankEnvForTypedKeyIsIgnoredWithAdvisory(t *testing.T) {
+	t.Setenv("TS2OTEL_ADMIN__ENABLED", "  ")
+	t.Setenv("TS2OTEL_TAILSCALE__HTTP__RETRY__MAX_ATTEMPTS", "")
+	t.Setenv("TS2OTEL_TAILSCALE__HTTP__RATE_LIMIT", " ")
+	t.Setenv("TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID", "")
+	t.Setenv("TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES", "")
+	path := writeTemp(t, `
+provider: headscale
+headscale:
+  url: https://headscale.invalid
+  api_key: synthetic
+admin:
+  enabled: true
+tailscale:
+  http:
+    retry:
+      max_attempts: 7
+    rate_limit: 2.5
+  auth:
+    oauth:
+      client_id: synthetic
+      scopes: [devices:read]
+`)
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Admin.Enabled || cfg.Tailscale.HTTP.Retry.MaxAttempts != 7 || cfg.Tailscale.HTTP.RateLimit != 2.5 {
+		t.Errorf("blank scalars overrode file values")
+	}
+	if cfg.Tailscale.Auth.OAuth.ClientID != "" || len(cfg.Tailscale.Auth.OAuth.Scopes) != 0 {
+		t.Error("blank string or list did not clear file value")
+	}
+	warnings := strings.Join(cfg.Warnings(), "\n")
+	for _, name := range []string{"TS2OTEL_ADMIN__ENABLED", "TS2OTEL_TAILSCALE__HTTP__RETRY__MAX_ATTEMPTS", "TS2OTEL_TAILSCALE__HTTP__RATE_LIMIT"} {
+		if !strings.Contains(warnings, name) {
+			t.Errorf("missing advisory for %s", name)
+		}
+	}
+	for _, name := range []string{"TS2OTEL_TAILSCALE__AUTH__OAUTH__CLIENT_ID", "TS2OTEL_TAILSCALE__AUTH__OAUTH__SCOPES"} {
+		if strings.Contains(warnings, name) {
+			t.Errorf("unexpected advisory for %s", name)
+		}
+	}
+	provenance, err := config.Provenance(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"admin.enabled", "tailscale.http.retry.max_attempts", "tailscale.http.rate_limit"} {
+		if provenance[key] == config.SourceEnv {
+			t.Errorf("%s attributed to env", key)
+		}
+	}
+	t.Setenv("TS2OTEL_VERSION_CHECKS__DEVICES__ENABLED", " ")
+	cfg, err = config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.VersionChecks.Devices.Enabled {
+		t.Error("blank env counted as explicit Headscale choice")
+	}
+	explicit := writeTemp(t, "provider: headscale\nheadscale:\n  url: https://headscale.invalid\n  api_key: synthetic\nversion_checks:\n  devices:\n    enabled: true\n")
+	cfg, err = config.Load(explicit)
+	if err != nil || !cfg.VersionChecks.Devices.Enabled {
+		t.Errorf("blank env must preserve explicit file choice: %v", err)
+	}
+	t.Setenv("TS2OTEL_TAILSCALE__HTTP__TIMEOUT", "")
+	if _, err := config.Load(path); err == nil {
+		t.Error("blank duration accepted")
+	}
+	t.Setenv("TS2OTEL_TAILSCALE__HTTP__TIMEOUT", "1s")
+	t.Setenv("TS2OTEL_ADMIN__ENABLED", "not-a-bool")
+	if _, err := config.Load(path); err == nil {
+		t.Error("invalid boolean accepted")
+	}
+}

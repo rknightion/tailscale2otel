@@ -12,6 +12,8 @@ env layer overrides any file that *is* present, so secrets can stay outside YAML
 reference, and [`../config.example.yaml`](https://github.com/rknightion/tailscale2otel/blob/main/config.example.yaml) for the same
 fields as a commented file.
 
+Blank environment values for non-optional boolean and numeric fields are ignored with an advisory, leaving the file or built-in default in place; optional pointer-backed boolean fields retain their existing behavior.
+
 **Naming.** Take the dotted config key, prefix it with `TS2OTEL_`, uppercase it,
 and replace each `.` with `__` (a single `_` inside a name is preserved):
 

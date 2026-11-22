@@ -18,6 +18,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -93,7 +94,8 @@ type Config struct {
 	// unknownEnv records TS2OTEL_* environment variables that did not map to any
 	// known config key (a likely typo — they were ignored). Unexported, populated
 	// by Load, surfaced via Warnings.
-	unknownEnv []string
+	unknownEnv    []string
+	blankTypedEnv []string
 
 	// configFileWarning is a load-time advisory about the config file itself
 	// (currently: loose permissions). Surfaced by Warnings(), like unknownEnv.
@@ -1899,6 +1901,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("load defaults: %w", err)
 	}
 	validKeys := append([]string(nil), k.Keys()...)
+	typedKeys := typedScalarKeys(k)
 
 	// 2. Optional YAML file (overrides defaults).
 	var cfgFileWarning string
@@ -1940,9 +1943,11 @@ func Load(path string) (*Config, error) {
 	}
 
 	// 3. Environment overrides (highest precedence).
+	var skipped []string
+	envKeys := make(map[string]bool)
 	if err := k.Load(env.Provider(keyDelim, env.Opt{
 		Prefix:        EnvPrefix,
-		TransformFunc: envTransform,
+		TransformFunc: newEnvTransform(typedKeys, &skipped, envKeys),
 	}), nil); err != nil {
 		return nil, fmt.Errorf("load environment: %w", err)
 	}
@@ -1958,7 +1963,7 @@ func Load(path string) (*Config, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
-	if _, set := envSetKeys()["version_checks.devices.enabled"]; set {
+	if _, set := envKeys["version_checks.devices.enabled"]; set {
 		deviceVersionChecksExplicit = true
 	}
 	if cfg.Provider == "headscale" && !deviceVersionChecksExplicit {
@@ -1971,6 +1976,8 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
+	slices.Sort(skipped)
+	cfg.blankTypedEnv = skipped
 	cfg.unknownEnv = unknownEnvVars(validKeys)
 	cfg.configFileWarning = cfgFileWarning
 
@@ -1980,7 +1987,7 @@ func Load(path string) (*Config, error) {
 	//    as-is. Done before resolveSecretFiles / Validate so both open the same
 	//    resolved path this process will actually use at runtime, and can name
 	//    it (alongside what the operator wrote) on failure. See paths.go.
-	cfg.pathResolutions = resolveConfigPaths(&cfg, path, envSetKeys())
+	cfg.pathResolutions = resolveConfigPaths(&cfg, path, envKeys)
 
 	// 5. Resolve every *_file secret sibling (Docker-secrets style) now that file
 	//    + env layering is complete AND every such field's path has already been
