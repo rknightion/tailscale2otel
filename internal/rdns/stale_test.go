@@ -176,17 +176,18 @@ func TestLookupName_StaleRefreshFailureKeepsServing(t *testing.T) {
 		}
 		synctest.Wait()
 
-		name2, ok2 := c.LookupName(addr("203.0.113.5"))
-		if !ok2 || name2 != "h.example.com" {
-			t.Fatalf("after failed refresh = (%q,%v), want (h.example.com,true) — must keep serving stale", name2, ok2)
-		}
-
+		// Observe the completed refresh before another stale lookup can schedule one.
 		s := c.Stats()
 		if s.RefreshFail != 1 {
 			t.Errorf("RefreshFail=%d want 1", s.RefreshFail)
 		}
 		if s.Negatives != 0 {
 			t.Errorf("Negatives=%d want 0 (failed refresh must not create a negative entry)", s.Negatives)
+		}
+
+		name2, ok2 := c.LookupName(addr("203.0.113.5"))
+		if !ok2 || name2 != "h.example.com" {
+			t.Fatalf("after failed refresh = (%q,%v), want (h.example.com,true) — must keep serving stale", name2, ok2)
 		}
 	})
 }
