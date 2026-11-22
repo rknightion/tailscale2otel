@@ -286,7 +286,9 @@ In addition, an admin HTTP server (on by default, `127.0.0.1:9091`) serves:
   Responds `200 application/json` with `{"purged": <int>, "enabled": <bool>}` - `enabled` reports
   whether reverse-DNS is configured at all (`enrichment.reverse_dns.enabled`); when it is false,
   `purged` is always `0`.
-- `/healthz` and `/readyz` - liveness and readiness probes.
+- `/healthz` and `/readyz` - liveness and readiness probes. For a terminal component failure,
+    `/readyz` names the failed component without its error text; find the cause in the process log
+    and on the authenticated status page.
 
     `/healthz` is **process-only** and answers 200 as long as the process is running: a component
     failure means "stop sending me traffic", not "restart me", and conflating the two turns a bad

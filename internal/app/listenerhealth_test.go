@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/appcatalog"
+	"github.com/rknightion/tailscale2otel/v5/internal/collector"
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
+	"github.com/rknightion/tailscale2otel/v5/internal/coordination"
 	"github.com/rknightion/tailscale2otel/v5/internal/telemetrytest"
 )
 
@@ -98,6 +100,34 @@ func TestReadyzReports503AfterAListenerFails(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), appcatalog.ComponentMetrics) {
 		t.Errorf("/readyz body = %q, want it to name the failed component", rec.Body.String())
+	}
+}
+
+func TestReadyzBodyOmitsComponentErrorText(t *testing.T) {
+	for _, standby := range []bool{false, true} {
+		t.Run(map[bool]string{false: "active", true: "standby"}[standby], func(t *testing.T) {
+			cfg := config.Default()
+			cfg.Admin.Auth.Token = testAdminToken
+			a := baseTestApp(t, cfg, "http://127.0.0.1:0", telemetrytest.New())
+			a.runtimes[0].registry = collector.NewRegistry()
+			if standby {
+				cfg.Coordination.Mode = "kubernetes"
+				a.observeCoordination(coordination.Status{State: coordination.StateStandby})
+			}
+			const detail = "synthetic-error-marker"
+			a.recordComponentStop(appcatalog.ComponentMetrics, errors.New(detail))
+			srv := a.buildAdminServer()
+			ready := do(srv, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			if ready.Code != http.StatusServiceUnavailable || ready.Body.String() != "component failure: "+appcatalog.ComponentMetrics {
+				t.Errorf("readyz = %d %q, want component name only", ready.Code, ready.Body.String())
+			}
+			req := httptest.NewRequest(http.MethodGet, "/api/status.json", nil)
+			req.Header.Set("Authorization", "Bearer "+testAdminToken)
+			status := do(srv, req)
+			if status.Code != http.StatusOK || !strings.Contains(status.Body.String(), detail) {
+				t.Errorf("authenticated status = %d %q, want full error detail", status.Code, status.Body.String())
+			}
+		})
 	}
 }
 
