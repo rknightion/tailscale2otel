@@ -232,7 +232,7 @@ class FlowVisualisationTest(unittest.TestCase):
     def setUp(self):
         self.doc = dashboard.build_family()
 
-    def test_sankeys_are_bounded_ordered_and_keep_plugin_identity(self):
+    def test_topologies_are_bounded_and_ordered(self):
         cases = {
             "Traffic topology - ROLLUP": "tailscale_network_io_rollup_bytes_total",
             "Traffic topology - RAW": "tailscale_network_io_bytes_total",
@@ -240,11 +240,14 @@ class FlowVisualisationTest(unittest.TestCase):
         for title, metric in cases.items():
             spec = panel_spec(self.doc, title)
             viz = spec["vizConfig"]
-            self.assertEqual(viz["group"], "netsage-sankey-panel")
-            self.assertEqual(viz["version"], "1.1.4")
-            self.assertEqual(viz["spec"]["options"]["valueField"], "Bytes/s")
-            self.assertIn("https://grafana.com/grafana/plugins/netsage-sankey-panel/",
-                          spec["description"])
+            if title.endswith("ROLLUP"):
+                self.assertEqual(viz["group"], "table")
+            else:
+                self.assertEqual(viz["group"], "netsage-sankey-panel")
+                self.assertEqual(viz["version"], "1.1.4")
+                self.assertEqual(viz["spec"]["options"]["valueField"], "Bytes/s")
+                self.assertIn("https://grafana.com/grafana/plugins/netsage-sankey-panel/",
+                              spec["description"])
             expr = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
             self.assertIn("topk($topn,", expr)
             self.assertIn(metric, expr)
@@ -277,8 +280,8 @@ class FlowVisualisationTest(unittest.TestCase):
     def test_sankey_rows_preserve_signal_and_pii_gates(self):
         rows = network_rows(self.doc)
         cases = {
-            "Traffic topology - ROLLUP (install netsage-sankey-panel)":
-                ("has_rollup_flow", False),
+            "Traffic topology - ROLLUP":
+                (None, False),
             "Traffic topology - RAW (install netsage-sankey-panel)":
                 ("has_raw_flow", True),
         }

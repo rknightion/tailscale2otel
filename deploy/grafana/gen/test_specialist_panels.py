@@ -205,9 +205,7 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
 
     def test_vip_service_topology_is_bounded_and_gated(self):
         spec = panel_spec(self.doc, "VIP service topology")
-        self.assertEqual(spec["vizConfig"]["group"], "netsage-sankey-panel")
-        self.assertEqual(spec["vizConfig"]["version"], "1.1.4")
-        self.assertIn("netsage-sankey-panel", spec["description"])
+        self.assertEqual(spec["vizConfig"]["group"], "table")
         query = spec["data"]["spec"]["queries"][0]["spec"]["query"]["spec"]["expr"]
         self.assertIn("topk($topn,", query)
         self.assertIn("tailscale_service_host_info_ratio", query)
@@ -218,7 +216,7 @@ class FleetAndRelationshipPanelContracts(unittest.TestCase):
         self.assertIn("tailscale_tailnet", excluded)
         self.assertIn("tailscale2otel_provider", excluded)
         self.assertEqual(conditions(self.rows["VIP service topology"]),
-                         ("has_svc", {"pii_perdevice"}))
+                         (None, {"pii_perdevice"}))
 
 
 class HealthAndCostPanelContracts(unittest.TestCase):

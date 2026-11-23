@@ -12579,7 +12579,7 @@
         "spec": {
           "id": 138,
           "title": "Traffic topology - ROLLUP",
-          "description": "Top-$topn source-to-destination paths by current byte rate. Bounded top-N rollup series, emitted when `cardinality.flow.metrics_mode` is `rollup` (the default) or `both`. This optional panel needs `netsage-sankey-panel` 1.1.4; install it from https://grafana.com/grafana/plugins/netsage-sankey-panel/. The adjacent native tables and bars remain available when the plugin is absent.",
+          "description": "Top-$topn source-to-destination byte rates. Bounded top-N rollup series, emitted when `cardinality.flow.metrics_mode` is `rollup` (the default) or `both`.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -12644,24 +12644,40 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "netsage-sankey-panel",
-            "version": "1.1.4",
+            "group": "table",
+            "version": "12.1.0",
             "spec": {
-              "options": {
-                "monochrome": false,
-                "nodeColor": "grey",
-                "nodeWidth": 30,
-                "nodePadding": 24,
-                "labelSize": 12,
-                "iteration": 7,
-                "valueField": "Bytes/s"
-              },
+              "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "Bps",
-                  "noValue": "No source/destination flow pairs in the selected interval."
+                  "noValue": "No rollup topology series. Check the Prometheus datasource, filters and time range, and that flow metrics are enabled with cardinality.flow.metrics_mode set to rollup or both."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Bytes/s"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "Bps"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -26797,7 +26813,7 @@
         "spec": {
           "id": 313,
           "title": "VIP service topology",
-          "description": "Top-$topn VIP service to backing-host relationships. This optional panel needs `netsage-sankey-panel` 1.1.4; install it from https://grafana.com/grafana/plugins/netsage-sankey-panel/. The native backing-host table remains available when the plugin is absent.",
+          "description": "Top-$topn VIP service to backing-host relationships.",
           "links": [],
           "data": {
             "kind": "QueryGroup",
@@ -26865,24 +26881,40 @@
           },
           "vizConfig": {
             "kind": "VizConfig",
-            "group": "netsage-sankey-panel",
-            "version": "1.1.4",
+            "group": "table",
+            "version": "12.1.0",
             "spec": {
-              "options": {
-                "monochrome": false,
-                "nodeColor": "grey",
-                "nodeWidth": 30,
-                "nodePadding": 24,
-                "labelSize": 12,
-                "iteration": 7,
-                "valueField": "Backing hosts"
-              },
+              "options": {},
               "fieldConfig": {
                 "defaults": {
-                  "unit": "short",
-                  "noValue": "No VIP service backing-host identity series."
+                  "noValue": "No VIP service backing-host identity series. Check the Prometheus datasource, filters and time range, and enable collectors.services.collect_hosts and cardinality.per_entity.service."
                 },
-                "overrides": []
+                "overrides": [
+                  {
+                    "matcher": {
+                      "id": "byRegexp",
+                      "options": ".*"
+                    },
+                    "properties": [
+                      {
+                        "id": "noValue",
+                        "value": "-"
+                      }
+                    ]
+                  },
+                  {
+                    "matcher": {
+                      "id": "byName",
+                      "options": "Backing hosts"
+                    },
+                    "properties": [
+                      {
+                        "id": "unit",
+                        "value": "short"
+                      }
+                    ]
+                  }
+                ]
               }
             }
           }
@@ -33022,7 +33054,7 @@
                               {
                                 "kind": "RowsLayoutRow",
                                 "spec": {
-                                  "title": "Traffic topology - ROLLUP (install netsage-sankey-panel)",
+                                  "title": "Traffic topology - ROLLUP",
                                   "collapse": false,
                                   "layout": {
                                     "kind": "GridLayout",
@@ -33050,14 +33082,6 @@
                                       "visibility": "show",
                                       "condition": "and",
                                       "items": [
-                                        {
-                                          "kind": "ConditionalRenderingVariable",
-                                          "spec": {
-                                            "variable": "has_rollup_flow",
-                                            "operator": "matches",
-                                            "value": ".+"
-                                          }
-                                        },
                                         {
                                           "kind": "ConditionalRenderingVariable",
                                           "spec": {
@@ -38775,14 +38799,6 @@
                                       "visibility": "show",
                                       "condition": "and",
                                       "items": [
-                                        {
-                                          "kind": "ConditionalRenderingVariable",
-                                          "spec": {
-                                            "variable": "has_svc",
-                                            "operator": "matches",
-                                            "value": ".+"
-                                          }
-                                        },
                                         {
                                           "kind": "ConditionalRenderingVariable",
                                           "spec": {
