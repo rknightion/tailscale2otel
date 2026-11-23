@@ -6,8 +6,12 @@
   "customManagers": [
     {
       "customType": "regex",
-      "managerFilePatterns": ["/^justfile$/"],
-      "matchStrings": ["# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\n[a-z_]+ := \"(?<currentValue>[^\"]+)\""]
+      "managerFilePatterns": [
+        "/^justfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[^\\s]+) depName=(?<depName>[^\\s]+)\\n[a-z_]+ := \"(?<currentValue>[^\"]+)\""
+      ]
     }
   ],
   "packageRules": [
@@ -72,6 +76,16 @@
       ],
       "matchUpdateTypes": [
         "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Hold k8s.io/kube-openapi at the pre-v7 revision: newer revisions import sigs.k8s.io/structured-merge-diff/v7 while k8s.io/apimachinery v0.37.x still uses v6, which breaks the build (type mismatch in managedfields). Lift once apimachinery moves to structured-merge-diff v7.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "k8s.io/kube-openapi"
       ],
       "enabled": false
     }
