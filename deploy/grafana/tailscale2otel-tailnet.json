@@ -1510,6 +1510,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -1606,6 +1614,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -1702,6 +1718,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -1776,6 +1800,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -1854,6 +1886,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -1932,6 +1972,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -2008,6 +2056,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -2084,6 +2140,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -2249,6 +2313,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -2613,6 +2685,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -3796,6 +3876,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -3870,6 +3958,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -4222,6 +4318,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -5135,6 +5239,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -6227,6 +6339,14 @@
                   "mode": "single",
                   "sort": "none"
                 },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
+                },
                 "perPage": 15
               },
               "fieldConfig": {
@@ -7060,6 +7180,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -7450,6 +7578,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -8386,6 +8522,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -8461,6 +8605,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -8537,6 +8689,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10010,6 +10170,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10088,6 +10256,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10296,6 +10472,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10374,6 +10558,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10450,6 +10642,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10541,6 +10741,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10615,6 +10823,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10693,6 +10909,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -10771,6 +10995,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -11055,6 +11287,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -11133,6 +11373,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -11211,6 +11459,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -11384,6 +11640,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -11462,6 +11726,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -12105,6 +12377,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -12183,6 +12463,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -12261,6 +12549,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13091,6 +13387,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13165,6 +13469,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13239,6 +13551,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13313,6 +13633,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13387,6 +13715,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -13931,6 +14267,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14007,6 +14351,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14471,6 +14823,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14545,6 +14905,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14623,6 +14991,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14888,6 +15264,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -14966,6 +15350,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15061,6 +15453,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15137,6 +15537,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15211,6 +15619,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15285,6 +15701,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15359,6 +15783,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15432,6 +15864,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15512,6 +15952,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15586,6 +16034,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15660,6 +16116,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -15814,6 +16278,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16048,6 +16520,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16125,6 +16605,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16203,6 +16691,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16276,6 +16772,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16371,6 +16875,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -16563,6 +17075,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -19303,6 +19823,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -19857,6 +20385,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -19954,6 +20490,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -20051,6 +20595,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -20218,6 +20770,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -20474,6 +21034,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -20548,6 +21116,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -20948,6 +21524,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -21253,6 +21837,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -21558,6 +22150,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -21863,6 +22463,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -22087,6 +22695,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -22392,6 +23008,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -26033,6 +26657,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -27375,6 +28007,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -27630,6 +28270,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -27709,6 +28357,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -27788,6 +28444,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -29176,6 +29840,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -29319,6 +29991,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -29437,6 +30117,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {
@@ -29511,6 +30199,14 @@
                 "tooltip": {
                   "mode": "multi",
                   "sort": "desc"
+                },
+                "annotations": {
+                  "lines": {
+                    "width": 0
+                  },
+                  "regions": {
+                    "opacity": 0
+                  }
                 }
               },
               "fieldConfig": {

@@ -20,7 +20,7 @@ tab. Neither row needs a new sentinel: both were already ungated on health_inter
 (each panel's own desc states the tracing.enabled prerequisite), so they stay ungated here.
 """
 
-from builder import (hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, row,
+from builder import (annolist_opts, hq, logs_opts, loki_t, lot, organize, panel, prom_t, RI, row,
                      sentinel, stat_opts, TBL_NOISE, tempo_t, thr, ts_custom, ts_opts,
                      WIN_FAST, WIN_SLOW)
 from maps import bool_map
@@ -78,6 +78,17 @@ def tab_health_delivery(scope):
                desc="Whether the most recent Grafana annotation write failed and has not yet been "
                     "recovered by a later success. The counterpart to the dropped counter: that one "
                     "says how much was lost, this says whether it is still happening."), 24, 5),
+        # #1211: the plots draw stored point events as markers only, and many events inside
+        # one interval cannot be told apart there. This lists every stored event in the
+        # selected time range, including the rollup regions and any rule the default
+        # point layer does not draw, without adding an overlay to any other panel.
+        (panel("Stored annotation events", "annolist", [],
+               options=annolist_opts(["tailscale2otel"]),
+               desc="Every tailscale2otel event stored in Grafana inside the selected time range, "
+                    "newest first, up to 100. The time series show these events as small markers on "
+                    "the time axis, so a dense burst cannot be read there. This list also holds "
+                    "events the plots do not draw by default, such as historical rollup regions.",
+               late=True), 24, 9),
     ]
 
     # --- OTLP export health: latency, outcome, failures, plus the two new

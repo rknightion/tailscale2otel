@@ -175,6 +175,7 @@ def build(spec, flat=False, only=None, folder=None):
     """
     builder.ELEMENTS = {}
     builder._id = 0
+    builder._late_id = builder.LATE_ID_BASE
     builder.reset_sentinels()
 
     if only is not None:

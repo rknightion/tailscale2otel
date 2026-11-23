@@ -70,9 +70,19 @@ Fleet & Network and Security & Policy are nested domains - each has sub-tabs, an
 | **Overview** | Golden signals (exporter up, collectors OK, goroutines, build info), collecting/delivering summaries, application health (config valid/warnings, uptime, checkpoint), a degradation summary, and API throttling. |
 | **Collection** | Node-metrics scraper health, per-collector scrape duration/success/errors/staleness, API request/retry/latency and rate-limiter wait, capability & scope preflight, the Prometheus pull endpoint, the enrichment and rDNS caches, and per-tailnet API errors. |
 | **Ingestion** | Object-store ingestion status/throughput/faults, the ingress WAL, per-entity subrequest fan-out, stream and webhook ingestion, receiver health and loss detail, ingestion volume, accepted-data freshness, cross-source dedup, processor queues, log truncation, and audit pipeline state/latency/schema drift. |
-| **Delivery** | Annotation delivery, OTLP export health (latency/outcome/failures/spans), PII filter status, SIEM log-shipping health, and trace/span diagnostics. |
+| **Delivery** | Annotation delivery and the stored annotation events list, OTLP export health (latency/outcome/failures/spans), PII filter status, SIEM log-shipping health, and trace/span diagnostics. |
 | **Runtime** | Go runtime (goroutines, GOMAXPROCS, uptime, CPU), GC & memory, profiling upload health, and TLS certificate rotation. |
 | **Cost & Cardinality** | Cardinality cap & overflow, active series by group, series budget vs cap, ingest-vs-export cost, node-metrics name budget, flow-cardinality drivers, and cross-source dedup set size/evictions. |
+
+### Annotations on the time series
+
+Stored tailscale2otel events appear on every time series and state timeline as small markers on the
+time axis. The dashed vertical lines and shaded regions are off (Grafana's "Hide lines and areas"
+panel option), so a burst of events inside one interval cannot cover the series. Hover a marker for
+that event's details, or open **Delivery > Annotations > Stored annotation events** on the health
+dashboard for a list of every stored event in the selected time range, including historical rollup
+regions and events the default layer does not draw. The category switches above the panels remain
+opt-in overlays.
 
 ## Removed: the four classic-schema dashboards
 

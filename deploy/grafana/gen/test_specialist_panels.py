@@ -82,7 +82,8 @@ class SpecialistOptionContracts(unittest.TestCase):
             builder.state_timeline_opts(),
             {"mergeValues": True, "showValue": "auto", "alignValue": "left",
              "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-             "tooltip": {"mode": "single", "sort": "none"}},
+             "tooltip": {"mode": "single", "sort": "none"},
+             "annotations": {"lines": {"width": 0}, "regions": {"opacity": 0}}},
         )
         self.assertEqual(
             builder.heatmap_opts(),
