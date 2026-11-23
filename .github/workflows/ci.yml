@@ -57,17 +57,14 @@ jobs:
       - name: go mod tidy leaves no diff
         run: just tidy-check .
 
+  # All five modules in one job (#1145). Every lint step runs after an earlier
+  # module fails, so one run reports every module. gofmt/goimports are enforced
+  # here via the `formatters` block in .golangci.yml. The root step owns the
+  # shared lint cache; internal/ci guards each module root.
   lint:
-    timeout-minutes: 10
+    timeout-minutes: 20
     name: golangci-lint
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Root module + the three CI-only tool modules (each a separate go.mod).
-        # gofmt/goimports are enforced here via the `formatters` block in
-        # .golangci.yml, so there is no separate gofmt step.
-        module: [".", "tools/configcheck", "tools/metricscatalog", "tools/apidrift", "tools/promqlcheck"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,7 +74,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          cache-dependency-path: |
+            go.sum
+            tools/configcheck/go.sum
+            tools/metricscatalog/go.sum
+            tools/apidrift/go.sum
+            tools/promqlcheck/go.sum
 
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
         with:
@@ -92,35 +94,59 @@ jobs:
           fi
           echo "golangci=$version" >> "$GITHUB_OUTPUT"
 
-      - name: golangci-lint (${{ matrix.module }})
+      - name: golangci-lint (.)
+        if: ${{ !cancelled() && steps.pins.outcome == 'success' }}
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: ${{ steps.pins.outputs.golangci }}
-          working-directory: ${{ matrix.module }}
+          working-directory: .
 
-  # Per-module verification for the three CI-only tool modules.
+      - name: golangci-lint (tools/configcheck)
+        if: ${{ !cancelled() && steps.pins.outcome == 'success' }}
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: ${{ steps.pins.outputs.golangci }}
+          working-directory: tools/configcheck
+          skip-cache: true
+
+      - name: golangci-lint (tools/metricscatalog)
+        if: ${{ !cancelled() && steps.pins.outcome == 'success' }}
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: ${{ steps.pins.outputs.golangci }}
+          working-directory: tools/metricscatalog
+          skip-cache: true
+
+      - name: golangci-lint (tools/apidrift)
+        if: ${{ !cancelled() && steps.pins.outcome == 'success' }}
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: ${{ steps.pins.outputs.golangci }}
+          working-directory: tools/apidrift
+          skip-cache: true
+
+      - name: golangci-lint (tools/promqlcheck)
+        if: ${{ !cancelled() && steps.pins.outcome == 'success' }}
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: ${{ steps.pins.outputs.golangci }}
+          working-directory: tools/promqlcheck
+          skip-cache: true
+
+  # Per-module verification for the CI-only tool modules, packed into one job (#1145).
   #
-  # There is no go.work, ON PURPOSE — each tool module is a separate go.mod so it
-  # never affects the main module's `go build ./...`. The consequence is that
-  # NOTHING run from the repository root reaches them: build-test's `go vet ./...`
-  # and `go test -race ./...`, and the govulncheck job's `govulncheck ./...`, all
-  # stop at the root module boundary. Before this job the tool modules were only
-  # golangci-lint'ed, plus incidentally compiled by whichever job happened to
-  # `go build -o /tmp/...` one of them.
+  # There is no go.work, ON PURPOSE: each tool module is a separate go.mod so it
+  # never affects the main module's `go build ./...`. Nothing run from the
+  # repository root reaches them, so this job names each one. The root module has
+  # its own build-test and govulncheck jobs.
   #
-  # The root module is deliberately NOT in this matrix: it already has dedicated
-  # build-test and govulncheck jobs, and duplicating it here would double the
-  # slowest legs in CI for no extra coverage. internal/ci's
-  # TestEveryGoModuleIsCoveredByCIVerification enforces that every OTHER module
-  # appears here, so a fifth module cannot be added and silently go unverified.
+  # Each module runs in its own scratch worktree because a failed `go mod tidy`
+  # rewrites go.mod in place. Tidy runs last in each step, every command runs even
+  # after an earlier failure, and internal/ci guards every module and command.
   module-verify:
-    timeout-minutes: 15
-    name: verify (${{ matrix.module }})
+    timeout-minutes: 30
+    name: verify (tool modules)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        module: ["tools/configcheck", "tools/metricscatalog", "tools/apidrift", "tools/promqlcheck"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -134,28 +160,65 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-          cache-dependency-path: ${{ matrix.module }}/go.sum
+          cache-dependency-path: |
+            tools/configcheck/go.sum
+            tools/metricscatalog/go.sum
+            tools/apidrift/go.sum
+            tools/promqlcheck/go.sum
 
       - name: install govulncheck (pinned)
         run: go install "golang.org/x/vuln/cmd/govulncheck@$(just --evaluate govulncheck_version)"
 
-      # -race here too: these modules parse untrusted-ish inputs (a spec, a config)
-      # and the cost is trivial at this size.
-      - name: go build + go test -race
-        run: just test-modules ${{ matrix.module }}
+      - name: create one scratch worktree per module
+        id: scratch
+        run: |
+          for module in configcheck metricscatalog apidrift promqlcheck; do
+            git worktree add --detach "$RUNNER_TEMP/verify/$module" HEAD
+          done
 
-      - name: go vet
-        run: just vet ${{ matrix.module }}
+      - name: verify tools/configcheck
+        if: ${{ !cancelled() && steps.scratch.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/verify/configcheck
+        run: |
+          status=0
+          just test-modules tools/configcheck || status=1
+          just vet tools/configcheck || status=1
+          just vuln tools/configcheck || status=1
+          just tidy-check tools/configcheck || status=1
+          exit "$status"
 
-      # Renovate bumps a dependency in the root module and a tool module's go.mod
-      # keeps the old requirement, or a `replace ../..` goes stale after a module
-      # major bump. `go mod tidy` is a pure function of the source, so any diff it
-      # produces is drift.
-      - name: go mod tidy leaves no diff
-        run: just tidy-check ${{ matrix.module }}
+      - name: verify tools/metricscatalog
+        if: ${{ !cancelled() && steps.scratch.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/verify/metricscatalog
+        run: |
+          status=0
+          just test-modules tools/metricscatalog || status=1
+          just vet tools/metricscatalog || status=1
+          just vuln tools/metricscatalog || status=1
+          just tidy-check tools/metricscatalog || status=1
+          exit "$status"
 
-      - name: govulncheck
-        run: just vuln ${{ matrix.module }}
+      - name: verify tools/apidrift
+        if: ${{ !cancelled() && steps.scratch.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/verify/apidrift
+        run: |
+          status=0
+          just test-modules tools/apidrift || status=1
+          just vet tools/apidrift || status=1
+          just vuln tools/apidrift || status=1
+          just tidy-check tools/apidrift || status=1
+          exit "$status"
+
+      - name: verify tools/promqlcheck
+        if: ${{ !cancelled() && steps.scratch.outcome == 'success' }}
+        working-directory: ${{ runner.temp }}/verify/promqlcheck
+        run: |
+          status=0
+          just test-modules tools/promqlcheck || status=1
+          just vet tools/promqlcheck || status=1
+          just vuln tools/promqlcheck || status=1
+          just tidy-check tools/promqlcheck || status=1
+          exit "$status"
 
   docs-catalog:
     timeout-minutes: 10
