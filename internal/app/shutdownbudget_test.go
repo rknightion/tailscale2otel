@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // worstCaseDrain is the wall-clock a stop can take with every stage at its

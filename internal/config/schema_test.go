@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // configSchemaPath is config.schema.json's location relative to this package

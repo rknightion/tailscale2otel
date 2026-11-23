@@ -3,7 +3,7 @@ package config
 import (
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // Duration is a time.Duration that unmarshals from YAML duration strings such

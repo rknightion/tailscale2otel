@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/config"
 )
