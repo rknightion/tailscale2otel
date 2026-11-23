@@ -462,18 +462,14 @@ func (s *Store) load() error {
 		if err := s.requireOwnedRegularAt(name); err != nil {
 			return err
 		}
-		data, readErr := s.readBounded(name)
+		meta, _, readErr := s.readRecordMeta(name, nil, false)
 		if readErr != nil {
 			return readErr
 		}
-		record, decodeErr := decodeRecord(data)
-		if decodeErr != nil {
-			return decodeErr
-		}
-		if record.Envelope.ID != filenameID || record.Sequence != sequence {
+		if meta.ID != filenameID || meta.Sequence != sequence {
 			return newCorruptError("entry filename does not match record")
 		}
-		size := int64(len(data))
+		size := meta.EncodedBytes
 		if err := s.reserve(size); err != nil {
 			return err
 		}
@@ -507,15 +503,12 @@ func (s *Store) Append(ctx context.Context, envelope Envelope) error {
 		}
 	}
 	if existing, ok := s.pending[envelope.ID]; ok {
-		onDisk, readErr := s.readBounded(existing.name)
+		meta, bodyEqual, readErr := s.readRecordMeta(existing.name, envelope.Body, true)
 		if readErr != nil {
 			return readErr
 		}
-		record, decodeErr := decodeRecord(onDisk)
-		if decodeErr != nil {
-			return decodeErr
-		}
-		if envelopesEquivalent(record.Envelope, envelope) {
+		if bodyEqual && meta.ID == envelope.ID && meta.Tailnet == envelope.Tailnet &&
+			meta.Source == envelope.Source && meta.Signal == envelope.Signal {
 			if !existing.durable {
 				if err := s.syncAndRevalidate(); err != nil {
 					return err
@@ -980,21 +973,70 @@ func (s *Store) createStage(prefix string) (string, *os.File, error) {
 }
 
 func (s *Store) readBounded(name string) ([]byte, error) {
-	file, err := s.ops.openAt(s.dirFile, name, os.O_RDONLY, 0)
+	file, _, err := s.openStateFile(name)
 	if err != nil {
-		return nil, &OwnershipError{Reason: "state file cannot be opened without following links"}
-	}
-	defer func() { _ = s.ops.closeFile(file) }()
-	info, err := file.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("ingress WAL inspect state file: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return nil, &OwnershipError{Reason: "state file is not an owner-only regular file"}
-	}
-	if err := s.requireFileOwner(file, "state file is not owned by the effective service UID"); err != nil {
 		return nil, err
 	}
+	defer func() { _ = s.ops.closeFile(file) }()
+	return s.readStateFile(file)
+}
+
+// readRecordMeta verifies one entry for a caller that needs no body. A record
+// in encodeRecord's exact form is streamed; anything else, valid or not, is
+// read whole and judged by decodeRecord, so acceptance and errors are unchanged.
+func (s *Store) readRecordMeta(name string, want []byte, compare bool) (recordMeta, bool, error) {
+	file, info, err := s.openStateFile(name)
+	if err != nil {
+		return recordMeta{}, false, err
+	}
+	defer func() { _ = s.ops.closeFile(file) }()
+	if meta, bodyEqual, ok := scanCanonicalRecord(file, info.Size(), s.opts.MaxBytes, want, compare); ok {
+		return meta, bodyEqual, nil
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return recordMeta{}, false, fmt.Errorf("ingress WAL read state file: %w", err)
+	}
+	data, err := s.readStateFile(file)
+	if err != nil {
+		return recordMeta{}, false, err
+	}
+	record, err := decodeRecord(data)
+	if err != nil {
+		return recordMeta{}, false, err
+	}
+	return recordMeta{
+		Sequence:     record.Sequence,
+		ID:           record.Envelope.ID,
+		Tailnet:      record.Envelope.Tailnet,
+		Source:       record.Envelope.Source,
+		Signal:       record.Envelope.Signal,
+		Accepted:     record.Envelope.Accepted,
+		EncodedBytes: int64(len(data)),
+	}, !compare || bytes.Equal(record.Envelope.Body, want), nil
+}
+
+func (s *Store) openStateFile(name string) (*os.File, os.FileInfo, error) {
+	file, err := s.ops.openAt(s.dirFile, name, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, nil, &OwnershipError{Reason: "state file cannot be opened without following links"}
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = s.ops.closeFile(file)
+		return nil, nil, fmt.Errorf("ingress WAL inspect state file: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		_ = s.ops.closeFile(file)
+		return nil, nil, &OwnershipError{Reason: "state file is not an owner-only regular file"}
+	}
+	if err := s.requireFileOwner(file, "state file is not owned by the effective service UID"); err != nil {
+		_ = s.ops.closeFile(file)
+		return nil, nil, err
+	}
+	return file, info, nil
+}
+
+func (s *Store) readStateFile(file *os.File) ([]byte, error) {
 	reader := io.LimitReader(file, s.opts.MaxBytes+1)
 	data, err := io.ReadAll(reader)
 	if err != nil {
@@ -1113,14 +1155,6 @@ func validStageName(name string) bool {
 		return err == nil && len(decoded) == stageRandomBytes
 	}
 	return false
-}
-
-func envelopesEquivalent(left, right Envelope) bool {
-	return left.ID == right.ID &&
-		left.Tailnet == right.Tailnet &&
-		left.Source == right.Source &&
-		left.Signal == right.Signal &&
-		bytes.Equal(left.Body, right.Body)
 }
 
 const (

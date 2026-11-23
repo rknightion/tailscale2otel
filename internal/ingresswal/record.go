@@ -1,12 +1,15 @@
 package ingresswal
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash"
 	"io"
 	"strconv"
 	"strings"
@@ -62,15 +65,24 @@ func NewID(tailnet, source, signal string, body []byte) (string, error) {
 	if err := validateIdentityInputs(tailnet, source, signal, body); err != nil {
 		return "", err
 	}
-	hash := sha256.New()
-	_, _ = hash.Write([]byte{recordVersion})
-	for _, field := range [][]byte{[]byte(tailnet), []byte(source), []byte(signal), body} {
-		var length [8]byte
+	identity := sha256.New()
+	writeIdentityPrefix(identity, tailnet, source, signal, uint64(len(body)))
+	_, _ = identity.Write(body)
+	return hex.EncodeToString(identity.Sum(nil)), nil
+}
+
+// writeIdentityPrefix hashes everything in an ID that precedes the body bytes,
+// so a streaming reader and NewID cannot disagree on the identity format.
+func writeIdentityPrefix(identity hash.Hash, tailnet, source, signal string, bodyLength uint64) {
+	_, _ = identity.Write([]byte{recordVersion})
+	var length [8]byte
+	for _, field := range []string{tailnet, source, signal} {
 		binary.BigEndian.PutUint64(length[:], uint64(len(field)))
-		_, _ = hash.Write(length[:])
-		_, _ = hash.Write(field)
+		_, _ = identity.Write(length[:])
+		_, _ = io.WriteString(identity, field)
 	}
-	return hex.EncodeToString(hash.Sum(nil)), nil
+	binary.BigEndian.PutUint64(length[:], bodyLength)
+	_, _ = identity.Write(length[:])
 }
 
 func validID(id string) bool {
@@ -161,6 +173,253 @@ func decodeRecord(data []byte) (storedRecord, error) {
 		return storedRecord{}, newCorruptError("entry envelope is invalid")
 	}
 	return storedRecord{Sequence: disk.Sequence, Envelope: envelope}, nil
+}
+
+// recordMeta is the body-free result of verifying one stored record.
+type recordMeta struct {
+	Sequence     uint64
+	ID           string
+	Tailnet      string
+	Source       string
+	Signal       string
+	Accepted     time.Time
+	EncodedBytes int64
+}
+
+const (
+	recordScanBufferBytes = 32 << 10
+	// A multiple of four, so every chunk is whole base64 groups.
+	recordScanChunkBytes = 48 << 10
+	maxAcceptedBytes     = 64
+	maxSequenceDigits    = 20
+)
+
+var strictBase64 = base64.StdEncoding.Strict()
+
+// recordSource is the open state file: read in order, with one positioned read
+// of the final base64 group to learn the body length before hashing the body.
+type recordSource interface {
+	io.Reader
+	io.ReaderAt
+}
+
+// scanCanonicalRecord verifies a record in the exact form encodeRecord writes
+// without holding its body: checksum, route, accepted time and body-derived ID
+// are all checked from a fixed buffer. When compare is true, bodyEqual reports
+// whether the stored body equals want.
+//
+// ok=false claims nothing about the record. Any other shape, including forms
+// encoding/json accepts (duplicate or case-folded keys, CRLF in base64, numeric
+// array bodies, escapes), and any read error must go to decodeRecord, which
+// stays the only authority on rejection and on non-canonical input.
+func scanCanonicalRecord(
+	file recordSource,
+	size, maxBytes int64,
+	want []byte,
+	compare bool,
+) (meta recordMeta, bodyEqual, ok bool) {
+	minimum := int64(recordHeaderBytes + checksumBytes)
+	if size < minimum || size > maxBytes {
+		return recordMeta{}, false, false
+	}
+	payload := size - minimum
+	scan := recordScanner{
+		reader: bufio.NewReaderSize(file, int(min(size, recordScanBufferBytes))),
+		sum:    sha256.New(),
+		left:   int64(recordHeaderBytes) + payload,
+	}
+	var header [recordHeaderBytes]byte
+	if !scan.take(header[:]) ||
+		string(header[:len(recordMagic)]) != recordMagic ||
+		header[len(recordMagic)] != recordVersion ||
+		binary.BigEndian.Uint64(header[len(recordMagic)+1:]) != uint64(payload) {
+		return recordMeta{}, false, false
+	}
+
+	sequence, sequenceOK := scan.sequence()
+	if !sequenceOK || !scan.literal(`"id":"`) {
+		return recordMeta{}, false, false
+	}
+	id, idOK := scan.text(idLength)
+	if !idOK || !validID(id) || !scan.literal(`,"tailnet":"`) {
+		return recordMeta{}, false, false
+	}
+	tailnet, tailnetOK := scan.text(maxTailnetBytes)
+	if !tailnetOK || !scan.literal(`,"source":"`) {
+		return recordMeta{}, false, false
+	}
+	source, sourceOK := scan.text(maxSourceBytes)
+	if !sourceOK || !scan.literal(`,"signal":"`) {
+		return recordMeta{}, false, false
+	}
+	signal, signalOK := scan.text(maxSignalBytes)
+	if !signalOK || !scan.literal(`,"accepted":"`) {
+		return recordMeta{}, false, false
+	}
+	acceptedText, acceptedOK := scan.text(maxAcceptedBytes)
+	if !acceptedOK || !scan.literal(`,"body":"`) {
+		return recordMeta{}, false, false
+	}
+	accepted, err := time.Parse(time.RFC3339Nano, acceptedText)
+	if err != nil || accepted.IsZero() {
+		return recordMeta{}, false, false
+	}
+	if validateIdentityInputs(tailnet, source, signal, nil) != nil {
+		return recordMeta{}, false, false
+	}
+
+	encoded := scan.left - 2
+	if encoded < 0 || encoded%4 != 0 {
+		return recordMeta{}, false, false
+	}
+	padding := int64(0)
+	if encoded > 0 {
+		var last [2]byte
+		if _, err := file.ReadAt(last[:], int64(recordHeaderBytes)+payload-4); err != nil {
+			return recordMeta{}, false, false
+		}
+		if last[1] == '=' {
+			padding = 1
+			if last[0] == '=' {
+				padding = 2
+			}
+		}
+	}
+	bodyLength := encoded/4*3 - padding
+	if bodyLength < 0 || bodyLength > maxBodyBytes {
+		return recordMeta{}, false, false
+	}
+	identity := sha256.New()
+	writeIdentityPrefix(identity, tailnet, source, signal, uint64(bodyLength))
+	bodyEqual = !compare || bodyLength == int64(len(want))
+
+	chunkBytes := int(min(encoded, recordScanChunkBytes))
+	raw := make([]byte, chunkBytes)
+	decoded := make([]byte, chunkBytes/4*3)
+	var decodedTotal int64
+	for remaining := encoded; remaining > 0; {
+		// The last group alone may carry padding.
+		n := int(min(remaining-4, int64(chunkBytes)))
+		final := n <= 0
+		if final {
+			n = 4
+		}
+		group := raw[:n]
+		if !scan.take(group) || bytes.ContainsAny(group, "\r\n") {
+			return recordMeta{}, false, false
+		}
+		if !final && bytes.IndexByte(group, '=') >= 0 {
+			return recordMeta{}, false, false
+		}
+		written, err := strictBase64.Decode(decoded, group)
+		if err != nil {
+			return recordMeta{}, false, false
+		}
+		_, _ = identity.Write(decoded[:written])
+		if compare && bodyEqual {
+			end := decodedTotal + int64(written)
+			bodyEqual = end <= int64(len(want)) && bytes.Equal(decoded[:written], want[decodedTotal:end])
+		}
+		decodedTotal += int64(written)
+		remaining -= int64(n)
+	}
+	if decodedTotal != bodyLength || !scan.literal(`"}`) || scan.left != 0 {
+		return recordMeta{}, false, false
+	}
+	var stored [checksumBytes]byte
+	if _, err := io.ReadFull(scan.reader, stored[:]); err != nil {
+		return recordMeta{}, false, false
+	}
+	if !bytes.Equal(stored[:], scan.sum.Sum(nil)) {
+		return recordMeta{}, false, false
+	}
+	if _, err := scan.reader.ReadByte(); err != io.EOF {
+		return recordMeta{}, false, false
+	}
+	if hex.EncodeToString(identity.Sum(nil)) != id {
+		return recordMeta{}, false, false
+	}
+	return recordMeta{
+		Sequence: sequence, ID: id, Tailnet: tailnet, Source: source, Signal: signal,
+		Accepted: accepted, EncodedBytes: size,
+	}, bodyEqual, true
+}
+
+// recordScanner consumes the checksummed region, hashing exactly what it reads.
+type recordScanner struct {
+	reader *bufio.Reader
+	sum    hash.Hash
+	left   int64
+}
+
+func (r *recordScanner) take(into []byte) bool {
+	if int64(len(into)) > r.left {
+		return false
+	}
+	if _, err := io.ReadFull(r.reader, into); err != nil {
+		return false
+	}
+	_, _ = r.sum.Write(into)
+	r.left -= int64(len(into))
+	return true
+}
+
+func (r *recordScanner) next() (byte, bool) {
+	var one [1]byte
+	if !r.take(one[:]) {
+		return 0, false
+	}
+	return one[0], true
+}
+
+func (r *recordScanner) literal(want string) bool {
+	var stack [16]byte
+	got := stack[:len(want)]
+	return r.take(got) && string(got) == want
+}
+
+// sequence reads the opening key, the digits and the comma after them.
+func (r *recordScanner) sequence() (uint64, bool) {
+	if !r.literal(`{"sequence":`) {
+		return 0, false
+	}
+	var digits [maxSequenceDigits]byte
+	for n := 0; ; n++ {
+		b, ok := r.next()
+		if !ok {
+			return 0, false
+		}
+		if b == ',' {
+			if n == 0 || digits[0] == '0' {
+				return 0, false
+			}
+			value, err := strconv.ParseUint(string(digits[:n]), 10, 64)
+			return value, err == nil
+		}
+		if b < '0' || b > '9' || n == len(digits) {
+			return 0, false
+		}
+		digits[n] = b
+	}
+}
+
+// text reads a JSON string body through its closing quote. Only printable ASCII
+// without escapes qualifies, so the raw bytes are exactly the decoded value.
+func (r *recordScanner) text(limit int) (string, bool) {
+	var value []byte
+	for {
+		b, ok := r.next()
+		if !ok {
+			return "", false
+		}
+		if b == '"' {
+			return string(value), true
+		}
+		if b < 0x20 || b > 0x7e || b == '\\' || len(value) == limit {
+			return "", false
+		}
+		value = append(value, b)
+	}
 }
 
 func validateEnvelope(envelope Envelope) error {
