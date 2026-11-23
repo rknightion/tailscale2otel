@@ -93,6 +93,26 @@ def topology_sankey(title, metric, prerequisite):
               % (prerequisite, SANKEY_CATALOGUE)))
 
 
+ROLLUP_TOPOLOGY_EMPTY = ("No rollup topology series. Check the Prometheus datasource, filters and time "
+                        "range, and that flow metrics are enabled with "
+                        "cardinality.flow.metrics_mode set to rollup or both.")
+
+
+def rollup_topology_table():
+    """Keep endpoints as independent fields, including equal and delimiter-bearing names."""
+    query = ("topk($topn, sum by (tailscale_src_node, tailscale_dst_node) "
+             "(rate(%s%s[%s])))" % (ROLLUP_BYTES, FLOW_FILTERS, RI))
+    return panel("Traffic topology - ROLLUP", "table",
+                 [prom_t(query, instant=True, fmt="table")], unit="Bps",
+                 transformations=[organize(
+                     exclude=BAR_NOISE,
+                     rename={"tailscale_src_node": "Source", "tailscale_dst_node": "Destination",
+                             "Value": "Bytes/s"},
+                     index={"tailscale_src_node": 0, "tailscale_dst_node": 1, "Value": 2})],
+                 novalue=ROLLUP_TOPOLOGY_EMPTY,
+                 desc="Top-$topn source-to-destination byte rates. " + ROLLUP_PREREQ)
+
+
 def tab_network(scope):
     # Presence sentinels this tab declares (moved from variables.py, #495).
     # #526 wave 3: every sentinel here gates a ROW inside this one tab, so each is
@@ -402,7 +422,7 @@ def tab_network(scope):
                     "Busiest destination services by raw per-flow byte rate. " + RAW_PREREQ), 8, 8),
     ]
     rollup_sankey = [
-        (topology_sankey("Traffic topology - ROLLUP", ROLLUP_BYTES, ROLLUP_PREREQ), 24, 10),
+        (rollup_topology_table(), 24, 10),
     ]
     raw_sankey = [
         (topology_sankey("Traffic topology - RAW", RAW_BYTES, RAW_PREREQ), 24, 10),
@@ -430,8 +450,7 @@ def tab_network(scope):
         row("Throughput & talkers — ROLLUP (bounded top-N)", rollup_agg, present="has_rollup_flow"),
         row("Path & DERP context — ROLLUP", rollup_path, present="has_rollup_flow"),
         row("Top talkers — ROLLUP", rollup_talkers, present="has_rollup_flow", hide_when=["pii_node"]),
-        row("Traffic topology - ROLLUP (install netsage-sankey-panel)", rollup_sankey,
-            present="has_rollup_flow", hide_when=["pii_node"]),
+        row("Traffic topology - ROLLUP", rollup_sankey, hide_when=["pii_node"]),
         # has_unique, not has_rollup_flow: both panels here need cardinality.flow.node_dims
         # on top of the rollup mode, and the unique_* gauges are the signal for that.
         # Collapsed: topology is a second-stage drill-down after rollup traffic.
