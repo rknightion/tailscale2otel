@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/rknightion/tailscale2otel/v5/internal/repotest"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // These tests exercise the same boundary that protects the generation tools:
