@@ -120,6 +120,8 @@ type scheduledMetricReader struct {
 	changed                     chan struct{}
 	terminal, terminalAttempted bool
 	failed                      bool
+	// deltaTemporality is true when any instrument kind resets on Collect.
+	deltaTemporality bool
 	// collectFailing and logFailures report CURRENT delivery trouble (the last
 	// normal Collect failed; consecutive durable-log export failures) so the
 	// ingress coordinator can tell real retrying from healthy waiting.
@@ -159,7 +161,26 @@ func newScheduledMetricReader(exp sdkmetric.Exporter, opts Options) (*scheduledM
 	if limit <= 0 {
 		limit = 5
 	}
-	return &scheduledMetricReader{onPermanentDrop: opts.OnPermanentDrop, maxPermanentRejections: limit, ManualReader: sdkmetric.NewManualReader(options...), exporter: exp, interval: interval, timeout: timeout, batchSize: opts.MetricExportBatchSize, epoch: providerEpoch.Add(1), receipts: make(map[*IngressReceipt]bool), changed: make(chan struct{}), clockDone: make(chan struct{}), workerDone: make(chan struct{})}, nil
+	return &scheduledMetricReader{onPermanentDrop: opts.OnPermanentDrop, maxPermanentRejections: limit, ManualReader: sdkmetric.NewManualReader(options...), exporter: exp, interval: interval, timeout: timeout, batchSize: opts.MetricExportBatchSize, deltaTemporality: selectsDeltaTemporality(exp.Temporality), epoch: providerEpoch.Add(1), receipts: make(map[*IngressReceipt]bool), changed: make(chan struct{}), clockDone: make(chan struct{}), workerDone: make(chan struct{})}, nil
+}
+
+// selectsDeltaTemporality reports whether any instrument kind is collected with
+// delta temporality, whose aggregation state a Collect drains.
+func selectsDeltaTemporality(selector sdkmetric.TemporalitySelector) bool {
+	for _, kind := range []sdkmetric.InstrumentKind{
+		sdkmetric.InstrumentKindCounter,
+		sdkmetric.InstrumentKindUpDownCounter,
+		sdkmetric.InstrumentKindHistogram,
+		sdkmetric.InstrumentKindGauge,
+		sdkmetric.InstrumentKindObservableCounter,
+		sdkmetric.InstrumentKindObservableUpDownCounter,
+		sdkmetric.InstrumentKindObservableGauge,
+	} {
+		if selector(kind) == metricdata.DeltaTemporality {
+			return true
+		}
+	}
+	return false
 }
 func (r *scheduledMetricReader) signalLocked() { close(r.changed); r.changed = make(chan struct{}) }
 func (r *scheduledMetricReader) Start() {
@@ -303,6 +324,22 @@ func (r *scheduledMetricReader) collectSlot(ctx context.Context, id collectionID
 	err := r.Collect(call, &data)
 	cancel()
 	if err != nil {
+		// The SDK sets Resource only once it is past its pre-produce check, and
+		// from there it always runs every aggregation. Under delta temporality
+		// the required effects are then gone, so a later slot would cover them
+		// with an empty result. Fail closed: the originals stay in the WAL for a
+		// later process. Cumulative state survives and simply retries.
+		if stage != nil && stage.group != nil && r.deltaTemporality && data.Resource != nil {
+			for _, member := range stage.members {
+				member.poison(err)
+			}
+			r.mu.Lock()
+			r.failed = true
+			// The poisoned group keeps its credit and originals until close.
+			r.stage = nil
+			r.mu.Unlock()
+			stage = nil
+		}
 		return r.collectFailure(stage, err, observe, id)
 	}
 	collection := &metricCollection{id: id, required: stage != nil && stage.group != nil}
