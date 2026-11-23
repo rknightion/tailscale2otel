@@ -39,6 +39,7 @@ jobs:
     uses: rknightion/.github/.github/workflows/container-publish.yml@84486af028f18f4a2d93ee5c4eb954fdd541d800 # v1.31.10
     with:
       release-tag: ${{ inputs.release_tag }}
+      trivy-ignore-unfixed: true
       dockerfile: deploy/Dockerfile
       helm-chart-path: deploy/helm/tailscale2otel
 

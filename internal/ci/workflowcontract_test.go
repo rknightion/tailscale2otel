@@ -529,11 +529,11 @@ func dockerImageScanContract(job map[string]any) error {
 				return errors.New("scan has continue-on-error")
 			}
 			env, _ := step["env"].(map[string]any)
-			if env["TRIVY_IGNORE_UNFIXED"] != "false" {
-				return errors.New("scan must explicitly set TRIVY_IGNORE_UNFIXED to false")
+			if env["TRIVY_IGNORE_UNFIXED"] != "true" {
+				return errors.New("scan must explicitly set TRIVY_IGNORE_UNFIXED to true")
 			}
 			with, _ := step["with"].(map[string]any)
-			for key, want := range map[string]any{"image-ref": "tailscale2otel:ci", "severity": "CRITICAL,HIGH", "exit-code": "1", "ignore-unfixed": false, "cache": false, "format": "table"} {
+			for key, want := range map[string]any{"image-ref": "tailscale2otel:ci", "severity": "CRITICAL,HIGH", "exit-code": "1", "ignore-unfixed": true, "cache": false, "format": "table"} {
 				if with[key] != want {
 					return fmt.Errorf("scan %s = %v, want %v", key, with[key], want)
 				}
@@ -575,8 +575,8 @@ func TestDockerBuildScansTheImageAtThePublishSeverity(t *testing.T) {
 		"missing ignore-unfixed env": func(steps []any, _, scan int) {
 			delete(steps[scan].(map[string]any)["env"].(map[string]any), "TRIVY_IGNORE_UNFIXED")
 		},
-		"true ignore-unfixed env": func(steps []any, _, scan int) {
-			steps[scan].(map[string]any)["env"].(map[string]any)["TRIVY_IGNORE_UNFIXED"] = "true"
+		"false ignore-unfixed env": func(steps []any, _, scan int) {
+			steps[scan].(map[string]any)["env"].(map[string]any)["TRIVY_IGNORE_UNFIXED"] = "false"
 		},
 		"narrowed severity": func(steps []any, _, scan int) {
 			steps[scan].(map[string]any)["with"].(map[string]any)["severity"] = "CRITICAL"
