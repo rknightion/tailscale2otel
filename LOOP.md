@@ -60,7 +60,7 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
   exact SHA, save Go evidence as `.go.txt`, never exclude `codex/` in `.golangci.yml` or the justfile.
 
 - `go test -race ./...` at the root stops at the module boundary; the `module-verify` and `lint`
-  matrices in ci.yml cover the four tool modules, and a workflow contract test fails if one
+  jobs in ci.yml cover the four tool modules, and a workflow contract test fails if one
   drops out.
 - A breaking change that cuts a new major needs `just bump-major` landed on `main` before the
   release PR merges; release-please does not maintain the module path.
