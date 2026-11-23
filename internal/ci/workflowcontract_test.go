@@ -666,41 +666,6 @@ func goModules(t *testing.T) []string {
 	return out
 }
 
-// matrixModules returns the module list of a matrix job in ci.yml.
-func matrixModules(t *testing.T, jobName string) []string {
-	t.Helper()
-	doc := readWorkflow(t, "ci.yml")
-	jobs, ok := doc["jobs"].(map[string]any)
-	if !ok {
-		t.Fatal("ci.yml has no jobs mapping")
-	}
-	job, ok := jobs[jobName].(map[string]any)
-	if !ok {
-		t.Fatalf("ci.yml has no %q job", jobName)
-	}
-	strategy, ok := job["strategy"].(map[string]any)
-	if !ok {
-		t.Fatalf("%s has no strategy block", jobName)
-	}
-	matrix, ok := strategy["matrix"].(map[string]any)
-	if !ok {
-		t.Fatalf("%s has no matrix block", jobName)
-	}
-	raw, ok := matrix["module"].([]any)
-	if !ok {
-		t.Fatalf("%s matrix has no module list", jobName)
-	}
-	var out []string
-	for _, m := range raw {
-		s, ok := m.(string)
-		if !ok {
-			t.Fatalf("%s matrix module entry is %T, want a string", jobName, m)
-		}
-		out = append(out, s)
-	}
-	return out
-}
-
 // There is no go.work, so `go build ./...` / `go vet ./...` / `go test -race ./...`
 // / `govulncheck ./...` run from the repository root CANNOT reach a nested module —
 // each tool module is a separate go.mod by design, precisely so it never affects
@@ -711,28 +676,28 @@ func matrixModules(t *testing.T, jobName string) []string {
 // a fifth module cannot be added and silently go unchecked (#437).
 func TestEveryGoModuleIsCoveredByCIVerification(t *testing.T) {
 	modules := goModules(t)
-
-	for _, job := range []string{"lint", "module-verify"} {
-		t.Run(job, func(t *testing.T) {
-			covered := map[string]bool{}
-			for _, m := range matrixModules(t, job) {
-				covered[m] = true
-			}
-			for _, m := range modules {
-				// The root module is spelled "." in a matrix, and has its own
-				// dedicated build/test/vuln jobs besides.
-				name := m
-				if name == "." && job == "module-verify" {
-					continue
-				}
-				if !covered[name] {
-					t.Errorf("module %q is not in ci.yml's %q matrix. Without a go.work, nothing "+
-						"run from the repo root reaches it, so it is verified only by what names "+
-						"it explicitly.", name, job)
-				}
-			}
-		})
+	jobs := jobsOf(t, readWorkflow(t, "ci.yml"), "ci.yml")
+	lint, ok := jobs["lint"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no lint job")
 	}
+	verify, ok := jobs["module-verify"].(map[string]any)
+	if !ok {
+		t.Fatal("ci.yml has no module-verify job")
+	}
+	t.Run("lint", func(t *testing.T) {
+		for _, problem := range packedLintProblems(lint, modules) {
+			t.Errorf("%s. Without a go.work, nothing run from the repo root reaches a nested "+
+				"module, so it is verified only by what names it explicitly.", problem)
+		}
+	})
+	t.Run("module-verify", func(t *testing.T) {
+		// The root module has its own dedicated build/test/vuln jobs.
+		for _, problem := range packedVerifyProblems(verify, toolModulesOf(modules)) {
+			t.Errorf("%s. Without a go.work, nothing run from the repo root reaches a nested "+
+				"module, so it is verified only by what names it explicitly.", problem)
+		}
+	})
 }
 
 func TestEveryGoModuleIsCoveredByJustVerification(t *testing.T) {
@@ -769,7 +734,16 @@ func TestModuleVerifyRunsTheFullPerModuleGate(t *testing.T) {
 	if !ok {
 		t.Fatal("module-verify has no steps list")
 	}
-	checkRecipeArguments(t, steps, map[string]string{"test-modules": "${{ matrix.module }}", "vet": "${{ matrix.module }}", "tidy-check": "${{ matrix.module }}", "vuln": "${{ matrix.module }}"})
+	for _, module := range toolModulesOf(goModules(t)) {
+		step := packedVerifyStep(job, module)
+		if step == nil {
+			t.Fatalf("module-verify has no step for %s", module)
+		}
+		argument := module + " || status=1"
+		t.Run(module, func(t *testing.T) {
+			checkRecipeArguments(t, []any{step}, map[string]string{"test-modules": argument, "vet": argument, "tidy-check": argument, "vuln": argument})
+		})
+	}
 	body := strings.Join([]string{
 		recipeBackedWorkflowBody(t, steps, "test-modules", "go build ./...", "go test -race ./..."),
 		recipeBackedWorkflowBody(t, steps, "vet", "go vet ./..."),
@@ -794,7 +768,7 @@ func TestModuleVerifyRunsTheFullPerModuleGate(t *testing.T) {
 }
 
 // The root module needs the same tidy-diff as the tool modules. It is not in the
-// module-verify matrix (it has dedicated jobs), so the check has to be asserted
+// module-verify job (it has dedicated jobs), so the check has to be asserted
 // where it actually lives — and it was missing: three root requirements were
 // marked `// indirect` while being imported directly, and nothing caught it (#437).
 func TestRootModuleTidyIsChecked(t *testing.T) {
@@ -814,7 +788,7 @@ func TestRootModuleTidyIsChecked(t *testing.T) {
 		return
 	}
 	t.Error("build-test never invokes `go mod tidy`. The root module is excluded from the " +
-		"module-verify matrix, so without a tidy leg here nothing checks it — which is how three " +
+		"module-verify job, so without a tidy leg here nothing checks it — which is how three " +
 		"directly-imported requirements sat marked `// indirect`.")
 }
 
@@ -922,7 +896,7 @@ func TestPrometheusRulesAreCheckedByPromtool(t *testing.T) {
 
 // promqlcheck is the only thing that parses the DASHBOARD's expressions and the
 // Grafana provisioning rules — promtool understands neither. Adding the module to
-// the lint/module-verify matrices makes it build and test; it does not make it RUN
+// the packed lint and module-verify jobs makes it build and test; it does not make it RUN
 // against the artifacts. Verified-but-never-invoked is exactly the shape of #437, so
 // assert the invocation on its own line rather than as a loose substring, because
 // remediation prose in an error message has satisfied a substring check here before.
