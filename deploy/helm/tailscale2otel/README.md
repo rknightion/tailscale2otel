@@ -1,6 +1,6 @@
 # tailscale2otel
 
-![Version: 0.36.7](https://img.shields.io/badge/Version-0.36.7-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
+![Version: 0.36.8](https://img.shields.io/badge/Version-0.36.8-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square)
 
 Tailscale exporter for OpenTelemetry and Prometheus — device fleet, network flow logs and audit logs over OTLP. Grafana Cloud ready. Headscale supported.
 
@@ -411,7 +411,7 @@ extraVolumeMounts:
 | config.collectors.flowlogs.objectstore.session_token | string | `""` | Static S3 session token (temporary credentials only). Set via the TS2OTEL_* secret, not here. |
 | config.collectors.flowlogs.objectstore.session_token_file | string | `""` | Read the temporary S3 session token from this mounted file instead of an inline value. Set the value or the file, never both. |
 | config.collectors.flowlogs.replay_overlap | string | `"5m"` | Reread this much before the durable high-water mark so records that became available after the first completed query can still arrive. 0 disables; maximum 1h. |
-| config.collectors.flowlogs.replay_seen_capacity | int | `131072` | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Must be 1..1048576 while replay_overlap is enabled. |
+| config.collectors.flowlogs.replay_seen_capacity | string | `nil` | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Must be 1..1048576 while replay_overlap is enabled. Leave unset (null) for the built-in 131072, reduced at load time to fit the checkpoint store; any number you set is kept as written and warned about when it exceeds that budget. |
 | config.collectors.flowlogs.source | string | `"poll"` | Ingestion source: poll | stream | objectstore | both. PICK ONE method per log type: `both` runs poll AND the `streaming` receiver and risks double-counting — cross-source de-duplication is a best-effort FAILSAFE, not a guarantee. The exporter logs a WARN at startup when streaming is enabled while this collector still polls or reads the export bucket. Set `stream` (not poll/both) when config.streaming.enabled is true; set `objectstore` and fill in the objectstore block below to read Tailscale's S3 export instead of calling the API. |
 | config.collectors.flowlogs.trusted_reporter_node_ids | list | `[]` | Verified FlowLog.NodeID values classified as `configured`. Empty together with trusted_reporter_tags leaves reporter trust `unconfigured`. |
 | config.collectors.flowlogs.trusted_reporter_tags | list | `[]` | Authoritative device tags that classify a verified reporter as `tagged`. Tags embedded in the flow record are unverified and never grant trust; unmatched reporters are `untrusted`. |

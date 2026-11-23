@@ -1276,8 +1276,10 @@ config: # @schema additionalProperties:false
       # after the first completed query can still arrive. 0 disables; maximum 1h.
       replay_overlap: 5m
       # -- Maximum durable SHA-256 connection identities retained to suppress the intentional
-      # replay across restart. Must be 1..1048576 while replay_overlap is enabled.
-      replay_seen_capacity: 131072
+      # replay across restart. Must be 1..1048576 while replay_overlap is enabled. Leave unset
+      # (null) for the built-in 131072, reduced at load time to fit the checkpoint store; any
+      # number you set is kept as written and warned about when it exceeds that budget.
+      replay_seen_capacity: null # @schema type:[integer,null]
       # -- Verified FlowLog.NodeID values classified as `configured`. Empty together with
       # trusted_reporter_tags leaves reporter trust `unconfigured`.
       trusted_reporter_node_ids: []

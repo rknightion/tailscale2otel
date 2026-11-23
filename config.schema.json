@@ -911,9 +911,11 @@
               "type": "string"
             },
             "replay_seen_capacity": {
-              "default": 131072,
-              "description": "poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)",
-              "type": "integer"
+              "description": "poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled). null/unset: the built-in 131072, reduced to fit the checkpoint store; a number you set is kept and warned about when too large",
+              "type": [
+                "integer",
+                "null"
+              ]
             },
             "source": {
               "default": "poll",

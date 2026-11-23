@@ -982,7 +982,7 @@ Pick exactly one method per log type. Which fields are honored depends on `sourc
 | `initial_lookback` | both | ✓ | - | Cold-start reach-back when there is no checkpoint yet. Must be **> 0** - `0` (or negative) leaves the poll window's `from ≥ to` forever, so the collector never polls and never checkpoints; rejected at startup rather than silently stalling. |
 | `max_window` | both | ✓ | - | Cap a single tick's window so a long outage catches up over several ticks. `0` (or negative) means **no cap** (the explicit sentinel). A *positive* `max_window ≤ interval` can never catch up (each tick advances at most `max_window`, so a backlog grows or stalls forever), and is now **rejected at startup** as a hard validation error - use `max_window > interval`, or `0` for no cap. Stream-only collectors are unaffected (they have no catch-up window). **Must be tuned together with [`tailscale.http.timeout`](#tailscalehttp)**: a catch-up window that takes longer to fetch+decode than the timeout fails every attempt identically and never advances (see the note under `tailscale.http`). |
 | `replay_overlap` | `flowlogs` | ✓ | - | Reread this much before the durable high-water mark so a record that became available after the first completed query can still arrive. Default `5m`; `0` disables; maximum `1h`. This is distinct from `lag`: lag delays closing the newest window, while replay deliberately revisits already completed time. |
-| `replay_seen_capacity` | `flowlogs` | ✓ | - | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Default `131072`; `1..1048576` while replay is enabled. Raw node IDs and endpoints are never checkpoint keys. |
+| `replay_seen_capacity` | `flowlogs` | ✓ | - | Maximum durable SHA-256 connection identities retained to suppress the intentional replay across restart. Base default `131072`, reduced at load time when needed to fit the checkpoint budget. Valid range `1..1048576` while replay is enabled. Raw node IDs and endpoints are never checkpoint keys. |
 | `log_mode` | `flowlogs` | ✓ | ✓ | Log detail level - output shaping in the shared processor. |
 | `max_log_records_per_window` | `flowlogs` | ✓ | ✓¹ | Cap on emitted flow LOG records (see below). |
 
@@ -1033,11 +1033,23 @@ Network flow logs → aggregated traffic counters + per-connection flow logs.
 | `collectors.flowlogs.max_window` | `1h` | Catch-up cap for one tick (poll only). |
 | `collectors.flowlogs.dedup_capacity` | `16384` | Connection identities retained for poll-window and cross-source dedup. Must be positive; unlimited is deliberately unsupported because an unbounded set is a memory leak. |
 | `collectors.flowlogs.replay_overlap` | `5m` | Reread this much of completed poll history for late API records (`0` disables; maximum `1h`). Separate from the tail-safety `lag`. |
-| `collectors.flowlogs.replay_seen_capacity` | `131072` | Bounded durable hashed connection identities used to suppress the replay across restart (`1..1048576` while enabled). |
+| `collectors.flowlogs.replay_seen_capacity` | `131072` before checkpoint sizing | Bounded durable hashed connection identities used to suppress the replay across restart (`1..1048576` while enabled). |
 | `collectors.flowlogs.trusted_reporter_node_ids` | `[]` | Optional allowlist of verified `FlowLog.NodeID` reporters, classified as `configured`. The reporter observation metric carries only the bounded trust/consistency classes, never these raw IDs. |
 | `collectors.flowlogs.trusted_reporter_tags` | `[]` | Optional authoritative device tags that classify a verified reporter as `tagged`. Only the devices collector's control-plane cache can grant tag trust; tags embedded in the flow record never do. Other reporters are `untrusted`; with both trust lists empty, reporter trust is `unconfigured`. |
 | `collectors.flowlogs.log_mode` | `per_connection` | Flow-log detail. One of `per_connection` (one log per 5-tuple), `per_record` (one summary log per node window), or `off` (no flow logs, metrics only). |
 | `collectors.flowlogs.max_log_records_per_window` | `0` | Cap on flow LOG records emitted (`0` = unlimited). Excess is counted into `tailscale.network.flow.logs_dropped`. Metrics are never capped. |
+
+When `replay_seen_capacity` is omitted or `null` (how the Helm chart and `config.example.yaml` ship it), the exporter keeps `131072` for a single tailnet with a
+file checkpoint. It can retain fewer identities per tailnet when several pollers share a file or
+when using Kubernetes checkpoints. Kubernetes sizing uses the most constrained ConfigMap shard
+and gives no credit for compression, so the same configuration gets the same capacity after a
+restart. Less retained history can let duplicates through during replay.
+
+An explicit YAML or environment value is kept. If it exceeds the conservative checkpoint budget,
+`-validate` and startup warn without rejecting the configuration; for Kubernetes the warning names the 1 MiB (1048576 bytes) ConfigMap shard limit. Use the suggested lower capacity
+if one is available. The estimate reserves some room for other rows but cannot account for all
+other checkpoint state or older flow rows with non-UTC timestamps. It does not apply to memory
+checkpoints, non-polling sources or disabled replay.
 
 #### `collectors.flowlogs.objectstore` - the S3 export as an ingestion source
 

@@ -311,6 +311,12 @@ func (b *schemaBuilder) schemaForField(t reflect.Type, path string) map[string]a
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		s := b.scalarSchema("integer", path)
 		applyRule(s, path)
+		if path == flowReplayCapacityPath {
+			// config.example.yaml and the Helm chart ship this key as null, meaning
+			// "use the built-in default, clamped to the checkpoint store". No
+			// other integer key accepts null.
+			s["type"] = []any{"integer", "null"}
+		}
 		return s
 	case reflect.Float32, reflect.Float64:
 		s := b.scalarSchema("number", path)

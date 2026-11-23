@@ -443,3 +443,79 @@ func collectConstrained(node map[string]any, path string, out *[]string) {
 		collectConstrained(ap, path+keyDelim+"*", out)
 	}
 }
+
+// The example file is meant to be pasted and validated against the standalone
+// schema, so every key it ships as null must permit null there. Only
+// replay_seen_capacity does: the schema stays a plain integer for every other key.
+func TestConfigSchemaAllowsEveryNullInExample(t *testing.T) {
+	example := readExampleYAML(t)
+	schema, err := buildConfigSchema(example)
+	if err != nil {
+		t.Fatalf("build config schema: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(example, &doc); err != nil {
+		t.Fatalf("parse config.example.yaml: %v", err)
+	}
+	var nulls []string
+	var walk func(prefix string, node map[string]any)
+	walk = func(prefix string, node map[string]any) {
+		for key, value := range node {
+			path := prefix + key
+			switch v := value.(type) {
+			case nil:
+				nulls = append(nulls, path)
+			case map[string]any:
+				walk(path+".", v)
+			}
+		}
+	}
+	walk("", doc)
+	if !slices.Contains(nulls, flowReplayCapacityPath) {
+		t.Fatalf("config.example.yaml no longer ships %s as null (found %v); this test would assert nothing", flowReplayCapacityPath, nulls)
+	}
+	for _, path := range nulls {
+		node := schema
+		for _, part := range strings.Split(path, ".") {
+			props, _ := node["properties"].(map[string]any)
+			next, ok := props[part].(map[string]any)
+			if !ok {
+				t.Fatalf("schema has no property %s", path)
+			}
+			node = next
+		}
+		if !schemaTypeAllowsNull(node["type"]) {
+			t.Errorf("config.example.yaml ships %s: null but config.schema.json type is %v, so the shipped example fails the schema", path, node["type"])
+		}
+	}
+	// No other key changes type: the replay capacity is the one nullable integer.
+	if got := nullableIntegerPaths(schema, ""); !slices.Equal(got, []string{flowReplayCapacityPath}) {
+		t.Errorf("nullable integer keys = %v, want only %s", got, flowReplayCapacityPath)
+	}
+}
+
+func schemaTypeAllowsNull(typ any) bool {
+	list, ok := typ.([]any)
+	if !ok {
+		return typ == "null"
+	}
+	return slices.Contains(list, any("null"))
+}
+
+func nullableIntegerPaths(node map[string]any, prefix string) []string {
+	var out []string
+	props, _ := node["properties"].(map[string]any)
+	for key, raw := range props {
+		child, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		path := prefix + key
+		if list, ok := child["type"].([]any); ok && slices.Contains(list, any("integer")) && slices.Contains(list, any("null")) {
+			out = append(out, path)
+		}
+		out = append(out, nullableIntegerPaths(child, path+".")...)
+	}
+	sort.Strings(out)
+	return out
+}

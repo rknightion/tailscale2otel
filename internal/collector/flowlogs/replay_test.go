@@ -42,7 +42,7 @@ func TestReplayOverlapAndDisabledSettings(t *testing.T) {
 }
 
 func TestCollectWindow_ReplayStateSuppressesRestartAndKeepsCurrentLateRecord(t *testing.T) {
-	now := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 26, 12, 0, 0, 123456789, time.FixedZone("fixture", 60*60))
 	store := collector.NewMemoryStore()
 	first := oneTCPResponse()
 
@@ -62,6 +62,10 @@ func TestCollectWindow_ReplayStateSuppressesRestartAndKeepsCurrentLateRecord(t *
 	}
 	if !strings.HasPrefix(keys[0], replayKeyPrefix) || len(strings.TrimPrefix(keys[0], replayKeyPrefix)) != 64 {
 		t.Fatalf("replay key = %q, want %s plus SHA-256 hex digest", keys[0], replayKeyPrefix)
+	}
+	expiry, ok := store.Get(keys[0])
+	if want := now.Add(5 * time.Minute); !ok || !expiry.Equal(want) || expiry.Location() != time.UTC {
+		t.Fatalf("replay expiry = %v; want %v in UTC to fit the checkpoint budget", expiry, want)
 	}
 	for _, raw := range []string{"n-laptop", "100.64.0.1", "100.64.0.2", ":12345", ":443"} {
 		if strings.Contains(keys[0], raw) {

@@ -221,7 +221,7 @@ A `TS2OTEL_*` variable that matches no known key is logged as a startup `WARN`.
 | `TS2OTEL_COLLECTORS__FLOWLOGS__MAX_WINDOW` | `1h` | `restart` | poll only — cap one tick's window so a long outage catches up over several ticks |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__DEDUP_CAPACITY` | `16384` | `restart` | identities retained for poll-window AND cross-source dedup; must be >0 (unlimited would leak memory) |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_OVERLAP` | `5m` | `restart` | poll only — reread this completed-window overlap for records that became available late (0 disables) |
-| `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_SEEN_CAPACITY` | `131072` | `restart` | poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled) |
+| `TS2OTEL_COLLECTORS__FLOWLOGS__REPLAY_SEEN_CAPACITY` | `null` | `restart` | poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled). null/unset: the built-in 131072, reduced to fit the checkpoint store; a number you set is kept and warned about when too large |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__TRUSTED_REPORTER_NODE_IDS` | `[]` | `restart` | verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__TRUSTED_REPORTER_TAGS` | `[]` | `restart` | authoritative device tags (e.g. ["tag:router"]) classified as tagged; embedded flow tags never grant trust _(comma-separated list)_ |
 | `TS2OTEL_COLLECTORS__FLOWLOGS__LOG_MODE` | `per_connection` | `restart` | per_connection \| per_record \| off — log detail level (applies to poll AND stream) |
