@@ -151,9 +151,9 @@ Root module `github.com/rknightion/tailscale2otel/v5` plus four CI-only tool mod
 tool module can never affect the main module's build.
 
 - `go test -race ./...` at the root is NOT "the test suite": it stops at the root module boundary.
-  ci.yml's `module-verify` matrix covers the tool modules (build, vet, race test, `go mod tidy`
-  diff, `govulncheck`) and is in `ci-success.needs`; the `lint` matrix covers all five modules.
-  `internal/ci/workflowcontract_test.go` fails if a module drops out of either matrix, or if
+  ci.yml's packed `module-verify` job covers the tool modules (build, vet, race test, `go mod tidy`
+  diff, `govulncheck`) and is in `ci-success.needs`; the packed `lint` job covers all five modules.
+  `internal/ci/workflowcontract_test.go` fails if a module drops out of either job, or if
   `module-verify` stops running a leg.
 - `tools/promqlcheck` is the one tool module with no `replace ../..` - it needs nothing from the
   root module - and it pins `golang.org/x/text` against a transitive vulnerability (`GO-2026-5970`),
