@@ -6,7 +6,7 @@ module github.com/rknightion/tailscale2otel/v5/tools/configcheck
 
 go 1.27.4
 
-require github.com/rknightion/tailscale2otel/v5 v5.0.0
+require github.com/rknightion/tailscale2otel/v5 v5.0.0 // indirect
 
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
