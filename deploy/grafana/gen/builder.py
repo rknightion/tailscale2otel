@@ -49,6 +49,11 @@ TBL_META = ["tailscale_tailnet", "tailscale2otel_provider", "deployment_environm
 
 ELEMENTS = {}
 _id = 0
+# Panel ids are positional, and an alert links a panel by its numeric id. A panel that is
+# added mid-build would renumber every panel after it and rewrite unrelated alert manifests,
+# so a panel that no alert links takes its id from this reserved block instead (late=True).
+LATE_ID_BASE = 10000
+_late_id = LATE_ID_BASE
 
 
 def lot(metric, w=WIN_FAST):
@@ -255,8 +260,8 @@ def has_verdict_color(value):
 def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
           mappings=None, thresholds=None, custom=None, options=None,
           overrides=None, decimals=None, version=VERSION, novalue=None,
-          transformations=None, population="selected"):
-    global _id
+          transformations=None, population="selected", late=False):
+    global _id, _late_id
     if ptype == "table" and any(t.get("group") == "merge" for t in transformations or []):
         check_merged_table(title, targets)
     if population not in {"selected", "fleet"}:
@@ -275,8 +280,13 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
     if ptype == "bargauge" and thresholds and options.get("displayMode") == "gradient":
         options["displayMode"] = "basic"
     check_bool_polarity(title, mappings, thresholds)
-    _id += 1
-    name = "panel-%d" % _id
+    if late:
+        _late_id += 1
+        pid = _late_id
+    else:
+        _id += 1
+        pid = _id
+    name = "panel-%d" % pid
     for i, _t in enumerate(targets):  # distinct refIds (A, B, C, ...) — duplicate refIds blank a panel
         _t["spec"]["refId"] = chr(65 + i)
     defaults = {}
@@ -314,7 +324,7 @@ def panel(title, ptype, targets, unit=None, desc="", min_=None, max_=None,
     if ptype == "table" and transformations is None:
         transformations = [organize(exclude=TBL_NOISE + TBL_META)]
     ELEMENTS[name] = {"kind": "Panel", "spec": {
-        "id": _id, "title": title, "description": desc, "links": [],
+        "id": pid, "title": title, "description": desc, "links": [],
         "data": {"kind": "QueryGroup", "spec": {
             "queries": targets, "queryOptions": {}, "transformations": transformations or []}},
         "vizConfig": {"kind": "VizConfig", "group": ptype, "version": version, "spec": {
@@ -332,10 +342,20 @@ def stat_opts(calc="lastNotNull", color="value", graph="none", text="auto"):
             "colorMode": color, "graphMode": graph, "textMode": text, "justifyMode": "auto"}
 
 
+# Grafana's own "Hide lines and areas" annotation option (#1211). Stored point annotations
+# keep their markers and hover details on the time axis; the dashed vertical lines and the
+# shaded regions that paint over the plot are not drawn. Dozens of events inside one
+# interval otherwise form a solid block that hides the series. Annotation clustering is
+# deliberately not used: it turns points into regions.
+def annotations_off_canvas():
+    return {"lines": {"width": 0}, "regions": {"opacity": 0}}
+
+
 def ts_opts(placement="bottom", mode="list", calcs=None, tt="multi"):
     return {"legend": {"displayMode": mode, "placement": placement, "showLegend": True,
                        "calcs": calcs or []},
-            "tooltip": {"mode": tt, "sort": "desc"}}
+            "tooltip": {"mode": tt, "sort": "desc"},
+            "annotations": annotations_off_canvas()}
 
 
 def ts_custom(style="line", fill=15, width=1, stack=None, points="never", grad="opacity"):
@@ -379,10 +399,18 @@ def geomap_opts(location_field="lookup"):
 def state_timeline_opts(per_page=None):
     options = {"mergeValues": True, "showValue": "auto", "alignValue": "left",
                "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-               "tooltip": {"mode": "single", "sort": "none"}}
+               "tooltip": {"mode": "single", "sort": "none"},
+               "annotations": annotations_off_canvas()}
     if per_page is not None:
         options["perPage"] = per_page
     return options
+
+
+def annolist_opts(tags, limit=100):
+    """Grafana annotation list over the org-wide store, within the dashboard time range."""
+    return {"onlyFromThisDashboard": False, "onlyInTimeRange": True, "tags": list(tags),
+            "limit": limit, "showUser": False, "showTime": True, "showTags": True,
+            "navigateBefore": "10m", "navigateAfter": "10m", "navigateToPanel": False}
 
 
 def heatmap_opts():
