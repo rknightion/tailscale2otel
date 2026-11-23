@@ -66,8 +66,10 @@ The required order is `lease_duration > renew_deadline > 1.2 * retry_period > 0`
 
 `checkpoint.store: kubernetes` requires Kubernetes coordination. It stores compressed checkpoint
 shards in ConfigMaps derived from the Lease name and collector namespace. Each shard must fit the
-ConfigMap size limit; startup checks capacity for bounded dedup and object-store state. This shares
-cursor progress across leaders without sharing a single-writer file.
+ConfigMap size limit. Startup lowers the implicit [flow replay capacity](configuration.md#collectorsflowlogs)
+when needed and warns about explicit values above the checkpoint budget. The object-store size
+check remains a separate validation error. Shared checkpoints preserve cursor progress across leaders
+without sharing a single-writer file.
 
 Other state stays local to each replica:
 

@@ -1907,7 +1907,7 @@ func Load(path string) (*Config, error) {
 
 	// 2. Optional YAML file (overrides defaults).
 	var cfgFileWarning string
-	var deviceVersionChecksExplicit bool
+	var deviceVersionChecksExplicit, flowReplayCapacityExplicit bool
 	if path != "" {
 		configData, info, err := safefile.ReadRegularInfo(path, safefile.MaxConfigBytes, safefile.AllowSymlink)
 		if err != nil {
@@ -1933,6 +1933,7 @@ func Load(path string) (*Config, error) {
 			return nil, unknownKeyError(u, valid)
 		}
 		deviceVersionChecksExplicit = fk.Exists("version_checks.devices.enabled")
+		flowReplayCapacityExplicit = fk.Exists(flowReplayCapacityPath)
 		// A kubelet-projected ConfigMap/Secret file on a read-only mount takes
 		// its mode from the volume's defaultMode and cannot be chmod'ed, so
 		// the advisory would stay red with no remedy; it is skipped only for
@@ -1976,6 +1977,9 @@ func Load(path string) (*Config, error) {
 	}
 	if err := applyTailnetEnvOverlays(&cfg); err != nil {
 		return nil, err
+	}
+	if !flowReplayCapacityExplicit && !envKeys[flowReplayCapacityPath] {
+		cfg.applyFlowReplayCheckpointDefault()
 	}
 
 	slices.Sort(skipped)
