@@ -367,7 +367,7 @@ collectors:
     max_window: 1h                    # poll only — cap one tick's window so a long outage catches up over several ticks
     dedup_capacity: 16384             # identities retained for poll-window AND cross-source dedup; must be >0 (unlimited would leak memory)
     replay_overlap: 5m                # poll only — reread this completed-window overlap for records that became available late (0 disables)
-    replay_seen_capacity: 131072      # poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled)
+    replay_seen_capacity: null        # poll only — durable hashed connection identities retained for overlap dedup (1..1048576 when enabled). null/unset: the built-in 131072, reduced to fit the checkpoint store; a number you set is kept and warned about when too large
     trusted_reporter_node_ids: []     # verified FlowLog.NodeID values classified as configured; empty with trusted_reporter_tags means trust policy is unconfigured
     trusted_reporter_tags: []         # authoritative device tags (e.g. ["tag:router"]) classified as tagged; embedded flow tags never grant trust
     log_mode: per_connection          # per_connection | per_record | off — log detail level (applies to poll AND stream)

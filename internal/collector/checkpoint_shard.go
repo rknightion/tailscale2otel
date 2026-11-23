@@ -2,6 +2,12 @@ package collector
 
 import "strings"
 
+// FlowCheckpointName is the scheduler cursor key for polled flow logs, before any tailnet prefix.
+const FlowCheckpointName = "flowlogs"
+
+// FlowReplayCheckpointPrefix prefixes hex SHA-256 digests in the flow replay checkpoint.
+const FlowReplayCheckpointPrefix = FlowCheckpointName + "/replay/seen/"
+
 // ShardKey returns the collector-owned namespace for a fully constructed
 // checkpoint key. Object-store state has a multi-row namespace (including a
 // feed identity); ordinary scheduler cursors are already one key per collector.
@@ -28,7 +34,7 @@ func ShardKey(key string) string {
 
 func isCheckpointCollectorNamespace(part string) bool {
 	switch part {
-	case "flowlogs", "auditlogs", "acl":
+	case FlowCheckpointName, "auditlogs", "acl":
 		return true
 	default:
 		return false

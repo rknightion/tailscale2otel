@@ -39,7 +39,7 @@ const (
 	defaultLag = 120 * time.Second
 	// replayKeyPrefix is the private checkpoint namespace used for durable replay
 	// identities. Keys contain only a SHA-256 digest, never a raw flow identity.
-	replayKeyPrefix = "flowlogs/replay/seen/"
+	replayKeyPrefix = collector.FlowReplayCheckpointPrefix
 )
 
 // metricFeatureEnabled is the gauge reporting whether the network-flow-logging
@@ -188,7 +188,7 @@ func New(a api, proc *flowlog.Processor, interval, lag time.Duration, featureChe
 }
 
 // Name returns the stable collector identifier.
-func (c *Collector) Name() string { return "flowlogs" }
+func (c *Collector) Name() string { return collector.FlowCheckpointName }
 
 // DefaultInterval returns the configured interval, or 60s when unset.
 func (c *Collector) DefaultInterval() time.Duration {
@@ -466,7 +466,9 @@ func (c *Collector) persistReplay(additions map[string]struct{}, deletes []strin
 		return nil
 	}
 	updates := make(map[string]time.Time, len(additions))
-	expiry := to.Add(c.replayOverlap)
+	// Keep the same instant and RFC3339 wire format, with a fixed maximum
+	// width independent of the host time zone (used by checkpoint sizing).
+	expiry := to.Add(c.replayOverlap).UTC()
 	for digest := range additions {
 		c.replaySeen[digest] = expiry
 	}

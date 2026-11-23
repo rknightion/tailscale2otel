@@ -494,7 +494,10 @@
                                     "type": "string"
                                 },
                                 "replay_seen_capacity": {
-                                    "type": "integer"
+                                    "type": [
+                                        "integer",
+                                        "null"
+                                    ]
                                 },
                                 "source": {
                                     "type": "string"

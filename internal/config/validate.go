@@ -336,6 +336,9 @@ func (c *Config) ProviderInactiveCollectors() []string {
 func (c *Config) Warnings() []string {
 	var w []string
 	w = append(w, c.logHorizonWarnings()...)
+	if warning := c.flowReplayCheckpointWarning(); warning != "" {
+		w = append(w, warning)
+	}
 	if c.Collectors.NodeMetrics.Discovery.InstanceSource == "hostname" && !c.PIIFilter.TailscaleIPs {
 		w = append(w, "collectors.node_metrics.discovery.instance_source=hostname embeds the node address in tailscale.node: with pii_filter.tailscale_ips=false the label is removed. Use instance_source: name for a unique label with no address.")
 	}
@@ -1952,13 +1955,13 @@ func (c *Config) validationChecks() []configCheck {
 		}
 		return nil
 	})
-	add("collectors.flowlogs.replay_seen_capacity", "Set collectors.flowlogs.replay_seen_capacity between 1 and 1048576.", func() error {
+	add(flowReplayCapacityPath, "Set collectors.flowlogs.replay_seen_capacity between 1 and 1048576.", func() error {
 		if !c.Collectors.Flowlogs.Enabled || !pollsSource(c.Collectors.Flowlogs.Source) {
 			return nil
 		}
 		overlap := c.Collectors.Flowlogs.ReplayOverlap.D()
 		capacity := c.Collectors.Flowlogs.ReplaySeenCapacity
-		if overlap > 0 && (capacity < 1 || capacity > 1048576) {
+		if overlap > 0 && (capacity < 1 || capacity > maxFlowReplayCapacity) {
 			return fmt.Errorf("collectors.flowlogs.replay_seen_capacity must be between 1 and 1048576 "+
 				"when replay_overlap is enabled (got %d)", capacity)
 		}
