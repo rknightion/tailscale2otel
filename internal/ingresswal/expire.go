@@ -76,33 +76,29 @@ func (s *Store) ExpireBefore(
 			s.mu.Unlock()
 			return expired, ErrClosed
 		}
-		data, err := s.readBounded(c.entry.name)
+		meta, _, err := s.readRecordMeta(c.entry.name, nil, false)
 		s.mu.Unlock()
 		if err != nil {
 			return expired, err
 		}
-		record, err := decodeRecord(data)
-		if err != nil {
-			return expired, err
-		}
-		if record.Envelope.ID != c.id || record.Sequence != c.entry.sequence {
+		if meta.ID != c.id || meta.Sequence != c.entry.sequence {
 			return expired, newCorruptError("expiry entry identity mismatch")
 		}
-		if !record.Envelope.Accepted.Before(cutoff) {
+		if !meta.Accepted.Before(cutoff) {
 			break
 		}
-		if eligible != nil && !eligible(record.Envelope.Tailnet, record.Envelope.Source, record.Envelope.Signal) {
+		if eligible != nil && !eligible(meta.Tailnet, meta.Source, meta.Signal) {
 			continue
 		}
 		if _, err := s.commitGeneration(ctx, c.id, c.entry.sequence); err != nil {
 			return expired, err
 		}
 		expired = append(expired, ExpiredEntry{
-			Tailnet:      record.Envelope.Tailnet,
-			Source:       record.Envelope.Source,
-			Signal:       record.Envelope.Signal,
-			Accepted:     record.Envelope.Accepted,
-			EncodedBytes: int64(len(data)),
+			Tailnet:      meta.Tailnet,
+			Source:       meta.Source,
+			Signal:       meta.Signal,
+			Accepted:     meta.Accepted,
+			EncodedBytes: meta.EncodedBytes,
 		})
 	}
 	return expired, nil
