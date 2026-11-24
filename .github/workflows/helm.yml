@@ -122,7 +122,7 @@ jobs:
     name: helm schema validate (kubeconform)
     permissions:
       contents: read
-    uses: rknightion/.github/.github/workflows/helm-validate.yml@84486af028f18f4a2d93ee5c4eb954fdd541d800 # v1.31.10
+    uses: rknightion/.github/.github/workflows/helm-validate.yml@9030a1b7d1d6652c0447b4a8e4181923105a0371 # v1.31.11
     with:
       # This chart renders CRD kinds (ServiceMonitor) that kubeconform has no
       # built-in schema for. Give it the schema rather than reaching for
