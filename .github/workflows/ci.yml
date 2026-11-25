@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
-    # `edited` re-runs CI when the pull request body changes, so the acceptance evidence check reads
-    # the new table. Every job runs on it: a job skipped by `if:` would report success to ci-success.
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    # The acceptance-evidence check reads the pull request body, so it runs in pr-metadata.yml;
+    # a body edit does not re-run this workflow.
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -649,20 +649,8 @@ jobs:
           path: ${{ matrix.package }}/testdata/corpus/**
           if-no-files-found: ignore
 
-  # A pull request that closes an issue shows evidence for each of its acceptance criteria. Checks
-  # only pull requests with a closing keyword (enforce-all-prs: false), because this repository takes
-  # outside and bot pull requests. The reusable fails on any event but pull_request, so it runs on
-  # pull requests only. Check run: `ac-evidence / Acceptance evidence`.
-  ac-evidence:
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: read
-      issues: read
-      pull-requests: read
-    uses: rknightion/.github/.github/workflows/ac-evidence.yml@7ed87713176ccae972b0143071b0196ff370d804 # v1.32.3
-
   # The lines a pull request adds carry no identifier, email address, public address or credential
-  # shape. Pull requests only, like ac-evidence. Check run: `privacy-sweep / Privacy sweep`.
+  # shape. Pull requests only. Check run: `privacy-sweep / Privacy sweep`.
   privacy-sweep:
     if: github.event_name == 'pull_request'
     permissions:
@@ -737,7 +725,7 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, ac-evidence, privacy-sweep, backlog-freeze, actionlint, dependency-review, zizmor]
+    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, privacy-sweep, backlog-freeze, actionlint, dependency-review, zizmor]
     steps:
       - name: Fail unless every required job succeeded
         id: gate
@@ -748,7 +736,7 @@ jobs:
           set -euo pipefail
           failures=$(jq -r --arg event "$EVENT_NAME" '
             to_entries[]
-            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "ac-evidence" and .key != "privacy-sweep" and .key != "backlog-freeze" and .key != "dependency-review")))
+            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "privacy-sweep" and .key != "backlog-freeze" and .key != "dependency-review")))
             | "\(.key)=\(.value.result)"
           ' <<< "$NEEDS_JSON")
           if [[ -n "$failures" ]]; then
