@@ -298,8 +298,7 @@ file such as `ROADMAP.md` beside them.
 
 ## Maintainer code review
 
-Pull requests are reviewed on demand: Codex (`@codex review`) first, with Cursor Bugbot (guided by
-`.cursor/BUGBOT.md`) as its fallback and as a second reviewer on guarded or large changes.
+Pull requests are reviewed on demand by Codex (`@codex review`), the only hosted reviewer.
 Documentation, CI, dependency, test-only and small changes merge on green checks with no hosted
 review. Before merging a reviewed head, read each requested reviewer's verdict on the exact head:
 fix each finding the code shows to be a real defect, answer the rest on their threads with the code
