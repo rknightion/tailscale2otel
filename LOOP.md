@@ -75,8 +75,8 @@ The tracker working model is `~/repos/agent-docs/docs/github-tracker.md` (mainta
   unit suffixes, `_ratio` on unit-`1` gauges.
 - Pick exactly one ingestion path per log type (`poll` or `stream`); both double-counts.
 - Validate record-type changes against real captures in `.capture/`, not synthetic fixtures.
-- Code slices that need a hosted review get Codex, with Cursor Bugbot as fallback and second
-  reviewer (the maintainer code-review section of `AGENTS.md`). A missing, cancelled or oversized
+- Code slices that need a hosted review get Codex
+  (the maintainer code-review section of `AGENTS.md`). A missing, cancelled or oversized
   review is no verdict, never clean.
 - `helm-success` reports on `main` only for pushes on `helm.yml`'s push paths; `just ci-status`
   treats it as absent, not a pass. Never make a source edit to trigger it. PRs always report it.
