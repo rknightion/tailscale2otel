@@ -107,23 +107,6 @@ Off the Mac, when the remote gate runner is installed (`which gaterun`): `gateru
 - `just run` starts the exporter against `config.yaml`; `otlp.protocol: stdout` prints signals to
   the console for local debug with no backend.
 
-## Cursor Cloud specific instructions
-
-The pinned [environment](.cursor/environment.json) runs `just cloud-bootstrap`.
-It reuses `just setup`, installs Helm 4 and Mike Farah `yq`, and warms build and
-race-test caches for all five Go modules. In a new shell, run
-`export PATH="$(go env GOPATH)/bin:$PATH"` before using the installed tools.
-
-- Run `go test -race ./internal/ci </dev/null` for a fast check.
-- Run `just check </dev/null` for the source gate. Compose rendering uses the Docker CLI.
-  In a Docker-enabled environment use
-  `HYGIENE_REQUIRE_DOCKER=1 just check </dev/null` to require the build-context
-  probe. Use hosted CI for image, runtime smoke, and release snapshot checks.
-- To exercise the running exporter without a live tailnet, use the synthetic
-  Compose configuration through `just ci </dev/null` in an environment with a
-  Docker daemon. The admin status page is intended for loopback or an
-  explicitly authenticated deployment.
-
 ## Generated artifacts
 
 Every committed generated artifact has a `gen-<family>` recipe and a CI fail-on-diff gate. `just gen`
