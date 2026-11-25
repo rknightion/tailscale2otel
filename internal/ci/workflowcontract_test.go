@@ -1208,7 +1208,7 @@ func TestWorkflowLintAndDependencyReviewGateMerges(t *testing.T) {
 // below fails in that direction too.
 var reusableCallJobs = map[string]bool{
 	"ci.yml/actionlint":                   true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
-	"ci.yml/ac-evidence":                  true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
+	"pr-metadata.yml/ac-evidence":         true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"ci.yml/privacy-sweep":                true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"arm-automerge.yml/arm":               true, // reusable call: GitHub does not allow timeout-minutes on uses jobs
 	"auto-rc.yml/rc":                      true, // reusable call: GitHub does not allow timeout-minutes on uses jobs

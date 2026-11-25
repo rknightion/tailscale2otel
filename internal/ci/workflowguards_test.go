@@ -40,7 +40,7 @@ func gatingJobProblems(t *testing.T, doc map[string]any, sentinel string) []stri
 			problems = append(problems, name+" must be pull request only")
 		}
 		if condition, exists := job["if"]; exists {
-			allowed := sentinel == "ci-success" && (name == "ac-evidence" || name == "privacy-sweep" || name == "backlog-freeze" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
+			allowed := sentinel == "ci-success" && (name == "privacy-sweep" || name == "backlog-freeze" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
 			if !allowed {
 				problems = append(problems, name+" has job-level if")
 			}
