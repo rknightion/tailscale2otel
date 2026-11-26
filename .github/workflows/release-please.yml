@@ -59,7 +59,7 @@ jobs:
       # failure here is infrastructure, not the commit.
       - name: Mint a scoped release token
         id: bao
-        uses: rknightion/.github/.github/actions/broker-token@a338a012f940c9f9c2bb4d116082d48fe8b35c8d # v1.33.0
+        uses: rknightion/.github/.github/actions/broker-token@9278035a95cca2de3e202817e536fc7f9fc774fc # v1.34.0
         with:
           permission-set: release-please-tailscale2otel
           tailscale-client-id: ${{ secrets.TS_WIF_BROKER_CLIENT_ID }}
@@ -143,7 +143,7 @@ jobs:
     # v1.5.0 is the first shared release containing the checksums-locate fix (the attest step was
     # nondeterministically handed the cosign .sigstore.json bundle instead of SHA256SUMS — #176),
     # so this is no longer pinned to a floating @main SHA. Renovate maintains the bump from here.
-    uses: rknightion/.github/.github/workflows/binaries.yml@a338a012f940c9f9c2bb4d116082d48fe8b35c8d # v1.33.0
+    uses: rknightion/.github/.github/workflows/binaries.yml@9278035a95cca2de3e202817e536fc7f9fc774fc # v1.34.0
     with:
       release-tag: ${{ needs.release-please.outputs.tag_name }}
       install-cosign: true
