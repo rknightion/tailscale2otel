@@ -7,7 +7,7 @@
 # Each repository's own gate tools (golangci-lint, zizmor, ...) are installed by its
 # justfile on first use, at the versions it pins.
 ARG GRAFANA_BASE_IMAGE
-FROM ghcr.io/rknightion/assistant-sandbox-tools:main@sha256:efdfc3796ef1f3e270c8078d33990be86ebbbc871dc663e424f5a4307ee50f8d AS tools
+FROM ghcr.io/rknightion/assistant-sandbox-tools:main@sha256:9845d8c3846e9f29cd7bfd60bd7cfed77da69d39a54e11d2a723f28b42c8d9f7 AS tools
 
 FROM ${GRAFANA_BASE_IMAGE}
 # Unpinned on purpose: Alpine versions follow whichever release Grafana's base image uses, and pnpm
