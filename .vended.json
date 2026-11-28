@@ -29,12 +29,12 @@
     ".github/privacy/identifier-patterns.txt": "85cadcfb81ec1dae95543723e6d6eed80fcbd0a4eed4ce2f9ec32acecd42971f",
     ".github/privacy/sweep": "914d03f4a0d5fa50458532e1b6beb381dda30a965b21694a14f68c8226ec2c3b",
     ".github/pull_request_template.md": "a62a73552fceec31a92aa10e69f2bfd02361c54facd6d9a2df463e05a01647d1",
-    ".grafana/Dockerfile": "9f5b00167d73bea96d20d8f4ce259e37c9fb6deaad3ea810ff6a03d4c40dca28",
+    ".grafana/Dockerfile": "426e3ede4384bed665f2f83eb9e38939ac2b886bb408c8ec7cf1995aec50b016",
     "AGENTS.md": "7b42fbb800463f74d73ff25d885ea1c63b507abf7043731399184b75a7505888",
     "CONTRIBUTING.md": "cad335154f1e9710da3e9527ca5a96811bdd1a27888fe06a627ed30bd9bb0c21"
   },
   "ref": "main",
   "schema": 1,
-  "sha": "08a808c35f95c91009926149ff9041b72c61efa1",
+  "sha": "41b04fdac45c953c177ab916779a04c65c820d2f",
   "source": "rknightion/.github"
 }
