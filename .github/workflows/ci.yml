@@ -16,9 +16,64 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Classifies the pull request (rknightion/.github docs/changes/README.md). The application suites
+  # (build-test, module-verify, docs-catalog, dashboards-drift, goreleaser-snapshot, docker-build)
+  # skip on a Renovate pull request that only moves hub reusable workflow pins, a release-please pull
+  # request and a vend-sync pull request; lint, govulncheck, privacy-sweep, actionlint,
+  # dependency-review, zizmor and ci-success always run, and fast-path-guards runs in their place.
+  # On a push it answers app: 'true', so main always runs everything. internal/ci guards the shape.
+  changes:
+    permissions:
+      contents: read
+    uses: rknightion/.github/.github/workflows/changes.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
+    with:
+      version-files: |
+        deploy/docker-compose.yaml
+        deploy/alloy/docker-compose.yaml
+        deploy/helm/tailscale2otel/Chart.yaml
+      vended-paths: |
+        .agents/skills/**
+        .claude/skills/**
+        CONTRIBUTING.md
+        AGENTS.md
+        .github/pull_request_template.md
+        .github/privacy/sweep
+        .github/privacy/identifier-patterns.txt
+        .grafana/Dockerfile
+        .vended.json
+
+  # What a fast-path pull request still has to pass. internal/ci reads every workflow, so a hub pin
+  # bump that breaks a workflow contract (the documented cosign identities, the zizmor gate, this
+  # graph) still fails. The release pin tests read .release-please-manifest.json, which only the
+  # release pull request moves: they exist to fail on that pull request, before the tag is cut.
+  fast-path-guards:
+    timeout-minutes: 10
+    name: fast-path guards (CI policy + release pins)
+    needs: changes
+    if: needs.changes.outputs.app == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        with:
+          just-version: '1.59.0'
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: CI policy and release pin tests
+        run: just fast-path-guards
+
   build-test:
     timeout-minutes: 20
     name: build / vet / test
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -142,6 +197,8 @@ jobs:
   module-verify:
     timeout-minutes: 30
     name: verify (tool modules)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -219,6 +276,8 @@ jobs:
   docs-catalog:
     timeout-minutes: 10
     name: docs/metrics.md is generated from the code catalog
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -263,6 +322,8 @@ jobs:
   dashboards-drift:
     timeout-minutes: 15
     name: generated dashboards and rules are in sync
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -364,6 +425,8 @@ jobs:
   goreleaser-snapshot:
     timeout-minutes: 20
     name: goreleaser build (snapshot)
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -406,6 +469,8 @@ jobs:
   docker-build:
     timeout-minutes: 25
     name: docker image builds
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -673,7 +738,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # backlog freeze step reads the pull request file list
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, privacy-sweep, actionlint, dependency-review, zizmor]
+    needs: [changes, fast-path-guards, build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, privacy-sweep, actionlint, dependency-review, zizmor]
     steps:
       - name: Fail unless every required job succeeded
         id: gate
@@ -682,13 +747,39 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # A skipped application suite or fast-path-guards is left to the verdict step below.
           failures=$(jq -r --arg event "$EVENT_NAME" '
             to_entries[]
-            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "privacy-sweep" and .key != "actionlint" and .key != "dependency-review")))
+            | select(.value.result != "success" and (.value.result != "skipped" or (
+                ($event == "pull_request" or (.key != "privacy-sweep" and .key != "actionlint" and .key != "dependency-review"))
+                and (.key | IN("fast-path-guards", "build-test", "module-verify", "docs-catalog", "dashboards-drift", "goreleaser-snapshot", "docker-build") | not))))
             | "\(.key)=\(.value.result)"
           ' <<< "$NEEDS_JSON")
           if [[ -n "$failures" ]]; then
             printf '%s\n' "$failures"
+            exit 1
+          fi
+      # A skipped job reports success. It counts as a pass only when changes succeeded and said
+      # the application suites need not run; then fast-path-guards must have passed instead.
+      - name: Fail if an application suite was skipped without a verdict
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          APP: ${{ needs.changes.outputs.app }}
+          SUITES: ${{ needs.build-test.result }} ${{ needs.module-verify.result }} ${{ needs.docs-catalog.result }} ${{ needs.dashboards-drift.result }} ${{ needs.goreleaser-snapshot.result }} ${{ needs.docker-build.result }}
+          GUARDS: ${{ needs.fast-path-guards.result }}
+        run: |
+          if [[ "$CHANGES" != success || ( "$APP" != true && "$APP" != false ) ]]; then
+            echo "::error::changes gave no verdict (result $CHANGES, app '$APP')"
+            exit 1
+          fi
+          for result in $SUITES; do
+            if [[ "$APP" == true && "$result" != success ]]; then
+              echo "::error::the application suites had to run, and one ended $result"
+              exit 1
+            fi
+          done
+          if [[ "$APP" == false && "$GUARDS" != success ]]; then
+            echo "::error::a fast-path pull request must pass fast-path-guards, which ended $GUARDS"
             exit 1
           fi
       # The Backlog.md board is retired: issues are the queue. A pull request may delete files under
