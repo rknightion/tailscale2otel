@@ -1,7 +1,5 @@
 name: Scorecard
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '41 7 * * 3'
 permissions: {}

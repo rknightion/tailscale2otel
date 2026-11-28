@@ -40,7 +40,7 @@ func gatingJobProblems(t *testing.T, doc map[string]any, sentinel string) []stri
 			problems = append(problems, name+" must be pull request only")
 		}
 		if condition, exists := job["if"]; exists {
-			allowed := sentinel == "ci-success" && (name == "privacy-sweep" || name == "backlog-freeze" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
+			allowed := sentinel == "ci-success" && (name == "privacy-sweep" || name == "actionlint" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
 			if !allowed {
 				problems = append(problems, name+" has job-level if")
 			}
@@ -83,6 +83,7 @@ func TestGatingJobsCannotBeSkippedOrSoftFailed(t *testing.T) {
 		{"build soft failure", "ci.yml", "ci-success", "build-test", true},
 		{"privacy condition", "ci.yml", "ci-success", "privacy-sweep", false},
 		{"dependency review condition", "ci.yml", "ci-success", "dependency-review", false},
+		{"actionlint condition", "ci.yml", "ci-success", "actionlint", false},
 		{"helm condition", "helm.yml", "helm-success", "lint-template", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -96,6 +97,67 @@ func TestGatingJobsCannotBeSkippedOrSoftFailed(t *testing.T) {
 			problems := gatingJobProblems(t, doc, tc.gate)
 			if !strings.Contains(strings.Join(problems, "\n"), tc.job) {
 				t.Fatalf("mutation escaped guard: %v", problems)
+			}
+		})
+	}
+}
+
+// The backlog freeze is a step of ci-success, not a job of its own. It must run on every pull
+// request even after an earlier step failed, and it must be able to read the file list.
+func backlogFreezeProblems(t *testing.T, job map[string]any) []string {
+	var problems []string
+	perms, _ := job["permissions"].(map[string]any)
+	if perms["pull-requests"] != "read" {
+		problems = append(problems, "ci-success needs pull-requests: read")
+	}
+	found := 0
+	for _, raw := range requiredSteps(t, job) {
+		step := raw.(map[string]any)
+		if step["name"] != "backlog/ is frozen" {
+			continue
+		}
+		found++
+		condition, _ := step["if"].(string)
+		if !strings.Contains(condition, "always()") || !strings.Contains(condition, "github.event_name == 'pull_request'") {
+			problems = append(problems, "backlog freeze step must run always() on pull requests")
+		}
+		if soft, exists := step["continue-on-error"]; exists && soft != false {
+			problems = append(problems, "backlog freeze step has continue-on-error")
+		}
+		script, _ := step["run"].(string)
+		if !strings.Contains(script, "startswith(\"backlog/\")") || !strings.Contains(script, "exit 1") {
+			problems = append(problems, "backlog freeze step lost its check")
+		}
+	}
+	if found != 1 {
+		problems = append(problems, fmt.Sprintf("want one backlog freeze step, found %d", found))
+	}
+	return problems
+}
+
+func TestBacklogFreezeIsAGatedStepOfCISuccess(t *testing.T) {
+	doc := readWorkflow(t, "ci.yml")
+	if _, ok := jobsOf(t, doc, "ci.yml")["backlog-freeze"]; ok {
+		t.Fatal("backlog-freeze must stay a step of ci-success, not a separate job")
+	}
+	if problems := backlogFreezeProblems(t, requiredJob(t, doc, "ci-success")); len(problems) > 0 {
+		t.Fatalf("%v", problems)
+	}
+	for name, mutate := range map[string]func(map[string]any, map[string]any){
+		"condition dropped":  func(_, step map[string]any) { step["if"] = "github.event_name == 'pull_request'" },
+		"soft failure":       func(_, step map[string]any) { step["continue-on-error"] = true },
+		"permission dropped": func(job, _ map[string]any) { delete(job["permissions"].(map[string]any), "pull-requests") },
+		"check removed":      func(_, step map[string]any) { step["run"] = "exit 0" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			job := requiredJob(t, readWorkflow(t, "ci.yml"), "ci-success")
+			for _, raw := range requiredSteps(t, job) {
+				if step := raw.(map[string]any); step["name"] == "backlog/ is frozen" {
+					mutate(job, step)
+				}
+			}
+			if len(backlogFreezeProblems(t, job)) == 0 {
+				t.Fatal("mutation escaped guard")
 			}
 		})
 	}
