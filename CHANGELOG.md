@@ -1,5 +1,39 @@
 # Changelog
 
+## [5.5.0](https://github.com/rknightion/tailscale2otel/compare/v5.4.0...v5.5.0) (2026-11-28)
+
+
+### Features
+
+* **devices:** add a per-device DERP latency toggle ([#1201](https://github.com/rknightion/tailscale2otel/issues/1201)) ([a006e36](https://github.com/rknightion/tailscale2otel/commit/a006e36281f98e8aac9c64a4f97d12478a3afb4d))
+
+
+### Bug Fixes
+
+* **admin:** name failed readiness components without exposing errors ([#1206](https://github.com/rknightion/tailscale2otel/issues/1206)) ([a8e02a8](https://github.com/rknightion/tailscale2otel/commit/a8e02a8e1b8abd8e54868009e761da2ba157751f))
+* clarify ignored blank typed environment overrides ([3971622](https://github.com/rknightion/tailscale2otel/commit/39716223197b7489508eb0888f919b532fbefe1c)), closes [#1200](https://github.com/rknightion/tailscale2otel/issues/1200)
+* **config:** clamp default flow replay capacity to the checkpoint store ([5daf30c](https://github.com/rknightion/tailscale2otel/commit/5daf30c063ce486a67aac3d8b60251c7b650772c)), closes [#1095](https://github.com/rknightion/tailscale2otel/issues/1095)
+* **config:** ignore blank typed environment overrides ([#1199](https://github.com/rknightion/tailscale2otel/issues/1199)) ([d1246a4](https://github.com/rknightion/tailscale2otel/commit/d1246a4375321a1a1132b22922bfb7f2f44343c9))
+* **dashboards:** keep dense annotations from hiding panel series ([#1243](https://github.com/rknightion/tailscale2otel/issues/1243)) ([b694ce6](https://github.com/rknightion/tailscale2otel/commit/b694ce677383fa6dba0e4bb06de42f0a301f2c53)), closes [#1211](https://github.com/rknightion/tailscale2otel/issues/1211)
+* **dashboards:** render topology panels as native tables ([#1242](https://github.com/rknightion/tailscale2otel/issues/1242)) ([5e90fe7](https://github.com/rknightion/tailscale2otel/commit/5e90fe7ecb94083fd288b1985a2fd073035ae208))
+* **deps:** update go dependencies ([6d2a8eb](https://github.com/rknightion/tailscale2otel/commit/6d2a8eb00d52f21b6fdc2b0e4a5805f42749fc7e))
+* **deps:** update go dependencies to v0.37.3 ([#1272](https://github.com/rknightion/tailscale2otel/issues/1272)) ([22910ee](https://github.com/rknightion/tailscale2otel/commit/22910eede04abc3b8015272c848f886a248dbd9d))
+* **deps:** update module go.yaml.in/yaml/v3 to v4 ([5cb58cf](https://github.com/rknightion/tailscale2otel/commit/5cb58cf30b07dd07966fa5f1082ff1bfa2905f4f))
+* emit snapshot state logs on change and daily ([206ccfd](https://github.com/rknightion/tailscale2otel/commit/206ccfd4d59035c45345ef7d854fa7f5c1dd9ac1)), closes [#1099](https://github.com/rknightion/tailscale2otel/issues/1099)
+* **flowlogs:** pace poll ingestion before the log queue fills ([#1197](https://github.com/rknightion/tailscale2otel/issues/1197)) ([168e2b7](https://github.com/rknightion/tailscale2otel/commit/168e2b7e9131b2d8d3ab6ceda3c819b748a2a8f0))
+* **grafana:** render active series by metric family natively ([#1194](https://github.com/rknightion/tailscale2otel/issues/1194)) ([937be4a](https://github.com/rknightion/tailscale2otel/commit/937be4a1388657bfd30e4637bba4b2a4fb1e9537))
+* **headscale:** summarize inactive collectors at startup ([#1203](https://github.com/rknightion/tailscale2otel/issues/1203)) ([d6cfc36](https://github.com/rknightion/tailscale2otel/commit/d6cfc36e170cf46b4cf1fd8c1a3a0ebf3f19af09))
+* omit rollup regions from default dashboard annotations ([3982074](https://github.com/rknightion/tailscale2otel/commit/39820743592d556f0d1dfd7ab064ec22579976ba)), closes [#807](https://github.com/rknightion/tailscale2otel/issues/807)
+* retire the unreachable receiver misconfiguration signal ([#1204](https://github.com/rknightion/tailscale2otel/issues/1204)) ([ca18e73](https://github.com/rknightion/tailscale2otel/commit/ca18e73974cb479bb51fd7b02f55b0ccd922aa07))
+* **telemetry:** never cover a delta effect after a failed collect ([7b00760](https://github.com/rknightion/tailscale2otel/commit/7b0076022f0146578360962e59280025020e11ee)), closes [#796](https://github.com/rknightion/tailscale2otel/issues/796)
+* warn when the ingress WAL stores unfiltered bodies ([9be0b18](https://github.com/rknightion/tailscale2otel/commit/9be0b18939b74fc4203ad905479d6d03de15b90b)), closes [#1108](https://github.com/rknightion/tailscale2otel/issues/1108)
+* withhold external flow names and fine geolocation ([4bd77e2](https://github.com/rknightion/tailscale2otel/commit/4bd77e2f236ff83e151cd9fab9c7e2de8f9b0c9f)), closes [#1104](https://github.com/rknightion/tailscale2otel/issues/1104)
+
+
+### Performance
+
+* **ingresswal:** stream record metadata without hydrating bodies ([d25fa0b](https://github.com/rknightion/tailscale2otel/commit/d25fa0b48416b41fa0473c3f7bbc508c856a1d1b)), closes [#795](https://github.com/rknightion/tailscale2otel/issues/795)
+
 ## [5.4.0](https://github.com/rknightion/tailscale2otel/compare/v5.3.0...v5.4.0) (2026-11-21)
 
 
