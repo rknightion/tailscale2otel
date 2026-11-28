@@ -36,7 +36,8 @@
         "go.opentelemetry.io/otel{,/**}"
       ],
       "groupName": "OpenTelemetry",
-      "automerge": false
+      "automerge": false,
+      "rebaseWhen": "conflicted"
     },
     {
       "description": "Ignore the self-module reference: the tools/* modules require github.com/rknightion/tailscale2otel/v5 but replace ../.. makes Go always build from local code, so the require version is cosmetic.",

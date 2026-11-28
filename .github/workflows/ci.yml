@@ -37,12 +37,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: go vet
-        run: just vet .
-
-      - name: go build
-        run: just build .
-
+      # No separate `go vet` or `go build` step: `go test -race` below compiles every package, and
+      # the lint job runs golangci-lint, whose standard set includes govet.
       - name: go test -race
         run: just test
 
@@ -380,12 +376,28 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # Pull requests build one target (linux/amd64) to prove the tree compiles and the config is
+      # valid; the full matrix, archives and checksums run on push to main and on the release PR
+      # (head ref release-please--*), where the release workflow builds the same set.
+      - name: goreleaser build (single target)
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--') }}
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        env:
+          GOOS: linux
+          GOARCH: amd64
+        with:
+          distribution: goreleaser
+          version: "v2.20.3"
+          args: build --snapshot --clean --single-target
+
       # Cross-compile every target + build archives/checksums. .goreleaser.yaml has
       # no docker pipeline (the real image build is deploy/Dockerfile via
       # publish.yml/container-publish.yml), so no docker/qemu/syft is needed here;
       # the image is smoke-tested by docker-build below and fully built, pushed,
       # and signed by the `publish` job in release-please.yml.
-      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+      - name: goreleaser release (full matrix, snapshot)
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') }}
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           distribution: goreleaser
           version: "v2.20.3"
@@ -427,38 +439,8 @@ jobs:
       - name: Compose assets resolve in both default and file-backed modes
         run: just compose-check
 
-      # Resolves the same Go version other jobs get from go-version-file: go.mod,
-      # for use in the cache key below. cache: false — this job never runs `go`
-      # directly, so there is no module cache to save here.
-      - name: Determine Go version
-        id: goversion
-        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      # The Dockerfile's `go build` step uses a BuildKit cache mount for the Go
-      # build cache (/root/.cache/go-build). type=gha layer cache does NOT carry
-      # cache-mount contents across runs, so restore/save it via actions/cache and
-      # let buildkit-cache-dance inject it into (and extract it from) the build.
-      # Keyed on content (Go version + go.sum) rather than github.sha, so a run
-      # with an unchanged dependency set restores the previous run's cache exactly
-      # instead of always missing and re-saving the full cache.
-      - name: Restore Go build cache for Docker
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: go-build-cache
-          key: ${{ runner.os }}-docker-go-build-${{ steps.goversion.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-docker-go-build-${{ steps.goversion.outputs.go-version }}-
-            ${{ runner.os }}-docker-go-build-
-      - name: Inject Go build cache into BuildKit
-        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
-        with:
-          cache-map: |
-            {
-              "go-build-cache": "/root/.cache/go-build"
-            }
+      # No Go build cache restore/inject here: measured on recent runs, the cache restore, inject and
+      # post-save steps cost about 185 s against a 63 s image build step, so they were net slower.
 
       - name: build image (no push)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -657,45 +639,8 @@ jobs:
       contents: read
     uses: rknightion/.github/.github/workflows/privacy-sweep.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
 
-  # The Backlog.md board is retired: issues are the queue. A pull request may delete files under
-  # backlog/ or move them out, never add or change one there. Reads the file list from the API, so
-  # no pull request code is checked out.
-  backlog-freeze:
-    name: backlog/ is frozen
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read
-    steps:
-      - name: Refuse additions and changes under backlog/
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
-        run: |
-          set -euo pipefail
-          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ && "$CHANGED_FILES" =~ ^[0-9]+$ ]]; then
-            echo "::error title=backlog freeze::the pull request number or file count is malformed"
-            exit 1
-          fi
-          # The pull request files API lists at most 3000 files; refuse rather than check part of a change.
-          if (( CHANGED_FILES > 3000 )); then
-            echo "::error title=backlog freeze::${CHANGED_FILES} changed files is more than the API lists; split the pull request"
-            exit 1
-          fi
-          offending="$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
-            --jq '.[] | select(.status != "removed") | select(.filename | startswith("backlog/")) | "\(.status) \(.filename | @json)"')"
-          if [[ -n "$offending" ]]; then
-            echo "::error title=backlog freeze::this pull request adds or changes files under backlog/; the board is retired, so file the work as an issue"
-            printf '  %s\n' "$offending"
-            exit 1
-          fi
-          echo "No file under backlog/ is added or changed."
-
   actionlint:
+    if: github.event_name == 'pull_request'
     permissions:
       contents: read
     uses: rknightion/.github/.github/workflows/actionlint.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
@@ -725,7 +670,10 @@ jobs:
     name: ci-success
     runs-on: ubuntu-latest
     if: always()
-    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, privacy-sweep, backlog-freeze, actionlint, dependency-review, zizmor]
+    permissions:
+      contents: read
+      pull-requests: read # backlog freeze step reads the pull request file list
+    needs: [build-test, lint, module-verify, docs-catalog, dashboards-drift, govulncheck, goreleaser-snapshot, docker-build, privacy-sweep, actionlint, dependency-review, zizmor]
     steps:
       - name: Fail unless every required job succeeded
         id: gate
@@ -736,13 +684,43 @@ jobs:
           set -euo pipefail
           failures=$(jq -r --arg event "$EVENT_NAME" '
             to_entries[]
-            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "privacy-sweep" and .key != "backlog-freeze" and .key != "dependency-review")))
+            | select(.value.result != "success" and (.value.result != "skipped" or $event == "pull_request" or (.key != "privacy-sweep" and .key != "actionlint" and .key != "dependency-review")))
             | "\(.key)=\(.value.result)"
           ' <<< "$NEEDS_JSON")
           if [[ -n "$failures" ]]; then
             printf '%s\n' "$failures"
             exit 1
           fi
+      # The Backlog.md board is retired: issues are the queue. A pull request may delete files under
+      # backlog/ or move them out, never add or change one there. Reads the file list from the API, so
+      # no pull request code is checked out. A step here, not a job of its own: it takes a few seconds,
+      # and always() keeps it running when the gate step failed so the guard is never skipped.
+      - name: backlog/ is frozen
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ && "$CHANGED_FILES" =~ ^[0-9]+$ ]]; then
+            echo "::error title=backlog freeze::the pull request number or file count is malformed"
+            exit 1
+          fi
+          # The pull request files API lists at most 3000 files; refuse rather than check part of a change.
+          if (( CHANGED_FILES > 3000 )); then
+            echo "::error title=backlog freeze::${CHANGED_FILES} changed files is more than the API lists; split the pull request"
+            exit 1
+          fi
+          offending="$(gh api --paginate "repos/${REPO}/pulls/${PR_NUMBER}/files?per_page=100" \
+            --jq '.[] | select(.status != "removed") | select(.filename | startswith("backlog/")) | "\(.status) \(.filename | @json)"')"
+          if [[ -n "$offending" ]]; then
+            echo "::error title=backlog freeze::this pull request adds or changes files under backlog/; the board is retired, so file the work as an issue"
+            printf '  %s\n' "$offending"
+            exit 1
+          fi
+          echo "No file under backlog/ is added or changed."
       - name: All required jobs passed
         env:
           RESULTS: ${{ join(needs.*.result, ', ') }}

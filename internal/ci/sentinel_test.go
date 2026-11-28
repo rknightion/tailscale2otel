@@ -75,7 +75,7 @@ func TestSentinelGateScripts(t *testing.T) {
 				}
 			}
 			check(t, "pull_request", nil, false)
-			exceptions := map[string]string{"privacy-sweep": "skipped", "backlog-freeze": "skipped", "dependency-review": "skipped"}
+			exceptions := map[string]string{"privacy-sweep": "skipped", "actionlint": "skipped", "dependency-review": "skipped"}
 			if tc.gate == "ci-success" {
 				check(t, "push", exceptions, false)
 				check(t, "pull_request", exceptions, true)

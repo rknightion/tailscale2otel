@@ -1,14 +1,14 @@
 name: PR metadata
 
 # Pull request checks that read the pull request itself rather than the code, kept apart from the
-# heavy CI workflow so that editing a pull request's body or title re-runs only these jobs. The
+# heavy CI workflow. The
 # required check is pr-metadata-success. The workflow name differs from the heavy workflow's because
 # the hub reusables key their own concurrency groups on github.workflow.
 run-name: PR ${{ github.event.pull_request.number }} metadata
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
