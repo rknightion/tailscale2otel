@@ -200,6 +200,12 @@ vet module="":
       go vet -C "$m" ./...
     done
 
+# the tests a fast-path pull request (hub pins, release, vend-sync) still runs: CI policy and release pins
+[group('check')]
+fast-path-guards:
+    go test ./internal/ci/...
+    go test ./internal/config -run '^(TestModulePathMatchesReleaseVersion|TestComposeImageTagMatchesRelease|TestChartAppVersionMatchesRelease)$'
+
 # run the root module test suite with the race detector; filter narrows by -run
 [group('check')]
 [no-exit-message]

@@ -25,6 +25,35 @@ func requiredSteps(t *testing.T, job map[string]any) []any {
 	return steps
 }
 
+// The fast path (rknightion/.github docs/changes/README.md). The changes job classifies a pull
+// request; these application suites run only when it answers app: 'true', and fast-path-guards
+// runs only when it answers app: 'false'. Every other job ci-success needs takes no changes
+// condition, so lint, govulncheck, zizmor and the pull request checks always run.
+var appSuites = map[string]bool{
+	"build-test": true, "module-verify": true, "docs-catalog": true, "dashboards-drift": true,
+	"goreleaser-snapshot": true, "docker-build": true,
+}
+
+const (
+	appGate          = "needs.changes.outputs.app == 'true'"
+	fastPathGate     = "needs.changes.outputs.app == 'false'"
+	fastPathGuardJob = "fast-path-guards"
+)
+
+func needsJob(job map[string]any, name string) bool {
+	switch needs := job["needs"].(type) {
+	case string:
+		return needs == name
+	case []any:
+		for _, need := range needs {
+			if need == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func gatingJobProblems(t *testing.T, doc map[string]any, sentinel string) []string {
 	t.Helper()
 	gate := requiredJob(t, doc, sentinel)
@@ -36,11 +65,20 @@ func gatingJobProblems(t *testing.T, doc map[string]any, sentinel string) []stri
 	for _, raw := range needs {
 		name := raw.(string)
 		job := requiredJob(t, doc, name)
+		if name == "changes" {
+			if _, exists := job["if"]; exists {
+				problems = append(problems, "changes has job-level if")
+			}
+			continue
+		}
 		if sentinel == "ci-success" && name == "dependency-review" && job["if"] != "github.event_name == 'pull_request'" {
 			problems = append(problems, name+" must be pull request only")
 		}
 		if condition, exists := job["if"]; exists {
 			allowed := sentinel == "ci-success" && (name == "privacy-sweep" || name == "actionlint" || name == "dependency-review") && condition == "github.event_name == 'pull_request'"
+			if sentinel == "ci-success" && needsJob(job, "changes") {
+				allowed = allowed || (appSuites[name] && condition == appGate) || (name == fastPathGuardJob && condition == fastPathGate)
+			}
 			if !allowed {
 				problems = append(problems, name+" has job-level if")
 			}
@@ -75,6 +113,30 @@ func TestGatingJobsCannotBeSkippedOrSoftFailed(t *testing.T) {
 			t.Fatalf("condition removal escaped guard: %v", problems)
 		}
 	})
+	for _, tc := range []struct {
+		name, file, job, condition string
+		dropNeeds                  bool
+	}{
+		{"lint behind the app gate", "ci.yml", "lint", appGate, false},
+		{"zizmor behind the app gate", "ci.yml", "zizmor", appGate, false},
+		{"govulncheck behind the fast-path gate", "ci.yml", "govulncheck", fastPathGate, false},
+		{"suite gate without needing changes", "ci.yml", "build-test", appGate, true},
+		{"guards on the app gate", "ci.yml", fastPathGuardJob, appGate, false},
+		{"changes with a condition", "ci.yml", "changes", "github.event_name == 'pull_request'", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := readWorkflow(t, tc.file)
+			job := requiredJob(t, doc, tc.job)
+			job["if"] = tc.condition
+			if tc.dropNeeds {
+				delete(job, "needs")
+			}
+			problems := gatingJobProblems(t, doc, "ci-success")
+			if !strings.Contains(strings.Join(problems, "\n"), tc.job) {
+				t.Fatalf("mutation escaped guard: %v", problems)
+			}
+		})
+	}
 	for _, tc := range []struct {
 		name, file, gate, job string
 		soft                  bool

@@ -16,7 +16,7 @@ jobs:
       packages: read
       actions: read
       contents: read
-    uses: rknightion/.github/.github/workflows/codeql.yml@a6e7f83c8fd233841120fc14c0412124a445c306 # v1.35.0
+    uses: rknightion/.github/.github/workflows/codeql.yml@c2c3d98e29e9f340620d8ef396a8e6dcb45bda68 # v1.37.0
     with:
       languages: '[{"language":"go","build-mode":"autobuild"},{"language":"python","build-mode":"none"},{"language":"actions","build-mode":"none"}]'
       timeout-minutes: 30
